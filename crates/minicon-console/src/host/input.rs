@@ -202,16 +202,39 @@ struct PendingRead<'session> {
 }
 
 impl PendingRead<'_> {
-    fn interrupt(self, status: i32) -> io::Result<()> {
-        complete_read_interruption(self.request, status)
+    fn interrupt(self, status: i32, trace: Option<&RequestTrace>) -> io::Result<()> {
+        complete_read_interruption(self.request, status, trace)
     }
 }
 
-fn complete_read_interruption(request: DriverRequest<'_>, status: i32) -> io::Result<()> {
+fn complete_read_interruption(
+    request: DriverRequest<'_>,
+    status: i32,
+    trace: Option<&RequestTrace>,
+) -> io::Result<()> {
+    let descriptor = request.descriptor;
+    if let Some(trace) = trace {
+        trace.write(format_args!(
+            "stage=read-complete-begin function={} process={} object={} status={:#010x}",
+            descriptor.function, descriptor.process, descriptor.object, status as u32,
+        ));
+    }
+    let result = request.interrupt_read(status);
+    if let Some(trace) = trace {
+        trace.write(format_args!(
+            "stage=read-complete-end function={} process={} object={} status={:#010x} win32={:?} error_kind={:?}",
+            descriptor.function,
+            descriptor.process,
+            descriptor.object,
+            status as u32,
+            result.as_ref().err().and_then(io::Error::raw_os_error),
+            result.as_ref().err().map(io::Error::kind),
+        ));
+    }
     // This is a reply to one retiring request. A recipient already cancelled
     // by ConDrv is benign; event-update, output and other transport errors are
     // outside this exception and still propagate through their own operations.
-    match request.interrupt_read(status) {
+    match result {
         Err(error) if error.raw_os_error() == Some(ERROR_OPERATION_ABORTED as i32) => Ok(()),
         result => result,
     }
@@ -445,12 +468,14 @@ impl<'session> ConsoleHost<'session> {
         // Publish native readiness before any blocked SDK caller resumes.
         let mut failure = self.update_input_event().err();
         for request in deferred_reads {
-            if let Err(error) = complete_read_interruption(request, READ_INTERRUPTED) {
+            if let Err(error) =
+                complete_read_interruption(request, READ_INTERRUPTED, self.request_trace.as_ref())
+            {
                 failure.get_or_insert(error);
             }
         }
         for read in pending {
-            if let Err(error) = read.interrupt(READ_INTERRUPTED) {
+            if let Err(error) = read.interrupt(READ_INTERRUPTED, self.request_trace.as_ref()) {
                 failure.get_or_insert(error);
             }
         }
@@ -1121,13 +1146,17 @@ impl<'session> ConsoleHost<'session> {
         self.deferred_output = retained;
         for request in retired {
             if request.is_console_read()
-                && let Err(error) = complete_read_interruption(request, retirement.status())
+                && let Err(error) = complete_read_interruption(
+                    request,
+                    retirement.status(),
+                    self.request_trace.as_ref(),
+                )
             {
                 failure.get_or_insert(error);
             }
         }
         for read in self.input.take_retired(retirement) {
-            if let Err(error) = read.interrupt(retirement.status()) {
+            if let Err(error) = read.interrupt(retirement.status(), self.request_trace.as_ref()) {
                 failure.get_or_insert(error);
             }
         }

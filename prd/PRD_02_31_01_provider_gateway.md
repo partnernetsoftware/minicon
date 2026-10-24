@@ -468,3 +468,15 @@ prove the corresponding public assertion fails when the guard is removed.
 Use isolated synthetic credentials for mechanism courts and real supported
 accounts only for separately identified provider receipts; never commit secrets
 or prompt/tool transcripts. Qualification and publication remain with PRD 27/32.
+
+### Native Harness input checkpoint
+
+The unsigned Windows x86_64 pack/input checkpoint indexed by
+[the controls owner](PRD_02_25_02_browser_controls.md#exact-unsigned-windows-native-input-checkpoint)
+also observed physical Console/Web/Harness route changes, independent native
+port/model drafts, unchanged saved binding before Submit, and explicit local
+key creation/revocation with no key in public snapshots or receipts. Its
+`harness-routes-fields-and-redaction` row passed; the overall court remains
+BLOCKED on fixture clipboard restoration. It attempted no account login,
+provider inference or listener activation, so the real-grant frontier above
+is unchanged. Pixel review and final-source qualification remain separate.

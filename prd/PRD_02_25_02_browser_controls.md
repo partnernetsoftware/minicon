@@ -223,3 +223,23 @@ remain open. Retain
 0.2.22 receipts in its release history and archived plan as the starting scope.
 A new source must qualify independently; physical keyboard, IME, injected CLI
 and rendered-state observations remain separate claims.
+
+### Exact unsigned Windows native-input checkpoint
+
+The Win32 SendInput/native Microsoft Pinyin court used the receipt-verified
+Windows x86_64 payload from pack `40113102017`, source
+`d40c4fd45543ea7e4e055d963d62bc2684a943ce`, SHA-256
+`47ab668bb6e3f7ffca104b2b4297dec7bf0cc1c0d00defcde399ffd91c8d283a`.
+At scale 1000 permille it observed actual page-key echo, page-to-address Ctrl+L,
+Tab/menu entry and focus return, and all three editors' native selection,
+copy/cut/paste, Pinyin preedit and Space commit without submitting the field.
+The local records are
+`target-six/v0.2.23-controls/native-pack-d40c4fd-2/receipt.json` and its named
+preedit/committed/menu PNGs. Owned-client-DC images expose the host controls;
+they do not certify GPU browser-page or IME-popup pixels.
+
+The overall court remains **BLOCKED**: its clipboard restoration returned
+`0x800401D4` after the functional assertions. Keep that failed fixture receipt;
+a corrected cleanup mechanism and a fresh complete run are required. These
+observations do not qualify another OS/ISA, another scale or final signed bytes.
+Harness observations from the same run belong to PRD 31.01.

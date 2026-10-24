@@ -406,6 +406,20 @@ jobs:
             exit 1
           fi
 
+      - name: Preserve owned Windows console lifecycle traces
+        if: always() && startsWith(matrix.cell, 'win-')
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          output = Path('probe-logs/console-lifecycle')
+          output.mkdir(parents=True, exist_ok=True)
+          for index, source in enumerate(Path('target/conhost-research').glob('*/result.console-trace')):
+              if index >= 4 or source.stat().st_size > 256 * 1024:
+                  raise SystemExit('console lifecycle trace exceeded its evidence bound')
+              (output / f'{source.parent.name}.log').write_bytes(source.read_bytes())
+          PY
+
       # Same rationale as local-artifact-probe.yml: a hang shows up as
       # `cancelled`, not `failure`, and `failure()` alone misses it.
       - name: Upload failure logs
@@ -430,6 +444,8 @@ jobs:
             probe-logs/test-receipt.json
             probe-logs/browser-workspace-test.log
             probe-logs/control-shutdown-response.log
+            probe-logs/retained-group/
+            probe-logs/console-lifecycle/
             probe-logs/browser-workspace/
           if-no-files-found: ignore
           retention-days: 14

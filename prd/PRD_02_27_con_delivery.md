@@ -157,6 +157,14 @@ unterminated banner is the source-supported explanation; that failed run had
 no sealed payload receipt and cannot establish mixed-source bytes or qualify
 an artifact. The explicit producer/parser boundary requires a new-source pack.
 
+The corrected boundary produced a clean-source receipt in pack run
+[`40113102017`](https://github.com/partnernetsoftware/minicon/actions/runs/40113102017)
+at `d40c4fd45543ea7e4e055d963d62bc2684a943ce`: all six downloaded native
+payloads match the recorded SHA-256 and lengths. The unsigned `minicon.com`
+receipt reports 15,475,988 bytes against the owner's 20,000,000-byte ceiling.
+This development pack is not a signed Candidate or public release; later
+source fixes require their own pack and artifact qualification.
+
 ## Load-time portability
 
 The oldest Windows this product claims is **Windows Server 2016 / Windows 10

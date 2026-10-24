@@ -5555,11 +5555,31 @@ fn native_report_failure_details(
     .collect();
     // This existing facade query is bounded. Only failure diagnostics ask it;
     // it is never evidence that a stalled native operation completed.
+    let trace_tail = native_request_trace_tail(report);
     format!(
-        "pid={};process={process};stages={stages:?};native_reads={:?}",
+        "pid={};process={process};stages={stages:?};native_reads={:?};console_trace_tail={trace_tail}",
         owned.id(),
         child.native_input_read_state()
     )
+}
+
+fn native_request_trace_tail(report: &Report) -> String {
+    use std::io::{Read as _, Seek as _, SeekFrom};
+    let result = (|| -> std::io::Result<String> {
+        let mut file = std::fs::File::open(report.0.with_extension("console-trace"))?;
+        let length = file.metadata()?.len();
+        file.seek(SeekFrom::Start(length.saturating_sub(16 * 1024)))?;
+        let mut bytes = Vec::new();
+        file.take(16 * 1024).read_to_end(&mut bytes)?;
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
+    })();
+    result.unwrap_or_else(|error| {
+        format!(
+            "unavailable(win32={:?},kind={:?})",
+            error.raw_os_error(),
+            error.kind(),
+        )
+    })
 }
 
 fn wait_native_report(
@@ -5594,10 +5614,16 @@ fn wait_native_report(
 fn retiring_buffer_cases(rust: bool) {
     for kind in ["input-close", "disconnect"] {
         let report = Report::new();
-        let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        let mut command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
             .arg(format!("cooked-retire-{kind}"))
             .arg(report.0.as_os_str())
             .size(TerminalSize { rows: 8, cols: 16 });
+        if rust && kind == "disconnect" {
+            command = command.env(
+                "MINICON_CONSOLE_TRACE",
+                report.0.with_extension("console-trace"),
+            );
+        }
         let mut fixture = if rust {
             Fixture::open(command.rust_console())
         } else {
@@ -5795,6 +5821,14 @@ fn queued_read_pressure_cases(rust: bool) {
                 if rust { "observed-" } else { "" }
             ))
             .arg(report.0.as_os_str());
+        let command = if rust && kind == "disconnect-file" {
+            command.env(
+                "MINICON_CONSOLE_TRACE",
+                report.0.with_extension("console-trace"),
+            )
+        } else {
+            command
+        };
         let (master, child) = if rust {
             command.rust_console().spawn().unwrap().into_parts()
         } else {

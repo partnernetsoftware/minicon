@@ -399,6 +399,53 @@ disconnect cases passed individually with rust-console/parent-console/runtime
 features under the same dangerous-lint wrapper. Those local development scopes
 do not replace either Windows CI cell or the required macOS/Linux reruns.
 
+### Repair checkpoint and remaining native failures
+
+Run [`40113098833`](https://github.com/partnernetsoftware/minicon/actions/runs/40113098833)
+at `d40c4fd45543ea7e4e055d963d62bc2684a943ce` passed all 21 configured
+suite rows on each Linux ISA, including the previously failing nested worker
+spawn. Both macOS ISAs passed the owned-group positive cases, two actual
+runtime guard-removal failures and byte-exact restoration; their raw logs and
+receipts survived in the failed-job artifacts. The workflow now also retains
+that directory in its success artifact, pending a new-source run.
+The full Windows workspace and owned-fork gate at that checkpoint exited 0:
+1692 passed / 82 ignored across 38 summaries. The separate native Microsoft
+Pinyin preedit/commit test also passed on the interactive Windows x86_64 host;
+this certifies that host fixture, not the three new browser fields.
+
+Both macOS cells still failed the minimal-environment fixture because startup
+added `__CF_USER_TEXT_ENCODING` after the explicitly cleared exec block. The
+[Apple CF getter/writer](https://github.com/apple-oss-distributions/CF/blob/CF-1153.18/CFStringEncodings.c#L832-L955)
+and [early initialization](https://github.com/apple-oss-distributions/CF/blob/CF-1153.18/CFRuntime.c#L851-L867)
+explain this mechanism; that historical source is not a claim about the runner's
+exact installed framework. The follow-up fixture supplies a valid UID-prefixed
+parent sentinel, confirms it survived parent startup, then accepts only a strict
+native three-component UID/encoding/region record in the child. A fourth field,
+unknown key or provider/client sentinel still fails. No Unix process-global
+environment mutation or production forwarding exception is introduced. Its
+current-native proof remains pending.
+
+Windows ARM passed its revised minimal-environment probe and all 36 selected
+worker tests at this checkpoint; the production forwarding list is unchanged.
+
+Windows queued-read failure now proves the owned probe is still inside
+`FreeConsole` with one deferred text read. Retirement failure proves
+`FreeConsole` returned but its reader is still admitted and has not returned.
+These observations narrow the failure; they do not establish which server
+notification was received or authorize a changed NTSTATUS/error allowlist.
+The next diagnostic checkpoint must observe receive/retire/completion ordering
+without changing the original deadlines or assertions.
+
+The opt-in service trace is limited to 2048 records / 256 KiB per owned
+session. Only the two failing fixture cases supply a command-local trace file;
+creation is exclusive and failures preserve service behavior. Metadata names
+receive/admit/defer/resume, process/object identities, admitted/deferred counts
+and actual completion errors before existing cancellation normalization. No
+console text or SDK buffer is recorded. The workflow copies at most four bounded
+trace files into its ordinary evidence directory on every Windows outcome.
+Both original cases pass locally with tracing; the CI event-order evidence is
+still pending and no speculative cancellation fix is claimed.
+
 ## Permission walls, disambiguated
 
 The observations below describe the 2026-09-27 session, not a universal current

@@ -114,6 +114,35 @@ pub(super) fn spawn(command: ChildCommand, size: TerminalSize) -> io::Result<Spa
     let line = command_line(&command)?;
     let line = OsString::from_wide(&line[..line.len() - 1]);
     let environment = environment_block(&command)?;
+    // A command-local override belongs to this owned service, not the ambient
+    // test process. Preserve the existing process-level compatibility trace.
+    let request_trace = command
+        .env
+        .iter()
+        .rev()
+        .find(|(key, _)| {
+            key.to_string_lossy()
+                .eq_ignore_ascii_case("MINICON_CONSOLE_TRACE")
+        })
+        .and_then(|(_, path)| {
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(path)
+            {
+                Ok(file) => Some(file),
+                Err(error) => {
+                    use std::io::Write as _;
+                    let _ = writeln!(
+                        std::io::stderr().lock(),
+                        "owned console lifecycle trace unavailable: win32={:?} error_kind={:?}",
+                        error.raw_os_error(),
+                        error.kind(),
+                    );
+                    None
+                }
+            }
+        });
     let driver = DriverSession::open()?;
     let child = Arc::new(driver.spawn_suspended_with(
         &image,
@@ -158,6 +187,7 @@ pub(super) fn spawn(command: ChildCommand, size: TerminalSize) -> io::Result<Spa
                     &mode,
                     receive,
                     size,
+                    request_trace,
                 )
             }))
             .unwrap_or_else(|_| Err(io::Error::other("Rust console worker panicked")));
@@ -295,8 +325,12 @@ fn serve(
     mode: &AtomicU32,
     controls: Receiver<Control>,
     size: TerminalSize,
+    request_trace: Option<std::fs::File>,
 ) -> io::Result<()> {
     let mut host = ConsoleHost::for_child(child)?;
+    if let Some(trace) = request_trace {
+        host.set_request_trace(trace);
+    }
     // Held for the whole session; dropping it closes the window. A failure
     // to create one leaves GetConsoleWindow unsupported rather than ending
     // the session.

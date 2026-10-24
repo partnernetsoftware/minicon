@@ -1841,6 +1841,47 @@ mod invocation_budget_tests {
 #[cfg(test)]
 mod worker_exec_tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    fn cf_user_prefix() -> String {
+        // Fixture-only native identity: CoreFoundation uses the real UID.
+        unsafe extern "C" {
+            fn getuid() -> u32;
+        }
+        format!("0x{:X}", unsafe { getuid() })
+    }
+
+    #[cfg(target_os = "macos")]
+    fn cf_parent_sentinel() -> String {
+        // CF accepts the UID and two numeric fields without consuming a tail.
+        // A bare invalid sentinel could instead be replaced during startup.
+        format!("{}:0:0:synthetic-parent-sentinel", cf_user_prefix())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn is_native_cf_encoding(value: &std::ffi::OsStr) -> bool {
+        let Some(value) = value.to_str() else {
+            return false;
+        };
+        if !value.is_ascii() || value.len() > 32 {
+            return false;
+        }
+        let mut fields = value.split(':');
+        let (Some(uid), Some(encoding), Some(region), None) =
+            (fields.next(), fields.next(), fields.next(), fields.next())
+        else {
+            return false;
+        };
+        let canonical_hex = |field: &str| {
+            field
+                .strip_prefix("0x")
+                .and_then(|digits| u32::from_str_radix(digits, 16).ok())
+                .is_some_and(|number| field == format!("0x{number:X}"))
+        };
+        uid == cf_user_prefix()
+            && ((encoding == "0" && region == "0")
+                || (canonical_hex(encoding) && canonical_hex(region)))
+    }
     use std::{
         io::Write as _,
         sync::{
@@ -1935,6 +1976,12 @@ mod worker_exec_tests {
                 for name in SECRETS {
                     assert_eq!(std::env::var(name).unwrap(), "synthetic-secret-sentinel");
                 }
+                #[cfg(target_os = "macos")]
+                assert_eq!(
+                    std::env::var("__CF_USER_TEXT_ENCODING").unwrap(),
+                    cf_parent_sentinel(),
+                    "the parent startup must retain the poisoned metadata"
+                );
                 let nested = std::env::current_dir().unwrap().join("child");
                 std::fs::create_dir_all(&nested).unwrap();
                 std::fs::write(nested.join("worker-probe-mode"), "environment-child").unwrap();
@@ -1964,6 +2011,17 @@ mod worker_exec_tests {
                     assert!(std::env::var_os(name).is_none(), "forwarded {name}");
                 }
                 for (name, value) in std::env::vars_os() {
+                    #[cfg(target_os = "macos")]
+                    if name == "__CF_USER_TEXT_ENCODING" {
+                        // CF startup may add its own metadata after env_clear.
+                        // Require a canonical native record, never the parent
+                        // sentinel or arbitrary inherited text. See PRD 32.
+                        assert!(
+                            is_native_cf_encoding(&value),
+                            "non-native CF encoding metadata"
+                        );
+                        continue;
+                    }
                     if cfg!(all(windows, target_arch = "aarch64"))
                         && name
                             .to_string_lossy()
@@ -2174,6 +2232,8 @@ mod worker_exec_tests {
         for name in SECRETS {
             parent.env(name, "synthetic-secret-sentinel");
         }
+        #[cfg(target_os = "macos")]
+        parent.env("__CF_USER_TEXT_ENCODING", cf_parent_sentinel());
         let output = parent.output().unwrap();
         assert!(
             output.status.success(),

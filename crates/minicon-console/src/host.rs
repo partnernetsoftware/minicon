@@ -36,6 +36,33 @@ const RAW_WRITE_CHUNK: u32 = 256 * 1024;
 /// request ceiling, so every write that used to work completes in one turn.
 const RAW_WRITE_TURN: u32 = 1024 * 1024;
 
+// Opt-in native lifecycle diagnostics contain only protocol identities/counts.
+// A caller supplies an exclusively created file; never inspect SDK buffers.
+struct RequestTrace {
+    file: std::fs::File,
+    limits: std::sync::Mutex<(usize, usize)>,
+}
+
+impl RequestTrace {
+    fn write(&self, message: std::fmt::Arguments<'_>) {
+        let Ok(mut limits) = self.limits.lock() else {
+            return;
+        };
+        if limits.0 >= 2048 {
+            return;
+        }
+        let line = format!("record={} {message}\n", limits.0);
+        let bytes = limits.1.saturating_add(line.len());
+        if bytes > 256 * 1024 {
+            return;
+        }
+        limits.0 += 1;
+        limits.1 = bytes;
+        let mut file = &self.file;
+        let _ = file.write_all(line.as_bytes());
+    }
+}
+
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum HandleKind {
     Input,
@@ -98,6 +125,7 @@ pub struct ConsoleHost<'session> {
     /// The window `GetConsoleWindow` reports, supplied by the hosting adapter
     /// (a hidden pseudo-console window, as ConPTY provides). Zero until set.
     console_window: u64,
+    request_trace: Option<RequestTrace>,
 }
 
 impl Default for ConsoleHost<'_> {
@@ -131,6 +159,7 @@ impl Default for ConsoleHost<'_> {
             title: Vec::new(),
             deferred_output: VecDeque::new(),
             console_window: 0,
+            request_trace: None,
         }
     }
 }
@@ -138,6 +167,34 @@ impl Default for ConsoleHost<'_> {
 impl<'session> ConsoleHost<'session> {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Enable bounded protocol-only diagnostics in a caller-owned trace file.
+    /// File failures never change console service or completion semantics.
+    pub fn set_request_trace(&mut self, file: std::fs::File) {
+        self.request_trace = Some(RequestTrace {
+            file,
+            limits: std::sync::Mutex::new((0, 0)),
+        });
+    }
+
+    fn trace_request(
+        &self,
+        stage: &str,
+        descriptor: crate::RequestDescriptor,
+        detail: std::fmt::Arguments<'_>,
+    ) {
+        if let Some(trace) = &self.request_trace {
+            trace.write(format_args!(
+                "stage={stage} function={} process={} object={} reads={:?} queued={} active_buffer={} {detail}",
+                descriptor.function,
+                descriptor.process,
+                descriptor.object,
+                self.input_read_state(),
+                self.deferred_output.len(),
+                self.active_buffer,
+            ));
+        }
     }
 
     /// Sets the window handle `GetConsoleWindow` returns to clients. Many
@@ -307,6 +364,22 @@ impl<'session> ConsoleHost<'session> {
         let api = (descriptor.function == 7)
             .then(|| read_u32(request.inline_payload(), 0))
             .flatten();
+        self.trace_request(
+            "receive",
+            descriptor,
+            format_args!("api={api:?} ready={ready}"),
+        );
+        if self.request_trace.is_some() && matches!(descriptor.function, 2 | 4) {
+            self.trace_request(
+                "retirement-admission",
+                descriptor,
+                format_args!(
+                    "ready={ready} close_may_publish={} fallback={:?}",
+                    self.close_may_publish(descriptor),
+                    self.buffer_fallback(),
+                ),
+            );
+        }
         // NOWAIT record reads/peeks use a direct path which never cooks or
         // echoes a previously blocked text read. Blocking reads may service it.
         let record_query = api == Some(0x0100_0004)
@@ -353,6 +426,11 @@ impl<'session> ConsoleHost<'session> {
                     )
                 ));
         if !bypass && (!ready || self.has_pending_output()) {
+            self.trace_request(
+                "output-defer",
+                descriptor,
+                format_args!("api={api:?} ready={ready} bypass={bypass}"),
+            );
             let mut receipt = DispatchReceipt {
                 function: descriptor.function,
                 api,
@@ -376,6 +454,11 @@ impl<'session> ConsoleHost<'session> {
             }
             return Ok(receipt);
         }
+        self.trace_request(
+            "output-admit",
+            descriptor,
+            format_args!("api={api:?} ready={ready} bypass={bypass}"),
+        );
         self.dispatch_buffer_request(request, output)
     }
 
@@ -391,7 +474,10 @@ impl<'session> ConsoleHost<'session> {
         }
         self.deferred_output
             .pop_front()
-            .map(|request| self.dispatch(request, output))
+            .map(|request| {
+                self.trace_request("output-resume", request.descriptor, format_args!(""));
+                self.dispatch(request, output)
+            })
             .transpose()
     }
 
@@ -571,7 +657,9 @@ impl<'session> ConsoleHost<'session> {
                 }
             }
             2 => {
+                self.trace_request("disconnect-begin", descriptor, format_args!(""));
                 self.cancel_process_reads(descriptor.process)?;
+                self.trace_request("disconnect-reads-retired", descriptor, format_args!(""));
                 self.histories.detach(descriptor.process);
                 if let Some(control) = &mut self.control {
                     control.remove(descriptor.process);
@@ -593,17 +681,41 @@ impl<'session> ConsoleHost<'session> {
                 }
                 self.update_input_event()?;
                 self.collect_buffers(output)?;
-                request.complete(receipt.status, 0, &[])?;
+                let result = request.complete(receipt.status, 0, &[]);
+                self.trace_request(
+                    "disconnect-completed",
+                    descriptor,
+                    format_args!(
+                        "status={:#010x} win32={:?} error_kind={:?}",
+                        receipt.status as u32,
+                        result.as_ref().err().and_then(io::Error::raw_os_error),
+                        result.as_ref().err().map(io::Error::kind),
+                    ),
+                );
+                result?;
             }
             3 => return self.create_object(request),
             4 => {
                 // This is a kernel object finalizer, including closes after
                 // process disconnect; it need not carry a live process token.
+                self.trace_request("close-begin", descriptor, format_args!(""));
                 self.retire_input_object(descriptor.object)?;
+                self.trace_request("close-reads-retired", descriptor, format_args!(""));
                 self.handles.remove(&descriptor.object);
                 self.collect_buffers(output)?;
                 self.update_input_event()?;
-                request.complete(receipt.status, 0, &[])?;
+                let result = request.complete(receipt.status, 0, &[]);
+                self.trace_request(
+                    "close-completed",
+                    descriptor,
+                    format_args!(
+                        "status={:#010x} win32={:?} error_kind={:?}",
+                        receipt.status as u32,
+                        result.as_ref().err().and_then(io::Error::raw_os_error),
+                        result.as_ref().err().map(io::Error::kind),
+                    ),
+                );
+                result?;
             }
             5 => {
                 receipt.status = self.handle_status(
