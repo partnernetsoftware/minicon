@@ -8,6 +8,11 @@
     <string>MiniCon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoadsInWebContent</key>
+        <true/>
+    </dict>
     <key>UIDesignRequiresCompatibility</key>
     <true/>
 </dict>

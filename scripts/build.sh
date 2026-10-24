@@ -62,6 +62,7 @@ payload = {
     "CFBundleVersion": version,
     "LSMinimumSystemVersion": "11.0",
     "NSHighResolutionCapable": True,
+    "NSAppTransportSecurity": {"NSAllowsArbitraryLoadsInWebContent": True},
 }
 with open(sys.argv[1], "wb") as output:
     plistlib.dump(payload, output, sort_keys=True)

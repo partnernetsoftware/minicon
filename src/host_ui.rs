@@ -51,6 +51,287 @@ pub(crate) fn paint_button_label(
     paint_host_ui_text(surface, x, y, label, color, font_size_px, button.width);
 }
 
+/// A compact, labelled creation entry; the rail keeps the geometric plus.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn paint_new_tab_button(
+    surface: &mut Surface<'_>,
+    button: ui::Rect,
+    language: ui::UiLanguage,
+    selected: bool,
+    theme: theme::Theme,
+    font_size: u16,
+    scale: f64,
+) {
+    if button.width == 0 || button.height == 0 {
+        return;
+    }
+    let scale = scale.max(1.0);
+    let unit = scale.round().max(1.0) as u32;
+    let pad = (6.0 * scale) as u32;
+    surface.fill_rect(
+        button.x,
+        button.y,
+        button.width,
+        button.height,
+        if selected {
+            theme.surface
+        } else {
+            theme.sidebar_bg
+        }
+        .to_xrgb(),
+    );
+    let label = match language {
+        ui::UiLanguage::English => "New",
+        ui::UiLanguage::ChineseSimplified => "新建",
+        ui::UiLanguage::ChineseTraditional => "新增",
+    };
+    let label_width = host_ui_text_width(label, font_size);
+    let has_label = button.width >= label_width.saturating_add((34.0 * scale) as u32);
+    let plus_x = if has_label {
+        button
+            .x
+            .saturating_add(pad)
+            .saturating_add((6.0 * scale) as u32)
+    } else {
+        button.x.saturating_add(button.width / 2)
+    };
+    let plus_y = button.y.saturating_add(button.height / 2);
+    let radius = ((5.0 * scale) as u32)
+        .min(button.width.saturating_sub(unit) / 2)
+        .min(button.height.saturating_sub(unit) / 2);
+    surface.fill_rect(
+        plus_x.saturating_sub(radius),
+        plus_y,
+        radius.saturating_mul(2).saturating_add(unit),
+        unit,
+        theme.accent.to_xrgb(),
+    );
+    surface.fill_rect(
+        plus_x,
+        plus_y.saturating_sub(radius),
+        unit,
+        radius.saturating_mul(2).saturating_add(unit),
+        theme.accent.to_xrgb(),
+    );
+    if has_label {
+        let x = button.x.saturating_add((28.0 * scale) as u32);
+        let y = button.y.saturating_add(
+            button
+                .height
+                .saturating_sub(font::cell_metrics(font_size).height)
+                / 2,
+        );
+        paint_host_ui_text(
+            surface,
+            x,
+            y,
+            label,
+            theme.text,
+            font_size,
+            button
+                .width
+                .saturating_sub(x.saturating_sub(button.x))
+                .saturating_sub(pad),
+        );
+    }
+    if selected {
+        surface.fill_rect(
+            button.x,
+            button.y.saturating_add(button.height.saturating_sub(unit)),
+            button.width,
+            unit,
+            theme.accent.to_xrgb(),
+        );
+    }
+}
+
+/// Disabled navigation remains visible without competing with usable actions.
+pub(crate) fn browser_navigation_color(theme: theme::Theme, enabled: bool) -> Rgb {
+    if enabled {
+        return theme.text;
+    }
+    let mix = |a: u8, b: u8| ((u16::from(a) + u16::from(b)) / 2) as u8;
+    Rgb(
+        mix(theme.muted.0, theme.sidebar_bg.0),
+        mix(theme.muted.1, theme.sidebar_bg.1),
+        mix(theme.muted.2, theme.sidebar_bg.2),
+    )
+}
+
+/// Paints an independent one-line host editor with the same selection and
+/// preedit metrics as the address field. Native page focus never owns it.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn paint_single_line_host_editor(
+    surface: &mut Surface<'_>,
+    rect: ui::Rect,
+    editor: &composer::ComposerState,
+    focused: bool,
+    placeholder: &str,
+    theme: theme::Theme,
+    font_size: u16,
+    scale: f64,
+) {
+    if rect.width == 0 || rect.height == 0 {
+        return;
+    }
+    surface.fill_rect(
+        rect.x,
+        rect.y,
+        rect.width,
+        rect.height,
+        theme.canvas_bg.to_xrgb(),
+    );
+    let border = if editor.submit_error.is_some() {
+        theme.error
+    } else if focused {
+        theme.accent
+    } else {
+        theme.border
+    };
+    stroke_rect(surface, rect, scale.max(1.0) as u32, border);
+    let pad = ((8.0 * scale) as u32).min(rect.width / 2);
+    let x = rect.x.saturating_add(pad);
+    let metrics = font::cell_metrics(font_size);
+    if rect.height < metrics.height {
+        return;
+    }
+    let y = rect
+        .y
+        .saturating_add(rect.height.saturating_sub(metrics.height) / 2);
+    let width = rect.width.saturating_sub(pad.saturating_mul(2));
+    let cell = metrics.width.max(1);
+    if !focused {
+        paint_host_ui_text(
+            surface,
+            x,
+            y,
+            if editor.text.is_empty() {
+                placeholder
+            } else {
+                &editor.text
+            },
+            if editor.text.is_empty() {
+                theme.muted
+            } else {
+                theme.text
+            },
+            font_size,
+            width,
+        );
+        return;
+    }
+    let view = composer::visible_window(
+        &editor.text,
+        &editor.preedit,
+        editor.caret,
+        1,
+        (width / cell).max(1) as usize,
+    );
+    if editor.preedit.is_empty()
+        && let Some((start, end)) = composer::selection_bounds(editor)
+    {
+        let start = start.max(view.text);
+        let end = end.max(view.text);
+        let offset = (composer::cells(&editor.text[view.text..start]) as u32 * cell).min(width);
+        let selected_width = (composer::cells(&editor.text[start..end]) as u32 * cell)
+            .min(width.saturating_sub(offset));
+        surface.fill_rect(
+            x.saturating_add(offset),
+            y,
+            selected_width,
+            metrics.height.min(rect.height),
+            theme.surface.to_xrgb(),
+        );
+    }
+    let caret = editor.caret.clamp(view.text, editor.text.len());
+    paint_host_ui_text_parts_clipped(
+        surface,
+        x,
+        y,
+        &[
+            &editor.text[view.text..caret],
+            &editor.preedit[view.preedit..],
+            &editor.text[caret..],
+        ],
+        theme.text,
+        font_size,
+        width,
+    );
+    let cells = composer::cells(&editor.text[view.text..caret])
+        + composer::cells(&editor.preedit[view.preedit..]);
+    surface.fill_rect(
+        x.saturating_add((cells as u32 * cell).min(width.saturating_sub(1))),
+        y,
+        (scale as u32).max(1),
+        metrics.height.min(rect.height),
+        theme.accent.to_xrgb(),
+    );
+}
+
+/// Bounded paragraph layout for host-owned status copy, including CJK without
+/// spaces. Width and line height use the same fixed-grid metrics as painting.
+pub(crate) fn paint_host_ui_paragraph(
+    surface: &mut Surface<'_>,
+    rect: ui::Rect,
+    text: &str,
+    color: Rgb,
+    font_size: u16,
+) {
+    let metrics = font::cell_metrics(font_size);
+    let cell = metrics.width.max(1);
+    let line_height = metrics.height.max(1).saturating_add(3);
+    let capacity = (rect.width / cell) as usize;
+    if capacity == 0 || rect.height < metrics.height {
+        return;
+    }
+    let mut line = String::new();
+    let mut cells = 0;
+    let mut y = rect.y;
+    for (offset, character) in text.char_indices() {
+        let width = composer::character_cells(character);
+        let word_width = if character.is_ascii()
+            && !character.is_whitespace()
+            && line.ends_with(char::is_whitespace)
+        {
+            composer::cells(text[offset..].split_whitespace().next().unwrap_or_default())
+        } else {
+            0
+        };
+        let wrap_word = word_width <= capacity && cells + word_width > capacity;
+        if wrap_word || character == '\n' || cells + width > capacity {
+            paint_host_ui_text(
+                surface,
+                rect.x,
+                y,
+                line.trim_end(),
+                color,
+                font_size,
+                rect.width,
+            );
+            y = y.saturating_add(line_height);
+            if y.saturating_add(metrics.height) > rect.y.saturating_add(rect.height) {
+                return;
+            }
+            line.clear();
+            cells = 0;
+            if character == '\n' || character.is_whitespace() {
+                continue;
+            }
+        }
+        line.push(character);
+        cells += width;
+    }
+    paint_host_ui_text(
+        surface,
+        rect.x,
+        y,
+        line.trim_end(),
+        color,
+        font_size,
+        rect.width,
+    );
+}
+
 /// Where a label of `label_width` by `label_height` sits inside `button`.
 ///
 /// Centring is computed rather than tuned, and it must stay inside the button
@@ -235,8 +516,29 @@ pub(crate) fn paint_settings_panel(
     // painter states the loss without knowing the tab count itself. Empty when
     // there is nothing to state.
     restart_cost: &str,
+    section: ui::SettingsSection,
+    proxy_input: &composer::ComposerState,
+    proxy_focused: bool,
+    proxy_error: Option<&str>,
+    proxy_options: &[String],
+    list_start: usize,
 ) {
     let dip = |value: f64| minicon_core::numeric::round_f64(value * scale.max(1.0)).max(0.0) as u32;
+    if section == ui::SettingsSection::Web {
+        paint_web_settings(
+            surface,
+            layout.web_settings(scale, list_start),
+            scale,
+            theme,
+            ui_language,
+            font_size_px,
+            proxy_input,
+            proxy_focused,
+            proxy_error,
+            proxy_options,
+        );
+        return;
+    }
     let s = layout.settings_panel(scale);
     let strings = ui_language.strings();
     let metrics = font::cell_metrics(font_size_px);
@@ -282,6 +584,7 @@ pub(crate) fn paint_settings_panel(
             rect.width,
         );
     };
+    paint_settings_routes(surface, s.routes, section, theme, font_size_px, scale);
     // Interface language
     section_label(surface, s.language[0], strings.settings_language);
     let langs = [
@@ -979,9 +1282,213 @@ fn layout_text_parts(parts: &[&str], x: u32, cell_w: u32, limit: u32) -> Vec<Pla
     placed
 }
 
+fn paint_settings_routes(
+    surface: &mut Surface<'_>,
+    routes: [ui::Rect; 2],
+    section: ui::SettingsSection,
+    theme: theme::Theme,
+    size: u16,
+    scale: f64,
+) {
+    for (index, rect) in routes.into_iter().enumerate() {
+        let active = index == usize::from(section == ui::SettingsSection::Web);
+        surface.fill_rect(
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height,
+            if active { theme.accent } else { theme.surface }.to_xrgb(),
+        );
+        paint_host_ui_text(
+            surface,
+            rect.x + (8.0 * scale) as u32,
+            rect.y + rect.height.saturating_sub(font::cell_metrics(size).height) / 2,
+            if index == 0 { "Console" } else { "Web" },
+            if active { theme.panel_bg } else { theme.text },
+            size,
+            rect.width.saturating_sub((16.0 * scale) as u32),
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paint_web_settings(
+    surface: &mut Surface<'_>,
+    s: ui::WebSettingsLayout,
+    scale: f64,
+    theme: theme::Theme,
+    lang: ui::UiLanguage,
+    size: u16,
+    editor: &composer::ComposerState,
+    focused: bool,
+    error: Option<&str>,
+    options: &[String],
+) {
+    surface.fill_rect(
+        s.panel.x,
+        s.panel.y,
+        s.panel.width,
+        s.panel.height,
+        theme.panel_bg.to_xrgb(),
+    );
+    stroke_rect(surface, s.panel, scale.max(1.0) as u32, theme.border);
+    paint_settings_routes(
+        surface,
+        s.routes,
+        ui::SettingsSection::Web,
+        theme,
+        size,
+        scale,
+    );
+    let (notice, placeholder, add, empty, previous, next) = match lang {
+        ui::UiLanguage::English => (
+            "Save up to 8 proxy choices. Language, theme and updates are in Console.",
+            "http://127.0.0.1:8890",
+            "Add",
+            "No saved proxies. Add one above.",
+            "Previous",
+            "Next",
+        ),
+        ui::UiLanguage::ChineseSimplified => (
+            "最多保存8个代理。语言、主题和更新在 Console 中设置。",
+            "http://127.0.0.1:8890",
+            "添加",
+            "暂无候选代理，请在上方添加。",
+            "上一页",
+            "下一页",
+        ),
+        ui::UiLanguage::ChineseTraditional => (
+            "最多儲存8個代理。語言、佈景主題和更新在 Console 中設定。",
+            "http://127.0.0.1:8890",
+            "新增",
+            "尚無候選代理，請在上方新增。",
+            "上一頁",
+            "下一頁",
+        ),
+    };
+    paint_host_ui_paragraph(surface, s.notice, notice, theme.muted, size);
+    paint_single_line_host_editor(
+        surface,
+        s.proxy_input,
+        editor,
+        focused,
+        placeholder,
+        theme,
+        size,
+        scale,
+    );
+    let button = |surface: &mut Surface<'_>, rect: ui::Rect, label: &str, enabled: bool| {
+        surface.fill_rect(
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height,
+            theme.surface.to_xrgb(),
+        );
+        paint_host_ui_text(
+            surface,
+            rect.x + (6.0 * scale) as u32,
+            rect.y + rect.height.saturating_sub(font::cell_metrics(size).height) / 2,
+            label,
+            if enabled { theme.text } else { theme.muted },
+            size,
+            rect.width.saturating_sub((12.0 * scale) as u32),
+        );
+    };
+    button(surface, s.proxy_add, add, options.len() < 8);
+    if let Some(error) = error {
+        paint_host_ui_text(
+            surface,
+            s.proxy_input.x,
+            s.proxy_input.y + s.proxy_input.height + (6.0 * scale) as u32,
+            error,
+            theme.error,
+            size,
+            s.notice.width,
+        );
+    }
+    if options.is_empty() && s.visible_rows > 0 {
+        paint_host_ui_text(
+            surface,
+            s.proxy_rows[0].x,
+            s.proxy_rows[0].y,
+            empty,
+            theme.muted,
+            size,
+            s.proxy_rows[0].width,
+        );
+    }
+    for index in 0..s.visible_rows {
+        let Some(value) = options.get(s.list_start + index) else {
+            break;
+        };
+        let row = s.proxy_rows[index];
+        let remove = s.proxy_remove[index];
+        surface.fill_rect(row.x, row.y, row.width, row.height, theme.surface.to_xrgb());
+        paint_host_ui_text(
+            surface,
+            row.x + (8.0 * scale) as u32,
+            row.y + row.height.saturating_sub(font::cell_metrics(size).height) / 2,
+            value,
+            theme.text,
+            size,
+            remove.x.saturating_sub(row.x + (12.0 * scale) as u32),
+        );
+        button(surface, remove, "×", true);
+    }
+    if options.len() > s.visible_rows {
+        button(surface, s.previous, previous, s.list_start > 0);
+        button(
+            surface,
+            s.next,
+            next,
+            s.list_start + s.visible_rows < options.len(),
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn disabled_browser_navigation_is_visibly_distinct_in_every_theme() {
+        for choice in theme::ThemeChoice::ALL {
+            let theme = theme::Theme::for_choice(choice);
+            let active = browser_navigation_color(theme, true);
+            let disabled = browser_navigation_color(theme, false);
+            assert_eq!(active, theme.text);
+            assert_ne!(disabled, active);
+            assert_ne!(disabled, theme.sidebar_bg);
+            let mut enabled_pixels = vec![theme.sidebar_bg.to_xrgb(); 34 * 44];
+            let mut disabled_pixels = enabled_pixels.clone();
+            paint_browser_navigation_icon(
+                &mut Surface::new(&mut enabled_pixels, 34, 44),
+                ui::Rect {
+                    x: 0,
+                    y: 0,
+                    width: 34,
+                    height: 44,
+                },
+                0,
+                active,
+                1.0,
+            );
+            paint_browser_navigation_icon(
+                &mut Surface::new(&mut disabled_pixels, 34, 44),
+                ui::Rect {
+                    x: 0,
+                    y: 0,
+                    width: 34,
+                    height: 44,
+                },
+                0,
+                disabled,
+                1.0,
+            );
+            assert_ne!(enabled_pixels, disabled_pixels);
+        }
+    }
 
     #[test]
     fn host_ui_font_tracks_terminal_zoom_and_display_scale() {

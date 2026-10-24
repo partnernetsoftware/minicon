@@ -558,6 +558,7 @@ path: hover, click targets and focus all resolve exactly as with a real mouse.
   Ctrl+Shift+H       Open or close the sent-history panel
 {composer_keys}
   Click a tab to select it. Closing the final tab leaves the greeting page.
+  Choose New -> Browser to preview a URL; Retry or Edit address recovers a failed page.
 
   -e, --command  Run PROGRAM instead of the default shell. Everything after
                  -e is passed through verbatim, so it must come last:

@@ -29,7 +29,8 @@ Outcome: relevant development feedback without lost release obligations
 │   ├── [v] cancellable journey sleeps and owned process teardown
 │   ├── [-] opt-in native window diagnostics; profile wiring pending
 │   ├── [-] named serial desktop gate for deadline-bound public observations
-│   └── [_] isolate shared resources before enabling concurrency
+│   ├── [v] shared build-root and guard-mutation serialization in the 0.2.22 trial
+│   └── [_] general resource leases before enabling automatic concurrency
 └── Observable evidence
     ├── planned/observed names and counts, phase costs and final verdicts
     ├── real guard mutation must fail its selected profile
@@ -43,7 +44,8 @@ flowchart TD
     I --> S
     S --> E["explainable plan; deduplicated task union"]
     E --> L["resource leases + bounded owned fixtures"]
-    L --> T["actual Cargo-discovered execution"]
+    L --> B["exclusive shared build-root / guard-mutation lease"]
+    B --> T["actual Cargo-discovered execution"]
     T --> R["observed counts, identities, costs, outcomes"]
     U["unknown dependency or broad source change"] --> F["canonical full qualification"]
     E --> F
@@ -215,6 +217,22 @@ fixtures before parallelism. Otherwise hold an explicit resource lease shared
 across executables. A mutex inside one test executable cannot protect another
 executable. Never kill processes by image name or mutate a user's global
 configuration merely to accelerate tests.
+
+### Parallel source owners and the shared build root
+
+Independent source-file ownership does not isolate a Cargo build or a running
+black-box fixture. A guard mutation in one module affects the whole binary;
+linking can temporarily replace the canonical executable while an existing
+fixture is spawning another public CLI process from that same path.
+
+In the authorized 0.2.22 parallel trial, workers used exclusive write sets and
+shared interfaces, then handed off source before the root's integration and
+qualification. Mutations, builds and public journeys using the same output
+root run serially under one controller. A worker waits for missing root
+interfaces rather than repeatedly compiling an incomplete composition.
+Separate artifact copies do not supply desktop/clipboard isolation by
+themselves. The trial's actual overlap, rework and receipts belong to
+[its plan](../plan/plan-v0.2.22.md); no serial comparison or speedup is inferred.
 
 ### Receipts and measurements
 

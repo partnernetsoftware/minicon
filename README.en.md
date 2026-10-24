@@ -118,6 +118,10 @@ minicon --status                 # what this machine gave it
 minicon --help                   # everything else
 ```
 
+Choose **New → Browser** to preview a local URL beside your terminal. If the
+service is unavailable, start it in the terminal and choose **Retry**; use
+**Edit address** to correct the URL. Click a terminal tab to resume your draft.
+
 | Key | |
 | --- | --- |
 | `Ctrl+Shift+T` | new terminal |
@@ -200,6 +204,12 @@ Rust 1.97. Linux needs `libxkbcommon.so.0` and `libwayland-client.so.0` (no
   LTD, with an RFC 3161 timestamp. Verify a Windows download with
   `scripts/inspect-authenticode.ps1`. Details in
   [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md).
+
+The editable proxy dropdown beside a Browser address accepts an HTTP proxy
+(for example `http://127.0.0.1:8890`). Enter applies and reloads the page,
+resetting its session/history; Escape cancels editing. Manage saved choices
+in **Settings → Web**; **Console** keeps the terminal settings. Select
+**Use configured proxy** to clear the override.
 
 ---
 

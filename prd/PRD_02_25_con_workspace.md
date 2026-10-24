@@ -21,7 +21,8 @@ minicon workspace and input
 │   └── [v] browser tab → one browser content panel (0.2.21)
 │       ├── [v] canonical native page journeys on the six shipped cells
 │       ├── [v] address/navigation workspace; owner released the UX gate
-│       └── [-] macOS daily-use refinement (0.2.22): draft editing, native navigation keys and close/reopen focus
+│       ├── [v] current-Mac local-preview workflow (0.2.22): visible entry, readable chrome, recovery and terminal draft continuity
+│       └── [-] proxy editing and Console/Web preferences → PRD_02_25_01_browser_preferences.md
 ├── Host UI (host chrome around the active tab's content panel(s))
 │   ├── header tools: New · Settings · sidebar toggle · panel toggle
 │   │     (panel toggle = chrome sent-history column — not a content panel)
@@ -70,6 +71,16 @@ flowchart LR
     BadUX["earlier diagnostic scaffold rejected"] -->|"replacement"| UX
     WinWeb["Windows WebView2 adapter bring-up"] --> UX
     UX -->|"owner release gate passed; 0.2.21"| BrCP
+    Entry["New: Terminal / Browser"] --> BrCP
+    BrCP --> State["Loading / Ready / Failure"]
+    State --> Recovery["Retry / Edit address"]
+    Recovery --> BrCP
+    Choices["Settings: Console / Web proxy choices"] --> Proxy
+    Proxy["Editable proxy dropdown"] --> Validate["Validate / recreate page"]
+    Validate --> BrCP
+    Validate -->|invalid| Recovery
+    TermCP -->|"local URL"| BrCP
+    BrCP -->|"switch back; preserve draft"| TermCP
     TermTab -.->|"future 1:N"| Multi["split content panels"]
     Chrome["chrome panels"] --> Hist["sent-history panel"]
     Chrome --> Sett["settings panel"]
@@ -163,6 +174,11 @@ names above.
   artifact evidence and its qualification scope. The earlier rejection and
   replacement sequence remain in the
   [archived plan](../plan/archive/plan-v0.2.21.md) `{UX-BASELINE}`.
+- [-] **Browser proxy and Console/Web preferences (0.2.22).** The active
+  override, saved candidates, settings routes, combobox behavior and evidence
+  are owned by [PRD 25.01](PRD_02_25_01_browser_preferences.md). Current macOS
+  arm64 development is qualified; other new native preference courts remain
+  BLOCKED. Existing Windows proxy-hook evidence remains below.
 - [-] **Windows native proxy settings (0.2.21).** A single HTTP or HTTPS hook
   supplies the native page's proxy; when both are supplied, each URL scheme
   uses its own endpoint. `browser.no_proxy` is passed as Chromium bypass
@@ -176,7 +192,7 @@ names above.
   Windows ARM64 proxy-mode evidence remains BLOCKED; its successful ordinary
   native page journey does not close this proxy-specific scope. Evidence and
   exact court commands: [archived plan](../plan/archive/plan-v0.2.21.md).
-- [-] **macOS browser daily-use refinement (0.2.22).** The canonical Mac
+- [v] **Current-Mac browser daily-use refinement (0.2.22).** The canonical Mac
   baseline was observed through Computer Use on 2026-10-24: page text survives
   terminal switch/return, and Cmd+L and Ctrl+Shift+[ work while a WKWebView text
   field owns focus. These are native window events on this arm64 Mac; they do
@@ -200,6 +216,20 @@ names above.
   page. Repeating page-input focus -> Ctrl+Shift+W -> Ctrl+Shift+O succeeds
   without an intervening click on this Mac. This observation qualifies that
   arm64 path only; the prior unmeasured-path caveat for 0.2.21 remains history.
+- [v] **Current-Mac local-preview workspace (0.2.22, owner 2026-10-24).** A visible header
+  New menu offers Terminal and Browser; opening Browser reuses the one root,
+  while a terminal row's child-creation action retains its meaning. Shared
+  chrome must keep text readable and pointer regions disjoint at normal,
+  narrow and Retina sizes. Browser state gives visible loading feedback and a
+  bounded failure surface with Retry/Edit address, preserves the attempted URL
+  and uses understandable localized copy rather than a primary raw error code.
+  Only observed native errors justify specific causes; timeout alone stays a
+  generic failure. Restarting a local service and retrying must recover in the
+  same tab, and returning to the terminal must preserve its draft. The delivery
+  evidence is a real local HTTP-service journey with state and visible pixels,
+  owned in [0.2.22 plan](../plan/plan-v0.2.22.md). Multiple browser tabs, split
+  panels, persistent workspaces, downloads, dashboard/wasm, installation and
+  provider-login UI are outside this delivery.
 - [v] **one browser root, and separate page/composer geometry (0.2.21).**
   `add_browser_root` inserts one browser root; a second call returns `None`
   and leaves the strip and the selection unchanged. `Layout::content_column`

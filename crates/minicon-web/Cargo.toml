@@ -38,7 +38,7 @@ webkit2gtk = { version = "2.0.2", optional = true }
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = { version = "0.6", optional = true }
 objc2 = { version = "0.6.4", optional = true }
-objc2-app-kit = { version = "0.3.2", optional = true, default-features = false, features = ["std", "block2", "NSEvent", "NSResponder", "NSView", "NSWindow"] }
+objc2-app-kit = { version = "0.3.2", optional = true, default-features = false, features = ["std", "block2", "NSEvent", "NSResponder", "NSView", "NSWindow", "NSGraphics"] }
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = { version = "0.38.2", optional = true }

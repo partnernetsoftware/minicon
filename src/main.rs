@@ -20,9 +20,14 @@
 mod a11y;
 mod agent_interface;
 mod browser;
+mod browser_feedback;
 #[cfg(target_os = "linux")]
 mod browser_process;
+mod browser_proxy_ui;
 mod browser_ui;
+mod new_tab_menu;
+mod web_preferences;
+mod web_settings_ui;
 use minicon_core::{composer, json, keymap};
 
 mod host_paint;
@@ -316,6 +321,7 @@ struct ConConfig {
     browser_http_proxy: Option<String>,
     browser_https_proxy: Option<String>,
     browser_no_proxy: Option<String>,
+    browser_proxy_options: Vec<String>,
 }
 
 /// The backend vocabulary `minicon.json` accepts. Anything else behaves as
@@ -507,6 +513,9 @@ fn config_from_bytes(bytes: &[u8]) -> ConConfig {
         browser_http_proxy: config.browser_http_proxy,
         browser_https_proxy: config.browser_https_proxy,
         browser_no_proxy: config.browser_no_proxy,
+        browser_proxy_options: web_preferences::normalize_proxy_options(
+            config.browser_proxy_options,
+        ),
     }
 }
 
@@ -550,6 +559,18 @@ fn config_document(config: &ConConfig) -> json::JsonValue {
     }
     if let Some(bypass) = &config.browser_no_proxy {
         fields.push(("browser.no_proxy", bypass.as_str().into()));
+    }
+    if !config.browser_proxy_options.is_empty() {
+        fields.push((
+            "browser.proxy_options",
+            json::JsonValue::Array(
+                config
+                    .browser_proxy_options
+                    .iter()
+                    .map(|value| value.as_str().into())
+                    .collect(),
+            ),
+        ));
     }
     json::object(fields)
 }
@@ -824,6 +845,9 @@ struct ConApp {
     /// Browser tabs have no PTY. Keyed by the same [`workspace::TabId`] as
     /// terminal sessions, and only present when the node kind is Browser.
     browsers: SessionStore<browser::BrowserTab>,
+    browser_proxy_input: composer::ComposerState,
+    browser_proxy_focused: bool,
+    browser_proxy_applied: String,
     browser_address: Option<composer::ComposerState>,
     browser_address_drag: Option<usize>,
     browser_address_clicks: minicon_core::click::ClickCounter<usize>,
@@ -911,6 +935,13 @@ struct ConApp {
     /// feedback. `None` when the pointer is elsewhere.
     hovered_header: Option<HeaderIcon>,
     settings_open: bool,
+    settings_section: ui::SettingsSection,
+    settings_proxy_input: composer::ComposerState,
+    settings_proxy_focused: bool,
+    settings_proxy_error: Option<String>,
+    settings_proxy_list_start: usize,
+    browser_proxy_menu_open: bool,
+    new_tab_menu_open: bool,
     tree_scroll_offset: usize,
     sidebar_width_logical: f64,
     /// The sidebar is showing as a rail. Session-scoped on purpose: it is a
@@ -1339,6 +1370,9 @@ impl ConApp {
             workspace,
             sessions,
             browsers: SessionStore::default(),
+            browser_proxy_input: Default::default(),
+            browser_proxy_focused: false,
+            browser_proxy_applied: String::new(),
             browser_address: None,
             browser_address_drag: None,
             browser_address_clicks: Default::default(),
@@ -1376,6 +1410,13 @@ impl ConApp {
             hovered_tree_row: None,
             hovered_header: None,
             settings_open: false,
+            settings_section: ui::SettingsSection::default(),
+            settings_proxy_input: Default::default(),
+            settings_proxy_focused: false,
+            settings_proxy_error: None,
+            settings_proxy_list_start: 0,
+            browser_proxy_menu_open: false,
+            new_tab_menu_open: false,
             tree_scroll_offset: 0,
             sidebar_width_logical: ui::SIDEBAR_WIDTH_DIP,
             sidebar_collapsed: false,
@@ -1510,6 +1551,7 @@ impl ConApp {
     }
 
     fn stop_page_host(&mut self) {
+        self.browser_proxy_focused = false;
         self.browser_visible = None;
         self.browser_load_deadline = None;
         self.browser_address = None;
@@ -1580,6 +1622,8 @@ impl ConApp {
     fn browser_page_visible(&self) -> bool {
         self.active_is_browser()
             && !self.settings_open
+            && !self.browser_proxy_menu_open
+            && !(self.new_tab_menu_open && self.sidebar_collapsed)
             && !self
                 .workspace
                 .browser_tab()
@@ -2258,7 +2302,17 @@ impl ConApp {
             return;
         };
         let waker = window.waker();
-        match browser::NativePageHost::new(slot, &self.browser_proxy(), move || {
+        let proxy = match self.effective_browser_proxy() {
+            Ok(proxy) => proxy,
+            Err(reason) => {
+                self.note_page_load(browser::PageLoad::Unavailable {
+                    url: String::new(),
+                    reason,
+                });
+                return;
+            }
+        };
+        match browser::NativePageHost::new(slot, &proxy, move || {
             let _ = waker.wake();
         }) {
             Ok(page) => {
@@ -2275,11 +2329,27 @@ impl ConApp {
     /// Ask the wry page host to load `url` into the active browser content panel.
     #[cfg(any(target_os = "macos", windows))]
     fn launch_page_host(&mut self, window: &PixelWindow, url: &str) {
+        if let Err(reason) = self.effective_browser_proxy() {
+            self.note_page_load(browser::PageLoad::Unavailable {
+                url: url.to_owned(),
+                reason,
+            });
+            return;
+        }
         self.ensure_native_page(window);
         let result = self
             .native_browser_page
             .as_ref()
-            .ok_or_else(|| "browser-native-unavailable".to_owned())
+            .ok_or_else(|| {
+                self.workspace
+                    .browser_tab()
+                    .and_then(|id| self.browsers.get(&id))
+                    .and_then(|tab| match &tab.panel().load {
+                        browser::PageLoad::Unavailable { reason, .. } => Some(reason.clone()),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| "browser-native-unavailable".to_owned())
+            })
             .and_then(|page| page.load_url(url));
         match result {
             Ok(()) => self.note_page_load(browser::PageLoad::Loading {
@@ -2296,6 +2366,13 @@ impl ConApp {
     /// Ask the wry page host to load `url` into the active browser content panel.
     #[cfg(all(unix, not(target_os = "macos")))]
     fn launch_page_host(&mut self, window: &PixelWindow, url: &str) {
+        if let Err(reason) = self.effective_browser_proxy() {
+            self.note_page_load(browser::PageLoad::Unavailable {
+                url: url.to_owned(),
+                reason,
+            });
+            return;
+        }
         #[cfg(target_os = "linux")]
         if let Some(process) = &self.browser_process {
             let load = match process.send("load", Some(url)) {
@@ -2344,7 +2421,10 @@ impl ConApp {
             });
             return;
         };
-        let proxy = self.browser_proxy();
+        let proxy = match self.effective_browser_proxy() {
+            Ok(proxy) => proxy,
+            Err(_) => return, // Validated before selecting the helper.
+        };
         let Some(slot) = self.content_panel_slot(window) else {
             self.note_page_load(browser::PageLoad::Unavailable {
                 url: url.to_owned(),
@@ -3825,6 +3905,13 @@ impl PixelWindowApplication for ConApp {
         {
             self.request_dirty_redraw(window);
         }
+        if self.route_proxy_choices(window, &event)?
+            || self.route_web_settings(window, &event)?
+            || self.handle_new_tab_menu(window, &event)?
+            || self.handle_browser_recovery_pointer(window, &event)?
+        {
+            return Ok(PixelWindowDirective::Continue);
+        }
         if self.handle_sidebar_resize(window, &event)? {
             self.mark_host_ui_full();
             return Ok(PixelWindowDirective::Continue);
@@ -4061,6 +4148,14 @@ impl PixelWindowApplication for ConApp {
                 let x = (position.x * scale).max(0.0) as u32;
                 let y = (position.y * scale).max(0.0) as u32;
                 match ui::settings_hit(layout, x, y, scale) {
+                    ui::SettingsHit::Route(section) => {
+                        self.settings_section = section;
+                        self.settings_proxy_focused = false;
+                        self.browser_proxy_focused = false;
+                        self.browser_proxy_menu_open = false;
+                        self.sync_embedded_page(window);
+                        self.mark_host_ui_full_and_repaint(window);
+                    }
                     ui::SettingsHit::Language(lang) => {
                         if self.ui_language != lang {
                             self.ui_language = lang;

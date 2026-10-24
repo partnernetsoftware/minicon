@@ -35,6 +35,7 @@ MiniCon — one-file local terminal
 │   │   └── prd/PRD_02_34_windows_console_backend.md
 │   ├── tab tree, content panels, composer, IME, selection, notes, settings and manual update
 │   │   └── prd/PRD_02_25_con_workspace.md
+│   │       └── [-] Browser proxy preferences / Console-Web routes → prd/PRD_02_25_01_browser_preferences.md
 │   ├── local CLI, waits, structured snapshots and screenshots
 │   │   └── prd/PRD_02_26_con_control_cli.md
 │   └── bounded mux/harness composition → prd/PRD_02_31_v0_2_horizon.md
@@ -56,7 +57,7 @@ MiniCon — one-file local terminal
 │           └── [_] native command-line installation after 0.2.21 → prd/PRD_02_27_01_install.md
 └── Current delivery
     ├── [v] v0.2.21 → prd/archive/v0.2.21-release-history.md
-    ├── [-] v0.2.22 macOS browser daily-use refinement → plan/plan-v0.2.22.md
+    ├── [-] v0.2.22 terminal-to-browser preview workflow → plan/plan-v0.2.22.md
     ├── [v] v0.2.20 → prd/archive/v0.2.20-release-history.md
     ├── [v] v0.2.19 → prd/archive/v0.2.19-release-history.md
     ├── [v] v0.2.18 → prd/archive/v0.2.18-release-history.md
@@ -129,6 +130,7 @@ flowchart LR
 | Keep modern agent TUIs readable | [TUI compatibility](prd/PRD_02_24_01_tui_compatibility.md) | versioned real agents, bounded source/wire/state/pixel traces and provider-specific claims |
 | Own the Windows console implementation | [Windows backend](prd/PRD_02_34_windows_console_backend.md) | planned API/bootstrap/lifecycle proofs; source research does not certify a replacement |
 | Organize and type without corrupting drafts | [Workspace](prd/PRD_02_25_con_workspace.md) | composer, IME, tabs, content vs chrome panels, notes/settings and input journeys; no stale targeting |
+| Browser proxy preferences | [Preferences](prd/PRD_02_25_01_browser_preferences.md) | Active override, saved candidates and Console/Web settings routes |
 | Built-in browser surface (not tray) | [Workspace](prd/PRD_02_25_con_workspace.md) + [horizon / minicon-web](prd/PRD_02_31_v0_2_horizon.md) | Tab / content panel; open/load via minicon-web; wry isolated; proxy hook; staged OAuth/dashboard/preview/wasm |
 | Automate what the GUI presents | [Control](prd/PRD_02_26_con_control_cli.md) | catalog, wait, snapshot and PNG black boxes; bounded typed errors |
 | Bounded mux/harness subcommands | [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md) | explicit provider/session contracts; no workbench authority inherited |
@@ -147,8 +149,13 @@ flowchart LR
   signed/Candidate/public qualification and the owner's release decision.
   [Workspace](prd/PRD_02_25_con_workspace.md) retains unobserved physical-focus,
   proxy and DPI limits; G4/G6 remain carried debt.
-- [-] **v0.2.22 macOS browser daily-use refinement.** Observe and improve
-  page/address focus, physical shortcuts and navigation on the current Mac.
+- [-] **v0.2.22 terminal-to-browser preview workflow.** Visible New entry, editable proxy choices and Console/Web settings,
+  readable chrome, understandable failure/retry and terminal draft continuity
+  are implemented and locally qualified on macOS arm64, building on the
+  completed focus/navigation repairs. Other new native preference courts
+  remain BLOCKED. The owner's
+  parallel development trial uses independent file owners, serial integration
+  and final gates; the plan records its measured result.
   Installation is deferred to later coordinated AgenTerm planning; size work
   retains its separate owner. [Sequence](plan/plan-v0.2.22.md),
   [workspace owner](prd/PRD_02_25_con_workspace.md),

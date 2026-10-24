@@ -25,6 +25,153 @@ impl ConApp {
         })
     }
 
+    fn paint_new_tab_menu(
+        &self,
+        surface: &mut Surface<'_>,
+        layout: ui::Layout,
+        scale: f64,
+        font_logical: f64,
+    ) {
+        if !self.new_tab_menu_open {
+            return;
+        }
+        let theme = theme::Theme::for_choice(self.ui_theme);
+        let menu = layout.new_tab_menu(scale);
+        surface.fill_rect(
+            menu.x,
+            menu.y,
+            menu.width,
+            menu.height,
+            theme.panel_bg.to_xrgb(),
+        );
+        stroke_rect(surface, menu, scale.max(1.0) as u32, theme.border);
+        let (terminal, browser) = match self.ui_language {
+            ui::UiLanguage::English => ("Terminal", "Browser"),
+            ui::UiLanguage::ChineseSimplified => ("终端", "网页"),
+            ui::UiLanguage::ChineseTraditional => ("終端", "網頁"),
+        };
+        let label_size = scaled_host_ui_font(16, font_logical, scale);
+        let hint_size = scaled_host_ui_font(11, font_logical, scale);
+        for (rect, label, hint) in [
+            (layout.new_terminal_action(scale), terminal, "Ctrl+Shift+T"),
+            (layout.new_browser_action(scale), browser, "Ctrl+Shift+O"),
+        ] {
+            let pad = (8.0 * scale) as u32;
+            let x = rect.x.saturating_add(pad);
+            let width = rect.width.saturating_sub(pad.saturating_mul(2));
+            let label_h = font::cell_metrics(label_size).height;
+            let hint_h = font::cell_metrics(hint_size).height;
+            let show_hint = rect.height >= label_h.saturating_add(hint_h).saturating_add(4);
+            let block_h = label_h.saturating_add(if show_hint {
+                hint_h.saturating_add(2)
+            } else {
+                0
+            });
+            let top = rect
+                .y
+                .saturating_add(rect.height.saturating_sub(block_h) / 2);
+            paint_host_ui_text(surface, x, top, label, theme.text, label_size, width);
+            if show_hint {
+                paint_host_ui_text(
+                    surface,
+                    x,
+                    top.saturating_add(label_h).saturating_add(2),
+                    hint,
+                    theme.muted,
+                    hint_size,
+                    width,
+                );
+            }
+        }
+    }
+
+    fn paint_browser_recovery(
+        &self,
+        surface: &mut Surface<'_>,
+        layout: ui::Layout,
+        scale: f64,
+        title: &str,
+        detail: &str,
+        proxy_failure: bool,
+    ) {
+        let theme = theme::Theme::for_choice(self.ui_theme);
+        let card = layout.browser_recovery_card(scale);
+        surface.fill_rect(
+            card.x,
+            card.y,
+            card.width,
+            card.height,
+            theme.panel_bg.to_xrgb(),
+        );
+        stroke_rect(surface, card, scale.max(1.0) as u32, theme.border);
+        let pad = (16.0 * scale) as u32;
+        let retry = layout.browser_retry(scale);
+        let edit = layout.browser_edit_address(scale);
+        let size =
+            |nominal| scaled_host_ui_font(nominal, self.session_seed.font_size_logical(), scale);
+        let title_height = (48.0 * scale) as u32;
+        let text_x = card.x.saturating_add(pad.min(card.width / 4));
+        let text_y = card.y.saturating_add(pad.min(card.height / 8));
+        let text_width = card
+            .width
+            .saturating_sub(pad.min(card.width / 4).saturating_mul(2));
+        let text_bottom = retry.y.saturating_sub((10.0 * scale) as u32);
+        let title_height = title_height.min(text_bottom.saturating_sub(text_y));
+        host_ui::paint_host_ui_paragraph(
+            surface,
+            ui::Rect {
+                x: text_x,
+                y: text_y,
+                width: text_width,
+                height: title_height,
+            },
+            title,
+            theme.text,
+            size(18),
+        );
+        let detail_y = text_y
+            .saturating_add(title_height)
+            .saturating_add((4.0 * scale) as u32);
+        host_ui::paint_host_ui_paragraph(
+            surface,
+            ui::Rect {
+                x: text_x,
+                y: detail_y,
+                width: text_width,
+                height: text_bottom.saturating_sub(detail_y),
+            },
+            detail,
+            theme.muted,
+            size(14),
+        );
+        for (rect, label, border) in [
+            (
+                retry,
+                browser_feedback::retry_label(self.ui_language),
+                theme.accent,
+            ),
+            (
+                edit,
+                if proxy_failure {
+                    browser_feedback::edit_proxy_label(self.ui_language)
+                } else {
+                    browser_feedback::edit_label(self.ui_language)
+                },
+                theme.border,
+            ),
+        ] {
+            surface.fill_rect(
+                rect.x,
+                rect.y,
+                rect.width,
+                rect.height,
+                theme.surface.to_xrgb(),
+            );
+            stroke_rect(surface, rect, scale.max(1.0) as u32, border);
+            paint_button_label(surface, rect, label, theme.text, size(15));
+        }
+    }
+
     pub(crate) fn paint_host_ui(
         &self,
         pixels: &mut [u32],
@@ -398,8 +545,15 @@ impl ConApp {
                 self.font_zoom_percent(),
                 &self.update,
                 &restart_cost,
+                self.settings_section,
+                &self.settings_proxy_input,
+                self.settings_proxy_focused,
+                self.settings_proxy_error.as_deref(),
+                &self.config.browser_proxy_options,
+                self.settings_proxy_list_start,
             );
         }
+        self.paint_new_tab_menu(&mut surface, layout, scale, session.font_size_logical);
         Ok(())
     }
 
@@ -668,13 +822,12 @@ impl ConApp {
         let text = t.text;
         let muted = t.muted;
         let header_icon_size = host_ui_size(HOST_UI_HEADER_SIZE_PX);
-        paint_header_icon_button(
+        host_ui::paint_new_tab_button(
             surface,
             layout.new_root,
-            HeaderIcon::NewRoot,
-            accent,
-            self.hovered_header == Some(HeaderIcon::NewRoot),
-            t.surface,
+            self.ui_language,
+            self.new_tab_menu_open || self.hovered_header == Some(HeaderIcon::NewRoot),
+            t,
             header_icon_size,
             scale,
         );
@@ -764,19 +917,41 @@ impl ConApp {
                 } else {
                     &tab.panel().title
                 };
-                let status = match tab.panel().load {
-                    browser::PageLoad::Loading { .. } => "◌",
-                    browser::PageLoad::Unavailable { .. } => "!",
-                    _ => "◎",
-                };
-                format!("{status} {title}")
+                title.to_owned()
             });
             let name = tree_row_name(
                 node.custom_title.as_deref(),
                 session.map(|terminal| terminal.program_label()),
                 browser_title.as_deref().unwrap_or(node.title.as_str()),
             );
-            let title = tree_row_title(session.map(|terminal| terminal.current_title.as_str()));
+            let browser_description = self.browsers.get(&node.id).map(|tab| {
+                match (&tab.panel().load, self.ui_language) {
+                    (browser::PageLoad::Loading { .. }, ui::UiLanguage::English) => {
+                        "Web · Loading…"
+                    }
+                    (browser::PageLoad::Unavailable { .. }, ui::UiLanguage::English) => {
+                        "Web · Unable to load"
+                    }
+                    (_, ui::UiLanguage::English) => "Web page",
+                    (browser::PageLoad::Loading { .. }, ui::UiLanguage::ChineseSimplified) => {
+                        "网页 · 正在加载"
+                    }
+                    (browser::PageLoad::Unavailable { .. }, ui::UiLanguage::ChineseSimplified) => {
+                        "网页 · 加载失败"
+                    }
+                    (_, ui::UiLanguage::ChineseSimplified) => "网页",
+                    (browser::PageLoad::Loading { .. }, ui::UiLanguage::ChineseTraditional) => {
+                        "網頁 · 載入中"
+                    }
+                    (browser::PageLoad::Unavailable { .. }, ui::UiLanguage::ChineseTraditional) => {
+                        "網頁 · 載入失敗"
+                    }
+                    (_, ui::UiLanguage::ChineseTraditional) => "網頁",
+                }
+            });
+            let title = browser_description.or_else(|| {
+                tree_row_title(session.map(|terminal| terminal.current_title.as_str()))
+            });
             // A child that exited leaves its tab in place (remain-on-exit), so
             // the row is the only thing that can say the shell is gone. Dim the
             // label: it reads as inert next to a live tab without moving or
@@ -959,7 +1134,11 @@ impl ConApp {
                 // Two stacked lines, centred as a block in the row: the name on
                 // top, the terminal's title under it in the muted color.
                 let name_font = host_ui_size(HOST_UI_TAB_SIZE_PX);
-                let title_font = host_ui_size(HOST_UI_SUBTITLE_SIZE_PX);
+                let title_font = host_ui_size(if browser_description.is_some() {
+                    12
+                } else {
+                    HOST_UI_SUBTITLE_SIZE_PX
+                });
                 let name_h = font::cell_metrics(name_font).height.max(1);
                 let title_h = font::cell_metrics(title_font).height.max(1);
                 let block_h = name_h.saturating_add(if title.is_some() { title_h } else { 0 });
@@ -1099,7 +1278,7 @@ impl ConApp {
             toolbar.height,
             t.sidebar_bg.to_xrgb(),
         );
-        let size = host_ui_size(14);
+        let size = host_ui_size(16);
         for (index, enabled) in [self.browser_can_back, self.browser_can_forward, true]
             .into_iter()
             .enumerate()
@@ -1110,10 +1289,10 @@ impl ConApp {
                     x: toolbar.x + (index as f64 * 34.0 * scale) as u32,
                     y: toolbar.y,
                     width: (34.0 * scale) as u32,
-                    height: toolbar.height,
+                    height: ((44.0 * scale) as u32).min(toolbar.height),
                 },
                 index,
-                if enabled { t.text } else { t.muted },
+                host_ui::browser_navigation_color(t, enabled),
                 scale,
             );
         }
@@ -1124,13 +1303,27 @@ impl ConApp {
             address.height,
             t.canvas_bg.to_xrgb(),
         );
+        stroke_rect(
+            &mut surface,
+            address,
+            (scale as u32).max(1),
+            if self.browser_address.is_some() {
+                t.accent
+            } else {
+                t.border
+            },
+        );
         let tab = self
             .workspace
             .active()
             .and_then(|id| self.browsers.get(&id));
         let url = tab.and_then(|tab| tab.panel().url.as_deref()).unwrap_or("");
         let text_x = address.x + (8.0 * scale) as u32;
-        let text_y = address.y + (7.0 * scale) as u32;
+        let text_y = address.y
+            + address
+                .height
+                .saturating_sub(font::cell_metrics(size).height)
+                / 2;
         let avail = address.width.saturating_sub((16.0 * scale) as u32);
         if let Some(editor) = &self.browser_address {
             let cell_w = font::cell_metrics(size).width.max(1);
@@ -1193,23 +1386,99 @@ impl ConApp {
                 avail,
             );
         }
+        let proxy_placeholder = match self.ui_language {
+            ui::UiLanguage::English => "Proxy (Enter)",
+            ui::UiLanguage::ChineseSimplified => "代理（回车应用）",
+            ui::UiLanguage::ChineseTraditional => "代理（Enter 套用）",
+        };
+        host_ui::paint_single_line_host_editor(
+            &mut surface,
+            layout.browser_proxy_text(scale),
+            &self.browser_proxy_input,
+            self.browser_proxy_focused,
+            proxy_placeholder,
+            t,
+            size,
+            scale,
+        );
+        let dropdown = layout.browser_proxy_dropdown(scale);
+        surface.fill_rect(
+            dropdown.x,
+            dropdown.y,
+            dropdown.width,
+            dropdown.height,
+            t.surface.to_xrgb(),
+        );
+        paint_host_ui_text(
+            &mut surface,
+            dropdown.x + (8.0 * scale) as u32,
+            dropdown.y + (6.0 * scale) as u32,
+            "▾",
+            t.text,
+            size,
+            dropdown.width.saturating_sub((8.0 * scale) as u32),
+        );
         if let Some(tab) = tab {
-            let message = match &tab.panel().load {
-                browser::PageLoad::Unavailable { reason, .. } => {
-                    format!("Unable to open this page · {reason} · Reload to retry")
-                }
-                browser::PageLoad::Loading { .. } => "Loading…".to_owned(),
-                _ => "Enter a URL above, or Ctrl+click a link in a terminal.".to_owned(),
-            };
-            paint_host_ui_text(
-                &mut surface,
-                toolbar.x + 24,
-                toolbar.height + 28,
-                &message,
-                t.muted,
-                size,
-                toolbar.width.saturating_sub(48),
+            let feedback = browser_feedback::for_load(&tab.panel().load, self.ui_language);
+            if feedback.failed {
+                self.paint_browser_recovery(
+                    &mut surface,
+                    layout,
+                    scale,
+                    feedback.title,
+                    feedback.detail,
+                    browser_feedback::is_proxy_failure(&tab.panel().load),
+                );
+            } else if matches!(tab.panel().load, browser::PageLoad::Loading { .. }) {
+                surface.fill_rect(
+                    toolbar.x,
+                    toolbar.height.saturating_sub((2.0 * scale) as u32),
+                    toolbar.width,
+                    (2.0 * scale) as u32,
+                    t.accent.to_xrgb(),
+                );
+            }
+        }
+        if self.browser_proxy_menu_open {
+            let mut menu = layout.browser_proxy_choices(scale);
+            let last =
+                layout.browser_proxy_choice(self.config.browser_proxy_options.len().min(8), scale);
+            menu.height = last
+                .y
+                .saturating_add(last.height)
+                .saturating_sub(menu.y)
+                .saturating_add((4.0 * scale) as u32)
+                .min(menu.height);
+            surface.fill_rect(
+                menu.x,
+                menu.y,
+                menu.width,
+                menu.height,
+                t.panel_bg.to_xrgb(),
             );
+            stroke_rect(&mut surface, menu, scale.max(1.0) as u32, t.border);
+            let configured = match self.ui_language {
+                ui::UiLanguage::English => "Use configured proxy",
+                ui::UiLanguage::ChineseSimplified => "使用配置的代理",
+                ui::UiLanguage::ChineseTraditional => "使用設定的代理",
+            };
+            for index in 0..=self.config.browser_proxy_options.len().min(8) {
+                let row = layout.browser_proxy_choice(index, scale);
+                let text = if index == 0 {
+                    configured
+                } else {
+                    &self.config.browser_proxy_options[index - 1]
+                };
+                paint_host_ui_text(
+                    &mut surface,
+                    row.x + (8.0 * scale) as u32,
+                    row.y + row.height.saturating_sub(font::cell_metrics(size).height) / 2,
+                    text,
+                    t.text,
+                    size,
+                    row.width.saturating_sub((16.0 * scale) as u32),
+                );
+            }
         }
         if self.settings_open {
             let restart_cost = self.ui_language.restart_cost(self.workspace.nodes().len());
@@ -1225,8 +1494,20 @@ impl ConApp {
                 self.font_zoom_percent(),
                 &self.update,
                 &restart_cost,
+                self.settings_section,
+                &self.settings_proxy_input,
+                self.settings_proxy_focused,
+                self.settings_proxy_error.as_deref(),
+                &self.config.browser_proxy_options,
+                self.settings_proxy_list_start,
             );
         }
+        self.paint_new_tab_menu(
+            &mut surface,
+            layout,
+            scale,
+            self.session_seed.font_size_logical(),
+        );
     }
 
     pub(crate) fn paint_empty_workspace(
@@ -1279,6 +1560,18 @@ impl ConApp {
                 self.settings_open || self.hovered_header == Some(HeaderIcon::Settings),
             ),
         ] {
+            if icon == HeaderIcon::NewRoot {
+                host_ui::paint_new_tab_button(
+                    &mut surface,
+                    button,
+                    self.ui_language,
+                    self.new_tab_menu_open || selected,
+                    t,
+                    icon_size,
+                    scale,
+                );
+                continue;
+            }
             paint_header_icon_button(
                 &mut surface,
                 button,
@@ -1385,8 +1678,20 @@ impl ConApp {
                 self.font_zoom_percent(),
                 &self.update,
                 &restart_cost,
+                self.settings_section,
+                &self.settings_proxy_input,
+                self.settings_proxy_focused,
+                self.settings_proxy_error.as_deref(),
+                &self.config.browser_proxy_options,
+                self.settings_proxy_list_start,
             );
         }
+        self.paint_new_tab_menu(
+            &mut surface,
+            layout,
+            scale,
+            self.session_seed.font_size_logical(),
+        );
     }
 }
 

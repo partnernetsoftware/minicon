@@ -32,6 +32,8 @@ def main() -> int:
     output = (args.output or binary.parent / "browser-workspace-court").resolve()
     output.mkdir(parents=True, exist_ok=True)
     counts: dict[str, int] = {}
+    proxy_requests: list[str] = []
+    proxy_target = "http://preview.minicon.invalid/page"
 
     class Page(http.server.BaseHTTPRequestHandler):
         def log_message(self, *_args: object) -> None:
@@ -51,20 +53,75 @@ def main() -> int:
                         "<p>A local page inside MiniCon.</p><input placeholder='Click to focus the page'>"
                         "<p><a href='/redirect'>Open the second page</a></p>").encode()
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
 
+    class ProxyPage(http.server.BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, *_args: object) -> None:
+            pass
+
+        def page_response(self, target: str) -> None:
+            # This is a loopback-only responder, never a forwarding proxy.
+            assert target.startswith("http://preview.minicon.invalid/"), "proxy fixture received an unexpected target"
+            proxy_requests.append(target)
+            body = b"<!doctype html><title>Proxy preview</title><h1>Proxy preview</h1>"
+            self.wfile.write(("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
+                              "Cache-Control: no-store\r\nConnection: close\r\n"
+                              f"Content-Length: {len(body)}\r\n\r\n").encode() + body)
+            self.close_connection = True
+
+        def do_GET(self) -> None:  # noqa: N802
+            if not self.path.startswith("http://preview.minicon.invalid/"):
+                self.send_error(400, "Expected the synthetic proxy target")
+                return
+            self.page_response(self.path)
+
+        def do_CONNECT(self) -> None:  # noqa: N802
+            # Apple's network proxy API uses CONNECT even for an http page.
+            if self.path not in ("preview.minicon.invalid", "preview.minicon.invalid:80"):
+                self.send_error(400, "Expected the synthetic CONNECT authority")
+                return
+            self.connection.settimeout(5)
+            self.wfile.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+            self.wfile.flush()
+            request = self.rfile.readline(8193)
+            words = request.split()
+            if len(words) != 3 or words[0] != b"GET" or len(request) > 8192:
+                return
+            headers = 0
+            while headers <= 8192:
+                line = self.rfile.readline(8193)
+                headers += len(line)
+                if line == b"\r\n":
+                    break
+                if not line:
+                    return
+            if headers > 8192:
+                return
+            path = words[1].decode("ascii")
+            if path.startswith("/"):
+                path = "http://preview.minicon.invalid" + path
+            self.page_response(path)
+
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Page)
     worker = threading.Thread(target=server.serve_forever, daemon=True)
     worker.start()
+    recovery_server = None
+    recovery_worker = None
+    proxy_server = None
+    proxy_worker = None
     origin = f"http://127.0.0.1:{server.server_port}"
     windows = sys.platform == "win32"
     scratch = tempfile.TemporaryDirectory(prefix="minicon-browser-")
     endpoint = rf"pipe:\\.\pipe\minicon-browser-{os.getpid()}" if windows else f"unix:{Path(scratch.name).resolve(strict=True) / 'control.sock'}"
     env = os.environ.copy()
-    env["MINICON_CONFIG_DIR"] = str(output / "config")
-    env["WEBVIEW2_USER_DATA_FOLDER"] = str(output / "profile")
+    # Reuse this isolated config only across the process restarts in this run.
+    env["MINICON_CONFIG_DIR"] = str(Path(scratch.name) / "config")
+    env["WEBVIEW2_USER_DATA_FOLDER"] = str(Path(scratch.name) / "profile")
     for key in ("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", "MINICON_BROWSER_HTTP_PROXY", "MINICON_BROWSER_HTTPS_PROXY",
                 "MINICON_BROWSER_NO_PROXY", "MINICON_BROWSER_BIN"):
         env.pop(key, None)
@@ -113,6 +170,59 @@ def main() -> int:
         scale = geometry["scale_permille"] / 1000
         x = geometry["browser_toolbar"]["x"] / scale + index * 34 + 16
         cli("send-ui-mouse", "--action", "click", "--button", "left", "--column", str(round(x)), "--row", "20")
+
+    def click_geometry(name: str, index: int | None = None):
+        geometry = cli("ui-snapshot")["geometry"]
+        rectangle = geometry[name] if index is None else geometry[name][index]
+        assert rectangle["width"] > 0 and rectangle["height"] > 0, f"{name} has no visible hit target"
+        scale = geometry["scale_permille"] / 1000
+        x = (rectangle["x"] + rectangle["width"] / 2) / scale
+        y = (rectangle["y"] + rectangle["height"] / 2) / scale
+        cli("send-ui-mouse", "--action", "click", "--button", "left", "--column", str(round(x)), "--row", str(round(y)))
+
+    def open_browser_from_menu():
+        click_geometry("new_root")
+        wait(lambda: cli("ui-snapshot")["geometry"]["new_tab_menu_open"], "New menu opens")
+        click_geometry("new_browser_action")
+        def observed():
+            rows = [row for row in cli("list-tabs")["tabs"] if row["kind"] == "browser"]
+            assert len(rows) <= 1, "New Browser created more than one root"
+            return rows[0] if len(rows) == 1 and rows[0]["active"] else None
+        row = wait(observed, "visible New Browser action focuses its single root")
+        assert not cli("ui-snapshot")["geometry"]["new_tab_menu_open"], "New menu stayed open after selection"
+        return row
+
+    def open_web_settings():
+        click_geometry("settings")
+        assert cli("ui-snapshot")["settings_open"], "Settings did not open"
+        click_geometry("settings_console_route")
+        assert cli("ui-snapshot")["geometry"]["settings_section"] == "console"
+        click_geometry("settings_web_route")
+        snapshot = cli("ui-snapshot")
+        assert snapshot["geometry"]["settings_section"] == "web"
+        return snapshot["geometry"]
+
+    def launch(trace):
+        nonlocal child
+        child = subprocess.Popen([str(binary), "--no-activate", "--control", endpoint, "-e", *shell],
+                                 env=env, stdout=subprocess.DEVNULL, stderr=trace, start_new_session=not windows)
+        deadline = time.monotonic() + 20
+        while True:
+            assert child.poll() is None, "GUI exited before control endpoint became ready"
+            try:
+                cli("list-tabs")
+                return
+            except subprocess.CalledProcessError:
+                assert time.monotonic() < deadline, "control endpoint did not become ready"
+                time.sleep(0.1)
+
+    def apply_proxy(value: str):
+        click_geometry("browser_proxy")
+        cli("send-ui-keys", "Ctrl+a")
+        cli("send-ui-keys", "Backspace")
+        if value:
+            cli("send-ui-ime", "commit", value)
+        cli("send-ui-keys", "Enter")
 
     def capture(name: str):
         nonlocal mac_window_id, mac_capture_error
@@ -168,20 +278,14 @@ if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopEl
 
     try:
         with (output / "host.log").open("wb") as trace:
-            child = subprocess.Popen([str(binary), "--no-activate", "--control", endpoint, "-e", *shell],
-                                     env=env, stdout=subprocess.DEVNULL, stderr=trace, start_new_session=not windows)
-            deadline = time.monotonic() + 20
-            while True:
-                try:
-                    cli("list-tabs")
-                    break
-                except subprocess.CalledProcessError:
-                    assert time.monotonic() < deadline, "control endpoint did not become ready"
-                    time.sleep(0.1)
-            cli("send-ui-keys", "Ctrl+Shift+O")
-            first_id = browser()["id"]
-            cli("send-ui-keys", "Ctrl+Shift+O")
-            assert browser()["id"] == first_id
+            launch(trace)
+            terminal_id = next(row["id"] for row in cli("list-tabs")["tabs"] if row["kind"] == "terminal")
+            terminal_draft = "preview draft stays editable"
+            cli("send-ui-keys", "Ctrl+Shift+I")
+            cli("send-ui-ime", "commit", terminal_draft)
+            assert cli("ui-snapshot")["composer_text"] == terminal_draft
+            first_id = open_browser_from_menu()["id"]
+            assert open_browser_from_menu()["id"] == first_id
             navigate(origin + "/first")
             loaded("/first", "First page")
             if args.physical:
@@ -252,26 +356,133 @@ if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopEl
                 geometry = cli("ui-snapshot")["geometry"]
                 assert geometry["browser_page"]["y"] == geometry["browser_toolbar"]["height"]
             cli("send-ui-keys", "Ctrl+Shift+[")
+            terminal = cli("ui-snapshot")
+            assert terminal["active"] == terminal_id
+            assert terminal["composer_text"] == terminal_draft, "returning from preview lost the terminal draft"
             cli("send-ui-keys", "Ctrl+Shift+O")
             loaded("/second", "Second page")
             capture("resized")
             with socket.socket() as refused:
                 refused.bind(("127.0.0.1", 0))
-                failed_url = f"http://127.0.0.1:{refused.getsockname()[1]}/unavailable"
+                recovery_port = refused.getsockname()[1]
+                failed_url = f"http://127.0.0.1:{recovery_port}/unavailable"
             navigate(failed_url)
             wait(lambda: browser()["browser"]["load"] == "unavailable", "failed connection is explicit")
             assert browser()["browser"]["url"] == failed_url
             assert browser()["browser"]["reason"].startswith("browser-navigation-")
             capture("failure")
+            click_geometry("browser_edit_address")
+            wait(lambda: cli("ui-snapshot")["geometry"]["address_focused"], "failure Edit address action focuses the editor")
+            assert browser()["browser"]["url"] == failed_url
+            cli("send-ui-keys", "Escape")
+            recovery_server = http.server.ThreadingHTTPServer(("127.0.0.1", recovery_port), Page)
+            recovery_worker = threading.Thread(target=recovery_server.serve_forever, daemon=True)
+            recovery_worker.start()
+            count = counts.get("/unavailable", 0)
+            click_geometry("browser_retry")
+            wait(lambda: counts.get("/unavailable", 0) > count, "Retry reaches the restarted local service")
+            wait(lambda: browser()["browser"]["load"] == "ready" and browser()["browser"]["url"] == failed_url,
+                 "Retry restores the attempted URL in the same panel")
+            recovered = browser()
+            assert recovered["id"] == first_id
+            assert recovered["browser"]["reason"] is None, "successful Retry retained the previous failure"
+            capture("recovered")
             navigate(origin + "/first")
             loaded("/first", "First page")
+            proxy_server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), ProxyPage)
+            proxy_worker = threading.Thread(target=proxy_server.serve_forever, daemon=True)
+            proxy_worker.start()
+            apply_proxy(f"http://127.0.0.1:{proxy_server.server_port}")
+            navigate(proxy_target)
+            wait(lambda: browser()["browser"]["url"] == proxy_target
+                 and browser()["browser"]["load"] == "ready"
+                 and browser()["browser"]["title"] == "Proxy preview", "visible proxy field applies to native page requests")
+            assert proxy_target in proxy_requests, "proxy setting did not reach the loopback proxy"
+            assert browser()["id"] == first_id, "applying a proxy must keep the Browser tab"
+            capture("proxied")
+            direct_path = "/direct-after-proxy"
+            navigate(origin + direct_path)
+            wait(lambda: browser()["browser"]["url"] == origin + direct_path, "direct recovery URL is retained before clearing proxy")
+            direct_count = counts.get(direct_path, 0)
+            apply_proxy("")
+            loaded(direct_path, "First page")
+            assert counts.get(direct_path, 0) > direct_count, "clearing proxy did not reload the local origin directly"
+            blocked_path = "/blocked-by-invalid-proxy"
+            apply_proxy("http://127.0.0.1:not-a-port")
+            wait(lambda: browser()["browser"]["reason"] == "browser-proxy-invalid", "invalid proxy is explicit")
+            navigate(origin + blocked_path)
+            wait(lambda: browser()["browser"]["url"] == origin + blocked_path
+                 and browser()["browser"]["reason"] == "browser-proxy-invalid", "invalid proxy blocks subsequent navigation")
+            click_geometry("browser_retry")
+            deadline = time.monotonic() + 0.5
+            while time.monotonic() < deadline:
+                assert counts.get(blocked_path, 0) == 0, "invalid proxy leaked a direct origin request"
+                time.sleep(0.01)
+            apply_proxy("")
+            loaded(blocked_path, "First page")
+            capture("proxy-cleared")
+            cli("select-tab", "--target", str(terminal_id))
+            assert cli("ui-snapshot")["composer_text"] == terminal_draft, "failure/recovery lost the terminal draft"
+            assert open_browser_from_menu()["id"] == first_id
             cli("close-tab", "--target", str(first_id))
             cli("send-ui-keys", "Ctrl+Shift+O")
             assert browser()["id"] != first_id
+            assert open_web_settings()["web_proxy_options_count"] == 0, "fixture settings must start empty"
+            click_geometry("web_proxy_input")
+            candidate = f"http://127.0.0.1:{proxy_server.server_port}"
+            cli("send-ui-ime", "commit", candidate)
+            click_geometry("web_proxy_add")
+            assert cli("ui-snapshot")["geometry"]["web_proxy_options_count"] == 1
+            cli("send-ui-keys", "Escape")
+            assert not cli("ui-snapshot")["settings_open"]
+            click_geometry("browser_proxy_dropdown")
+            click_geometry("browser_proxy_option_rows", 1)
+            proxy_count = len(proxy_requests)
+            navigate(proxy_target)
+            wait(lambda: browser()["browser"]["url"] == proxy_target
+                 and browser()["browser"]["load"] == "ready"
+                 and browser()["browser"]["title"] == "Proxy preview", "new candidate is immediately selectable")
+            assert len(proxy_requests) > proxy_count, "new candidate did not produce a proxy request"
+            cli("close-window")
+            child.wait(timeout=10)
+            launch(trace)
+            assert open_web_settings()["web_proxy_options_count"] == 1, "candidate was not persisted across restart"
+            cli("send-ui-keys", "Escape")
+            open_browser_from_menu()
+            click_geometry("browser_proxy_dropdown")
+            geometry = cli("ui-snapshot")["geometry"]
+            assert geometry["browser_proxy_menu_open"]
+            assert len(geometry["browser_proxy_option_rows"]) == 2
+            proxy_count = len(proxy_requests)
+            click_geometry("browser_proxy_option_rows", 1)
+            navigate(proxy_target)
+            wait(lambda: browser()["browser"]["url"] == proxy_target
+                 and browser()["browser"]["load"] == "ready"
+                 and browser()["browser"]["title"] == "Proxy preview", "persisted proxy candidate controls native requests")
+            assert len(proxy_requests) > proxy_count, "candidate selection did not produce a new proxy request"
+            assert open_web_settings()["web_proxy_options_count"] == 1
+            click_geometry("web_proxy_remove", 0)
+            assert cli("ui-snapshot")["geometry"]["web_proxy_options_count"] == 0
+            cli("send-ui-keys", "Escape")
+            cli("close-window")
+            child.wait(timeout=10)
+            launch(trace)
+            assert open_web_settings()["web_proxy_options_count"] == 0, "deleted candidate returned after restart"
+            cli("send-ui-keys", "Escape")
+            open_browser_from_menu()
+            click_geometry("browser_proxy_dropdown")
+            assert len(cli("ui-snapshot")["geometry"]["browser_proxy_option_rows"]) == 1, "deleted candidate remains selectable"
+            cli("send-ui-keys", "Escape")
             cli("close-window")
             child.wait(timeout=10)
         receipt = {"binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(), "platform": sys.platform,
                    "physical_page_ctrl_l": args.physical, "physical_page_tab_switch": args.physical,
+                   "visible_browser_entry": True, "single_browser_root_reused": True,
+                   "service_restart_retry": True, "terminal_draft_preserved": True,
+                   "visible_proxy_applied": True, "proxy_clear_restores_direct": True,
+                   "invalid_proxy_blocks_direct": True, "proxy_candidates_persisted": True,
+                   "proxy_candidate_selected": True, "proxy_candidate_deletion_persisted": True,
+                   "proxy_requests": proxy_requests,
                    "requests": counts, "status": "passed", "screenshots": screenshots}
         (output / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(receipt))
@@ -289,6 +500,14 @@ if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopEl
         server.shutdown()
         server.server_close()
         worker.join(timeout=2)
+        if recovery_server is not None:
+            recovery_server.shutdown()
+            recovery_server.server_close()
+            recovery_worker.join(timeout=2)
+        if proxy_server is not None:
+            proxy_server.shutdown()
+            proxy_server.server_close()
+            proxy_worker.join(timeout=2)
         scratch.cleanup()
 
 

@@ -14,9 +14,9 @@
 //! Stable names: [`BrowserTab`], [`BrowserPanel`], [`PageLoad`], [`PageHost`],
 //! [`http_url_at`], [`resolve_proxy`], [`page_host_request`], [`spawn_page_host`].
 //!
-//! Proxy is a settings hook only. Environment wins over `minicon.json`.
-//! The page host applies that hook when it loads. OAuth, dashboard,
-//! preview and wasm are later [`PageHost`] callers, not extra traits.
+//! Proxy mechanisms: `prd/PRD_02_28_shared_core.md`.
+//! Product editing and saved choices: `prd/PRD_02_25_01_browser_preferences.md`.
+//! The PRD series owns staged callers and product non-goals.
 
 /// Hard cap so a hand-edited config cannot hand the future network stack an
 /// unbounded header.
@@ -194,6 +194,46 @@ pub fn resolve_proxy(
 
 pub fn resolve_proxy_from_process(config: &BrowserProxyConfig) -> BrowserProxy {
     resolve_proxy(config, |key| std::env::var(key).ok())
+}
+
+/// A temporary browser-field override. Empty input retains the resolved
+/// config/environment hook; an explicit HTTP proxy is used for both URL schemes
+/// without inheriting a bypass list that could silently route pages directly.
+/// Authentication, TLS-to-proxy, paths and browser switches are not supported.
+pub fn proxy_override(base: &BrowserProxy, input: &str) -> Result<BrowserProxy, String> {
+    let input = input.trim();
+    if input.is_empty() {
+        return Ok(base.clone());
+    }
+    let (host, port) =
+        parse_http_proxy_endpoint(input).ok_or_else(|| "browser-proxy-invalid".to_owned())?;
+    let endpoint = format!("http://{host}:{port}");
+    Ok(BrowserProxy {
+        http: Some(endpoint.clone()),
+        https: Some(endpoint),
+        no_proxy: None,
+    })
+}
+
+fn parse_http_proxy_endpoint(raw: &str) -> Option<(String, String)> {
+    let raw = raw.trim();
+    if raw.len() > 2048 {
+        return None;
+    }
+    let authority = raw.strip_prefix("http://")?;
+    let authority = authority.strip_suffix('/').unwrap_or(authority);
+    let (host, port) = authority.rsplit_once(':')?;
+    if host.is_empty()
+        || !host
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b".-".contains(&byte))
+        || port.is_empty()
+        || !port.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    let port = port.parse::<u16>().ok().filter(|port| *port != 0)?;
+    Some((host.to_owned(), port.to_string()))
 }
 
 /// An http(s) token under `char_index` on one terminal row.
@@ -1248,19 +1288,7 @@ fn load_webview(
 /// Socks and userinfo are refused. `None` means a direct WebView load.
 pub fn wry_proxy_endpoint(proxy: &BrowserProxy) -> Option<(String, String)> {
     let raw = proxy.http.as_deref().or(proxy.https.as_deref())?;
-    let rest = raw
-        .trim()
-        .strip_prefix("http://")
-        .or_else(|| raw.trim().strip_prefix("https://"))?;
-    if rest.contains('@') {
-        return None;
-    }
-    let (host, port) = rest.split_once(':')?;
-    let port = port.split(['/', '?', '#']).next().unwrap_or("");
-    if host.is_empty() || port.is_empty() || !port.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    Some((host.to_owned(), port.to_owned()))
+    parse_http_proxy_endpoint(raw)
 }
 
 /// True when `url` is an http loopback the WebView proxy must not carry.
@@ -1359,6 +1387,60 @@ fn usable_proxy_value(value: String) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn proxy_override_blank_retains_the_complete_config_environment_default() {
+        let base = BrowserProxy {
+            http: Some("http://config.test:8080".into()),
+            https: Some("http://secure.test:8081".into()),
+            no_proxy: Some("localhost,example.test".into()),
+        };
+        assert_eq!(proxy_override(&base, " \t ").unwrap(), base);
+        assert_eq!(
+            proxy_override(&BrowserProxy::default(), "").unwrap(),
+            BrowserProxy::default()
+        );
+    }
+
+    #[test]
+    fn proxy_override_explicit_http_endpoint_covers_both_schemes_and_clears_bypass() {
+        let base = BrowserProxy {
+            no_proxy: Some("*".into()),
+            ..BrowserProxy::default()
+        };
+        let proxy = proxy_override(&base, "  http://127.0.0.1:08890/  ").unwrap();
+        assert_eq!(proxy.http.as_deref(), Some("http://127.0.0.1:8890"));
+        assert_eq!(proxy.https, proxy.http);
+        assert_eq!(proxy.no_proxy, None);
+        assert_eq!(base.no_proxy.as_deref(), Some("*"));
+    }
+
+    #[test]
+    fn proxy_override_invalid_input_is_an_error_instead_of_a_direct_connection() {
+        for input in [
+            "127.0.0.1:8890",
+            "https://proxy.test:8890",
+            "socks5://127.0.0.1:8890",
+            "http://user:password@127.0.0.1:8890",
+            "http://host --switch:80",
+            "http://host:80/path",
+            "http://host:80?query",
+            "http://host:80#fragment",
+            "http://host:0",
+            "http://host:65536",
+            "http://host:-1",
+            "http://host:+80",
+            "http://:80",
+            "http://host:",
+            "http://host:80\0",
+        ] {
+            assert_eq!(
+                proxy_override(&BrowserProxy::default(), input),
+                Err("browser-proxy-invalid".into()),
+                "{input:?}"
+            );
+        }
+    }
 
     #[test]
     fn a_browser_tab_hosts_exactly_one_panel() {

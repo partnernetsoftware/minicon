@@ -5,6 +5,7 @@ const MAX_DEPTH: usize = 32;
 const MAX_NODES: usize = 65_536;
 const MAX_OBJECT_FIELDS: usize = 256;
 const MAX_STRING_BYTES: usize = 1024 * 1024;
+const MAX_CONFIG_STRING_ARRAY_ITEMS: usize = 256;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum JsonValue {
@@ -96,6 +97,9 @@ pub struct ConfigValues {
     pub browser_http_proxy: Option<String>,
     pub browser_https_proxy: Option<String>,
     pub browser_no_proxy: Option<String>,
+    /// Candidate proxy strings, as written. Endpoint validity and the visible
+    /// list limit belong to the product; this codec checks bounded JSON shape.
+    pub browser_proxy_options: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -104,7 +108,7 @@ enum ValueKind {
     Bool,
     Number { start: usize, end: usize },
     String { start: usize, end: usize },
-    Array,
+    Array { start: usize, end: usize },
     Object,
 }
 
@@ -127,6 +131,7 @@ enum ConfigField {
     BrowserHttpProxy,
     BrowserHttpsProxy,
     BrowserNoProxy,
+    BrowserProxyOptions,
 }
 
 pub fn parse_config(bytes: &[u8]) -> Result<ConfigValues, String> {
@@ -151,6 +156,7 @@ pub fn parse_config(bytes: &[u8]) -> Result<ConfigValues, String> {
         browser_http_proxy: None,
         browser_https_proxy: None,
         browser_no_proxy: None,
+        browser_proxy_options: Vec::new(),
     };
     let kind = parser.value(0, Some(&mut config))?;
     parser.whitespace();
@@ -204,8 +210,12 @@ impl ConfigParser<'_> {
                 })
             }
             Some(b'[') => {
+                let start = self.position;
                 self.array(depth + 1)?;
-                Ok(ValueKind::Array)
+                Ok(ValueKind::Array {
+                    start,
+                    end: self.position,
+                })
             }
             Some(b'{') => self.object(depth + 1, config),
             Some(b'-' | b'0'..=b'9') => {
@@ -285,6 +295,10 @@ impl ConfigParser<'_> {
                     ConfigField::BrowserNoProxy => {
                         config.browser_no_proxy = self.string_value(value, "browser.no_proxy")?;
                     }
+                    ConfigField::BrowserProxyOptions => {
+                        config.browser_proxy_options =
+                            self.string_array_value(value, "browser.proxy_options")?;
+                    }
                 }
             }
             keys.push(key);
@@ -358,6 +372,43 @@ impl ConfigParser<'_> {
         }
     }
 
+    fn string_array_value(&self, value: ValueKind, key: &str) -> Result<Vec<String>, String> {
+        let (start, end) = match value {
+            ValueKind::Null => return Ok(Vec::new()),
+            ValueKind::Array { start, end } => (start, end),
+            _ => return Err(format!("{key} must be an array of strings")),
+        };
+        // The first pass has already checked depth, total nodes and syntax.
+        // Decode only this known array without retaining unknown JSON trees.
+        let mut parser = ConfigParser {
+            bytes: &self.bytes[..end],
+            position: start + 1,
+            nodes: 0,
+        };
+        let mut strings = Vec::new();
+        parser.whitespace();
+        if parser.consume(b']') {
+            return Ok(strings);
+        }
+        loop {
+            if strings.len() == MAX_CONFIG_STRING_ARRAY_ITEMS {
+                return Err(format!(
+                    "{key} exceeds {MAX_CONFIG_STRING_ARRAY_ITEMS} items"
+                ));
+            }
+            let value = parser.value(1, None)?;
+            let ValueKind::String { start, end } = value else {
+                return Err(format!("{key} must contain only strings"));
+            };
+            strings.push(parser.decode_string(KeySpan { start, end })?);
+            parser.whitespace();
+            if parser.consume(b']') {
+                return Ok(strings);
+            }
+            parser.expect(b',')?;
+        }
+    }
+
     fn config_field(&self, key: KeySpan) -> Option<ConfigField> {
         if self.key_equals(key, "font_size") {
             Some(ConfigField::FontSize)
@@ -381,6 +432,8 @@ impl ConfigParser<'_> {
             Some(ConfigField::BrowserHttpsProxy)
         } else if self.key_equals(key, "browser.no_proxy") {
             Some(ConfigField::BrowserNoProxy)
+        } else if self.key_equals(key, "browser.proxy_options") {
+            Some(ConfigField::BrowserProxyOptions)
         } else {
             None
         }
@@ -918,6 +971,71 @@ mod tests {
         );
         assert_eq!(config.browser_https_proxy, None);
         assert_eq!(config.browser_no_proxy.as_deref(), Some("localhost"));
+    }
+
+    #[test]
+    fn proxy_candidate_string_arrays_round_trip_with_escapes_and_null_defaults() {
+        let options = vec![
+            "http://localhost:8890".to_owned(),
+            "quoted\"\\\n中文😀".to_owned(),
+        ];
+        let encoded = to_vec(&object(vec![(
+            "browser.proxy_options",
+            JsonValue::Array(options.iter().cloned().map(JsonValue::from).collect()),
+        )]));
+        let oracle: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(oracle["browser.proxy_options"], serde_json::json!(options));
+        assert_eq!(
+            parse_config(&encoded).unwrap().browser_proxy_options,
+            options
+        );
+        assert_eq!(
+            parse_config(br#"{"browser.proxy\u005foptions":["http:\/\/localhost:8890"]}"#)
+                .unwrap()
+                .browser_proxy_options,
+            ["http://localhost:8890"]
+        );
+        for input in [
+            br#"{}"#.as_slice(),
+            br#"{"browser.proxy_options":null}"#,
+            br#"{"browser.proxy_options":[]}"#,
+        ] {
+            assert!(
+                parse_config(input)
+                    .unwrap()
+                    .browser_proxy_options
+                    .is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn proxy_candidate_arrays_reject_wrong_shapes_and_bound_their_item_count() {
+        for input in [
+            br#"{"browser.proxy_options":"http://localhost:8890"}"#.as_slice(),
+            br#"{"browser.proxy_options":{}}"#,
+            br#"{"browser.proxy_options":true}"#,
+            br#"{"browser.proxy_options":[null]}"#,
+            br#"{"browser.proxy_options":["valid",12]}"#,
+            br#"{"browser.proxy_options":[[]]}"#,
+            br#"{"browser.proxy_options":[{}]}"#,
+        ] {
+            assert!(parse_config(input).is_err(), "accepted {input:?}");
+        }
+        let encode = |count| {
+            to_vec(&object(vec![(
+                "browser.proxy_options",
+                JsonValue::Array(vec![JsonValue::from("candidate"); count]),
+            )]))
+        };
+        assert_eq!(
+            parse_config(&encode(MAX_CONFIG_STRING_ARRAY_ITEMS))
+                .unwrap()
+                .browser_proxy_options
+                .len(),
+            MAX_CONFIG_STRING_ARRAY_ITEMS
+        );
+        assert!(parse_config(&encode(MAX_CONFIG_STRING_ARRAY_ITEMS + 1)).is_err());
     }
 
     #[test]

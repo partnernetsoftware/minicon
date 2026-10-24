@@ -104,6 +104,9 @@ minicon --status                 # 这台机器给了它什么
 minicon --help                   # 其余全部
 ```
 
+选择 **新建 → 网页**，即可在终端旁预览本地网址。服务暂不可用时，在终端启动
+服务后点击 **重试**；也可通过 **编辑地址** 修正网址。点击终端标签即可继续原来的草稿。
+
 | 按键 | |
 | --- | --- |
 | `Ctrl+Shift+T` | 新建终端 |
@@ -181,6 +184,11 @@ Rust 1.97。Linux 需要 `libxkbcommon.so.0` 和 `libwayland-client.so.0`（无�
   macOS Developer ID + 公证，主体为 PARTNERNET SOFTWARE PTY LTD，并带 RFC 3161
   时间戳。用 `scripts/inspect-authenticode.ps1` 验证 Windows 下载。细节见
   [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md)。
+
+网页地址旁的代理下拉框支持手输 HTTP 代理，例如 `http://127.0.0.1:8890`。
+Enter 应用并重新加载（重置页面会话和历史），Escape 取消编辑。在
+**设置 → Web** 增删保存的候选项，**Console** 保留终端设置；选择
+**使用配置的代理** 可清除本次覆盖。
 
 ---
 

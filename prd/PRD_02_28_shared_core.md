@@ -62,7 +62,7 @@ Outcome: maintain one terminal implementation with explicit reusable boundaries
 │   ├── terminal::TerminalPresentation: active/presented frames and bounded synchronization; GUI consumes through a private clock adapter (PRD 24.01)
 │   └── Windows ConDrv/object/API/input/job/control service; experimental PTY adapter
 ├── [-] Browser surface — crates/minicon-web (workspace member; native adapters stay here; PRD_02_25 + PRD_02_31)
-│   ├── library: open/load URL, proxy application, staged OAuth/dashboard/preview/wasm
+│   ├── library: open/load URL, validated proxy override and creation-time application, staged OAuth/dashboard/preview/wasm
 │   ├── Linux optional helper owns wry/tao; macOS/Windows GUI feature owns native child WebView
 │   └── product face remains Tab / content panel; no tray; core/headless crates do not link wry
 ├── Owned dependencies — third_party/
@@ -98,6 +98,8 @@ flowchart LR
     MC --> CORE & UI & PLAT & VT
     MC -->|"common terminal query replies"| CON
     MC -.->|"browser content panel"| WEB
+    MC -->|"proxy candidate product rules"| WEB
+    CORE -->|"bounded config array codec; no WebView dependency"| MC
     AG -->|"immutable revision; own feature selection"| UI & PLAT
     AG -. "prepared core consumer; own qualification" .-> CORE
     UI -->|"tree; core defaults disabled"| CORE
@@ -390,3 +392,37 @@ compatibility descriptor. They do not depend on platform GUI font discovery or
 claim that the renderer uses that face/size. The native RawUI dependency and
 actual client evidence are owned by [PRD 02.34](PRD_02_34_windows_console_backend.md).
 The neutral cell mutation remains in the owned shared terminal library.
+
+### Browser proxy creation-time adapter (0.2.22)
+
+`proxy_override` validates the process-local product override before adapter
+creation; an invalid endpoint must never become a direct connection. Product
+editor and page-recreation semantics belong to PRD 25. macOS uses a separate
+nonpersistent WebKit data store for each explicitly proxied page to prevent a previous proxy from
+leaking into a new page after clearing the field; HTTP CONNECT proxy support
+requires macOS 14 or later. Windows uses WebView2 creation arguments and Linux
+uses the helper environment. Compilation does not qualify routing: per-platform
+proxy request receipts and missing native courts belong to the 0.2.22 plan.
+
+The native macOS executable's embedded plist and both app wrappers permit
+user-selected HTTP page content through `NSAllowsArbitraryLoadsInWebContent`.
+Without this WebView-specific setting, ATS rejects non-loopback HTTP before
+any proxy connection; loopback-only tests cannot expose the defect. This
+uses the [documented WebView policy](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsallowsarbitraryloadsinwebcontent).
+The HTTP proxy court requires a synthetic non-loopback target served entirely
+by a loopback proxy. HTTPS keeps the default server certificate trust checks;
+there is no certificate-exception callback.
+
+On macOS, revealing a native page explicitly places its NSView above the
+parent software surface and invalidates its display. The public AppKit
+operation prevents a recreated, successfully loaded page from staying blank
+until a terminal/browser switch. This is adapter presentation ownership;
+product visibility and error-overlay authority stay in MiniCon.
+
+The shared config codec accepts a bounded string array for candidate data
+(`browser.proxy_options`, absent/null means empty). Shape validation, JSON
+escaping and the 256-item structural bound remain in `minicon-core`; endpoint
+validation, normalization, deduplication and the eight-choice product limit
+remain in MiniCon's `web_preferences` module. The core codec does not depend
+on the native page library or product editor state. Runtime candidate and
+restart evidence belongs to PRD 25 and the 0.2.22 plan.

@@ -3,6 +3,7 @@ use super::*;
 
 impl ConApp {
     pub(super) fn focus_browser_address(&mut self, window: &PixelWindow) {
+        self.browser_proxy_focused = false;
         self.begin_browser_address();
         self.composer.focused = false;
         #[cfg(any(target_os = "macos", windows))]
@@ -80,7 +81,7 @@ impl ConApp {
         let rect = self
             .layout(metrics.physical_width, metrics.physical_height, scale)
             .browser_address(scale);
-        let size = scaled_host_ui_font(14, self.session_seed.font_size_logical(), scale);
+        let size = scaled_host_ui_font(16, self.session_seed.font_size_logical(), scale);
         let cell = font::cell_metrics(size).width.max(1);
         let width = rect.width.saturating_sub((16.0 * scale) as u32);
         let visible = composer::visible_window(
@@ -104,6 +105,12 @@ impl ConApp {
         window: &PixelWindow,
         event: &PixelWindowEvent,
     ) -> Result<bool, PixelWindowError> {
+        if self.settings_open {
+            return Ok(false);
+        }
+        if self.route_browser_proxy_input(window, event)? {
+            return Ok(true);
+        }
         if !self.active_is_browser() {
             self.browser_address = None;
             self.browser_address_drag = None;
@@ -189,7 +196,11 @@ impl ConApp {
                         self.update_browser_ime_anchor(window);
                         self.mark_host_ui_full_and_repaint(window);
                     }
-                } else {
+                } else if y < layout
+                    .browser_toolbar(scale)
+                    .y
+                    .saturating_add((44.0 * scale) as u32)
+                {
                     let control =
                         ((x.saturating_sub(layout.composer.x)) as f64 / (34.0 * scale)) as u32;
                     self.browser_navigation(window, control);
@@ -308,7 +319,7 @@ impl ConApp {
         Ok(true)
     }
 
-    fn update_browser_ime_anchor(&self, window: &PixelWindow) {
+    pub(super) fn update_browser_ime_anchor(&self, window: &PixelWindow) {
         let Some(editor) = &self.browser_address else {
             return;
         };
@@ -319,7 +330,7 @@ impl ConApp {
         let rect = self
             .layout(metrics.physical_width, metrics.physical_height, scale)
             .browser_address(scale);
-        let size = scaled_host_ui_font(14, self.session_seed.font_size_logical(), scale);
+        let size = scaled_host_ui_font(16, self.session_seed.font_size_logical(), scale);
         let cell = font::cell_metrics(size).width.max(1);
         let cells = (rect.width.saturating_sub((16.0 * scale) as u32) / cell).max(1) as usize;
         let visible =
@@ -329,7 +340,8 @@ impl ConApp {
             + composer::cells(&editor.preedit[visible.preedit..]);
         let _ = window.set_ime_cursor_area(minicon_platform::window_host::LogicalRect::new(
             f64::from(rect.x + cell.saturating_mul(offset as u32)) / scale + 8.0,
-            f64::from(rect.y) / scale + 7.0,
+            f64::from(rect.y + rect.height.saturating_sub(font::cell_metrics(size).height) / 2)
+                / scale,
             2.0,
             20.0,
         ));
@@ -340,6 +352,18 @@ impl ConApp {
             || (control == 0 && !self.browser_can_back)
             || (control == 1 && !self.browser_can_forward)
         {
+            return;
+        }
+        if control == 2
+            && self
+                .workspace
+                .browser_tab()
+                .and_then(|id| self.browsers.get(&id))
+                .is_some_and(|tab| {
+                    matches!(tab.panel().load, browser::PageLoad::Unavailable { .. })
+                })
+        {
+            self.retry_browser_page(window);
             return;
         }
         self.browser_address = None;
@@ -393,6 +417,43 @@ impl ConApp {
                 self.note_page_load(browser::PageLoad::Unavailable { url, reason });
             }
         }
+        self.mark_host_ui_full_and_repaint(window);
+    }
+
+    fn prepare_browser_retry(&mut self) -> Option<String> {
+        let tab = self
+            .workspace
+            .browser_tab()
+            .and_then(|id| self.browsers.get_mut(&id))?;
+        let url = tab.panel().url.clone().filter(|url| !url.is_empty())?;
+        tab.note_title("");
+        tab.note_load(browser::PageLoad::Loading { url: url.clone() });
+        Some(url)
+    }
+
+    /// Retry the attempted URL, even if the WebView is still on an earlier
+    /// successful page. Reloading that page would silently retry the wrong URL.
+    pub(super) fn retry_browser_page(&mut self, window: &PixelWindow) {
+        if !self.active_is_browser() {
+            return;
+        }
+        self.browser_address = None;
+        self.browser_address_drag = None;
+        if let Some(url) = self.prepare_browser_retry() {
+            self.launch_page_host(window, &url);
+        } else {
+            #[cfg(any(target_os = "macos", windows))]
+            {
+                self.ensure_native_page(window);
+                if self.native_browser_page.is_some() {
+                    self.note_page_load(browser::PageLoad::Idle);
+                }
+            }
+            #[cfg(not(any(target_os = "macos", windows)))]
+            self.focus_browser_address(window);
+        }
+        self.sync_embedded_page(window);
+        let _ = self.refresh_title(window);
         self.mark_host_ui_full_and_repaint(window);
     }
 
@@ -574,6 +635,41 @@ impl ConApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retry_keeps_the_failed_url_and_clears_the_previous_page_title_and_error() {
+        let mut app = ConApp::new(None, None);
+        let attempted = "http://localhost/preview";
+        assert!(ConApp::handoff_http_link(
+            &mut app.workspace,
+            &mut app.browsers,
+            attempted
+        ));
+        let id = app.workspace.browser_tab().unwrap();
+        let tab = app.browsers.get_mut(&id).unwrap();
+        tab.note_title("Earlier successful page");
+        tab.note_load(browser::PageLoad::Unavailable {
+            url: attempted.into(),
+            reason: "browser-navigation-timeout".into(),
+        });
+        assert_eq!(app.prepare_browser_retry().as_deref(), Some(attempted));
+        let panel = app.browsers.get(&id).unwrap().panel();
+        assert_eq!(panel.url.as_deref(), Some(attempted));
+        assert!(panel.title.is_empty());
+        assert_eq!(
+            panel.load,
+            browser::PageLoad::Loading {
+                url: attempted.into()
+            }
+        );
+    }
+
+    #[test]
+    fn retry_without_an_attempted_url_does_not_create_a_navigation() {
+        let mut app = ConApp::new(None, None);
+        assert_eq!(app.prepare_browser_retry(), None);
+        assert!(app.workspace.browser_tab().is_none());
+    }
 
     #[test]
     fn refocusing_browser_address_preserves_the_unsubmitted_draft() {

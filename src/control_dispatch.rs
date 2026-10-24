@@ -313,6 +313,8 @@ impl ConApp {
                     && self.rename.is_none()
                     && !self.composer.focused
                     && self.browser_address.is_none()
+                    && !self.browser_proxy_focused
+                    && !self.settings_proxy_focused
                 {
                     let session = self.active_session().map_err(|error| error.to_string())?;
                     session.ensure_pty_input_open()?;
@@ -332,6 +334,10 @@ impl ConApp {
                 // it.
                 let route = if self.rename.is_some() {
                     "rename"
+                } else if self.settings_proxy_focused {
+                    "web_proxy_candidate"
+                } else if self.browser_proxy_focused {
+                    "browser_proxy"
                 } else if self.browser_address.is_some() {
                     "browser_address"
                 } else if self.composer.focused {
