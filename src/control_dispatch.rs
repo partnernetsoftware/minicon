@@ -112,7 +112,10 @@ impl ConApp {
                                                 "reason",
                                                 reason.map_or(json::JsonValue::Null, |reason| {
                                                     if authorization_page {
-                                                        "authorization-page-unavailable".into()
+                                                        browser_ui::public_authorization_failure(
+                                                            reason,
+                                                        )
+                                                        .into()
                                                     } else {
                                                         browser_ui::public_browser_text(reason)
                                                             .as_ref()
@@ -692,6 +695,222 @@ impl ConApp {
 #[cfg(test)]
 mod title_tests {
     use super::*;
+
+    fn authorization_failure_observation(
+        app: &mut ConApp,
+        url: &str,
+        reason: &str,
+    ) -> serde_json::Value {
+        assert!(ConApp::handoff_http_link(
+            &mut app.workspace,
+            &mut app.browsers,
+            url,
+        ));
+        let id = app.workspace.browser_tab().unwrap();
+        let tab = app.browsers.get_mut(&id).unwrap();
+        tab.note_title("SYNTHETIC-TITLE-PRIVATE");
+        tab.note_load(browser::PageLoad::Unavailable {
+            url: url.into(),
+            reason: reason.into(),
+        });
+        let reply = app
+            .windowless_command(&control::CliCommand::ListTabs)
+            .unwrap()
+            .unwrap();
+        let observed: serde_json::Value = serde_json::from_slice(&json::to_vec(&reply)).unwrap();
+        let encoded = observed.to_string();
+        for secret in [
+            "SYNTHETIC-STATE-PRIVATE",
+            "SYNTHETIC-CODE-PRIVATE",
+            "SYNTHETIC-FRAGMENT-PRIVATE",
+            "SYNTHETIC-TITLE-PRIVATE",
+            "SYNTHETIC-ERROR-PRIVATE",
+            "SYNTHETIC-USER-CODE-PRIVATE",
+        ] {
+            assert!(!encoded.contains(secret), "private browser metadata leaked");
+        }
+        let browser = observed["tabs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tab| tab["kind"] == "browser")
+            .unwrap()["browser"]
+            .clone();
+        assert_eq!(browser["url"], url.split(['?', '#']).next().unwrap());
+        assert_eq!(browser["url_redacted"], true);
+        assert_eq!(browser["title"], "Authorization page");
+        assert_eq!(browser["load"], "unavailable");
+        browser
+    }
+
+    #[test]
+    fn authorization_failure_observation_preserves_only_fixed_navigation_categories() {
+        let mut app = ConApp::new(None, None);
+        let url = "https://platform.deepseek.com/dsh/authorized?state=SYNTHETIC-STATE-PRIVATE&code=SYNTHETIC-CODE-PRIVATE#SYNTHETIC-FRAGMENT-PRIVATE";
+        for (reason, category) in [
+            ("browser-navigation-error-0", "browser-navigation-unknown"),
+            (
+                "browser-navigation-error-2",
+                "browser-navigation-certificate-expired",
+            ),
+            ("browser-navigation-error-7", "browser-navigation-timeout"),
+            (
+                "browser-navigation-error-8",
+                "browser-navigation-invalid-server-response",
+            ),
+            (
+                "browser-navigation-error-12",
+                "browser-navigation-cannot-connect",
+            ),
+            (
+                "browser-navigation-error-14",
+                "browser-navigation-operation-canceled",
+            ),
+            (
+                "browser-navigation-error-17",
+                "browser-navigation-authentication-required",
+            ),
+            (
+                "browser-navigation-error-18",
+                "browser-navigation-proxy-authentication-required",
+            ),
+            ("browser-navigation-timeout", "browser-navigation-timeout"),
+        ] {
+            assert_eq!(
+                authorization_failure_observation(&mut app, url, reason)["reason"],
+                category,
+            );
+        }
+    }
+
+    #[test]
+    fn authorization_failure_observation_redacts_unknown_codes_and_free_text() {
+        let mut app = ConApp::new(None, None);
+        let url = "https://platform.deepseek.com/dsh/authorized?state=SYNTHETIC-STATE-PRIVATE&code=SYNTHETIC-CODE-PRIVATE#SYNTHETIC-FRAGMENT-PRIVATE";
+        for reason in [
+            "browser-navigation-error-19",
+            "browser-navigation-error-999999999",
+            "browser-navigation-error--1",
+            "browser-navigation-error-+12",
+            "browser-navigation-error-012",
+            "browser-navigation-error-12\n",
+            "browser-navigation-error-12?code=SYNTHETIC-ERROR-PRIVATE",
+            "browser-navigation-error-12 SYNTHETIC-ERROR-PRIVATE",
+            "browser-navigation-error-12 https://platform.deepseek.com/dsh/authorized?code=SYNTHETIC-ERROR-PRIVATE",
+            "browser-navigation-timeout SYNTHETIC-ERROR-PRIVATE",
+            "SYNTHETIC-ERROR-PRIVATE https://ordinary.test/error",
+            "browser-navigation-cannot-connect",
+        ] {
+            assert_eq!(
+                authorization_failure_observation(&mut app, url, reason)["reason"],
+                "authorization-page-unavailable",
+            );
+        }
+
+        let ordinary = "https://ordinary.test/page?q=visible";
+        assert!(ConApp::handoff_http_link(
+            &mut app.workspace,
+            &mut app.browsers,
+            ordinary,
+        ));
+        app.browsers
+            .get_mut(&app.workspace.browser_tab().unwrap())
+            .unwrap()
+            .note_load(browser::PageLoad::Unavailable {
+                url: ordinary.into(),
+                reason: "browser-navigation-error-12".into(),
+            });
+        let reply = app
+            .windowless_command(&control::CliCommand::ListTabs)
+            .unwrap()
+            .unwrap();
+        let observed: serde_json::Value = serde_json::from_slice(&json::to_vec(&reply)).unwrap();
+        let browser = observed["tabs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tab| tab["kind"] == "browser")
+            .unwrap()["browser"]
+            .clone();
+        assert_eq!(browser["url"], ordinary);
+        assert_eq!(browser["url_redacted"], false);
+        assert_eq!(browser["reason"], "browser-navigation-error-12");
+    }
+
+    #[test]
+    fn authorization_failure_observation_redacts_both_official_device_paths() {
+        let mut app = ConApp::new(None, None);
+        for url in [
+            "https://opencode.ai/console/device?user_code=SYNTHETIC-USER-CODE-PRIVATE#SYNTHETIC-FRAGMENT-PRIVATE",
+            "https://opencode.ai/console/auth/device?user_code=SYNTHETIC-USER-CODE-PRIVATE#SYNTHETIC-FRAGMENT-PRIVATE",
+        ] {
+            assert_eq!(
+                authorization_failure_observation(&mut app, url, "browser-navigation-error-12")["reason"],
+                "browser-navigation-cannot-connect",
+            );
+        }
+    }
+
+    #[test]
+    fn authorization_failure_observation_redacts_github_sso_and_nested_return_destinations() {
+        let mut app = ConApp::new(None, None);
+        for base in [
+            "https://github.com/login",
+            "https://github.com/login/oauth/authorize",
+            "https://github.com/login/device",
+            "https://github.com/login/two-factor/app",
+            "https://opencode.ai/console/auth/social/github/callback",
+        ] {
+            let url = format!(
+                "{base}?return_to=%2Flogin%2Foauth%2Fauthorize%3Fredirect_uri%3Dhttps%253A%252F%252Fopencode.ai%252Fconsole%252Fauth%252Fsocial%252Fgithub%252Fcallback%253Fcode%253DSYNTHETIC-CODE-PRIVATE%26state%3DSYNTHETIC-STATE-PRIVATE#SYNTHETIC-FRAGMENT-PRIVATE"
+            );
+            let reason = format!("SYNTHETIC-ERROR-PRIVATE while loading {url}");
+            assert_eq!(
+                authorization_failure_observation(&mut app, &url, &reason)["reason"],
+                "authorization-page-unavailable",
+            );
+        }
+    }
+
+    #[test]
+    fn ordinary_github_urls_keep_their_public_query_title_and_reason() {
+        let mut app = ConApp::new(None, None);
+        for url in [
+            "https://github.com/example/repository?tab=readme#section",
+            "https://github.com/example/login?return_to=ordinary",
+            "https://github.com/login-research?tab=readme",
+        ] {
+            assert!(ConApp::handoff_http_link(
+                &mut app.workspace,
+                &mut app.browsers,
+                url,
+            ));
+            let id = app.workspace.browser_tab().unwrap();
+            let tab = app.browsers.get_mut(&id).unwrap();
+            tab.note_title("Public repository");
+            tab.note_load(browser::PageLoad::Unavailable {
+                url: url.into(),
+                reason: "browser-navigation-error-12".into(),
+            });
+            let reply = app
+                .windowless_command(&control::CliCommand::ListTabs)
+                .unwrap()
+                .unwrap();
+            let observed: serde_json::Value =
+                serde_json::from_slice(&json::to_vec(&reply)).unwrap();
+            let browser = observed["tabs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|tab| tab["kind"] == "browser")
+                .unwrap()["browser"]
+                .clone();
+            assert_eq!(browser["url"], url);
+            assert_eq!(browser["url_redacted"], false);
+            assert_eq!(browser["title"], "Public repository");
+            assert_eq!(browser["reason"], "browser-navigation-error-12");
+        }
+    }
 
     #[test]
     fn gui_title_control_observation_normalizes_without_a_render() {

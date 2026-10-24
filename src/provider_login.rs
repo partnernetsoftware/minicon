@@ -197,7 +197,7 @@ impl AuthTransport for PlatformTransport {
         )
         .map_err(|error| match error {
             NetworkHttpStreamError::Cancelled => AuthError::Cancelled,
-            NetworkHttpStreamError::Http(_) => AuthError::TransportUnavailable,
+            NetworkHttpStreamError::Http(error) => AuthError::TransportFailure(error.kind()),
         })?;
         response.body = body;
         response.truncated = outcome.stopped;
@@ -964,6 +964,22 @@ mod tests {
             login.shutdown(Duration::from_secs(1)).unwrap();
             assert!(!root.exists());
         }
+    }
+
+    #[test]
+    fn platform_transport_preserves_safe_failure_kind_without_request_secrets() {
+        let request = NetworkHttpRequest::new(
+            network_http::NetworkHttpMethod::Get,
+            "synthetic-private-code-is-not-an-absolute-url",
+        );
+        let error = PlatformTransport
+            .request(&request, &NetworkHttpCancel::new())
+            .unwrap_err();
+        assert_eq!(
+            error,
+            AuthError::TransportFailure(network_http::NetworkHttpErrorKind::InvalidUrl)
+        );
+        assert!(!format!("{error:?} {error}").contains("synthetic-private-code"));
     }
 
     #[test]

@@ -17,7 +17,14 @@ pub(super) fn is_authorization_page(url: &str) -> bool {
         let authority = authority.strip_suffix(":443").unwrap_or(&authority);
         return (authority == "platform.deepseek.com"
             && matches!(path, "dsh/authorize" | "dsh/authorized" | "oauth/authorize"))
-            || (authority == "opencode.ai" && path == "console/device");
+            || (authority == "opencode.ai"
+                && matches!(
+                    path,
+                    "console/device"
+                        | "console/auth/device"
+                        | "console/auth/social/github/callback"
+                ))
+            || (authority == "github.com" && (path == "login" || path.starts_with("login/")));
     }
     if !scheme.eq_ignore_ascii_case("http") || !matches!(path, "oauth/callback" | "minicon/oauth") {
         return false;
@@ -36,6 +43,34 @@ pub(super) fn public_browser_url(url: &str) -> &str {
         url.split(['?', '#']).next().unwrap_or(url)
     } else {
         url
+    }
+}
+
+/// Preserve only exact transport-owned diagnostics on private authorization
+/// pages. Every result is fixed text; unknown codes and provider text stay
+/// fully redacted. Codes follow COREWEBVIEW2_WEB_ERROR_STATUS.
+pub(super) fn public_authorization_failure(reason: &str) -> &'static str {
+    match reason {
+        "browser-navigation-error-0" => "browser-navigation-unknown",
+        "browser-navigation-error-1" => "browser-navigation-certificate-name-mismatch",
+        "browser-navigation-error-2" => "browser-navigation-certificate-expired",
+        "browser-navigation-error-3" => "browser-navigation-client-certificate-invalid",
+        "browser-navigation-error-4" => "browser-navigation-certificate-revoked",
+        "browser-navigation-error-5" => "browser-navigation-certificate-invalid",
+        "browser-navigation-error-6" => "browser-navigation-server-unreachable",
+        "browser-navigation-error-7" | "browser-navigation-timeout" => "browser-navigation-timeout",
+        "browser-navigation-error-8" => "browser-navigation-invalid-server-response",
+        "browser-navigation-error-9" => "browser-navigation-connection-aborted",
+        "browser-navigation-error-10" => "browser-navigation-connection-reset",
+        "browser-navigation-error-11" => "browser-navigation-disconnected",
+        "browser-navigation-error-12" => "browser-navigation-cannot-connect",
+        "browser-navigation-error-13" => "browser-navigation-host-name-not-resolved",
+        "browser-navigation-error-14" => "browser-navigation-operation-canceled",
+        "browser-navigation-error-15" => "browser-navigation-redirect-failed",
+        "browser-navigation-error-16" => "browser-navigation-unexpected-error",
+        "browser-navigation-error-17" => "browser-navigation-authentication-required",
+        "browser-navigation-error-18" => "browser-navigation-proxy-authentication-required",
+        _ => "authorization-page-unavailable",
     }
 }
 

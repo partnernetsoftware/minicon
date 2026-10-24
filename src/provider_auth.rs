@@ -107,6 +107,7 @@ pub enum AuthError {
     InvalidState,
     EntropyUnavailable,
     TransportUnavailable,
+    TransportFailure(network_http::NetworkHttpErrorKind),
 }
 
 impl fmt::Display for AuthError {
