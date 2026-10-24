@@ -1,6 +1,6 @@
 # MiniCon product requirements
 
-MiniCon is a terminal that is one file: no installer, no bundled runtime, and
+MiniCon is a terminal that is one file: no required installer, no bundled runtime, and
 no authority beyond local terminal hosting. This compact index links each
 capability to its owning PRD. Machine alignment is `alignment-contract.json`,
 public evidence identities are in `evidence-registry.json`, and artifact
@@ -53,6 +53,7 @@ MiniCon — one-file local terminal
 │   │   └── prd/PRD_02_33_test_orchestration.md · plan/plan-v0.2.16.md
 │   └── exact-source artifacts, signing, scan and no-rebuild Promotion
 │       └── prd/PRD_02_27_con_delivery.md
+│           └── [_] native command-line installation after 0.2.21 → prd/PRD_02_27_01_install.md
 └── Current delivery
     ├── [-] v0.2.21 first unsigned browser six-cell baseline qualified; final-source qualification and owner UX review open → plan/plan-v0.2.21.md
     ├── [v] v0.2.20 → prd/archive/v0.2.20-release-history.md
@@ -135,6 +136,7 @@ flowchart LR
 | Native developer feedback | [Dev court](prd/PRD_02_32_dev_loop_crosscheck.md) | observed native suite execution; unavailable courts stay BLOCKED |
 | Select and compose tests efficiently | [Test orchestration](prd/PRD_02_33_test_orchestration.md) | planned versus observed obligations; unknown impact expands coverage |
 | Ship portable exact artifacts and control RSS/build cost | [Delivery](prd/PRD_02_27_con_delivery.md) | native artifacts, signatures, scan, Promotion and scoped measurements; no silent weakening |
+| Install native MiniCon from a command line (after 0.2.21) | [Native installation](prd/PRD_02_27_01_install.md) | published OS-appropriate bootstrap scripts, verified native bytes and matching README/site instructions |
 | Deferred portable logic / foundry directions | [qjswasm](prd/PRD_02_29_qjswasm_horizon.md), [foundry](prd/PRD_02_30_foundry_horizon.md) | independent complete-product decisions; no current-version implementation claim |
 
 ## Current frontier
@@ -142,8 +144,8 @@ flowchart LR
 - [-] **v0.2.21: browser workspace and publication qualification.** The owner
   authorized completion through public release after rejecting the diagnostic
   scaffold. The replacement address/navigation/shared-sidebar interaction has
-  local Windows x86_64 canonical native-page evidence; owner review and fresh
-  native six-cell evidence remain open. [Workspace](prd/PRD_02_25_con_workspace.md)
+  native six-cell browser/shutdown evidence in PRD 32; owner review and final
+  exact-source/signed artifact qualification remain open. [Workspace](prd/PRD_02_25_con_workspace.md)
   owns the interaction and acceptance boundary, [reuse](prd/PRD_02_28_shared_core.md)
   owns native adapters and bounded Linux helper transport, and
   [delivery](prd/PRD_02_27_con_delivery.md) owns the one-file artifact chain.

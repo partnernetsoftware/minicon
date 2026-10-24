@@ -123,6 +123,13 @@ product's code and from ad-hoc experimentation.
   its source, configuration and artifact identity match. Resume a failed stage
   where the gate supports it; source changes still require the applicable gates.
   Report local qualification time separately from the actual release chain.
+- Keep a resumed release's live logs outside an expirable ordinary Cargo
+  target before invoking a build wrapper. On Windows an open redirected log
+  prevents removal of its parent after cleanup has already removed other cache
+  files. Use the product's documented handoff location/retention setting and
+  restore matching CI evidence, then rerun the interrupted gate. MiniCon's
+  lifecycle authority is `prd/PRD_02_27_con_delivery.md`, "Bounded build-state
+  lifecycle"; do not reimplement or disable its cleanup routine here.
 - Finish version/docs edits before source-stability qualification. Use the
   standard ignored output directory, or verify a custom directory with
   `git check-ignore` before running. Generated output entering the source

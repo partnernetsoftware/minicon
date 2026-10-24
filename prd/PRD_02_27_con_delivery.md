@@ -13,8 +13,8 @@ Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
 
 ## Current release evolution
 
-The current public baseline is v0.2.18 (receipts in
-[its release history](archive/v0.2.18-release-history.md)). The per-release
+The current public baseline is v0.2.20 (receipts in
+[its release history](archive/v0.2.20-release-history.md)). The per-release
 evolution record from v0.1.2 forward — cell coverage, signing-mode changes,
 candidate/court/promotion receipts and the lessons each release bought — is
 frozen in [the delivery-history archive](archive/PRD_02_27-delivery-history.md)
@@ -55,6 +55,14 @@ recorded, carried here so the archive stays optional reading:
   pages have no generator; that gap is already recorded as deliberately not done
   in `plan/plan-repo-hygiene.md`.
 
+### Native command-line installation after 0.2.21
+
+The accepted product/distribution priority is owned by
+[PRD 23](PRD_02_23_minicon.md#distribution-priority). After 0.2.21 is publicly
+released, command-line installation and the matching README/site instructions
+are owned by [PRD 27.01](PRD_02_27_01_install.md). They do not add a prerequisite
+to the current Candidate and do not change its asset/signing policy.
+
 ## Bounded build-state lifecycle
 
 - [v] `scripts/cleanup-build-state.py` is the single deletion authority for
@@ -91,6 +99,18 @@ recorded, carried here so the archive stays optional reading:
   with background/low-I/O scheduling, uses the same shared cleaner, and logs to
   `~/Library/Logs/minicon-maintenance.log`. Reinstalling updates the job
   idempotently; no password or system daemon authority is required.
+
+- Routine cleanup can expire an idle `target/` after one hour under disk
+  pressure. On Windows, redirecting a new build log into that eligible tree
+  holds the file open while cleanup removes its parent; the result is partial
+  cache removal followed by a sharing violation. Put handoff receipts/logs
+  outside that cache, such as ignored `target-six/release-<version>-logs/`,
+  before starting the wrapper. The existing per-command
+  `MINICON_TARGET_TTL_HOURS` override can retain an active release handoff's
+  cache; it does not bypass test, source or artifact gates. The 0.2.21 replay
+  used the normal 336-hour retention for that invocation, restored durable CI
+  receipts, and reran the interrupted selected gate. Incident log:
+  `target-six/release-0.2.21-logs/cleanup-windows-log-lock.log`.
 
 ## Package identity
 
@@ -297,6 +317,53 @@ six-cell claim.
   `minicon.com` was already only `124,472` bytes under the old ceiling, so the
   budget was due for review regardless. Raising it again requires the same
   explicit owner decision.
+- [v] **Candidate hard ceiling raised to `20,000,000` bytes (20 MB, decimal),
+  2026-10-24 (owner), for 0.2.21's `minicon-web` growth.** This is approximately
+  19.07 MiB, not 20 MiB. The owner explicitly accepted the larger budget and
+  required subsequent size optimization. The earlier unsigned baseline is
+  measured in "What runs where" below; final signed bytes must still pass this
+  exact hard ceiling. Raising it again requires another explicit owner decision.
+  The Candidate bundle, size report and self-signing rehearsal's Candidate
+  ceiling/receipt now share this integer. The size report's independent
+  rehearsal-only guard remains 12 MiB and cannot decide a Candidate.
+  `candidate_bundle.py --self-test` accepts the exact ceiling and rejects one
+  extra byte through both real seal and verify paths. Removing either guard
+  makes its boundary control fail. Local evidence:
+  `target-six/release-0.2.21-logs/candidate-20mb-green.log` and
+  `candidate-20mb-red-no-{seal,verify}-guard.log` in the same directory.
+- [_] **After 0.2.21: optimize artifact size.** Attribute native sections,
+  embedded-helper bytes and compressed container contributions at named
+  source/profile/target identities before choosing reductions. Preserve the
+  native product outcome, browser functionality, unwind containment and signing
+  gates; the larger allowance is not evidence that optimization is complete.
+
+```text
+Outcome: bounded artifact growth with measured follow-up
+├── [v] Owner-approved 20 MB Candidate ceiling
+│   invariant: exact byte limit; never auto-raise
+│   evidence: real seal/verify boundary controls above
+│   safe failure: over-budget Candidate fails
+│   dependency: the same integer at every enforcement/receipt site
+│   non-goal: using the separate rehearsal guard as Candidate authority
+└── [_] Size optimization after public 0.2.21
+    invariant: preserve the native product and supported browser behavior
+    evidence: reproducible before/after sections and compressed bytes by cell
+    safe failure: retain qualified bytes when a reduction breaks behavior
+    dependency: the public baseline and exact-source profiling
+    non-goal: deleting release gates or cutting accepted features to fit
+```
+
+```mermaid
+flowchart LR
+    O[Owner budget decision] --> B[Exact Candidate byte ceiling]
+    B --> G{Within budget and qualified?}
+    G -->|yes| P[Public 0.2.21 baseline]
+    G -->|no| F[Stop Candidate]
+    P --> M[Attribute bytes by target and profile]
+    M --> R[Feature-preserving reductions]
+    R --> B
+```
+
 - [v] the Windows resource retains the existing icon's 16/32/64 PNG frames while
   removing redundant mip sizes: `.rsrc` fell from 90,112 to 8,704 bytes, the
   source ICO is capped at 16 KiB by the build script, and Windows shell icon
@@ -426,7 +493,7 @@ feature, so Cocoa bindings can be present **in addition to** winit.
 
 Linker knobs already spent on Linux: LTO, `opt-level=z`, `strip`,
 `--gc-sections`. Do not trade `panic = "unwind"` for `.eh_frame`. Do not
-auto-raise the Candidate ceiling (currently 11.75 MiB, see "Artifact budget")
+auto-raise the Candidate ceiling (currently 20 MB decimal, see "Artifact budget")
 without an explicit owner decision.
 
 - [-] **Linux dual desktop stack is retained (2026-08-30, user).** Keep
@@ -1468,7 +1535,8 @@ All six native runtime receipts name that run/source/pack hash and successful
 browser journeys. Independently hashing every extracted ZIP payload matched
 its runtime and browser receipt's native executable hash; the receipt set is
 exactly the six required cells. The raw pack is 13,969,271 bytes, above the
-current Candidate ceiling; owner budget review remains open. This baseline
+previous Candidate ceiling; the owner-approved replacement is recorded under
+"Artifact budget" above. This baseline
 precedes the shutdown-response repair and does not qualify its final source,
 signed transformations, Candidate or public download.
 The unsigned six-cell court executes the independently extracted native payload

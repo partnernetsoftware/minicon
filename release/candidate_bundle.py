@@ -13,7 +13,7 @@ from pathlib import Path
 
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 SOURCE_RE = re.compile(r"^[0-9a-f]{40}$")
-CANDIDATE_CEILING_BYTES = 12_320_768  # 11.75 MiB, raised 2026-10-14 for 0.2.8 (update-path hardening + image paste); see PRD_02_27 "Artifact budget"
+CANDIDATE_CEILING_BYTES = 20_000_000  # 20 MB (decimal), owner 2026-10-24; see PRD_02_27 "Artifact budget"
 
 
 def sha256(path: Path) -> str:
@@ -218,7 +218,7 @@ def seal(args: argparse.Namespace) -> None:
     if include_com:
         com = next(item for item in assets if item["name"] == "minicon.com")
         if com["bytes"] > CANDIDATE_CEILING_BYTES:
-            raise ValueError("minicon.com exceeds the stamped 11.75 MiB Candidate ceiling")
+            raise ValueError(f"minicon.com exceeds the stamped Candidate ceiling ({CANDIDATE_CEILING_BYTES} bytes)")
         if signing_mode == "required":
             signed_com = signing["assets"]["minicon.com"]
             if com["sha256"] != signed_com.get("after_sha256") or com["bytes"] != signed_com.get("after_bytes"):
@@ -368,7 +368,7 @@ def verify_manifest(manifest: dict, payload: Path, policy_path: Path | None = No
         if sha256(payload / "minicon.com") != after["minicon.com"]:
             raise ValueError("sealed minicon.com is not the signed after-SHA")
         if (payload / "minicon.com").stat().st_size > CANDIDATE_CEILING_BYTES:
-            raise ValueError("sealed minicon.com exceeds the stamped 11.75 MiB Candidate ceiling")
+            raise ValueError(f"sealed minicon.com exceeds the stamped Candidate ceiling ({CANDIDATE_CEILING_BYTES} bytes)")
         for cell, platform in (("win-x86_64", "windows-x86_64"), ("win-aarch64", "windows-arm64")):
             archive = payload / f"minicon-{version}-{platform}.zip"
             member = f"minicon-{version}-{platform}/minicon.exe"
@@ -493,6 +493,63 @@ def self_test() -> None:
             source_sha=source, version=version, candidate_run_id=11,
             candidate_run_attempt=1, output=output,
         ))
+        # Exercise the real seal and verify paths with coherent signed
+        # identities: the exact byte budget passes, one more byte fails.
+        original = {path: path.read_bytes() for path in (
+            com, payload / "minicon.com.sha256", signing_path, aggregate_path, output,
+        )}
+        try:
+            boundary_manifest = None
+            boundary_digest = None
+            for size in (CANDIDATE_CEILING_BYTES, CANDIDATE_CEILING_BYTES + 1):
+                with com.open("wb") as stream:
+                    stream.truncate(size)
+                digest = sha256(com)
+                sidecar = payload / "minicon.com.sha256"
+                sidecar.write_text(f"{digest}  minicon.com\n")
+                receipt = read_json(signing_path)
+                receipt["assets"]["minicon.com"].update(after_sha256=digest, after_bytes=size)
+                signing_path.write_text(json.dumps(receipt))
+                aggregate = read_json(aggregate_path)
+                aggregate["minicon_com_sha256"] = digest
+                aggregate_path.write_text(json.dumps(aggregate))
+                args = argparse.Namespace(
+                    payload=payload, build_receipt=build_path,
+                    aggregate_receipt=aggregate_path, signing_receipt=signing_path,
+                    policy=policy_path, g3_receipt=g3_path, source_sha=source,
+                    version=version, candidate_run_id=11, candidate_run_attempt=1,
+                    output=output,
+                )
+                if size == CANDIDATE_CEILING_BYTES:
+                    seal(args)
+                    boundary_manifest = read_json(output)
+                    verify_manifest(boundary_manifest, payload, policy_path)
+                    boundary_digest = digest
+                    continue
+                try:
+                    seal(args)
+                except ValueError as exc:
+                    assert str(exc).startswith("minicon.com exceeds the stamped"), (
+                        f"seal did not enforce its own byte ceiling: {exc}"
+                    )
+                else:
+                    raise AssertionError("Candidate seal accepted ceiling+1 bytes")
+                # Keep hashes and sidecars coherent so only the independent
+                # verify budget guard can reject this otherwise valid bundle.
+                oversized = json.loads(json.dumps(boundary_manifest).replace(boundary_digest, digest))
+                row = next(item for item in oversized["assets"] if item["name"] == "minicon.com")
+                row["bytes"] = size
+                row["sidecar"]["sha256"] = sha256(sidecar)
+                try:
+                    verify_manifest(oversized, payload, policy_path)
+                except ValueError as exc:
+                    assert str(exc).startswith("sealed minicon.com exceeds the stamped"), str(exc)
+                else:
+                    raise AssertionError("Candidate verify accepted ceiling+1 bytes")
+            print(f"PASS Candidate byte ceiling {CANDIDATE_CEILING_BYTES}: exact accepted, +1 rejected by seal and verify")
+        finally:
+            for path, data in original.items():
+                path.write_bytes(data)
         signing_fixture = read_json(signing_path)
         signing_fixture["release_eligible"] = False
         signing_path.write_text(json.dumps(signing_fixture))

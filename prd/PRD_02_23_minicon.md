@@ -29,6 +29,7 @@ minicon — one-file local terminal (product root)
 ├── Product outcome — independent local terminals, dedicated input, bounded CLI
 ├── Product boundary
 │   ├── Shipped and owned here
+│   ├── Distribution priority — native product; APE packaging demonstration
 │   └── Explicit non-goals (no server, persistence, Fleet, mux, MCP, scripts, Agent policy)
 ├── Governing invariants
 ├── Observable success evidence
@@ -72,6 +73,17 @@ tab and the whole GUI remain stable under malformed output, native callback
 failure, resize storms, process exit, and interaction races.
 
 ## Product boundary
+
+### Distribution priority
+
+Owner decision, 2026-10-24: native MiniCon deliverables for each operating
+system are the primary product. `minicon.com` is a secondary demonstration of
+cross-platform binary packaging. Its illustrative role does not weaken the
+qualification or signatures required for any version that includes it.
+Optional command-line installation convenience does not introduce a required
+installer, bundled runtime, daemon or automatic start. Delivery and the
+post-0.2.21 installation work are owned by
+[PRD 27](PRD_02_27_con_delivery.md#native-command-line-installation-after-0221).
 
 ### Shipped and owned here
 

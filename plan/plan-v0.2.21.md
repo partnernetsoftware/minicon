@@ -3,9 +3,9 @@
 Status: in progress. The replacement browser workspace and bounded shutdown
 response courts have native six-cell development evidence in
 [PRD 32](../prd/PRD_02_32_dev_loop_crosscheck.md); the first unsigned one-file
-baseline and its over-budget measurement are owned by
-[PRD 27](../prd/PRD_02_27_con_delivery.md). Owner UX acceptance and a Candidate
-budget decision remain open, followed by final-source artifact/signing,
+baseline and the owner-approved 20 MB budget are owned by
+[PRD 27](../prd/PRD_02_27_con_delivery.md). Owner UX acceptance remains open,
+followed by final-source artifact/signing,
 Candidate, reputation and public-download qualification.
 The owner has authorized completing 0.2.21 through public publication; see
 "Publication continuation" below. The earlier macOS diagnostic scaffold was
@@ -709,6 +709,16 @@ flowchart LR
   Windows evidence. Mac arm64 run `39996333498` on `59cd665` subsequently
   captured four real window PNGs; inspection confirmed the Reload mark is visible.
   Owner UX acceptance remains pending.
+
+## Accepted follow-up after public 0.2.21
+
+Owner instruction, 2026-10-24: native delivery is the primary product and the
+APE is a packaging demonstration (authority: PRD 23). After this version is
+public, implement the native command-line installation branch in
+[PRD 27.01](../prd/PRD_02_27_01_install.md), including its public Unix and
+Windows entry points and coordinated README/site guidance. Artifact size
+optimization remains the separate follow-up owned by PRD 27. Neither follow-up
+is silently added to this version's publication prerequisites.
 
 ## Non-goals
 
