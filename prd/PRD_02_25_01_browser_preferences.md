@@ -101,3 +101,20 @@ Computer Use captures under `target/parallel-preview-ui/` cover normal/narrow
 presentation and physical editing/selection. Guard-removal failures and final
 full/six-cell results are owned by the plan. Intel macOS, Windows and Linux
 native evidence for this new preference flow remains BLOCKED until run.
+
+### 0.2.22 release qualification frontier
+
+- [-] Exact-source six-platform CI run `40073750173` at `73b98f7`:
+  both macOS native journeys passed; Windows redirected-page title and Linux
+  active-proxy journeys failed. Publication remains blocked until replacement
+  exact-source evidence passes; current-Mac receipts above retain their scope.
+- Windows completion reads the committed native document title as well as title
+  notifications. The public smoke court observes one snapshot per proxy poll
+  and preserves its final failure state without exhausting the bounded control
+  replay cache. Local follow-up: `target-six/release-0.2.22/fix-test.log`
+  records 1,313 passing tests, six ignored across 37 suites; Clippy passes in
+  `target-six/release-0.2.22/fix-clippy.log`. The inherited uncommitted harness
+  work remains outside the release source; fresh exact-source CI is required.
+  `target-six/release-0.2.22/fix-mac-smoke/receipt.json` passes the unchanged
+  request, clear/invalid and persisted-candidate assertions on this Mac, with
+  seven captured native windows; it does not certify physical key interception.

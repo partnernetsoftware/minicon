@@ -146,12 +146,14 @@ def main() -> int:
         timeout = args.timeout if timeout is None else timeout
         deadline = time.monotonic() + timeout
         last = None
+        # Stay within the bounded replay cache even when a native page fails;
+        # each observation is a fresh public control request.
         while time.monotonic() < deadline:
             assert child is not None and child.poll() is None, "GUI exited before the journey completed"
             last = predicate()
             if last:
                 return last
-            time.sleep(0.05)
+            time.sleep(0.2)
         raise AssertionError(f"timed out: {label}; last={last}; tabs={cli('list-tabs')}")
 
     def loaded(path: str, title: str):
@@ -218,6 +220,7 @@ def main() -> int:
 
     def apply_proxy(value: str):
         click_geometry("browser_proxy")
+        assert cli("ui-snapshot")["geometry"]["proxy_focused"], "proxy field did not acquire editing focus"
         cli("send-ui-keys", "Ctrl+a")
         cli("send-ui-keys", "Backspace")
         if value:
@@ -394,9 +397,10 @@ if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopEl
             proxy_worker.start()
             apply_proxy(f"http://127.0.0.1:{proxy_server.server_port}")
             navigate(proxy_target)
-            wait(lambda: browser()["browser"]["url"] == proxy_target
-                 and browser()["browser"]["load"] == "ready"
-                 and browser()["browser"]["title"] == "Proxy preview", "visible proxy field applies to native page requests")
+            def proxy_loaded():
+                state = browser()["browser"]
+                return state["url"] == proxy_target and state["load"] == "ready" and state["title"] == "Proxy preview"
+            wait(proxy_loaded, "visible proxy field applies to native page requests")
             assert proxy_target in proxy_requests, "proxy setting did not reach the loopback proxy"
             assert browser()["id"] == first_id, "applying a proxy must keep the Browser tab"
             capture("proxied")
@@ -439,9 +443,7 @@ if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopEl
             click_geometry("browser_proxy_option_rows", 1)
             proxy_count = len(proxy_requests)
             navigate(proxy_target)
-            wait(lambda: browser()["browser"]["url"] == proxy_target
-                 and browser()["browser"]["load"] == "ready"
-                 and browser()["browser"]["title"] == "Proxy preview", "new candidate is immediately selectable")
+            wait(proxy_loaded, "new candidate is immediately selectable")
             assert len(proxy_requests) > proxy_count, "new candidate did not produce a proxy request"
             cli("close-window")
             child.wait(timeout=10)
@@ -456,9 +458,7 @@ if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopEl
             proxy_count = len(proxy_requests)
             click_geometry("browser_proxy_option_rows", 1)
             navigate(proxy_target)
-            wait(lambda: browser()["browser"]["url"] == proxy_target
-                 and browser()["browser"]["load"] == "ready"
-                 and browser()["browser"]["title"] == "Proxy preview", "persisted proxy candidate controls native requests")
+            wait(proxy_loaded, "persisted proxy candidate controls native requests")
             assert len(proxy_requests) > proxy_count, "candidate selection did not produce a new proxy request"
             assert open_web_settings()["web_proxy_options_count"] == 1
             click_geometry("web_proxy_remove", 0)
@@ -488,6 +488,14 @@ if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopEl
         print(json.dumps(receipt))
         return 0
     finally:
+        if sys.exc_info()[0] is not None:
+            try:
+                (output / "failure-final.json").write_text(json.dumps({
+                    "tabs": cli("list-tabs"), "ui": cli("ui-snapshot"),
+                    "proxy_requests": proxy_requests, "requests": counts,
+                }, indent=2) + "\n", encoding="utf-8")
+            except (OSError, subprocess.SubprocessError):
+                pass
         if child is not None and child.poll() is None:
             if not windows:
                 os.killpg(child.pid, signal.SIGKILL)

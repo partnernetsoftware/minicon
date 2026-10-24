@@ -428,7 +428,7 @@ fn install_windows_events(
         webview
             .webview()
             .add_NavigationCompleted(
-                &NavigationCompletedEventHandler::create(Box::new(move |_, args| {
+                &NavigationCompletedEventHandler::create(Box::new(move |sender, args| {
                     let Some(args) = args else {
                         return Ok(());
                     };
@@ -436,6 +436,19 @@ fn install_windows_events(
                     args.IsSuccess(&mut success)?;
                     let mut state = state.borrow_mut();
                     state.error = if success.as_bool() {
+                        // Read the committed document as well as title-change
+                        // notifications: redirects may deliver those before the
+                        // final navigation-start callback resets stale state.
+                        if let Some(sender) = sender {
+                            let mut title = Default::default();
+                            if sender.DocumentTitle(&mut title).is_ok() {
+                                state.title = webview2_com::take_pwstr(title)
+                                    .chars()
+                                    .filter(|c| !c.is_control())
+                                    .take(256)
+                                    .collect();
+                            }
+                        }
                         None
                     } else {
                         let mut status = Default::default();
