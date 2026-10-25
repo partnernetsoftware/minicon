@@ -30,6 +30,7 @@ INPUTS=tuple(dict.fromkeys((*qualification.INPUTS,
     "crates/minicon-web/tests/support/native_auth_fixture.rs",
     "crates/minicon-web/examples/windows-cookie-lifetime.rs",
     "crates/minicon-web/examples/windows_cookie_lifetime/host.rs",
+    "crates/minicon-web/examples/windows_cookie_lifetime/cookie_store_histograms.rs",
     "scripts/native-auth-context/lifetime.py",
     "scripts/native-auth-context/lifetime_metadata_selfcheck.py",
     *(p.relative_to(ROOT).as_posix() for p in sorted((ROOT/"crates/minicon-web/src").rglob("*.rs"))),
@@ -207,17 +208,32 @@ def build_and_run(args):
             raise native.CourtError("lifetime-protocol-evidence-invalid",True)
         suffix=["-p","minicon-web","--no-default-features","--features","windows-cookie-lifetime-court",
                 "--example","windows-cookie-lifetime","--target",args.target]
-        code,text=run_step("strict-example-tests",[bash,str(ROOT/"scripts/build.sh"),"test-suite",*suffix,"host::tests::","--","--test-threads=1"],900)
-        expected={"actual_load_ack_accepts_only_the_original_ordinary_history_query",
-                  "keeper_and_pending_owned_exit_are_both_required_at_the_real_reopen_gate",
-                  "matched_exit_is_insufficient_until_both_old_keeper_and_environment_are_released",
-                  "only_the_two_finite_lifetime_modes_are_executable",
-                  "actual_dispatch_authority_refuses_changed_url_phase_kind_and_sequence",
-                  "preclose_metadata_requires_one_persistent_future_sdk_cookie",
-                  "preclose_metadata_rejects_late_wrong_run_and_nonfinite_classification"}
-        names=re.findall(r"^test host::tests::([^ ]+) \.\.\. ok$",text,re.M)
+        code,text=run_step("strict-example-tests",[bash,str(ROOT/"scripts/build.sh"),"test-suite",*suffix,"host::","--","--test-threads=1"],900)
+        expected={
+            'host::tests::backend_histograms_only_admit_the_two_current_pending_phases',
+            'host::tests::preclose_metadata_requires_one_persistent_future_sdk_cookie',
+            'host::tests::preclose_metadata_rejects_late_wrong_run_and_nonfinite_classification',
+            'host::tests::actual_load_ack_accepts_only_the_original_ordinary_history_query',
+            'host::tests::keeper_and_pending_owned_exit_are_both_required_at_the_real_reopen_gate',
+            'host::tests::matched_exit_is_insufficient_until_both_old_keeper_and_environment_are_released',
+            'host::tests::only_the_two_finite_lifetime_modes_are_executable',
+            'host::tests::actual_dispatch_authority_refuses_changed_url_phase_kind_and_sequence',
+            'host::cookie_store_histograms::tests::numeric_backend_problem_reduces_without_cookie_or_error_strings',
+            'host::cookie_store_histograms::tests::missing_empty_unknown_and_nonfinite_shapes_remain_unknown',
+            'host::cookie_store_histograms::tests::response_prefix_is_bounded_before_json_allocation',
+            'host::cookie_store_histograms::tests::numeric_bucket_count_and_range_cannot_escape_fixed_bound',
+            'host::cookie_store_histograms::tests::deadline_and_cancel_reject_late_callback_generation',
+            'host::cookie_store_histograms::tests::duplicate_callback_cannot_replace_the_first_finite_result',
+            'host::cookies::tests::cookie_metadata_is_bounded_and_never_turns_failure_into_zero',
+            'host::cookies::tests::cookie_query_state_refuses_late_or_cancelled_completion',
+            'host::cookies::tests::cookie_query_never_enumerates_a_whole_profile',
+            'host::release::tests::only_the_owned_normal_exit_releases_the_observation',
+            'host::release::tests::unreadable_events_fail_without_native_diagnostic_payloads',
+            'host::release::tests::observation_terminal_states_do_not_change_on_late_events',
+        }
+        names=re.findall(r"^test (host::[^ ]+) \.\.\. ok$",text,re.M)
         counts=re.findall(r"^test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored;",text,re.M)
-        if code or counts!=[("ok","7","0","0")] or set(names)!=expected or len(names)!=7:
+        if code or counts!=[("ok",str(len(expected)),"0","0")] or set(names)!=expected or len(names)!=len(expected):
             raise native.CourtError("lifetime-example-tests-failed-or-zero")
         code,text=run_step("dedicated-build",[bash,str(ROOT/"scripts/build.sh"),"dev",*suffix,"--message-format=json-render-diagnostics"],900)
         if code:raise native.CourtError("lifetime-dedicated-build-failed")

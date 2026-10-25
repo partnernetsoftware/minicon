@@ -59,6 +59,12 @@ Outcome: reuse an account's browser context only after its previous native host 
 │   evidence: seven Rust host consumers, six Python checks and eight actual assertion controls; native replay open
 │   safe failure: unavailable/late metadata stays unavailable; never becomes Cookie content or durability truth
 │   dependency: existing fixture SDK summary and release ordering; non-goal: discovery, flush or a production repair
+├── [-] BACKEND HISTOGRAMS — observe fixed numeric backend problems in the lifetime diagnostic
+│   invariant: two fixed names in two exact owned phases; unavailable remains unknown
+│   evidence: 20 strict example consumers and seven actual original-assertion controls, scoped below
+│   safe failure: retain the original Cookie verdict and original total deadline
+│   dependency: LIFETIME CONTRAST, verified live profile and bounded SDK callback
+│   non-goal: production telemetry, arbitrary CDP, Cookie content, flush or persistence repair
 └── [_] LATER DELETE — compose release with an explicitly authorized store deletion
     invariant: observation, deletion and durable completion are separate results
     evidence: future OS-specific deletion/retry courts; currently unavailable
@@ -97,6 +103,9 @@ flowchart TD
     LIFE[Explicit direct-wry test image / original fixture protocol] --> K[KEEP: same live blank keeper and environment]
     LIFE --> X[EXIT: Close all A controllers / matched NORMAL exit / release old environment]
     K & X --> STORE
+    K & X -. two fixed phases / optional diagnostic .-> HIST[Two bounded numeric Cookie problem histograms]
+    HIST --> UNKNOWN[Missing / empty / unsupported / late remains unknown]
+    HIST -. no change to original predicates .-> STORE
     STORE --> BOTH[Preserve each original verdict; either failure fails the comparison]
     PRIVATE --> ROOTS{Fresh roots and every ancestor valid?}
     ROOTS -->|yes| DB[Bounded immutable value-free DB counts]
@@ -672,3 +681,49 @@ protocol assertion REDs and fifteen restored protocol passes. The public ZIP's
 API size/digest/CRC and private exclusions are audited. No Cookie contents or
 private profile carrier were downloaded. This is diagnostic evidence; the
 production persistence requirement remains unresolved.
+
+
+### Fixed backend histogram diagnostic: integration frontier
+
+The direct-wry example now requests only `Cookie.LoadProblem` and
+`Cookie.CommitProblem` through the SDK's fixed `Browser.getHistogram` method,
+at A-before-release and A-reopen-before-target-navigation. The diagnostic
+revalidates the exact action/sequence/ack, profile, window, WebView/environment
+COM identity and browser PID before admission and publication. Its raw SDK
+completed handler avoids the convenience callback's unbounded string conversion:
+scan at most 4097 UTF-16 units, copy at most 4096, accept at most 8192 UTF-8 bytes
+and 32 validated numeric buckets. Each phase shares a completion deadline of
+at most two seconds within the unchanged original global deadline. Weak STA
+state, generation/deadline/first-result checks and cancellation fence callbacks;
+cleanup cancels before closing the pages.
+
+Only finite statuses and validated numbers are retained. Missing, empty,
+unsupported, malformed, oversized, cancelled or late results stay UNKNOWN,
+never zero backend problems or a successful persistence result. Histograms are
+cumulative browser-process observations, not per-profile facts. KEEP phases
+must not be summed as independent errors; EXIT uses a different generation.
+Upstream Chromium error categories do not prove the tested Edge implementation
+or identify an affected Cookie, permission rule or encryption failure. There is
+no arbitrary CDP input, remote debugging port, extra HTTP service, file discovery,
+SQLite/content read, forced flush or production behavior change. Additional
+observation can perturb timing; a changed verdict alone would not establish a
+repair.
+
+The exact frozen three-path preview and independent static review are retained
+under `target-six/v0.2.23-provider/windows-cookie-histogram-preview/` and
+`windows-cookie-histogram-independent-review/`. Actual integration compiles and
+passes all 20 named example consumers (13 retained, seven new), zero failed or
+ignored, through `scripts/build.sh test-suite`; fmt and strict example/all-target
+Clippy also pass. Logs are `cookie-histogram-initial-tests.log` and
+`cookie-histogram-initial-clippy.log` under that evidence root.
+
+`cookie-histogram-controls-attempt-1/receipt.json` retains seven actual intended
+original-assertion failures and seven exact restored-subject passes, plus seven
+initial/final passing subjects. It remains FAIL because root appended this
+owning documentation while the runner completed its final full-tree stability
+check. `cookie-histogram-controls-adjudication.json` independently compares the
+recorded source hashes and original files: that PRD is the sole changed tracked
+path; both guarded Rust files are restored byte-exactly, with no live controls.
+This adjudication records the observed guard results without relabeling the
+failed full-tree run. The matching-source native comparison remains pending;
+the original EXIT Cookie failure and production storage requirement stay open.

@@ -24,8 +24,11 @@ use windows_core::{IUnknown, Interface};
 use wry::{WebContext, WebView, WebViewBuilder, WebViewBuilderExtWindows, WebViewExtWindows};
 
 // Physical source reuse, not a second HTTP client, Cookie reader or exit observer.
+#[path = "cookie_store_histograms.rs"]
+mod cookie_store_histograms;
 #[path = "../../src/native_page/windows_cookie_diagnostics.rs"]
 mod cookies;
+use cookie_store_histograms as histograms;
 #[path = "../../tests/support/native_auth_fixture.rs"]
 mod fixture_protocol;
 #[path = "../../src/native_page/windows_release.rs"]
@@ -390,6 +393,8 @@ enum Stage {
     Home,
     BeforeRelease,
     BeforeFileMetadata,
+    BeforeReleaseHistograms,
+    BeforeReopenHistograms,
     AwaitExit,
     BeforeNavigation,
     Navigating,
@@ -400,6 +405,30 @@ struct PendingProbe {
     probe: cookies::NativeCookieMetadataProbe,
     seq: u64,
     stage: Stage,
+}
+fn histogram_phase_authorized(
+    phase: histograms::Phase,
+    seq: u64,
+    stage: Stage,
+    last_ack: Option<u64>,
+) -> bool {
+    match phase {
+        histograms::Phase::BeforeRelease => {
+            seq == 2 && stage == Stage::BeforeReleaseHistograms && last_ack == Some(1)
+        }
+        histograms::Phase::BeforeReopenNavigation => {
+            seq == 3 && stage == Stage::BeforeReopenHistograms && last_ack == Some(2)
+        }
+    }
+}
+struct PendingHistograms {
+    probe: histograms::Probe,
+    seq: u64,
+    phase: histograms::Phase,
+    window: tao::window::WindowId,
+    view: IUnknown,
+    environment: IUnknown,
+    pid: u32,
 }
 struct Host {
     recipe: Recipe,
@@ -421,6 +450,8 @@ struct Host {
     stage: Stage,
     probe: Option<PendingProbe>,
     preclose_files: Option<PrecloseFiles>,
+    histogram_probe: Option<PendingHistograms>,
+    histogram_metadata: Vec<Value>,
     file_metadata: Value,
     exit_deadline: Option<Instant>,
     last_ack: Option<u64>,
@@ -607,6 +638,7 @@ impl Host {
     }
     fn begin_cleanup(&mut self) {
         self.probe = None;
+        self.histogram_probe = None;
         self.pending = None;
         self.close_active();
         if let Some(page) = self.ordinary.take() {
@@ -636,6 +668,89 @@ impl Host {
                 .get_or_insert("lifetime-cookie-metadata-unavailable");
         }
         self.metadata.push(json!({"phase":phase,"stage":stage,"status":summary.status.as_str(),"counts":summary.counts.map(|c|json!({"total":c.total,"session":c.session,"persistent":c.persistent,"expiry_future":c.expiry_future,"expiry_elapsed":c.expiry_elapsed,"expiry_unknown":c.expiry_unknown}))}));
+        Ok(())
+    }
+    // Optional observation only: every unavailable condition leaves the original
+    // fixture verdict and close/navigation protocol unchanged.
+    fn observe_histograms(&mut self, window: &Window, phase: histograms::Phase) -> Option<Value> {
+        let unknown = || Some(histograms::Probe::authority_unavailable());
+        let Some(action) = self.pending.as_ref() else {
+            self.histogram_probe = None;
+            return unknown();
+        };
+        if !authorized(&self.recipe, action)
+            || !histogram_phase_authorized(phase, action.seq, self.stage, self.last_ack)
+            || self.histogram_metadata.len() >= 2
+        {
+            self.histogram_probe = None;
+            return unknown();
+        }
+        let Some(page) = self.active.as_ref() else {
+            self.histogram_probe = None;
+            return unknown();
+        };
+        // Recheck the SDK UDF/non-InPrivate/ProfilePath before both request and
+        // publication. No arbitrary path becomes public.
+        if profile_facts(&page.view, &self.recipe.a.profile).is_err() {
+            self.histogram_probe = None;
+            return unknown();
+        }
+        let (Ok(view), Ok(environment), Ok(pid)) = (
+            page.view.webview().cast::<IUnknown>(),
+            page.view.environment().cast::<IUnknown>(),
+            browser_pid(&page.view),
+        ) else {
+            self.histogram_probe = None;
+            return unknown();
+        };
+        if let Some(pending) = &self.histogram_probe {
+            if pending.seq != action.seq
+                || pending.phase != phase
+                || pending.window != window.id()
+                || pending.view.as_raw() != view.as_raw()
+                || pending.environment.as_raw() != environment.as_raw()
+                || pending.pid != pid
+            {
+                self.histogram_probe = None;
+                return unknown();
+            }
+        } else {
+            self.histogram_probe = Some(PendingHistograms {
+                probe: histograms::Probe::start(
+                    &page.view,
+                    action.seq,
+                    self.deadline.min(Instant::now() + Duration::from_secs(2)),
+                ),
+                seq: action.seq,
+                phase,
+                window: window.id(),
+                view,
+                environment,
+                pid,
+            });
+        }
+        let result = self.histogram_probe.as_mut()?.probe.poll(Instant::now());
+        if result.is_some() {
+            self.histogram_probe = None;
+        }
+        result
+    }
+    fn record_histograms(&mut self, phase: histograms::Phase, observation: Value) {
+        if self.histogram_metadata.len() < 2 {
+            self.histogram_metadata.push(json!({"phase":phase.name(),"environment_generation":self.environment_generation,
+                "scope":"fresh-owned-browser-process-cumulative-not-profile-proof","observation":observation}));
+        }
+    }
+    fn navigate_pending(&mut self) -> Result<()> {
+        let a = self.check_pending()?;
+        let page = if a.seq == 0 {
+            self.ordinary.as_ref()
+        } else {
+            self.active.as_ref()
+        }
+        .ok_or("lifetime-target-host-missing")?;
+        page.navigate(a.url.as_deref().ok_or("lifetime-target-url-missing")?)?;
+        self.stage = Stage::Navigating;
         Ok(())
     }
     fn probe(&mut self, phase: &str) -> Result<Option<cookies::NativeCookieMetadataSummary>> {
@@ -756,15 +871,19 @@ impl Host {
                     };
                     self.metadata(summary, &a.phase, "before-target-navigation")?;
                 }
-                self.check_pending()?;
-                let page = if a.seq == 0 {
-                    self.ordinary.as_ref()
+                if a.seq == 3 {
+                    self.stage = Stage::BeforeReopenHistograms;
                 } else {
-                    self.active.as_ref()
+                    self.navigate_pending()?;
                 }
-                .ok_or("lifetime-target-host-missing")?;
-                page.navigate(a.url.as_deref().ok_or("lifetime-target-url-missing")?)?;
-                self.stage = Stage::Navigating;
+            }
+            Stage::BeforeReopenHistograms => {
+                let phase = histograms::Phase::BeforeReopenNavigation;
+                let Some(observation) = self.observe_histograms(window, phase) else {
+                    return Ok(());
+                };
+                self.record_histograms(phase, observation);
+                self.navigate_pending()?;
             }
             Stage::Navigating => {
                 let a = self.check_pending()?;
@@ -809,6 +928,14 @@ impl Host {
                 } else {
                     json!({"status":"unavailable"})
                 };
+                self.stage = Stage::BeforeReleaseHistograms;
+            }
+            Stage::BeforeReleaseHistograms => {
+                let phase = histograms::Phase::BeforeRelease;
+                let Some(observation) = self.observe_histograms(window, phase) else {
+                    return Ok(());
+                };
+                self.record_histograms(phase, observation);
                 self.check_pending()?;
                 let page = self.active.take().ok_or("lifetime-a-missing")?;
                 self.a_monitor = Some(NativePageRelease::observe(&page.view, || {}));
@@ -971,6 +1098,8 @@ fn run(manifest: &Path, mode: Mode) -> Result<i32> {
         stage: Stage::Home,
         probe: None,
         preclose_files: None,
+        histogram_probe: None,
+        histogram_metadata: Vec::new(),
         file_metadata: json!({"status":"unavailable"}),
         exit_deadline: None,
         last_ack: None,
@@ -1011,7 +1140,7 @@ fn run(manifest: &Path, mode: Mode) -> Result<i32> {
             Mode::KeepBrowser => host.reopened_same_browser,
             Mode::NormalExit => host.matched_a_exit && host.environment_generation == 2,
         };
-    let receipt = json!({"kind":"windows-cookie-lifetime-direct-wry-diagnostic","test_only":true,"native_qualification":false,"production_repair":false,"mode":mode.name(),"wry_package":"0.56.1","diagnostic_features":[cookies::NativeCookieMetadataProbe::feature_name()],"profile_acl_mode":host.recipe.profile_acl_mode.as_str(),"runtime_version":host.runtime,"same_options":true,"original_eight_complete":host.original_complete,"boundary_valid":boundary,"failure_code":host.failure,"boundary_failure_code":host.boundary_failure,"fixture":host.fixture,"environment_generation":host.environment_generation,"keep_reopened_same_live_browser":host.reopened_same_browser,"exit_matched_normal_before_new_environment":host.matched_a_exit,"windows_context_observations":host.contexts,"windows_cookie_metadata_observations":host.metadata,"before_release_file_metadata":host.file_metadata,"finite_phase_records":host.trace});
+    let receipt = json!({"kind":"windows-cookie-lifetime-direct-wry-diagnostic","test_only":true,"native_qualification":false,"production_repair":false,"mode":mode.name(),"wry_package":"0.56.1","diagnostic_features":[cookies::NativeCookieMetadataProbe::feature_name()],"profile_acl_mode":host.recipe.profile_acl_mode.as_str(),"runtime_version":host.runtime,"same_options":true,"original_eight_complete":host.original_complete,"boundary_valid":boundary,"failure_code":host.failure,"boundary_failure_code":host.boundary_failure,"fixture":host.fixture,"environment_generation":host.environment_generation,"keep_reopened_same_live_browser":host.reopened_same_browser,"exit_matched_normal_before_new_environment":host.matched_a_exit,"windows_context_observations":host.contexts,"windows_cookie_metadata_observations":host.metadata,"before_release_file_metadata":host.file_metadata,"cookie_backend_histograms":host.histogram_metadata,"finite_phase_records":host.trace});
     let bytes = serde_json::to_vec_pretty(&receipt).map_err(|_| "lifetime-receipt-encode")?;
     minicon_platform::filesystem::write_private_atomic(
         &output.join("native-driver-receipt.json"),
@@ -1036,6 +1165,45 @@ fn run(manifest: &Path, mode: Mode) -> Result<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn backend_histograms_only_admit_the_two_current_pending_phases() {
+        assert!(histogram_phase_authorized(
+            histograms::Phase::BeforeRelease,
+            2,
+            Stage::BeforeReleaseHistograms,
+            Some(1)
+        ));
+        assert!(histogram_phase_authorized(
+            histograms::Phase::BeforeReopenNavigation,
+            3,
+            Stage::BeforeReopenHistograms,
+            Some(2)
+        ));
+        assert!(!histogram_phase_authorized(
+            histograms::Phase::BeforeRelease,
+            3,
+            Stage::BeforeReleaseHistograms,
+            Some(1)
+        ));
+        assert!(!histogram_phase_authorized(
+            histograms::Phase::BeforeRelease,
+            2,
+            Stage::BeforeFileMetadata,
+            Some(1)
+        ));
+        assert!(!histogram_phase_authorized(
+            histograms::Phase::BeforeRelease,
+            2,
+            Stage::BeforeReleaseHistograms,
+            Some(0)
+        ));
+        assert!(!histogram_phase_authorized(
+            histograms::Phase::BeforeReopenNavigation,
+            3,
+            Stage::Cleanup,
+            Some(2)
+        ));
+    }
     #[test]
     fn preclose_metadata_requires_one_persistent_future_sdk_cookie() {
         let summary = cookies::NativeCookieMetadataSummary {
