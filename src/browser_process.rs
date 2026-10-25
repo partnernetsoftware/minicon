@@ -21,7 +21,7 @@ struct ProcessState {
     shortcuts: Vec<char>,
     embedding: Option<(u32, u64)>,
     close_command_received: bool,
-    native_close_signalled: bool,
+    native_view_destroyed: bool,
     closed: bool,
     reader_finished: bool,
 }
@@ -34,7 +34,7 @@ impl ProcessState {
             if progress["pid"].as_u64() == Some(u64::from(pid)) {
                 match progress["stage"].as_str() {
                     Some("command-received") => self.close_command_received = true,
-                    Some("native-close-signalled") => self.native_close_signalled = true,
+                    Some("native-view-destroyed") => self.native_view_destroyed = true,
                     _ => {}
                 }
             }
@@ -265,7 +265,7 @@ impl BrowserRelease {
             "exit_success":self.exit.get().map(|exit| exit.success()),
             "kill_requested":self.kill_requested.get(),
             "close_command_received":pipe.as_ref().map(|state| state.close_command_received),
-            "native_close_signalled":pipe.as_ref().map(|state| state.native_close_signalled),
+            "native_view_destroyed":pipe.as_ref().map(|state| state.native_view_destroyed),
             "closed_ack":pipe.as_ref().map(|state| state.closed),
             "pipe_finished":pipe.as_ref().map(|state| state.reader_finished),
         })
@@ -292,13 +292,13 @@ mod tests {
         let mut state = ProcessState::default();
         let page = serde_json::json!({"title":"Owned"});
         state.receive(page.clone(), 17);
-        for stage in ["command-received", "native-close-signalled"] {
+        for stage in ["command-received", "native-view-destroyed"] {
             state.receive(
                 serde_json::json!({"release_progress":{"pid":29,"stage":stage}}),
                 17,
             );
             assert!(
-                !state.close_command_received && !state.native_close_signalled,
+                !state.close_command_received && !state.native_view_destroyed,
                 "a different helper must not report release progress"
             );
         }
@@ -306,14 +306,14 @@ mod tests {
             serde_json::json!({"release_progress":{"pid":17,"stage":"unrecognized"}}),
             17,
         );
-        assert!(!state.close_command_received && !state.native_close_signalled);
-        for stage in ["command-received", "native-close-signalled"] {
+        assert!(!state.close_command_received && !state.native_view_destroyed);
+        for stage in ["command-received", "native-view-destroyed"] {
             state.receive(
                 serde_json::json!({"release_progress":{"pid":17,"stage":stage}}),
                 17,
             );
         }
-        assert!(state.close_command_received && state.native_close_signalled);
+        assert!(state.close_command_received && state.native_view_destroyed);
         assert!(
             !state.closed,
             "release progress is not a native close acknowledgement"

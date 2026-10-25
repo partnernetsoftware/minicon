@@ -1080,3 +1080,25 @@ account stores enter this trace. A seventh mechanism subject and two intended
 mutation controls check wrong-child progress and progress-as-ack refusal.
 Actual Linux execution remains open; the trace is diagnosis, not a storage
 repair or a relaxed release criterion.
+
+The diagnostic [run40244581351](https://github.com/partnernetsoftware/minicon/actions/runs/40244581351)
+at `1207d2e2efd74efea9628b80b36e1af4c37385bd` is terminal FAIL on both Linux
+targets. The x86_64 retained trace proves both direct helpers receive the close
+command, never publish the additional close-signal stage, then time out and
+are killed/reaped as failures. Its seven mechanism subjects and all five
+intended source mutation controls pass, with exact restoration. Local artifacts
+are `target-six/v0.2.23-provider/linux-release-ci-1207d2e/`. Do not infer a
+storage failure or successful native close from the command-stage observation.
+
+The locked wry0.56.0 `webkitgtk::InnerWebView::attach_handlers` registers
+`connect_close` before the product's later callback and calls Widget::destroy.
+The selected correction observes the actual
+[GTK destroy signal](https://docs.gtk.org/gtk3/signal.Widget.destroy.html)
+instead. A local destroyed flag also prevents querying the inert view while
+earlier queued events drain. Event-loop return still drops the retained
+view/context before the final exact-child acknowledgement; normal child exit
+is still mandatory. GTK documents that destroy requests reference release;
+it does not itself prove finalization or saved state. The finite stage is
+therefore renamed `native-view-destroyed`, not a storage-flush acknowledgement.
+This addresses an observed callback boundary and remains a candidate repair
+until the original native initial/negative/restored court passes.

@@ -291,6 +291,8 @@ fn load_inner(
         }
     }
     #[cfg(target_os = "linux")]
+    let native_view_destroyed = std::rc::Rc::new(std::cell::Cell::new(false));
+    #[cfg(target_os = "linux")]
     if ipc {
         use gtk::prelude::WidgetExt;
         use tao::platform::unix::WindowExtUnix;
@@ -311,9 +313,13 @@ fn load_inner(
                 true
             });
         let closed = event_loop.create_proxy();
-        webview.webview().connect_close(move |_| {
+        let destroyed = native_view_destroyed.clone();
+        // wry's earlier close handler destroys the widget. Observe that actual
+        // lifetime event, rather than installing another later close handler.
+        webview.webview().connect_destroy(move |_| {
+            destroyed.set(true);
             emit(serde_json::json!({"release_progress":{
-                "pid":std::process::id(),"stage":"native-close-signalled"
+                "pid":std::process::id(),"stage":"native-view-destroyed"
             }}));
             let _ = closed.send_event(HostEvent::Closed);
         });
@@ -357,7 +363,7 @@ fn load_inner(
         let _keep = &webview;
         let _keep_context = &native_context;
         #[cfg(target_os = "linux")]
-        if matches!(event, Event::UserEvent(HostEvent::Closed)) {
+        if native_view_destroyed.get() || matches!(event, Event::UserEvent(HostEvent::Closed)) {
             *control_flow = ControlFlow::Exit;
             return;
         }
