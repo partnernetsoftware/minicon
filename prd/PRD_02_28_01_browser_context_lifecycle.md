@@ -751,3 +751,27 @@ its build driver reports the source and canonical product unchanged. The first
 attempt (`40230209292`) failed checkout because root supplied a short ref;
 it executed no build or native comparison. The corrected run uses the full
 40-character source SHA and preserves the failing aggregate.
+
+
+### Local Windows environment comparison
+
+The existing two-arm entry also runs locally at `999c797ec90a848287d005dfcf0a6094deb82dbf`
+on Windows build 20348 and WebView2 `152.0.4191.66`. It passes all 20 strict
+example subjects and restored protocol controls, then again observes KEEP's
+eight passes and EXIT's original reopened-A Cookie failure with matching
+localStorage. Both fixed histogram names remain unsupported-or-failed-unknown.
+The exact test image is SHA-256
+`b04d273e5548322125d66464b78bef8282fff0dc65bbc9852b36060f36f73930`.
+Source and canonical product bytes remain unchanged; both owned process groups
+are cleaned up. The test uses fresh synthetic profiles and hidden/unfocused
+windows, with no foreground input, clipboard or real-account profile access.
+
+Evidence: `target-six/v0.2.23-provider/cookie-local-host-comparison-1/build-driver-receipt.json`
+and `environment-comparison.json` beside it. The conservative 481-input maps
+differ only in LF/CRLF for a Windows PTY file; both commits have the same Git
+blob, and the actual platform dependency has filesystem-only features, with no
+PTY or Rust-console feature. Cookie driver/fixture inputs match byte-for-byte.
+The environments vary in OS/runtime and build bytes, so this is not a controlled
+single-variable experiment. It establishes that the observed loss also occurs
+outside the CI Windows-2025/Runtime-155 combination; it neither identifies a
+cause nor justifies a downgrade, flush workaround or storage-requirement waiver.

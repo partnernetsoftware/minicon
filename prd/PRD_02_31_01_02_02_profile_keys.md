@@ -383,3 +383,21 @@ original result/fresh-request requirement; the corrected function ignores the
 old and pending frames, then accepts the exact new receipt. This exercises no
 GUI or clipboard and does not yet prove which race occurred in the CI failure.
 Native replay of the owned-window and receipt-wait corrections remains open.
+
+
+### Recipe acknowledgement differs from asynchronous key receipts
+
+Setup-recipe copying calls its clipboard sink synchronously and publishes a
+local feedback result with `request: null`. The public `send-ui-mouse` command
+runs the full event operation before sending its acknowledgement; the following
+UI snapshot reads live Settings state. A recipe therefore cannot use the
+asynchronous key-operation request-ID fence above. A proposed shared strict
+request wait was rejected before commit after inspecting these actual consumers;
+it would wait forever for a recipe request ID that does not exist.
+
+The controlled recipe model had invented a numeric request and stale snapshots
+across that synchronous acknowledgement. Its raw model outputs are not product
+counterexamples or native qualification. The rejection and exact source
+restoration are recorded in
+`target-six/v0.2.23-provider/k3-recipe-model-adjudication.json`. The original
+synchronous recipe path and all result/content assertions remain unchanged.
