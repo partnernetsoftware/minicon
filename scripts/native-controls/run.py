@@ -92,7 +92,7 @@ class JobLimits(c.Structure):
 
 class OwnedProcess:
     """Assign suspended GUI to kill-on-close Job before it can spawn children."""
-    def __init__(self, binary, arguments, env):
+    def __init__(self, binary, arguments, env, desktop=None):
         self.k = c.WinDLL("kernel32", use_last_error=True)
         for name, result, arguments_types in [
             ("CreateJobObjectW", w.HANDLE, [c.c_void_p, w.LPCWSTR]),
@@ -115,7 +115,7 @@ class OwnedProcess:
         try:
             if not self.job or not self.k.SetInformationJobObject(self.job, 9, c.byref(limits), c.sizeof(limits)):
                 raise Blocked("owned kill-on-close Job unavailable")
-            startup = StartupInfo(size=c.sizeof(StartupInfo))
+            startup = StartupInfo(size=c.sizeof(StartupInfo), desktop=desktop)
             command = c.create_unicode_buffer(subprocess.list2cmdline([str(binary), *arguments]))
             environment = c.create_unicode_buffer("\0".join(f"{key}={value}" for key, value in
                                                           sorted(env.items(), key=lambda item: item[0].upper())) + "\0\0")
@@ -160,11 +160,15 @@ class OwnedProcess:
             self.info.process = None
 
 
+def require_hosted():
+    if (sys.platform != "win32" or os.environ.get("GITHUB_ACTIONS") != "true"
+            or os.environ.get("RUNNER_ENVIRONMENT") != "github-hosted"):
+        raise Blocked("native input requires the disposable GitHub-hosted court")
+
+
 class Native:
     def __init__(self):
-        if (sys.platform != "win32" or os.environ.get("GITHUB_ACTIONS") != "true"
-                or os.environ.get("RUNNER_ENVIRONMENT") != "github-hosted"):
-            raise Blocked("native input requires the disposable GitHub-hosted court")
+        require_hosted()
         self.u = c.WinDLL("user32", use_last_error=True)
         self.g = c.WinDLL("gdi32", use_last_error=True)
         self.k = c.WinDLL("kernel32", use_last_error=True)

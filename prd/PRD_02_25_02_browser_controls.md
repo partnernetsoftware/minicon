@@ -293,3 +293,9 @@ not passed by these four rows. ARM64 sends no input because its activation point
 is obscured. Other scales, complete remaining native scope and signed-artifact
 qualification stay open under PRD32/31.01.
 Harness observations from the same run belong to PRD 31.01.
+
+The later exact `d2a67eb` x86_64 replay passes the complete physical court,
+including those browser rows and cleanup. [PRD32](PRD_02_32_dev_loop_crosscheck.md#hosted-native-input-completion-and-remaining-desktop-allocation)
+owns its actual work-area geometry, source/image receipt, remaining ARM64
+desktop blocker and allocation sequence. This is a development1000-permille
+result, not other-scale/OS or signed-artifact qualification.

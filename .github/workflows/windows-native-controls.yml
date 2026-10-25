@@ -85,7 +85,11 @@ jobs:
             $registered = $true
             $source = (git rev-parse HEAD).Trim()
             $binary = Join-Path $PWD "target/$env:TRIPLE/debug/minicon.exe"
-            python -B -X utf8 scripts/native-controls/run.py --binary $binary --output (Join-Path $output 'controls') --source-sha $source
+            if ($env:CELL -eq 'win-aarch64') {
+              python -B -X utf8 scripts/native-controls/desktop.py --binary $binary --output (Join-Path $output 'controls') --source-sha $source --desktop-receipt (Join-Path $output 'desktop.json')
+            } else {
+              python -B -X utf8 scripts/native-controls/run.py --binary $binary --output (Join-Path $output 'controls') --source-sha $source
+            }
             $courtExit = $LASTEXITCODE
           } finally {
             try {
@@ -116,6 +120,7 @@ jobs:
           name: native-controls-${{ matrix.cell }}
           path: |
             ${{ runner.temp }}/minicon-native-controls/setup.json
+            ${{ runner.temp }}/minicon-native-controls/desktop.json
             ${{ runner.temp }}/minicon-native-controls/controls/*.json
             ${{ runner.temp }}/minicon-native-controls/controls/*.png
           if-no-files-found: error

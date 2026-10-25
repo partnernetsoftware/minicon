@@ -572,3 +572,18 @@ retain their actual execution counts. Audit:
 `target-six/v0.2.23-provider/harness-ci-fc26f16/verification-index.json`.
 This closes these two editing regressions at that source; it does not claim
 physical clipboard/IME input, another scale or final signed-artifact acceptance.
+
+### Hosted physical Harness fields and redaction checkpoint
+
+The exact `d2a67eb` Windows x86_64 physical court passes actual pointer/keyboard
+port and model draft editing, Console/Web/Harness route return with those
+drafts retained, temporary local-key creation/revocation and public snapshot
+redaction. It applies no model binding, performs no provider login/inference
+and does not claim a physical Copy-key action. The model-field and key-status
+PNGs have been visually inspected; no key bytes are shown. Source/image,
+actual1000-permille geometry, exact clipboard/GUI/thread/profile cleanup and the
+still-blocked ARM64 scope belong to
+[PRD32](PRD_02_32_dev_loop_crosscheck.md#hosted-native-input-completion-and-remaining-desktop-allocation).
+Clipped explanation rows and technical draft-status wording observed in that
+fixture remain open presentation work; native field success does not close
+the complete first-use/readability acceptance gate.

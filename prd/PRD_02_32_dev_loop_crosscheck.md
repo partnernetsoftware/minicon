@@ -45,6 +45,11 @@ dev-loop-crosscheck — agent cross-arch dev/test loop
 │   │   evidence: current default product image, public editor/page observations and bounded owned-client PNGs on each selected target
 │   │   safe failure: missing IME, lost foreground, failed restoration or forced cleanup is BLOCKED/failure
 │   │   dependency: observed hosted desktop, isolated synthetic profile and existing native fixture; non-goal: owner-desktop input, provider login, other scales or release qualification
+│   │   └── [_] ARM64 allocated interactive desktop
+│   │       invariant: hosted-only allocation, exact desktop-bound contained controller and original input desktop restoration
+│   │       evidence: actual native rows plus desktop create/switch/readback/restore and owned process cleanup
+│   │       safe failure: refuse unavailable desktop/permission; no input to onboarding; restoration failure cannot pass
+│   │       dependency: Windows desktop APIs and the existing contained launch/controls; non-goal: secure-desktop bypass, onboarding changes or local execution
 │   ├── [-] explicit Windows fixture ACL comparison → PRD 28.01
 │   │   invariant: diagnostic entry requires exactly win-x86_64 and native_auth_context=false
 │   │   evidence: real workflow-plan consumer and separate diagnostic aggregate
@@ -87,6 +92,9 @@ flowchart LR
     PP -->|actual tests + RED controls + exact restore| L
     INPUT[Separate read-only Windows input-readiness workflow] -->|prerequisites only; no input qualification| L
     INPUT --> NC[Separate isolated Windows physical controls court]
+    NC --> ARM[ARM64 hosted-only allocated interactive desktop / contained controller]
+    ARM --> RESTORE[Original input desktop restored / handles closed]
+    RESTORE --> L
     NC -->|actual native input and cleanup; retain failures| L
     W -. never .-> R["release / GHCR / tag / version"]
 ```
@@ -1179,3 +1187,50 @@ WWAHost blocker, finite metadata may additionally contain its public package
 family from [GetPackageFamilyName](https://learn.microsoft.com/en-us/windows/win32/api/appmodel/nf-appmodel-getpackagefamilyname).
 It still reads no package files, application content, titles or command lines.
 This is a diagnostic identity, never authority to stop or interact with it.
+
+### Hosted native-input completion and remaining desktop allocation
+
+At exact `d2a67eb37aa77cb0d1cc577eb058455bb8cd79b7`,
+[run40245493819](https://github.com/partnernetsoftware/minicon/actions/runs/40245493819)
+passes the entire Windows x86_64 physical court at1000 permille: native page
+echo/Ctrl+L/header traversal, all three editors' selection/clipboard/Pinyin,
+and Harness route/draft/key-redaction assertions. Clipboard bytes are restored,
+presentation cleanup passes, GUI exit is0, the page thread joins, and synthetic
+roots and original language profiles are restored. Its actual outer bounds
+are8,8..1016,712 inside the1024x720 work area. The product image hash and exact
+steps are retained in
+`target-six/v0.2.23-provider/native-controls-ci-d2a67eb/`.
+The two Harness field/key PNGs have been visually reviewed: edited model text
+and key-created/not-copied status are readable, and no key bytes appear.
+Clipped explanatory rows remain a separate presentation obligation; these
+images do not qualify complete narrow-layout readability or GPU/IME-popup pixels.
+
+The same run's ARM64 court remains BLOCKED before input. Its actual obscuring
+package family is `Microsoft.Windows.CloudExperienceHost_cw5n1h2txyewy`,
+confirmed through the bounded process API, not guessed from a window title.
+It restores the owned window level, leaves the clipboard untouched and closes
+the GUI normally. Do not rerun the unchanged obscured-default-desktop path.
+
+The next ARM64 court allocates a fresh interactive desktop in the hosted
+runner's current window station through
+[CreateDesktop](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-createdesktopw),
+switches input with [SwitchDesktop](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-switchdesktop),
+and launches the existing unchanged controls controller on that named desktop
+inside a private kill-on-close Job. The existing GUI has its own nested Job.
+No secure desktop, other session, process termination or onboarding interaction
+is admitted. Hosted-environment refusal occurs before native DLL calls in both
+entries. Capture the original input desktop before allocation; on every path,
+stop/reap the owned controller, close its Job, restore/read back the original
+input desktop and close owned desktop handles. A deadline, unavailable switch,
+failed restoration or failed inner court cannot become native-input PASS.
+The new public desktop receipt records only finite lifecycle/equality facts;
+it cannot substitute for the original real keyboard/IME/clipboard assertions.
+
+Local hosted-refusal evidence:
+`target-six/v0.2.23-provider/hosted-desktop-refusal-controls/receipt.json`.
+Both the direct controls entry and the desktop allocator refuse before any
+native DLL call. Removing their shared production guard reaches each original
+refusal assertion failure, with a DLL sentinel intercepting the attempted load;
+no real native call occurs even in the mutant. Exact source restoration then
+passes both entries again. Desktop allocation/input and cleanup still need the
+actual hosted ARM64 replay; local refusal is not a native-input pass.
