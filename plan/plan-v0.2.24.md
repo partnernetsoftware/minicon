@@ -1,8 +1,9 @@
 # v0.2.24 — tab-tree drag and reliable inline rename
 
 Status: `[_]` selected next-version scope, 2026-10-25. The owner requests these
-changes in the next 0.2.x version and authorizes development/publication of
-0.2.23 and 0.2.24. Current release policy remains 0.2.23 until its release join;
+changes in the next 0.2.x version. The current active owner goal now selects
+only development/publication of 0.2.23; this next-version scope stays planned.
+Current release policy remains 0.2.23 until its release join;
 this plan does not bump or mix the two versions' source/artifact evidence.
 
 Behavior: [tab-tree interaction owner](../prd/PRD_02_25_03_tab_tree_interactions.md).
@@ -80,5 +81,5 @@ be independent only after its intent and file ownership are agreed. One controll
 owns Cargo/GUI/capture/mutation resources and final integration.
 
 No product-code change, version bump or publish is implied by the planning
-checkpoint. The active two-version goal remains responsible for implementation,
-selected real evidence and both actual public releases.
+checkpoint. The active goal selects 0.2.23 publication; implementing and publishing this
+next-version scope is a later delivery join.

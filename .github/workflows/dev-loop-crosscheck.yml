@@ -45,6 +45,11 @@ on:
         type: boolean
         required: false
         default: false
+      windows_cookie_lifetime_contrast:
+        description: "Windows x64 only: direct-wry same-image KEEP/EXIT lifetime diagnostic (not qualification)"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -61,6 +66,8 @@ jobs:
           CELLS: ${{ inputs.cells }}
           ACL_CONTRAST: ${{ inputs.windows_profile_acl_contrast }}
           NATIVE_AUTH: ${{ inputs.native_auth_context }}
+          PRIVATE_PUBLICATION: ${{ inputs.private_publication }}
+          LIFETIME_CONTRAST: ${{ inputs.windows_cookie_lifetime_contrast }}
         run: |
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import json, os
@@ -83,6 +90,10 @@ jobs:
           if os.environ.get("ACL_CONTRAST", "").lower() == "true":
               if wanted != ["win-x86_64"] or os.environ.get("NATIVE_AUTH", "").lower() == "true":
                   raise SystemExit("ACL diagnostic requires exactly win-x86_64 and native_auth_context=false")
+          if os.environ.get("LIFETIME_CONTRAST", "").lower() == "true":
+              incompatible = any(os.environ.get(k, "").lower() == "true" for k in ("NATIVE_AUTH", "ACL_CONTRAST", "PRIVATE_PUBLICATION"))
+              if wanted != ["win-x86_64"] or incompatible:
+                  raise SystemExit("Lifetime diagnostic requires exactly win-x86_64 and native_auth_context/windows_profile_acl_contrast/private_publication=false")
           unknown = [c for c in wanted if c not in runners]
           if unknown:
               raise SystemExit(f"unknown cells: {unknown}")
@@ -205,6 +216,18 @@ jobs:
           python3 scripts/native-auth-context/qualify.py --target '${{ matrix.triple }}' \
             --canonical-product "$PWD/target/browser-canonical/minicon.exe" \
             --output probe-logs/native-auth-context --windows-profile-acl-contrast
+
+      - name: Observe direct-wry Windows browser lifetime contrast
+        if: inputs.windows_cookie_lifetime_contrast && matrix.cell == 'win-x86_64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Diagnostic only. Both original verdicts remain separate; a FAIL is
+          # still a failing job, not a successful qualification/restored court.
+          python3 -B scripts/native-auth-context/lifetime.py --build \
+            --target '${{ matrix.triple }}' \
+            --canonical-product "$PWD/target/browser-canonical/minicon.exe" \
+            --output probe-logs/windows-cookie-lifetime
 
       - name: Qualify bounded control shutdown responses
         # Required on every cell, independently of the optional suite filter.
@@ -519,6 +542,7 @@ jobs:
           name: crosscheck-logs-${{ matrix.cell }}
           path: |
             probe-logs
+            !probe-logs/windows-cookie-lifetime/**
             !probe-logs/native-auth-context/**/manifest.private.json
             !probe-logs/native-auth-context/**/native-profile-locator.private.json
             !probe-logs/native-auth-context/**/profiles/**
@@ -526,6 +550,34 @@ jobs:
             !probe-logs/native-auth-context/**/config/**
           if-no-files-found: ignore
           retention-days: 7
+
+      - name: Upload public Windows lifetime diagnostic receipts
+        if: always() && inputs.windows_cookie_lifetime_contrast && matrix.cell == 'win-x86_64'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-cookie-lifetime-${{ matrix.cell }}-attempt-${{ github.run_attempt }}
+          # No blanket output upload: private manifest/locator/UDF, Cargo
+          # output and the pinned image are intentionally outside this list.
+          path: |
+            probe-logs/windows-cookie-lifetime/build-driver-receipt.json
+            probe-logs/windows-cookie-lifetime/build-receipt.json
+            probe-logs/windows-cookie-lifetime/protocol.log
+            probe-logs/windows-cookie-lifetime/protocol/protocol-guard-receipt.json
+            probe-logs/windows-cookie-lifetime/protocol/protocol-red-*.log
+            probe-logs/windows-cookie-lifetime/protocol/protocol-restored.log
+            probe-logs/windows-cookie-lifetime/protocol/restored/protocol-selfcheck-receipt.json
+            probe-logs/windows-cookie-lifetime/strict-example-tests.log
+            probe-logs/windows-cookie-lifetime/dedicated-build.log
+            probe-logs/windows-cookie-lifetime/comparison.log
+            probe-logs/windows-cookie-lifetime/comparison/lifetime-comparison-receipt.json
+            probe-logs/windows-cookie-lifetime/comparison/*/receipt.json
+            probe-logs/windows-cookie-lifetime/comparison/*/native-driver-receipt.json
+            probe-logs/windows-cookie-lifetime/comparison/*/fixture-receipt.json
+            probe-logs/windows-cookie-lifetime/comparison/*/windows-cookie-diagnostics.json
+            probe-logs/windows-cookie-lifetime/comparison/*/driver.stdout.log
+            probe-logs/windows-cookie-lifetime/comparison/*/driver.stderr.log
+          if-no-files-found: ignore
+          retention-days: 14
 
       # Runs on every outcome, including success: the receipt is the point.
       # A green run's per-suite results and per-cell timings are exactly what

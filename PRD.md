@@ -53,6 +53,7 @@ MiniCon — one-file local terminal
 │           ├── [_] Guided connection experience and recovery → prd/PRD_02_31_01_01_harness_experience.md
 │           ├── [-] Multi-account pool / account networks / client allocation → prd/PRD_02_31_01_02_provider_pool.md
 │           │   └── [-] Account catalogues / drafts / verified atomic apply → prd/PRD_02_31_01_02_01_connection_selection.md
+│           │       └── [_] Whole-profile Verify and apply → prd/PRD_02_31_01_02_01_01_profile_verification.md
 │           └── [_] Usage statistics / balance and allowance monitoring → prd/PRD_02_31_01_03_usage_monitoring.md
 ├── Reusable foundations → prd/PRD_02_28_shared_core.md
 │   ├── [-] Commit-aware private publication → prd/PRD_02_28_02_private_publication.md
@@ -105,6 +106,7 @@ flowchart LR
     GW --> MON["PRD 31.01.03: attributed usage / provider balances and quota"]
     ROB["PRD 36: robot beside Settings / visual Harness workspace"] --> HX
     POOL & MON --> ROB
+    BV["PRD 31.01.02.01.01: quoted profile checks / explicit commit cutoff"] --> POOL
     ROB -. later explicit task operation .-> HC
     CL["PRD 37: future paired nodes / cross-machine coordination"] -. origin-scoped observations .-> ROB
     AUTH -->|yes| HC[Existing worker and named external client]

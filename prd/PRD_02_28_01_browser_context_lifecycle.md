@@ -48,6 +48,12 @@ Outcome: reuse an account's browser context only after its previous native host 
 │   safe failure: either failed arm fails the aggregate; absent structural difference is inconclusive
 │   dependency: COOKIE METADATA and explicit Windows-only developer entry in PRD 32
 │   non-goal: production UDF/credential-policy changes, effective child-token access or a persistence repair
+├── [-] LIFETIME CONTRAST — preserve all eight original checks across two explicit browser lifetimes
+│   invariant: KEEP proves a live same-environment keeper; EXIT proves matching normal exit before new environment
+│   evidence: LC-01 actual helper controls and LC-02 same-image Windows comparison, both unrun
+│   safe failure: retain each original failure; unavailable boundary is BLOCKED, never a persistence repair
+│   dependency: shared test-only fixture protocol and existing native observations
+│   non-goal: production behavior changes, forced-exit evidence or a new release gate
 └── [_] LATER DELETE — compose release with an explicitly authorized store deletion
     invariant: observation, deletion and durable completion are separate results
     evidence: future OS-specific deletion/retry courts; currently unavailable
@@ -80,6 +86,9 @@ flowchart TD
     META --> STORE
     IMAGE[One exact dedicated Windows test image] --> ACL[Two fresh permission-policy fixture arms]
     ACL --> STORE
+    LIFE[Explicit direct-wry test image / original fixture protocol] --> K[KEEP: same live blank keeper and environment]
+    LIFE --> X[EXIT: Close all A controllers / matched NORMAL exit / release old environment]
+    K & X --> STORE
     STORE --> BOTH[Preserve each original verdict; either failure fails the comparison]
     PRIVATE --> ROOTS{Fresh roots and every ancestor valid?}
     ROOTS -->|yes| DB[Bounded immutable value-free DB counts]
@@ -495,3 +504,79 @@ sizes, digests, public bytes and private carrier/store exclusions are audited in
 This native audit is by the diagnostic author, not independent whole-change
 qualification. No fault/restored native qualification or flush/access claim
 is supplied by this comparison.
+
+
+## Direct-wry lifetime comparison (planned diagnostic)
+
+The ACL comparison did not repair the original reopened-A Cookie failure.
+The next finite experiment compares keeping an actual same-environment blank
+controller alive with closing all A controllers, observing the exact owned
+normal browser exit, releasing the old environment and reopening the same fresh
+UDF with a new environment. An environment COM reference alone is not a keeper.
+Use one pinned, explicitly enabled Windows-only developer example and identical
+options/runtime for both arms. Preserve the original fixture/page and all eight
+assertions; run both arms even when the first original oracle fails.
+
+Physically reuse the dedicated court's bounded Recipe/HTTP/Worker protocol and
+the existing Cookie metadata and release observer. Keep all COM lifetime work
+on its pumping STA. Check exact pending recipe/action before navigation or
+callback resume. Record four finite metadata phases and verified private profile
+locators; public artifacts exclude profiles, manifests and private carriers.
+Normal exit is a lifetime fact, not a flush acknowledgement. KEEP success only
+establishes memory reuse; neither arm substitutes for the production court.
+
+The integrated example compiles after a measured missing crate-root import is
+repaired by reusing the existing public URL function. Strict example and both
+product Clippy configurations pass; eighteen alignment, eleven example tests
+(five new consumers plus six physically reused native mechanisms) and all six
+existing dedicated product-court consumers pass. The original path-alignment
+failure was missing tracked new-file registration, not a product regression;
+root registers only reviewed paths with intent-to-add. Initial failed compiler/
+style/alignment receipts remain retained. Evidence:
+`target-six/v0.2.23-provider/lifetime-initial-gates-v3/receipt.json` and
+`lifetime-initial-gates-v4/receipt.json` in that directory.
+
+LC-01's five new consumers each fail their exact original assertion when the
+real load-history, keeper, normal-exit, finite-mode or action-URL guard is
+removed. All eleven original/restored example tests pass and source restores
+byte-exactly: `target-six/v0.2.23-provider/lifetime-helper-controls/receipt.json`.
+These are helper-consumer checks, not COM or browser-lifetime observations.
+
+The explicit CI build coordinator and expanded local-dependency source map are
+integrated but native execution remains unrun. LC-02 actual two-arm comparison
+has no observed browser result yet.
+
+Independent static review reproduces a receipt-classification defect with two
+actual original-assertion failures: driver exit 69 and invalid driver identity
+are labelled original-oracle failures even when all original checks pass. Root
+repairs that classification; all four controlled regressions pass. Two further
+source controls make the retained normal-PASS and actual-oracle-FAIL assertions
+fail, then restore all four passes. The actual arm, receipt I/O and original
+validator execute with an injected fixture/owned child; no process, HTTP or COM
+runs. Evidence: `target-six/v0.2.23-provider/lifetime-arm-classification-repair/receipt.json`
+and `lifetime-arm-positive-controls/receipt.json` in that directory. Original
+failures remain failures; unavailable diagnostics retain their separate BLOCKED
+result. Independent source review is recorded at
+`target-six/v0.2.23-provider/lifetime-independent-static-review/receipt.json`.
+
+The actual workflow inline plan passes seven controlled selections and rejects
+all-cell/mutually incompatible lifetime dispatch. Removing its real admission
+guard violates the original refusal assertion. Existing default selection keeps
+four ordinary cells; explicit all keeps six. Evidence:
+`target-six/v0.2.23-provider/lifetime-workflow-plan-controls/receipt.json`.
+The unchanged original protocol executes eleven real assertion counterexamples
+and fifteen restored positives with byte-exact source restoration:
+`target-six/v0.2.23-provider/lifetime-protocol-review/receipt.json`.
+
+The final current-source gate passes format, strict example/default/native-auth
+Clippy, eighteen alignment checks, eleven example consumers and six dedicated
+court consumers: `target-six/v0.2.23-provider/lifetime-final-gates/receipt.json`.
+The stale preview comment is replaced with an owner pointer only; executable
+code, tests and line count remain exact relative to the five helper controls,
+with that delta recorded in `lifetime-comment-closeout.json` beside the gate.
+The earlier documentation-closeout helper stopped on a mismatched wrapped
+paragraph before changing this owner; its successful source-comment edit and
+actual final gates are retained, not classified as runtime counterevidence.
+Only this evidence/status closeout follows those source gates. Source
+qualification/integration stays serialized with provider work; the diagnostic
+does not alter normal qualification or release scope.

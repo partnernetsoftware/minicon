@@ -217,6 +217,11 @@ publication seam and Gateway-to-Store lock join now consume the existing shared
 atomic-write result for plain Apply under development; account authority and
 profile policy remain private to MiniCon. Acceptance and scoped evidence remain
 with that owner.
+The [whole-profile workflow](PRD_02_31_01_02_01_01_profile_verification.md)
+reuses these consumers and adds one bounded product-private pending/active
+intent gate, one sequential worker and existing field-activity merge. Its quote,
+parent cancellation and commit-admission policy stay in MiniCon; they do not
+require a second queue, transport, shared publisher hook or permission engine.
 Its [version-3 resolver/migration prerequisite](PRD_02_31_01_02_01_connection_selection.md#version-3-resolver-and-migration-prerequisite-in-progress)
 also keeps private provenance and compatibility resolution in these product
 modules; its production consumer does not promote the future paid-probe/draft

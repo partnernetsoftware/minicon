@@ -67,6 +67,9 @@ mod ime_mode;
 #[cfg(target_os = "linux")]
 mod linux_startup;
 mod mux;
+#[cfg(feature = "native-auth-court")]
+#[path = "../crates/minicon-web/tests/support/native_auth_fixture.rs"]
+mod native_auth_fixture;
 mod notes;
 mod palette;
 mod perf;

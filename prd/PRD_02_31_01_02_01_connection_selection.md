@@ -9,6 +9,9 @@ form joins in development; draft acceptance and verify/apply delivery remain ope
 This module owns catalogue identity, connection drafts, verification evidence
 and publication of applied routes. The parent owns account/profile/key lifecycle;
 the gateway owns admission, conversation pinning and protocol conversion.
+The [whole-profile workflow](PRD_02_31_01_02_01_01_profile_verification.md)
+owns paid-call quoting, sequential progress, intent cancellation and the
+transition into this module's atomic Apply.
 
 ## Outcome tree DAG
 
@@ -38,6 +41,7 @@ Outcome: safely prepare one client's model connection while other clients keep w
 │   safe failure: no partial binding; retain draft and matching proof for a deliberate retry
 │   dependency: VERIFY and serialized gateway/store publication
 │   non-goal: rotating unrelated bindings, account fallback or cancelling streams on highlight
+│   └── [_] Whole-profile paid workflow → PRD_02_31_01_02_01_01_profile_verification.md
 └── [-] MIGRATE — preserve existing usable connections without inventing inference evidence
     invariant: default key/aliases and custom allocations retain their meaning
     evidence: CS-07 version-1/2 load, default/custom worker resume and migration no-op
@@ -54,6 +58,8 @@ flowchart TD
     C --> R[Resolved authority plus bounded metadata]
     R --> D[Per-profile draft / revision]
     D --> V[Explicit small inference check]
+    D --> B[Child owner: complete-profile quote / sequential checks / commit admission]
+    B --> P
     V --> P[Exact candidate proof]
     P --> G{Draft and current authority still match?}
     STOP[Cancel / Stop / changed draft revision] --> INVALID[Invalidate exact permit; reject late proof]
@@ -120,11 +126,21 @@ sending a paid request, then revalidate after the response. A draft edited while
 checking cannot inherit the late proof. A successful check does not apply the
 candidate by itself unless the initiating action was Verify and apply.
 
-Verify and apply checks each changed allocation that lacks a matching proof,
-then applies the complete profile atomically. A previous exact check can be
-reused by explicit Apply without another paid request. Failure preserves the
-draft, matching successful proofs and previous applied profile. Readiness of
-the account alone never authorizes a newly selected model.
+A previous exact check can be reused by explicit Apply without another paid
+request. Readiness of the account alone never authorizes a newly selected model.
+The [whole-profile workflow owner](PRD_02_31_01_02_01_01_profile_verification.md)
+specifies the complete-profile quote, missing-proof checks and final Apply.
+
+Accepted CS-05 resolver extension, not yet implemented: an applied reference
+can supply its immutable wire when the user changes the public alias. Resolve
+that current raw alias as a new candidate under current account authority for
+both single and profile checks; do not require reselecting unchanged catalogue
+metadata. The reference proves wire provenance, never proof for the new alias.
+Plain Apply must still refuse the unchecked alias without writing. The existing
+changed-alias consumer consequently changes its expected refusal from
+`DraftChanged` to `VerificationRequired`; preserve its no-publication assertion
+and add a real HTTP/check/Apply positive consumer rather than weakening the
+anti-laundering guard.
 
 The initial manual check uses one 60-second deadline and a 2 MiB aggregate
 decoded-response budget, including credential refresh, with an output limit of
@@ -722,7 +738,8 @@ and qualifies no successful paid call or physical input. The pinned image is a
 default build of the precommit dirty product source, not a clean-commit rebuild
 or release artifact. Strict Clippy/alignment/broader source evidence is reused
 only with the recorded exact product bytes and explicit test-order-only delta.
-Independent postcommit and actual provider/native/release acceptance remain open.
+Independent postcommit verification is recorded below; actual provider/native/
+release acceptance remains open.
 Whole-profile Verify and apply and the remaining guided/profile/key/usage
 experience stay selected subsequent work.
 
@@ -740,3 +757,26 @@ additional unique checks. The initial incorrect old-image closeout assumption
 is rejected before document writes and is not runtime counterevidence.
 Evidence: `target-six/v0.2.23-provider/cs04-source-inventory-correction.json`
 and `cs04-closeout-byte-assumption-failure.json` in the same evidence directory.
+
+
+Independent postcommit verification of
+`eca1f1f4d282a31354e8bdfbe2148205c54aff30` passes on a clean worktree/index:
+182 Rust executions (162 affected families, 18 alignment and two public workers),
+all fifteen public Apply observations and 22 ordinary-browser checks. The
+independent verifier consumes the create-new pinned default image before Cargo;
+this is shared-cache verification, not an isolated rebuild or release artifact.
+Evidence: `target-six/v0.2.23-provider/cs04-independent-eca1f1f/receipt.json`.
+This source is pushed to main. Matching six-cell developer feedback completes
+successfully as run `40197070582`: 2156 successful Rust execution instances,
+four intended Mac original-assertion failures, six named Pi opt-in ignores and
+zero unexpected failures. The fourteen new Apply subjects pass on each cell;
+Settings runs thirty per cell and ordinary-browser checks twenty-two per cell.
+All six official ZIP identities/digests/private exclusions and exact source
+identities are verified. Evidence:
+`target-six/v0.2.23-provider/ci-eca1f1f-cs04-native/verification-index.json`.
+The run does not select the separate fifteen-check public Apply replay and does
+not qualify provider entitlement, physical input or release artifacts.
+
+The next selected slice is the accepted
+[whole-profile workflow design](PRD_02_31_01_02_01_01_profile_verification.md).
+Its runtime implementation/evidence remain planned, independently of plain Apply.

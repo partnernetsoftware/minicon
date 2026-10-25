@@ -15,6 +15,7 @@ name = "minicon-web-host"
 path = "src/bin/minicon-web-host.rs"
 
 [features]
+windows-cookie-lifetime-court = ["native-page-host", "native-profile-diagnostics", "dep:tao", "dep:serde_json"]
 default = []
 # Private locator seam for a dedicated non-production native court. Owner: PRD 28.
 native-profile-diagnostics = []
@@ -45,3 +46,12 @@ objc2-app-kit = { version = "0.3.2", optional = true, default-features = false, 
 [target.'cfg(windows)'.dependencies]
 webview2-com = { version = "0.38.2", optional = true }
 windows-core = { version = "0.61", optional = true }
+
+# A Windows-only developer example; no normal product entry or release target.
+[[example]]
+name = "windows-cookie-lifetime"
+path = "examples/windows-cookie-lifetime.rs"
+required-features = ["windows-cookie-lifetime-court"]
+
+[dev-dependencies]
+minicon-platform = { path = "../minicon-platform", default-features = false, features = ["filesystem"] }

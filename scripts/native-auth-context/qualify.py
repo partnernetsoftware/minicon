@@ -20,7 +20,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = Path(__file__).resolve().parent
 INPUTS = (
-    "Cargo.toml", "Cargo.lock", ".github/workflows/dev-loop-crosscheck.yml", "src/main.rs", "src/harness_auth_court.rs",
+    "Cargo.toml", "Cargo.lock", ".github/workflows/dev-loop-crosscheck.yml", "src/main.rs", "src/harness_auth_court.rs", "crates/minicon-web/tests/support/native_auth_fixture.rs",
     "src/harness_auth_ui.rs", "src/harness_settings_ui.rs",
     "src/harness_workspace_ui.rs",
     "crates/minicon-web/Cargo.toml",

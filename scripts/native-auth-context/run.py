@@ -493,7 +493,12 @@ def validate(driver, observed, build, driver_snapshot):
         raise CourtError("native-court-native-host-unsupported", True)
     if driver.get("status") != "native-observations-complete":
         raise CourtError("driver-observations-failed")
-    if driver_snapshot is None or driver.get("fixture") != driver_snapshot:
+    validate_original_fixture(driver.get("fixture"), observed, driver_snapshot)
+
+
+def validate_original_fixture(driver_fixture, observed, driver_snapshot):
+    """Same unchanged original eight-oracle check, shared by dedicated adapters."""
+    if driver_snapshot is None or driver_fixture != driver_snapshot:
         raise CourtError("driver-fixture-receipt-mismatch")
     for name in ("checks", "run_sha256", "page_get_counts", "report_count", "report_hashes"):
         if driver_snapshot.get(name) != observed.get(name):

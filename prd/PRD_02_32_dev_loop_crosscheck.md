@@ -15,7 +15,7 @@ dev-loop-crosscheck — agent cross-arch dev/test loop
 ├── Problem: a cloud session can reach only its own host's architecture
 ├── Non-goal: never a release-evidence path, never publishes, never needs write
 ├── Mechanism: GitHub-hosted native per-cell build + test on request
-│   ├── inputs: ref, cells, test_filter, native_auth_context, private_publication, windows_profile_acl_contrast
+│   ├── inputs: ref, cells, test_filter, native_auth_context, private_publication, windows_profile_acl_contrast, windows_cookie_lifetime_contrast
 │   ├── core and UI library tests, including each native ISA kernel
 │   ├── isolated minimal consumer; no workspace feature leakage
 │   ├── [-] provider / worker / HTTP mechanism and real CLI gateway courts (0.2.23)
@@ -35,6 +35,11 @@ dev-loop-crosscheck — agent cross-arch dev/test loop
 │   │   evidence: real workflow-plan consumer and separate diagnostic aggregate
 │   │   safe failure: reject incompatible selection; retain the comparison's nonzero failure
 │   │   dependency: canonical browser and dedicated qualifier; non-goal: native/release qualification
+│   ├── [-] explicit windows_cookie_lifetime_contrast diagnostic → PRD 28.01
+│   │   invariant: one Winx64 diagnostic; independent from auth/ACL/private-publication selection
+│   │   evidence: explicit build/source/image receipts and both original arm verdicts
+│   │   safe failure: preserve nonzero/blocked outcome and export only the public allowlist
+│   │   dependency: canonical browser and direct test example; non-goal: production repair or release qualification
 │   ├── [-] explicit private_publication source court → PRD 28.02
 │   │   invariant: private native files and actual guard failures retain exact restored source
 │   │   evidence: three named baseline tests, three runtime REDs and three restored passes
@@ -59,6 +64,8 @@ flowchart LR
     T -->|actual observations + RED controls + exact restore| L
     W -->|explicit windows_profile_acl_contrast / exact Winx64 only| ACL[Diagnostic entry / PRD 28.01]
     ACL --> L
+    W -->|explicit windows_cookie_lifetime_contrast| LC[Direct test example / source and image binding / two original arm verdicts]
+    LC --> L
     W -->|explicit private_publication| PP[Private native files / publication / errno / platform access controls]
     PP -->|actual tests + RED controls + exact restore| L
     W -. never .-> R["release / GHCR / tag / version"]
@@ -168,6 +175,19 @@ tests. The corrected court reuses `scripts/test-plan.py::choose_bash` and passes
 the resolved executable to the launcher. A PATH prefix alone did not select
 the intended native executable in that failed attempt. Its raw failure remains
 in `target-six/v0.2.23-provider/private-publication-native-local/receipt.json`.
+
+### Opt-in Windows browser-lifetime diagnostic
+
+`windows_cookie_lifetime_contrast=true` selects only `cells=win-x86_64` with
+native-auth, ACL and private-publication options false. The workflow invokes
+`scripts/native-auth-context/lifetime.py --build` after the canonical browser
+court; it keeps dedicated target output and a create-new pinned example separate.
+The lifecycle experiment, original oracle and interpretation belong to
+[PRD 28.01](PRD_02_28_01_browser_context_lifecycle.md#direct-wry-lifetime-comparison-planned-diagnostic).
+The job retains the actual comparison exit code and uploads an explicit public
+allowlist even on failure. The broad failure upload excludes this entire private
+output namespace. This entry has not yet run on CI and grants no native/product/
+release qualification.
 
 ### Opt-in native authorization-context court
 

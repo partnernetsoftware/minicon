@@ -385,41 +385,47 @@ vendor runtime bytes or caches, or to change the independent Surf/PageSession
 consumer boundary in PRD 28.
 
 
-### Exact-candidate verification checkpoint
+### Connection workflow sequence
 
-The production check now has strict original-assertion failure controls for all
-fifteen new consumers, restored GREEN, and current-source Windows public
-refusal/cancellation observations. Evidence and its controlled-provider/native
-boundaries belong to [the connection-selection owner](../prd/PRD_02_31_01_02_01_connection_selection.md#production-exact-candidate-check-join-in-progress).
-Join the independent postcommit verification before pushing this slice, then
-implement plain atomic Apply through the existing private-publication contract.
-Batch Verify-and-Apply and remaining profile/key/usage experience stay selected
-subsequent work; no Candidate or release is claimed by this checkpoint.
+1. Exact-candidate checks and plain atomic Apply are independently verified and
+   pushed. Evidence, source identities and retained failed attempts belong to
+   [connection selection](../prd/PRD_02_31_01_02_01_connection_selection.md).
+   Matching plain-Apply six-cell feedback passes; it does not qualify paid
+   provider entitlement or release artifacts.
+2. Implement the accepted
+   [whole-profile Verify and apply](../prd/PRD_02_31_01_02_01_01_profile_verification.md)
+   contract next. Shared prerequisites: the raw alias/wire resolver extension,
+   stable quoted scope, producer-side pending gate and existing atomic Apply.
+   Hot files are `provider_selection.rs`, `provider_runtime.rs`,
+   `provider_accounts.rs`, `provider_server.rs`, `harness_settings_ui.rs` and
+   `harness_settings_ui/connection_forms.rs`; quote, worker and UI integration
+   share ownership and join serially. An ignored frozen author preview can
+   proceed independently of read-only older-source CI auditing.
+3. Review and integrate the complete production consumer before strict static
+   gates, real HTTP/Owner/public UI journeys, original-assertion controls and
+   exact restoration. Run final local gates serially, obtain independent
+   postcommit evidence, then push exact reviewed source and select matching
+   native feedback. Keep actual public executable identities with each receipt.
+4. Continue the selected profile/key lifecycle, real account/provider and
+   usage experience. The connection workflow alone does not close HU-03/04,
+   provider entitlement, native authentication persistence or release courts.
 
-The exact-candidate slice is now independently verified and pushed; its six-cell
-development feedback is still live. Plain atomic Apply is the current integrated
-slice, starting with compiler/runtime review and fourteen unrun test candidates.
-Its actual acceptance/evidence status stays in the owning module above. Keep
-production-source changes and final local mutation/GUI gates serial; matching
-older-source CI feedback may proceed independently.
+The current plain-Apply public gate inventories staged and unstaged changes
+plus explicit hot files. Its second pinned image has its own repeated public
+journeys; preserve the earlier narrower-inventory/image receipts as history in
+the behavior owner. Do not substitute one image's receipt for another.
 
-Plain Apply's current source now passes all fourteen new consumers and fifteen
-actual original-assertion guard controls, with exact restoration GREEN. Complete
-the real public Apply replay and independent postcommit proof before pushing;
-keep whole-profile Verify-and-Apply as the next selected capability rather than
-calling plain Apply the complete connection workflow. Source and failure history
-stay in the connection-selection owner, including the test-only lock-order
-assertion strengthening and initial exhaustive-match compiler failure.
 
-The current plain-Apply public replay now observes real version-3 replacement,
-explicit no-op byte stability, unchanged keys and seven independent draft/editor
-states. Its fifteen observations include the prior twelve once; no successful
-provider inference or release is implied. All 22 ordinary-browser checks and
-both gateway workers pass after exact source restoration. Join independent
-postcommit verification, then continue the whole-profile verified-apply workflow.
+### Windows authentication persistence investigation
 
-The final plain-Apply gate repeats fresh build/public qualification with complete
-staged-plus-unstaged source inventory and explicit six-code hashes. The rebuild
-has different bytes, and all selected public journeys rerun on that new pinned
-image. Preserve earlier image/inventory receipts as history; independent review
-consumes the second current-source receipt before exact push.
+Review and integrate the finite
+[lifetime comparison](../prd/PRD_02_28_01_browser_context_lifecycle.md#direct-wry-lifetime-comparison-planned-diagnostic)
+while the complete provider preview is prepared. Shared prerequisites are the
+unchanged original fixture protocol and the existing native release/metadata
+mechanisms. Hot files: dedicated `harness_auth_court.rs`, its feature-only
+`main.rs` module, `minicon-web` example/manifest and native-auth Python driver.
+These do not overlap the six provider code paths, but Cargo/source/final gates
+remain under one controller and execute serially. Compile the example and
+retest the extracted protocol's actual existing consumer before selecting a
+matching-source Windows CI observation. A failed original oracle remains failed;
+a matching normal-exit trace is not a persistence fix or release qualification.
