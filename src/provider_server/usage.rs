@@ -10,7 +10,10 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 mod history;
-pub(crate) use history::{UsageClose, UsageHistory, UsageSummary};
+pub(crate) use history::{
+    BillingTotals, DecimalTotal, GroupKey, GroupSummary, Metrics, UsageClose, UsageHistory,
+    UsageState, UsageSummary,
+};
 
 pub(super) const RECEIPT_BYTES: usize = 4096;
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

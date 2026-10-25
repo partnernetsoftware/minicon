@@ -49,6 +49,21 @@ flowchart LR
 
 ## Product experience
 
+### First users and useful journeys
+
+| User | First useful journey | Delivery owner |
+| --- | --- | --- |
+| A developer diagnosing an unfamiliar application | Select one window, inspect its preview and accessible controls, export one privately owned observation | CU1; useful without a model account |
+| A script or external harness author | Submit one versioned CLI request and consume a bounded typed result/artifact; explicitly request a qualified single action later | CU1 then CU2; the caller retains its model loop |
+| A MiniCon Harness user | See the chosen application and scope beside the current step, inspect the result, and stop further actions | CU3 and PRD 36 H2 |
+| A user operating another paired machine | Identify the execution node and desktop session before observation or action | CU4 and PRD 37; independently gated |
+
+CU1 acceptance is a complete selection-to-observation journey, not a collection
+of exposed OS APIs. Show which parts came from pixels versus accessibility,
+what was omitted, and where the private artifacts live. A browser window may
+be observed as an application window; DOM/CDP/browser-flow automation is a
+separate capability decision. Capture permission does not promise input support.
+
 The first useful outcome is **inspect this window**, even without a model or
 provider account. A user chooses a currently available application/window,
 sees capture/accessibility support and any required OS permission, then asks
@@ -143,6 +158,15 @@ the current macOS capture path can report Unsupported if its dynamically
 resolved capture API is unavailable. Inventory actual target support before
 promising macOS/Windows/Linux parity; unsupported desktop protocols remain
 explicit. Browser-native semantics/CDP need a separate selected scope.
+
+Native reference check (2026-10-26): Windows
+[UI Automation](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-uiautomationoverview)
+exposes an element tree and control patterns; the actual application's provider
+determines available semantics. Linux's
+[RemoteDesktop portal](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.RemoteDesktop.html)
+has explicit session/device selection and user-approved start, with stream-relative
+coordinates. These references inform the capability inventory; they do not prove
+MiniCon implements those adapters or qualifies a particular desktop protocol.
 
 CU owns target/admission/observation/action meaning. PRD 26 owns automation of
 MiniCon's own GUI. PRD 25.04 owns shortcuts for its own window; minicon-winmgr

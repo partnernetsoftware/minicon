@@ -270,23 +270,19 @@ pub(crate) fn paint_single_line_host_editor(
 
 /// Bounded paragraph layout for host-owned status copy, including CJK without
 /// spaces. Width and line height use the same fixed-grid metrics as painting.
-pub(crate) fn paint_host_ui_paragraph(
-    surface: &mut Surface<'_>,
-    rect: ui::Rect,
+fn walk_host_ui_paragraph(
     text: &str,
-    color: Rgb,
+    width: u32,
     font_size: u16,
+    mut emit: impl FnMut(&str) -> bool,
 ) {
-    let metrics = font::cell_metrics(font_size);
-    let cell = metrics.width.max(1);
-    let line_height = metrics.height.max(1).saturating_add(3);
-    let capacity = (rect.width / cell) as usize;
-    if capacity == 0 || rect.height < metrics.height {
+    let cell = font::cell_metrics(font_size).width.max(1);
+    let capacity = (width / cell) as usize;
+    if capacity == 0 {
         return;
     }
     let mut line = String::new();
     let mut cells = 0;
-    let mut y = rect.y;
     for (offset, character) in text.char_indices() {
         let width = composer::character_cells(character);
         let word_width = if character.is_ascii()
@@ -297,19 +293,11 @@ pub(crate) fn paint_host_ui_paragraph(
         } else {
             0
         };
-        let wrap_word = word_width <= capacity && cells + word_width > capacity;
-        if wrap_word || character == '\n' || cells + width > capacity {
-            paint_host_ui_text(
-                surface,
-                rect.x,
-                y,
-                line.trim_end(),
-                color,
-                font_size,
-                rect.width,
-            );
-            y = y.saturating_add(line_height);
-            if y.saturating_add(metrics.height) > rect.y.saturating_add(rect.height) {
+        if (word_width <= capacity && cells + word_width > capacity)
+            || character == '\n'
+            || cells + width > capacity
+        {
+            if !emit(line.trim_end()) {
                 return;
             }
             line.clear();
@@ -321,15 +309,34 @@ pub(crate) fn paint_host_ui_paragraph(
         line.push(character);
         cells += width;
     }
-    paint_host_ui_text(
-        surface,
-        rect.x,
-        y,
-        line.trim_end(),
-        color,
-        font_size,
-        rect.width,
-    );
+    let _ = emit(line.trim_end());
+}
+pub(crate) fn host_ui_paragraph_lines(text: &str, width: u32, font_size: u16) -> Vec<String> {
+    let mut lines = Vec::new();
+    walk_host_ui_paragraph(text, width, font_size, |line| {
+        lines.push(line.into());
+        true
+    });
+    lines
+}
+pub(crate) fn paint_host_ui_paragraph(
+    surface: &mut Surface<'_>,
+    rect: ui::Rect,
+    text: &str,
+    color: Rgb,
+    font_size: u16,
+) {
+    let metrics = font::cell_metrics(font_size);
+    let line_height = metrics.height.max(1).saturating_add(3);
+    let mut y = rect.y;
+    walk_host_ui_paragraph(text, rect.width, font_size, |line| {
+        if y.saturating_add(metrics.height) > rect.y.saturating_add(rect.height) {
+            return false;
+        }
+        paint_host_ui_text(surface, rect.x, y, line, color, font_size, rect.width);
+        y = y.saturating_add(line_height);
+        true
+    });
 }
 
 /// Where a label of `label_width` by `label_height` sits inside `button`.

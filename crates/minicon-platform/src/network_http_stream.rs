@@ -1294,7 +1294,7 @@ mod tests {
             });
             let resolver = HelperResolver {
                 executable: std::env::current_exe().unwrap(),
-                state,
+                state: state.clone(),
                 arguments: vec![
                     "--exact".into(),
                     "network_http_stream::tests::slow_resolver_probe".into(),
@@ -1303,6 +1303,7 @@ mod tests {
                     format!("resolver-ready={}", ready.display()),
                 ],
             };
+            let lookup_started = Instant::now();
             let worker = thread::spawn(move || {
                 resolver.lookup(&resolver_frame("localhost", 443).unwrap(), RESOLVE_TIMEOUT)
             });
@@ -1329,10 +1330,20 @@ mod tests {
             }
             let error = worker.join().unwrap().unwrap_err();
             if !cancel_during_lookup {
-                assert!(matches!(
-                    error,
-                    ureq::Error::Timeout(ureq::Timeout::Resolve)
-                ));
+                let (variant, io_kind, raw_os_error) = match &error {
+                    ureq::Error::Timeout(ureq::Timeout::Resolve) => ("timeout-resolve", None, None),
+                    ureq::Error::Timeout(_) => ("timeout-other", None, None),
+                    ureq::Error::Io(error) => ("io", Some(error.kind()), error.raw_os_error()),
+                    ureq::Error::HostNotFound => ("host-not-found", None, None),
+                    _ => ("other", None, None),
+                };
+                assert!(
+                    matches!(error, ureq::Error::Timeout(ureq::Timeout::Resolve)),
+                    "resolver result variant={variant} io_kind={io_kind:?} raw_os_error={raw_os_error:?} cleanup_failed={} lookup_elapsed_ms={} after_ready_elapsed_ms={}",
+                    state.cleanup_failed.load(Ordering::Acquire),
+                    lookup_started.elapsed().as_millis(),
+                    start.elapsed().as_millis(),
+                );
             }
             assert!(start.elapsed() < Duration::from_secs(5));
             assert_eq!(

@@ -4,33 +4,46 @@ Parent: [provider gateway](PRD_02_31_01_provider_gateway.md). Account/allocation
 identity: [provider pool](PRD_02_31_01_02_provider_pool.md). Presentation:
 [Harness experience](PRD_02_31_01_01_harness_experience.md). Sequence:
 [0.2.23 plan](../plan/plan-v0.2.23.md#harness-product-redesign-before-publication).
-Status: `[-]` request-accounting implementation in progress after the owner's 2026-10-25 clarification.
+Status: `[-]` local accounting, metadata and report consumers have development
+evidence; selected real-account and final-release acceptance remain open.
 Protocol usage forwarding already exists; a durable statistics/monitoring
 product has not been delivered.
+
+Implementation of provider metadata reads, account monitoring policy and the
+shared-writer persistence join is owned by
+[account monitoring](PRD_02_31_01_03_02_account_monitoring.md). That owner records
+matching-source local consumers and actual removed-guard failures; these do not
+qualify the selected real accounts or native release artifacts.
+
+Report controls, geometry, finite visible observations and Monitoring settings
+presentation belong to [usage reports](PRD_02_31_01_03_03_usage_reports.md).
+That owner records local consumers and synthetic Windows public journeys,
+including their failed predecessors and exact artifact identity. Remaining
+native and real-account journeys are still required.
 
 ## Outcome tree DAG
 
 ```text
 Outcome: see which harness used which account, and whether its funds/quota need attention
-├── [_] ATTRIBUTION — local requests measured once under their actual binding
+├── [-] ATTRIBUTION — local requests measured once under their actual binding
 │   invariant: profile/account/model/protocol identify the admitted request
 │   evidence: UM-01/02 concurrent, failed, streamed and cancelled request receipts
 │   safe failure: mark partial/missing usage and accounting gaps; never invent zero
 │   dependency: provider-pool identities and provider adapter terminal events
 │   non-goal: prompts, tool transcripts or observations of unrelated direct traffic
-├── [_] BALANCE — read provider-authoritative money and allowance snapshots
+├── [-] BALANCE — read provider-authoritative money and allowance snapshots
 │   invariant: source, account/workspace, unit, freshness and support are explicit
 │   evidence: UM-03 real credential-compatible reads and stale/error lifecycle
 │   safe failure: unknown/unsupported/stale, preserving the last successful reading
 │   dependency: verified provider endpoint/audience and per-account network policy
 │   non-goal: deriving wallet balance from local tokens or fabricating billing APIs
-├── [_] MONITOR — bounded refresh and actionable local attention states
+├── [-] MONITOR — bounded refresh and actionable local attention states
 │   invariant: monitoring performs no model inference, auto-top-up or routing change
 │   evidence: UM-04 opt-in refresh/coalescing/backoff/cancel and account isolation
 │   safe failure: pause failed polling; keep inference and other accounts independent
 │   dependency: BALANCE and process-lifetime scheduling
 │   non-goal: OS daemon, continuous web scraping or external notifications
-└── [_] REPORT — account/client/model views without misleading financial totals
+└── [-] REPORT — account/client/model views without misleading financial totals
     invariant: local measured usage, provider charge and estimated cost stay distinct
     evidence: UM-05/06 retention, restart, currency/coverage and narrow-view journeys
     safe failure: display the retained coverage and any missing measurements
@@ -152,30 +165,14 @@ optional reset/provider time, and `fresh`, `stale`, `unavailable`, `unsupported`
 or `needs_authorization`. Malformed, absent and zero are different values.
 Late results from old grants or removed accounts are discarded.
 
-Research checked 2026-10-25; these are implementation inputs, not MiniCon account
-read receipts:
-
-| Provider | Primary input and implementation consequence |
-| --- | --- |
-| DeepSeek account grant | The [pinned official account implementation](https://github.com/deepseek-ai/deepseek-harness/blob/22ddee3792402c3e70ec5f86a63c3e3e895a2f60/packages/credentials/deepseek-account-platform/README.md) defines a GET to the fixed Platform issuer's `/api/v0/users/get_user_summary`, using `x-dsh-auth-token` and the five existing client metadata headers. Its [typed projection](https://github.com/deepseek-ai/deepseek-harness/blob/22ddee3792402c3e70ec5f86a63c3e3e895a2f60/packages/credentials/deepseek-account-platform/src/details.ts) retains separate normal/bonus wallets with CNY/USD decimal strings, including scientific notation. This is a verified credential contract, not an actual MiniCon account read |
-| DeepSeek API-key balance | The [public balance API](https://api-docs.deepseek.com/api/get-user-balance/) reports currency and total/granted/topped-up amounts. Its existence alone does not prove an OAuth grant can call it; keep credential contracts distinct |
-| OpenCode Go allowance | The [official Go guide](https://opencode.ai/v2/docs/console/go/) describes rolling, weekly and monthly plan limits. An [official repository clarification](https://github.com/anomalyco/opencode/issues/52227) identifies Go usage/model metadata paths, but endpoint version, response schema, workspace and OAuth-token access still require actual adapter verification; do not import Console cookies or add an OpenCode agent dependency |
-| OpenCode response metadata | The [official inference reference](https://dev.opencode.ai/v2/docs/console/api/inference) distinguishes charge, billing source and Go allowance in usage metadata. Read them only where the selected endpoint really returns them; a zero charge does not mean no plan allowance was consumed |
-
-DeepSeek needs a narrow typed GET builder under its existing issuer/client
-metadata contract; the current auth POST builder is not interchangeable. Query
-under the account's captured service-network policy and CAS the exact credential,
-service and organization lifetime on acceptance. Metadata success is not model
-readiness. Only the contract's actual rejected-grant signals may change that
-credential's lifecycle; failures cannot invalidate a newer reconnect.
-
-The [OpenCode API reference](https://dev.opencode.ai/v2/docs/console/api/)
-distinguishes Models, Usage and Billing permissions. Current device-token/config/
-inference consumers expose no proven Usage/Billing audience. The Go endpoint's
-existence does not prove access, and absence of that proof is UNKNOWN rather than
-proof of unsupported. Verify metadata authorization independently; do not add an
-API-key auth method, borrow cookies, scrape billing or disable inference on a
-metadata-only 403/404 to obtain a green result.
+Pinned provider endpoint/header/projection contracts and remaining real-account
+measurements are owned by [account monitoring](PRD_02_31_01_03_02_account_monitoring.md#provider-contracts-and-remaining-measurements).
+The current official OAuth Go consumer establishes an allowance-read contract;
+actual MiniCon account authorization and monetary-credit support remain distinct
+open obligations. Response billing belongs to
+[request accounting](PRD_02_31_01_03_01_request_accounting.md#pinned-response-billing).
+Do not import Console cookies or an external agent runtime, substitute a new
+auth method, or disable working inference to make metadata pass.
 
 Balance and allowance are independent capabilities. If the exact OpenCode grant
 can read quota but not monetary credit, display quota with Balance unavailable;
@@ -192,12 +189,11 @@ allowance** setting while MiniCon is running. Opening Settings renders cached
 readings only. A refresh never sends a model inference or changes a provider's
 paid overage/recharge settings.
 
-Initial automatic interval is five minutes, coalesced per account with at least
-one minute between refreshes. Completion-triggered refresh respects the same
-minimum. Limit metadata work to one query per account and two accounts globally,
-with finite adapter deadlines. Rate-limit/network failures back off, show last
-success and allow a deliberate retry; no unbounded catch-up after sleep. Disable,
-sign-out and process exit cancel the affected poll. No hidden browser navigation.
+Monitoring admission, persisted opt-in, finite interval/backoff, Stop/resume,
+per-account network/cancellation and writer-ack semantics are owned by
+[the account-monitoring lifecycle](PRD_02_31_01_03_02_account_monitoring.md#read-and-lifecycle-contract).
+That owner distinguishes executed local development evidence from remaining
+real-account metadata and continuous product acceptance.
 
 Show local attention for provider-confirmed exhaustion/auth failure, stale reads,
 and user-configured low monetary balance or allowance thresholds when units and
@@ -207,12 +203,12 @@ enables paid overflow, switches accounts or changes quotas in response.
 
 | Status / journey | Required observable result |
 | --- | --- |
-| `[_]` UM-01 | Two DeepSeek accounts and OpenCode Go receive independently attributed requests from multiple keyed profiles, including concurrent shared-account use |
-| `[_]` UM-02 | Non-stream/SSE success, cumulative usage, error, cancel and missing final usage yield one correctly qualified receipt; no double counting or invented zeros |
-| `[_]` UM-03 | Real per-account balance/allowance reads for supported exact grants; unsupported/stale/error remain truthful and cannot erase another account's snapshot |
-| `[_]` UM-04 | Manual/opt-in polling, coalescing, timeout/backoff, account proxy, reconnect/remove races and exit remain bounded with no model-call side effect |
-| `[_]` UM-05 | Restart/retention/overflow/failure reveal actual coverage; client/account/model totals and separate currencies match controlled receipts |
-| `[_]` UM-06 | Harness overview shows useful account balance/allowance and client usage in narrow/localized layouts; no secrets or transcript content in observations |
+| `[-]` UM-01 | Two DeepSeek accounts and OpenCode Go receive independently attributed requests from multiple keyed profiles, including concurrent shared-account use |
+| `[-]` UM-02 | Non-stream/SSE success, cumulative usage, error, cancel and missing final usage yield one correctly qualified receipt; no double counting or invented zeros |
+| `[-]` UM-03 | Real per-account balance/allowance reads for supported exact grants; unsupported/stale/error remain truthful and cannot erase another account's snapshot |
+| `[-]` UM-04 | Manual/opt-in polling, coalescing, timeout/backoff, account proxy, reconnect/remove races and exit remain bounded with no model-call side effect |
+| `[-]` UM-05 | Restart/retention/overflow/failure reveal actual coverage; client/account/model totals and separate currencies match controlled receipts |
+| `[-]` UM-06 | Harness overview shows useful account balance/allowance and client usage in narrow/localized layouts; no secrets or transcript content in observations |
 
 0.2.23 targets local attribution/history, account/client summaries, explicit
 provider refresh, truthful balance/allowance capability states and basic

@@ -1,6 +1,7 @@
 //! Harness settings presentation. Runtime authority stays with provider_runtime.
 use super::*;
 mod connection_forms;
+mod monitoring;
 mod profile_keys;
 use connection_forms::{ConnectionForms, FormFocus, ProfileField};
 use minicon_core::field_editor::{self, Command, Intent, Limits};
@@ -91,6 +92,7 @@ enum Row {
     Recipe,
     RecipePi,
     Status,
+    Monitoring(monitoring::Item),
 }
 
 struct DeviceChallenge {
@@ -233,6 +235,9 @@ pub(super) struct HarnessSettings {
     model: composer::ComposerState,
     forms: ConnectionForms,
     keys: KeyUi,
+    monitoring: monitoring::MonitoringUi,
+    open_usage: bool,
+    pending_workspace_target: Option<super::harness_workspace_ui::SettingsTarget>,
     profile_navigation: Option<usize>,
     focused: Option<Field>,
     scroll: usize,
@@ -259,6 +264,10 @@ impl HarnessSettings {
         target: super::harness_workspace_ui::SettingsTarget,
     ) {
         use super::harness_workspace_ui::SettingsTarget;
+        // Loading can insert profile rows and restore a default profile scroll.
+        // Resolve the requested destination again after that initial transition.
+        self.pending_workspace_target =
+            (self.view.load_state == provider_runtime::LoadState::Loading).then(|| target.clone());
         self.blur();
         let marker = match target {
             SettingsTarget::Service => Row::Local,
@@ -272,15 +281,43 @@ impl HarnessSettings {
             }
             SettingsTarget::Connection => Row::Model,
             SettingsTarget::Monitoring => {
-                self.error = Some("Monitoring observations are not available in this view.".into());
-                Row::Status
+                self.monitoring.sync(&self.view);
+                self.monitoring.enter();
+                Row::Monitoring(monitoring::Item::Heading)
             }
         };
         self.scroll = self
             .rows()
             .iter()
-            .position(|row| std::mem::discriminant(row) == std::mem::discriminant(&marker))
+            .position(|row| match (row, marker) {
+                (Row::Monitoring(a), Row::Monitoring(b)) => *a == b,
+                _ => std::mem::discriminant(row) == std::mem::discriminant(&marker),
+            })
             .unwrap_or(0);
+    }
+
+    fn finish_workspace_target(&mut self) {
+        if self.view.load_state != provider_runtime::LoadState::Loading
+            && let Some(target) = self.pending_workspace_target.take()
+        {
+            self.show_workspace_target(target);
+        }
+    }
+
+    fn supersede_workspace_target(&mut self, event: &PixelWindowEvent) {
+        if matches!(event, PixelWindowEvent::Keyboard(key) if key.state == KeyPressState::Pressed)
+            || matches!(
+                event,
+                PixelWindowEvent::Ime(_)
+                    | PixelWindowEvent::MouseWheel { .. }
+                    | PixelWindowEvent::PointerButton {
+                        state: PointerButtonState::Pressed,
+                        ..
+                    }
+            )
+        {
+            self.pending_workspace_target = None;
+        }
     }
 
     #[cfg(feature = "native-auth-court")]
@@ -409,6 +446,9 @@ impl HarnessSettings {
             model: composer::ComposerState::default(),
             forms: ConnectionForms::default(),
             keys: KeyUi::default(),
+            monitoring: Default::default(),
+            open_usage: false,
+            pending_workspace_target: None,
             profile_navigation: None,
             focused: None,
             scroll: 0,
@@ -427,6 +467,21 @@ impl HarnessSettings {
         }
     }
 
+    pub(super) fn select_monitoring_account(&mut self, account: Option<&str>) {
+        self.monitoring.select(account);
+        self.monitoring.enter();
+    }
+    fn monitoring_action(&mut self, item: monitoring::Item) {
+        let request = self
+            .runtime
+            .as_ref()
+            .and_then(|r| r.next_account_monitoring_request().ok());
+        match self.monitoring.activate(item, &self.view, request) {
+            monitoring::UiAction::None => {}
+            monitoring::UiAction::OpenReport => self.open_usage = true,
+            monitoring::UiAction::Send(action) => self.act(action),
+        }
+    }
     fn rows(&self) -> Vec<Row> {
         let mut rows = vec![
             Row::Local,
@@ -534,6 +589,12 @@ impl HarnessSettings {
             Row::Recipe,
             Row::RecipePi,
         ]);
+        rows.extend(
+            self.monitoring
+                .rows(&self.view)
+                .into_iter()
+                .map(Row::Monitoring),
+        );
         rows
     }
 
@@ -590,6 +651,7 @@ impl HarnessSettings {
     }
 
     fn blur(&mut self) {
+        self.monitoring.blur();
         self.keys.invalidate_copy();
         self.remember_connection_focus();
         self.forms.blur();
@@ -620,6 +682,7 @@ impl HarnessSettings {
         );
         if let Err(error) = result {
             self.forms.send_failed(&action, error);
+            self.monitoring.send_failed(&action, error);
         }
         self.error = result.err().map(|error| error.to_string());
     }
@@ -1034,6 +1097,10 @@ impl HarnessSettings {
             return None;
         }
         match row {
+            Row::Monitoring(monitoring::Item::Threshold(i)) if column == 1 => {
+                self.monitoring_action(monitoring::Item::RemoveThreshold(i))
+            }
+            Row::Monitoring(item) => self.monitoring_action(item),
             Row::Port if column == 1 => self.submit(Field::Port),
             Row::ListenerActions => self.act(if column == 0 {
                 Action::Start
@@ -1293,6 +1360,7 @@ fn key_button_fits(rect: ui::Rect, caption: &str, size: u16, scale: f64) -> bool
 fn row_columns(row: Row) -> usize {
     match row {
         Row::KeyActions => 3,
+        Row::Monitoring(monitoring::Item::Threshold(_)) => 2,
         Row::Port
         | Row::ListenerActions
         | Row::Login
@@ -1314,6 +1382,7 @@ fn row_columns(row: Row) -> usize {
 
 fn row_id(row: Row) -> String {
     match row {
+        Row::Monitoring(item) => return monitoring::MonitoringUi::id(item),
         Row::Local => "local_api",
         Row::Listener => "listener",
         Row::Port => "port",
@@ -1453,6 +1522,35 @@ impl ConApp {
             let mut label = String::new();
             let mut heading = false;
             match row {
+                Row::Monitoring(item) => {
+                    let summary = self
+                        .presented_harness_usage()
+                        .unwrap_or(settings.view.usage.as_ref());
+                    let label =
+                        settings
+                            .monitoring
+                            .label(item, &settings.view, summary, self.ui_language);
+                    if let Some(editor) = settings.monitoring.editor(item) {
+                        host_ui::paint_single_line_host_editor(
+                            surface,
+                            cell(0, 2),
+                            editor,
+                            settings.monitoring.editor_focused(item),
+                            &label,
+                            theme,
+                            size,
+                            scale,
+                        );
+                        button(surface, cell(1, 2), tr("Remove", "移除", "移除"), false);
+                    } else {
+                        button(
+                            surface,
+                            rect,
+                            &label,
+                            settings.monitoring.current() == Some(item),
+                        );
+                    }
+                }
                 Row::Local => {
                     label = "Local API".to_owned();
                     heading = true;
@@ -2308,6 +2406,8 @@ impl ConApp {
         // Whitelist observations: no credentials, labels, device URL/code or recipe key.
         json::object(vec![
             ("panel", rect(geometry.panel)),
+            ("monitoring", settings.monitoring.snapshot(&settings.view)),
+            ("monitoring_usage_revision", self.presented_harness_usage().map_or(json::JsonValue::Null,|s|s.revision.into())),
             ("port", settings.view.port.into()),
             (
                 "actual_port",
@@ -2618,6 +2718,7 @@ impl ConApp {
         };
         if !self.settings_open || self.settings_section != ui::SettingsSection::Harness {
             settings.keys.invalidate_copy();
+            settings.monitoring.blur();
             // Menus suspend a settings field; real route changes explicitly blur.
             field_editor::apply(&mut settings.port, Command::Blur, PORT_LIMITS);
             field_editor::apply(&mut settings.model, Command::Blur, MODEL_LIMITS);
@@ -2665,6 +2766,14 @@ impl ConApp {
             && runtime.view() != &settings.view
         {
             let next = runtime.view().clone();
+            // Keep the authoritative View/effects current; coalesce only usage raster.
+            let usage_only = {
+                let previous_usage =
+                    std::mem::replace(&mut settings.view.usage, next.usage.clone());
+                let unchanged = next == settings.view;
+                settings.view.usage = previous_usage;
+                unchanged
+            };
             if settings.port.text == settings.view.port.to_string() {
                 settings.port.text = next.port.to_string();
                 settings.port.caret = settings.port.text.len();
@@ -2679,8 +2788,14 @@ impl ConApp {
             settings.reconcile_auth_result();
             settings.sync_account_drafts();
             settings.sync_connection_forms();
-            changed = true;
+            settings.monitoring.sync(&settings.view);
+            settings.finish_workspace_target();
+            changed |= !usage_only;
         }
+        let usage = settings.view.usage.clone();
+        let visible = self.harness_workspace.active()
+            || (self.settings_open && self.settings_section == ui::SettingsSection::Harness);
+        changed |= self.observe_harness_usage(usage, visible, Instant::now());
         for effect in effects {
             match effect {
                 Effect::CopyClientKey(copy) => {
@@ -2765,15 +2880,80 @@ impl ConApp {
         let Some(mut settings) = self.harness_settings.take() else {
             return Ok(false);
         };
+        settings.supersede_workspace_target(event);
         let rows = settings.rows();
         let geometry = layout.harness_settings(scale, rows.len(), settings.scroll);
         settings.scroll = geometry.rows.start;
         let mut open_url = None;
         let mut consumed = true;
         match event {
+            PixelWindowEvent::Keyboard(key)
+                if settings.monitoring.focused()
+                    && key.state == KeyPressState::Pressed
+                    && !key.modifiers.control
+                    && !key.modifiers.alt
+                    && !key.modifiers.meta
+                    && matches!(
+                        key.logical,
+                        LogicalKey::Named(NamedKey::Tab | NamedKey::ArrowUp | NamedKey::ArrowDown)
+                    ) =>
+            {
+                let backwards =
+                    key.modifiers.shift || key.logical == LogicalKey::Named(NamedKey::ArrowUp);
+                if let Some(item) = settings.monitoring.navigate(backwards, &settings.view) {
+                    if let Some(index) = rows
+                        .iter()
+                        .position(|r| matches!(r, Row::Monitoring(i) if *i==item))
+                    {
+                        settings.scroll = geometry.rows.reveal(index);
+                    }
+                } else {
+                    settings.focused = Some(Field::Port);
+                    if let Some(index) = rows.iter().position(|r| matches!(r, Row::Port)) {
+                        settings.scroll = geometry.rows.reveal(index);
+                    }
+                }
+            }
+            PixelWindowEvent::Keyboard(key)
+                if settings.monitoring.focused()
+                    && key.state == KeyPressState::Pressed
+                    && !key.modifiers.control
+                    && !key.modifiers.alt
+                    && !key.modifiers.meta
+                    && (matches!(
+                        key.logical,
+                        LogicalKey::Named(NamedKey::Enter | NamedKey::Space)
+                    ) || matches!(&key.logical,LogicalKey::Character(t)if t==" "))
+                    && !settings.monitoring.editing() =>
+            {
+                if let Some(item) = settings.monitoring.current() {
+                    settings.monitoring_action(item);
+                }
+            }
+            PixelWindowEvent::Keyboard(_) | PixelWindowEvent::Ime(_)
+                if settings.monitoring.editing() =>
+            {
+                settings.monitoring.edit(event);
+            }
             PixelWindowEvent::FocusChanged(false) | PixelWindowEvent::PointerCaptureLost => {
                 settings.blur();
                 let _ = window.set_pointer_capture(false);
+            }
+            PixelWindowEvent::PointerMoved { position, .. }
+                if settings.monitoring.drag_item().is_some() =>
+            {
+                if let Some(item) = settings.monitoring.drag_item()
+                    && let Some(index) = rows
+                        .iter()
+                        .position(|r| matches!(r,Row::Monitoring(i)if *i==item))
+                {
+                    settings.monitoring.drag_to(
+                        position,
+                        geometry.cell(index, 0, 2, scale),
+                        scale,
+                        size,
+                    );
+                }
             }
             PixelWindowEvent::PointerMoved { position, .. } => {
                 if let (Some(field), Some(anchor)) = (settings.focused, settings.drag) {
@@ -2813,6 +2993,7 @@ impl ConApp {
                 ..
             } => {
                 settings.drag = None;
+                settings.monitoring.end_drag();
                 let _ = window.set_pointer_capture(false);
             }
             PixelWindowEvent::PointerButton {
@@ -2839,99 +3020,121 @@ impl ConApp {
                         geometry.cell(index, column, columns, scale).contains(x, y)
                     });
                     if let Some(column) = column {
-                        let field = match (row, column) {
-                            (Row::Port, 0) if settings.port_editable() => Some(Field::Port),
-                            (Row::ModelInput, 0) => Some(Field::Model),
-                            (Row::Model, 0) => Some(Field::ProfileChooser),
-                            (Row::AccountInput(field) | Row::ConnectInput(field), 0) => Some(field),
-                            (Row::ProfileInput(field), 0) => Some(Field::Profile(field)),
-                            _ => None,
-                        };
-                        if field == Some(Field::ProfileChooser) {
-                            settings.blur();
-                            settings.focused = Some(Field::ProfileChooser);
-                            settings.navigate_connection_profiles(0);
-                        } else if let Some(field) = field {
-                            let rect = geometry.cell(index, 0, 2, scale);
-                            let offset = super::browser_ui::host_field_offset(
-                                settings.editor(field),
-                                rect,
-                                position,
-                                scale,
-                                size,
-                            );
-                            let was_focused = settings.focused == Some(field);
-                            if !was_focused {
+                        if let Row::Monitoring(monitoring::Item::Threshold(i)) = row
+                            && column == 0
+                        {
+                            if !settings
+                                .monitoring
+                                .editor_focused(monitoring::Item::Threshold(i))
+                            {
                                 settings.blur();
                             }
-                            settings.focused = Some(field);
-                            let clicks = settings.clicks.register(offset, Instant::now());
-                            let selection_before = (
-                                settings.editor(field).caret,
-                                settings.editor(field).anchor,
-                                settings.editor(field).select_all,
-                            );
-                            settings.drag = field_editor::press(
-                                settings.editor_mut(field),
-                                offset,
+                            let capture = settings.monitoring.press(
+                                i,
+                                position,
+                                geometry.cell(index, 0, 2, scale),
+                                scale,
+                                size,
                                 modifiers.shift,
-                                clicks,
                             );
-                            let selection_after = (
-                                settings.editor(field).caret,
-                                settings.editor(field).anchor,
-                                settings.editor(field).select_all,
-                            );
-                            if selection_before != selection_after {
-                                settings.note_connection_activity(field);
-                            }
-                            let _ = window.set_pointer_capture(settings.drag.is_some());
-                            self.composer.focused = false;
-                            self.settings_proxy_focused = false;
-                            self.browser_address_focused = false;
-                            self.browser_proxy_focused = false;
-                            #[cfg(any(target_os = "macos", windows))]
-                            if let Some(page) = &self.native_browser_page {
-                                page.focus_parent();
-                            }
-                            #[cfg(target_os = "linux")]
-                            window.focus();
+                            let _ = window.set_pointer_capture(capture);
                         } else {
-                            settings.blur();
-                            let profile_caption = profile_verification_label(
-                                self.ui_language,
-                                settings.profile_plan(),
-                            );
-                            let unreadable_profile = matches!(row, Row::ProfileVerification)
-                                && cost_button_font(
-                                    geometry.cell(index, column, columns, scale),
-                                    &profile_caption,
-                                    size,
+                            let field = match (row, column) {
+                                (Row::Port, 0) if settings.port_editable() => Some(Field::Port),
+                                (Row::ModelInput, 0) => Some(Field::Model),
+                                (Row::Model, 0) => Some(Field::ProfileChooser),
+                                (Row::AccountInput(field) | Row::ConnectInput(field), 0) => {
+                                    Some(field)
+                                }
+                                (Row::ProfileInput(field), 0) => Some(Field::Profile(field)),
+                                _ => None,
+                            };
+                            if field == Some(Field::ProfileChooser) {
+                                settings.blur();
+                                settings.focused = Some(Field::ProfileChooser);
+                                settings.navigate_connection_profiles(0);
+                            } else if let Some(field) = field {
+                                let rect = geometry.cell(index, 0, 2, scale);
+                                let offset = super::browser_ui::host_field_offset(
+                                    settings.editor(field),
+                                    rect,
+                                    position,
                                     scale,
-                                )
-                                .is_none();
-                            let unreadable_key = matches!(row, Row::KeyActions)
-                                && !key_button_fits(
-                                    geometry.cell(index, column, columns, scale),
-                                    key_button_caption(self.ui_language, column),
                                     size,
-                                    scale,
                                 );
-                            if unreadable_key {
-                                settings.refuse_unreadable_key();
-                            } else if unreadable_profile
-                                || (matches!(row, Row::VerificationActions)
-                                    && verification_button_font(
+                                let was_focused = settings.focused == Some(field);
+                                if !was_focused {
+                                    settings.blur();
+                                }
+                                settings.focused = Some(field);
+                                let clicks = settings.clicks.register(offset, Instant::now());
+                                let selection_before = (
+                                    settings.editor(field).caret,
+                                    settings.editor(field).anchor,
+                                    settings.editor(field).select_all,
+                                );
+                                settings.drag = field_editor::press(
+                                    settings.editor_mut(field),
+                                    offset,
+                                    modifiers.shift,
+                                    clicks,
+                                );
+                                let selection_after = (
+                                    settings.editor(field).caret,
+                                    settings.editor(field).anchor,
+                                    settings.editor(field).select_all,
+                                );
+                                if selection_before != selection_after {
+                                    settings.note_connection_activity(field);
+                                }
+                                let _ = window.set_pointer_capture(settings.drag.is_some());
+                                self.composer.focused = false;
+                                self.settings_proxy_focused = false;
+                                self.browser_address_focused = false;
+                                self.browser_proxy_focused = false;
+                                #[cfg(any(target_os = "macos", windows))]
+                                if let Some(page) = &self.native_browser_page {
+                                    page.focus_parent();
+                                }
+                                #[cfg(target_os = "linux")]
+                                window.focus();
+                            } else {
+                                settings.blur();
+                                let profile_caption = profile_verification_label(
+                                    self.ui_language,
+                                    settings.profile_plan(),
+                                );
+                                let unreadable_profile = matches!(row, Row::ProfileVerification)
+                                    && cost_button_font(
                                         geometry.cell(index, column, columns, scale),
-                                        self.ui_language,
+                                        &profile_caption,
                                         size,
                                         scale,
                                     )
-                                    .is_none())
-                            {
-                                settings.error=Some("Enlarge the window to read the complete model-check cost notice before verifying.".into());
-                            } else {
-                                open_url = settings.activate(row, column);
+                                    .is_none();
+                                let unreadable_key = matches!(row, Row::KeyActions)
+                                    && !key_button_fits(
+                                        geometry.cell(index, column, columns, scale),
+                                        key_button_caption(self.ui_language, column),
+                                        size,
+                                        scale,
+                                    );
+                                if unreadable_key {
+                                    settings.refuse_unreadable_key();
+                                } else if unreadable_profile
+                                    || (matches!(row, Row::VerificationActions)
+                                        && verification_button_font(
+                                            geometry.cell(index, column, columns, scale),
+                                            self.ui_language,
+                                            size,
+                                            scale,
+                                        )
+                                        .is_none())
+                                {
+                                    settings.error=Some("Enlarge the window to read the complete model-check cost notice before verifying.".into());
+                                } else {
+                                    open_url = settings.activate(row, column);
+                                }
                             }
                         }
                     }
@@ -2972,14 +3175,24 @@ impl ConApp {
                         (None, true) => fields.len() - 1,
                         (None, false) => 0,
                     };
-                    let next = fields[next_index];
-                    settings.blur();
-                    settings.focused = Some(next);
-                    let index = rows
-                        .iter()
-                        .position(|row| row_field(*row) == Some(next))
-                        .unwrap_or(0);
-                    settings.scroll = geometry.rows.reveal(index);
+                    if current.is_some_and(|i| i + 1 == fields.len()) && !key.modifiers.shift {
+                        settings.blur();
+                        settings.monitoring.enter();
+                        if let Some(index) = rows.iter().position(|r| {
+                            matches!(r, Row::Monitoring(monitoring::Item::OpenReport))
+                        }) {
+                            settings.scroll = geometry.rows.reveal(index);
+                        }
+                    } else {
+                        let next = fields[next_index];
+                        settings.blur();
+                        settings.focused = Some(next);
+                        let index = rows
+                            .iter()
+                            .position(|row| row_field(*row) == Some(next))
+                            .unwrap_or(0);
+                        settings.scroll = geometry.rows.reveal(index);
+                    }
                 }
             }
             PixelWindowEvent::Keyboard(key) if settings.focused == Some(Field::ProfileChooser) => {
@@ -3094,7 +3307,34 @@ impl ConApp {
                 20.0,
             ));
         }
+        if let Some(item) = settings.monitoring.editing_item()
+            && let Some(index) = rows
+                .iter()
+                .position(|r| matches!(r,Row::Monitoring(i)if *i==item))
+            && let Some(editor) = settings.monitoring.editor(item)
+        {
+            let rect = layout
+                .harness_settings(scale, rows.len(), settings.scroll)
+                .cell(index, 0, 2, scale);
+            let cell = font::cell_metrics(size).width.max(1);
+            let columns = (rect.width.saturating_sub((16.0 * scale) as u32) / cell).max(1) as usize;
+            let visible =
+                composer::visible_window(&editor.text, &editor.preedit, editor.caret, 1, columns);
+            let offset = composer::cells(
+                &editor.text[visible.text..editor.caret.clamp(visible.text, editor.text.len())],
+            ) + composer::cells(&editor.preedit[visible.preedit..]);
+            let _ = window.set_ime_cursor_area(minicon_platform::window_host::LogicalRect::new(
+                f64::from(rect.x.saturating_add(cell.saturating_mul(offset as u32))) / scale + 8.0,
+                f64::from(rect.y.saturating_add(rect.height)) / scale,
+                2.0,
+                20.0,
+            ));
+        }
+        let open_usage = std::mem::take(&mut settings.open_usage);
         self.harness_settings = Some(settings);
+        if open_usage {
+            self.open_harness_usage_report(window)?;
+        }
         if let Some(url) = open_url {
             self.open_harness_login(window, &url);
         }
@@ -4332,5 +4572,109 @@ mod tests {
             draft.save_error,
             Some(provider_runtime::RuntimeError::AccountChanged)
         );
+    }
+    #[test]
+    fn monitoring_deeplink_survives_initial_profile_load_and_yields_to_later_navigation() {
+        let mut settings = HarnessSettings::default();
+        settings.port.text = "23456".into();
+        settings.port.caret = 2;
+        settings
+            .show_workspace_target(super::super::harness_workspace_ui::SettingsTarget::Monitoring);
+        assert!(settings.pending_workspace_target.is_some());
+        settings.view.load_state = provider_runtime::LoadState::Loaded;
+        settings.view.connection_profile = "default".into();
+        settings.view.connection_profiles = vec![connection_profile("default", "a")];
+        settings.sync_connection_forms();
+        settings.monitoring.sync(&settings.view);
+        settings.finish_workspace_target();
+        assert_eq!(row_id(settings.rows()[settings.scroll]), "monitoring");
+        assert!(settings.pending_workspace_target.is_none());
+        assert_eq!(
+            (settings.port.text.as_str(), settings.port.caret),
+            ("23456", 2)
+        );
+        settings.scroll = 2;
+        settings.finish_workspace_target();
+        assert_eq!(
+            settings.scroll, 2,
+            "resolved destination must not keep replaying"
+        );
+
+        settings.view.load_state = provider_runtime::LoadState::Loading;
+        settings
+            .show_workspace_target(super::super::harness_workspace_ui::SettingsTarget::Monitoring);
+        settings.supersede_workspace_target(&PixelWindowEvent::Wake);
+        assert!(settings.pending_workspace_target.is_some());
+        settings.supersede_workspace_target(&PixelWindowEvent::PointerButton {
+            button: PointerButton::Left,
+            state: PointerButtonState::Pressed,
+            position: None,
+            modifiers: Default::default(),
+        });
+        settings.scroll = 3;
+        settings.view.load_state = provider_runtime::LoadState::Loaded;
+        settings.finish_workspace_target();
+        assert_eq!(
+            settings.scroll, 3,
+            "later explicit navigation owns the page"
+        );
+    }
+
+    #[test]
+    fn monitoring_real_deeplink_and_report_action_preserve_existing_drafts() {
+        let mut settings = HarnessSettings::default();
+        settings.port.text = "23456".into();
+        settings.port.caret = 2;
+        settings
+            .show_workspace_target(super::super::harness_workspace_ui::SettingsTarget::Monitoring);
+        let rows = settings.rows();
+        assert_eq!(row_id(rows[settings.scroll]), "monitoring");
+        settings.activate(Row::Monitoring(monitoring::Item::OpenReport), 0);
+        assert!(settings.open_usage);
+        assert_eq!(
+            (settings.port.text.as_str(), settings.port.caret),
+            ("23456", 2)
+        );
+        assert!(
+            settings.runtime.is_none(),
+            "read-only route action cannot construct Runtime"
+        );
+    }
+    #[test]
+    fn monitoring_open_report_uses_actual_revealed_cell_and_full_localized_caption() {
+        let settings = HarnessSettings::default();
+        let rows = settings.rows();
+        let index = rows
+            .iter()
+            .position(|r| matches!(r, Row::Monitoring(monitoring::Item::OpenReport)))
+            .unwrap();
+        for (width, height) in [(420, 300), (760, 360), (1400, 900)] {
+            let layout = ui::Layout::new(width, height, 1.0);
+            let initial = layout.harness_settings(1.0, rows.len(), 0);
+            let g = layout.harness_settings(1.0, rows.len(), initial.rows.reveal(index));
+            let rect = g.cell(index, 0, 1, 1.0);
+            assert_eq!(
+                g.rows
+                    .hit(rect.x + rect.width / 2, rect.y + rect.height / 2),
+                Some(index)
+            );
+            for language in [
+                ui::UiLanguage::English,
+                ui::UiLanguage::ChineseSimplified,
+                ui::UiLanguage::ChineseTraditional,
+            ] {
+                let caption = settings.monitoring.label(
+                    monitoring::Item::OpenReport,
+                    &settings.view,
+                    settings.view.usage.as_ref(),
+                    language,
+                );
+                assert!(
+                    host_ui::host_ui_text_width(&caption, 14) <= rect.width.saturating_sub(16),
+                    "{width}x{height}: {caption}; width={}",
+                    rect.width
+                );
+            }
+        }
     }
 }

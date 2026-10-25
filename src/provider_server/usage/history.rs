@@ -618,6 +618,7 @@ fn summarize_groups(
 struct Shared {
     counters: SharedCounters,
     cache: Mutex<Arc<UsageSummary>>,
+    monitor: crate::provider_monitoring::DiskSlot,
 }
 pub(super) struct TerminalSink {
     sender: SyncSender<Receipt>,
@@ -659,6 +660,7 @@ impl UsageHistory {
         let shared = Arc::new(Shared {
             counters: Default::default(),
             cache: Mutex::new(Arc::new(UsageSummary::default())),
+            monitor: Default::default(),
         });
         let run_id = super::super::random_id().unwrap_or_default();
         let done = Arc::new((Mutex::new(false), Condvar::new()));
@@ -690,6 +692,15 @@ impl UsageHistory {
             worker: Arc::new(Mutex::new(worker)),
             done,
         }
+    }
+    pub(crate) fn monitor_view(&self) -> Option<crate::provider_monitoring::DiskView> {
+        self.shared.monitor.view()
+    }
+    pub(crate) fn submit_monitor(
+        &self,
+        snapshot: Arc<crate::provider_monitoring::MonitorSnapshot>,
+    ) -> Result<(), crate::provider_monitoring::MonitorError> {
+        self.shared.monitor.submit(snapshot)
     }
     pub(super) fn begin(&self) -> Option<(TerminalSink, u64, String)> {
         if self.run_id.is_empty() {
@@ -876,6 +887,7 @@ fn writer(root: PathBuf, incoming: mpsc::Receiver<Receipt>, shared: Arc<Shared>)
         Err(())
     };
     let writable = loaded.is_ok();
+    let monitor_writable = shared.monitor.open(&root, prepared);
     let mut snapshot = loaded.unwrap_or_else(|_| Snapshot {
         gaps: Gaps {
             invalid_history: true,
@@ -980,6 +992,7 @@ fn writer(root: PathBuf, incoming: mpsc::Receiver<Receipt>, shared: Arc<Shared>)
             changed || closing,
             now_ms(),
         );
+        shared.monitor.flush(&root, monitor_writable);
         if closing {
             break;
         }
@@ -1404,6 +1417,7 @@ mod tests {
         let shared = Shared {
             counters: Default::default(),
             cache: Mutex::new(Arc::new(UsageSummary::default())),
+            monitor: Default::default(),
         };
         let before_midnight = 101 * DAY_MS - 1;
         publish_summary(
@@ -1464,6 +1478,7 @@ mod tests {
         let shared = Shared {
             counters: Default::default(),
             cache: Mutex::new(Arc::new(UsageSummary::default())),
+            monitor: Default::default(),
         };
         publish_summary(&snapshot, &shared, 3, UsageState::Ready, true, Some(2));
         assert_eq!(shared.cache.lock().unwrap().windows[0].client.requests, 1);
@@ -1517,6 +1532,7 @@ mod tests {
         let shared = Arc::new(Shared {
             counters: Default::default(),
             cache: Mutex::new(Arc::new(UsageSummary::default())),
+            monitor: Default::default(),
         });
         let history = UsageHistory {
             sender,
@@ -1569,6 +1585,7 @@ mod tests {
         let shared = Arc::new(Shared {
             counters: Default::default(),
             cache: Mutex::new(Arc::new(UsageSummary::default())),
+            monitor: Default::default(),
         });
         let history = UsageHistory {
             sender,

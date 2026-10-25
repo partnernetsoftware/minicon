@@ -318,3 +318,24 @@ clipboard or a provider. Receipt:
 The integrated runner now selects `model_input` and preserves boolean-only
 precondition diagnostics. Actual Windows CI replay of the remaining clipboard
 and recipe checks remains open; this local repair is not their qualification.
+
+
+### K3 corrected-selector native replay
+
+Exact `ac20aeed3873654340ddf32942b2c1f504ca84ef`, run `40218590490`, reaches
+nine public checks: all three actual OS Copy targets, dirty model/alias
+precondition, applied running recipes and the stopped configured-only recipe
+pass. It then fails `clipboard-lock-cleanup`. The safe receipt does not retain
+the lock child's exit/ready/release acknowledgement or the original key-action
+exception that the finally cleanup may have replaced. No product cause or actual
+contention/retry result is inferred. ABA/reopen, final network assertion,
+shutdown and ordinary suites remain unobserved after that failure. Recorded
+provider POST/proxy counts are zero and owned final cleanup reports no errors.
+
+The safe artifact/raw audit is
+`target-six/v0.2.23-provider/ci-ac20aee-k3/verification-index.json`
+(SHA-256 `26c2b8503b2f59ca7a2624674f6008ee85cc0fbe5776bfc453ea0c31bac9c2de`).
+The next diagnostic must preserve primary failure and publish only finite helper
+lifecycle/status fields; it must not relax original assertions or export the
+private carrier, keys or clipboard contents. The earlier failed runs remain
+separate source observations, not reclassified successes.

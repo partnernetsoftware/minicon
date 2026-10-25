@@ -228,6 +228,12 @@ publication seam and Gateway-to-Store lock join now consume the existing shared
 atomic-write result for plain Apply under development; account authority and
 profile policy remain private to MiniCon. Acceptance and scoped evidence remain
 with that owner.
+Report presentation reuses the existing pure
+`minicon_platform::contract::local_clock::civil_from_unix_seconds` conversion;
+UTC labels and unavailable-time meaning remain product-owned in
+`harness_workspace_ui/usage_report.rs` and [the report owner](PRD_02_31_01_03_03_usage_reports.md).
+This adds no native adapter, dependency or independent clock engine, and local
+Windows developer evidence does not qualify other advertised targets.
 The [whole-profile workflow](PRD_02_31_01_02_01_01_profile_verification.md)
 reuses these consumers and adds one bounded product-private pending/active
 intent gate, one sequential worker and existing field-activity merge. Its quote,
@@ -798,3 +804,11 @@ existing minicon-platform HTTP/SSE transport and typed private publication;
 it adds no shared OS/ISA API or accounting policy to the platform. RawValue is
 an existing serde_json feature, not a new SSE/transport engine. Execution status is owned by that module; this reuse map does not confer
 provider or native qualification.
+
+### Usage report projection join (design only)
+
+[Report presentation](PRD_02_31_01_03_03_usage_reports.md) reuses existing host
+paragraph/font/button geometry, editor, focus/return and event-loop deadlines.
+The accounting owner retains cached UTC rollover; metadata retains policy and
+provider HTTP. Proposed crate-private typed re-exports serve actual UI consumers
+only; no new shared OS/ISA, statistics, writer or timer framework is introduced.

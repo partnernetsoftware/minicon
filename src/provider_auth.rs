@@ -430,6 +430,40 @@ fn deepseek_request(
     body: JsonValue,
     metadata: &DeepSeekMetadata<'_>,
 ) -> Result<NetworkHttpRequest, AuthError> {
+    deepseek_client_headers(
+        client,
+        json_request(&format!("{DEEPSEEK_ORIGIN}{path}"), body)?,
+        metadata,
+    )
+}
+
+/// Official Platform GET with the same grant/client metadata as desktop auth.
+pub(crate) fn deepseek_summary_request(
+    client: &AuthClient,
+    grant: &TokenGrant,
+    metadata: &DeepSeekMetadata<'_>,
+) -> Result<NetworkHttpRequest, AuthError> {
+    if grant.provider != Provider::DeepSeek
+        || !matches!(grant.lifecycle, TokenLifecycle::OpaqueUntilRejected)
+    {
+        return Err(AuthError::InvalidInput);
+    }
+    deepseek_client_headers(
+        client,
+        NetworkHttpRequest::new(
+            NetworkHttpMethod::Get,
+            "https://platform.deepseek.com/api/v0/users/get_user_summary",
+        )
+        .header("Accept", "application/json")
+        .header("x-dsh-auth-token", grant.access_token.expose()),
+        metadata,
+    )
+}
+fn deepseek_client_headers(
+    client: &AuthClient,
+    request: NetworkHttpRequest,
+    metadata: &DeepSeekMetadata<'_>,
+) -> Result<NetworkHttpRequest, AuthError> {
     let client_id = client.admit(Provider::DeepSeek)?;
     if !identifier(metadata.version, 128)
         || !matches!(
@@ -441,7 +475,7 @@ fn deepseek_request(
     {
         return Err(AuthError::InvalidInput);
     }
-    let request = json_request(&format!("{DEEPSEEK_ORIGIN}{path}"), body)?
+    let request = request
         .header("x-client-bundle-id", client_id)
         .header("x-client-platform", metadata.platform)
         .header("x-client-version", metadata.version)

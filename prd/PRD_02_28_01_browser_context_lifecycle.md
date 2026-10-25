@@ -605,7 +605,7 @@ equality failure. Receipt:
 `target-six/v0.2.23-provider/preclose-controls-attempt-1/receipt.json`
 (SHA-256 `0b5c13e2ac95e78a6d3e90c8b9ff6d0bc11b3762d0de30f1f6902ff72f9b02c6`).
 This is synthetic helper/HTTP qualification, with shared build cache; it proves
-no COM/browser persistence result. Matching-source native replay remains open.
+no COM/browser persistence result. The first matching-source native replay below retains the original EXIT failure.
 
 Pre-close presence versus post-exit absence only characterizes sampled file
 lifetime. It identifies neither Cookie contents nor a deleting actor; absence
@@ -647,3 +647,28 @@ actual final gates are retained, not classified as runtime counterevidence.
 Only this evidence/status closeout follows those source gates. Source
 qualification/integration stays serialized with provider work; the diagnostic
 does not alter normal qualification or release scope.
+
+
+### Actual pre-close metadata replay: original EXIT failure retained
+
+Exact source `ac20aeed3873654340ddf32942b2c1f504ca84ef`, Windows x86_64 run
+`40218598520`, executes both arms once using one dedicated image
+`16cb967302037f4f862bd522d9179eff100b9dc087887ca22996f966061f432f`
+and runtime155.0.4283.62. KEEP again passes all eight original predicates. EXIT
+again fails the original reopened-A Cookie predicate while localStorage matches;
+its actual normal-exit/new-environment boundary is valid. Aggregate remains FAIL.
+
+In both arms, the SDK observes one persistent future Cookie before A closes,
+while the new accepted pre-close metadata observation classifies all six fixed
+slots absent. EXIT's reopened SDK observation has zero Cookies; KEEP's has one.
+This samples those paths and times only: it establishes neither an alternate
+backend nor a flush, deletion actor, permission/DPAPI cause or production fix.
+The additional causal HTTP handoff remains a timing difference from the old run.
+
+`target-six/v0.2.23-provider/ci-ac20aee-lifetime/verification-index.json`
+(SHA-256 `dcc3fff35713426ee423f5ee2c521d3bafc642fd87b1dd2ab09dd573b993003e`)
+binds480 exact-source Git blobs, the seven strict helper passes, eleven original
+protocol assertion REDs and fifteen restored protocol passes. The public ZIP's
+API size/digest/CRC and private exclusions are audited. No Cookie contents or
+private profile carrier were downloaded. This is diagnostic evidence; the
+production persistence requirement remains unresolved.

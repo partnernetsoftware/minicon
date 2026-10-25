@@ -1,5 +1,6 @@
 //! Read-only Harness destination; product owner: PRD 02.36.
 use super::*;
+pub(super) mod usage_report;
 use provider_runtime::{ListenerState, LoadState, View};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -29,7 +30,7 @@ impl Section {
         }
     }
 }
-fn text(
+pub(super) fn text(
     language: ui::UiLanguage,
     en: &'static str,
     hans: &'static str,
@@ -309,6 +310,7 @@ pub(super) struct HarnessWorkspace {
         InputSurface,
     )>,
     entry_error: bool,
+    report: usage_report::Report,
 }
 impl HarnessWorkspace {
     pub(super) fn active(&self) -> bool {
@@ -567,6 +569,73 @@ impl ConApp {
             })
         }
     }
+    pub(super) fn open_harness_usage_report(
+        &mut self,
+        window: &PixelWindow,
+    ) -> Result<(), PixelWindowError> {
+        // Actual close intent invalidates Copy even for close/reopen between polls.
+        self.settings_open = false;
+        self.blur_harness_fields();
+        self.invalidate_inactive_harness_key_copy();
+        self.restore_harness_settings_focus(window);
+        if !self.harness_workspace.active() {
+            self.toggle_harness_workspace(window)?;
+        }
+        if self.harness_workspace.active() {
+            self.harness_workspace.section = Section::Usage;
+            self.harness_workspace.report.restore_focus();
+            let latest = self
+                .harness_settings
+                .as_ref()
+                .map(|s| s.cached_workspace_view().usage.clone());
+            self.harness_workspace
+                .report
+                .reveal_latest(latest, Instant::now());
+        }
+        self.sync_embedded_page(window);
+        self.mark_host_ui_full_and_repaint(window);
+        Ok(())
+    }
+    pub(super) fn observe_harness_usage(
+        &mut self,
+        usage: std::sync::Arc<provider_server::usage::UsageSummary>,
+        visible: bool,
+        now: Instant,
+    ) -> bool {
+        self.harness_workspace.report.observe(usage, visible, now)
+    }
+    pub(super) fn harness_usage_presentation_deadline(&self) -> Option<Instant> {
+        self.harness_workspace.report.deadline()
+    }
+    pub(super) fn service_harness_usage_presentation(
+        &mut self,
+        window: &PixelWindow,
+        now: Instant,
+    ) {
+        let visible = self.harness_workspace.active()
+            || (self.settings_open && self.settings_section == ui::SettingsSection::Harness);
+        if self.harness_workspace.report.service(now, visible) {
+            self.mark_host_ui_full_and_repaint(window);
+        }
+    }
+    pub(super) fn presented_harness_usage(&self) -> Option<&provider_server::usage::UsageSummary> {
+        self.harness_workspace
+            .report
+            .presented(self.harness_cached_view())
+    }
+    fn report_body(g: Geometry) -> ui::Rect {
+        ui::Rect {
+            width: if g.inspector.width > 0 {
+                g.inspector
+                    .x
+                    .saturating_add(g.inspector.width)
+                    .saturating_sub(g.body.x)
+            } else {
+                g.body.width
+            },
+            ..g.body
+        }
+    }
     fn open_workspace_settings(&mut self, window: &PixelWindow, target: SettingsTarget) {
         if !self.harness_workspace.active()
             && let Some(owner) = self.harness_workspace.header_return_focus.take()
@@ -813,6 +882,47 @@ impl ConApp {
             metrics.physical_height,
             scale,
         );
+        if self.harness_workspace.section == Section::Usage {
+            let size = scaled_host_ui_font(14, self.host_font_logical(), scale);
+            let view = self
+                .harness_settings
+                .as_ref()
+                .map(|s| s.cached_workspace_view());
+            let projection = self.harness_workspace.report.project(
+                view,
+                self.ui_language,
+                Self::report_body(g),
+                size,
+            );
+            let content_pointer = matches!(event, PixelWindowEvent::PointerButton { position: Some(p), .. }
+                if Self::report_body(g).contains((p.x*scale).max(0.0) as u32,(p.y*scale).max(0.0) as u32));
+            let content_key = self.harness_workspace.report.focused()
+                || matches!(event, PixelWindowEvent::Keyboard(key) if key.logical == LogicalKey::Named(NamedKey::Tab)
+                    && key.state == KeyPressState::Pressed && self.harness_workspace.focus == 6 && !key.modifiers.shift);
+            if (content_pointer
+                || content_key
+                || matches!(event, PixelWindowEvent::MouseWheel { .. }))
+                && let Some(intent) =
+                    self.harness_workspace
+                        .report
+                        .route(event, view, &projection, scale)
+            {
+                match intent {
+                    usage_report::Intent::Monitoring(account) => {
+                        self.open_workspace_settings(window, SettingsTarget::Monitoring);
+                        if let Some(settings) = &mut self.harness_settings {
+                            settings.select_monitoring_account(account.as_deref());
+                        }
+                    }
+                    usage_report::Intent::Leave(backwards) => {
+                        self.harness_workspace.focus = if backwards { 6 } else { 0 }
+                    }
+                    usage_report::Intent::None => {}
+                }
+                self.mark_host_ui_full_and_repaint(window);
+                return Ok(true);
+            }
+        }
         let rows = cards(
             self.harness_cached_view(),
             self.harness_workspace.section,
@@ -838,6 +948,7 @@ impl ConApp {
                     return Ok(true);
                 }
                 if let Some(index) = g.nav.iter().position(|rect| rect.contains(x, y)) {
+                    self.harness_workspace.report.leave_focus();
                     self.harness_workspace.section = Section::ALL[index];
                     self.harness_workspace.scroll = 0;
                     self.harness_workspace.selected = None;
@@ -882,6 +993,7 @@ impl ConApp {
                         if focus == 0 {
                             self.toggle_harness_workspace(window)?;
                         } else if focus <= 5 {
+                            self.harness_workspace.report.leave_focus();
                             self.harness_workspace.section = Section::ALL[focus - 1];
                             self.harness_workspace.scroll = 0;
                         } else {
@@ -1087,62 +1199,85 @@ impl ConApp {
                     || self.harness_workspace.focus == index + 1,
             );
         }
-        let rows = cards(
-            self.harness_cached_view(),
-            self.harness_workspace.section,
-            self.ui_language,
-        );
-        let start = g.start(rows.len(), self.harness_workspace.scroll);
-        for (index, card) in rows.iter().enumerate() {
-            let rect = g.row(index, start);
-            if rect.height == 0 {
-                continue;
-            }
-            surface.fill_rect(rect.x, rect.y, rect.width, rect.height, t.surface.to_xrgb());
-            host_ui::paint_host_ui_text(
-                &mut surface,
-                rect.x + 8,
-                rect.y + 8,
-                &card.title,
-                t.accent,
+        if self.harness_workspace.section == Section::Usage {
+            let p = self.harness_workspace.report.project(
+                self.harness_cached_view(),
+                self.ui_language,
+                Self::report_body(g),
                 size,
-                rect.width.saturating_sub(16),
             );
-            for (line, value) in card.lines.iter().take(3).enumerate() {
+            self.harness_workspace
+                .report
+                .paint(&mut surface, &p, size, t);
+        } else {
+            let mut rows = cards(
+                self.harness_cached_view(),
+                self.harness_workspace.section,
+                self.ui_language,
+            );
+            if let Some(summary) = self.presented_harness_usage()
+                && let Some(card) = rows.iter_mut().find(|c| c.id == "monitoring")
+            {
+                card.lines = vec![usage_report::compact(summary, self.ui_language)];
+            }
+            let start = g.start(rows.len(), self.harness_workspace.scroll);
+            for (index, card) in rows.iter().enumerate() {
+                let rect = g.row(index, start);
+                if rect.height == 0 {
+                    continue;
+                }
+                surface.fill_rect(rect.x, rect.y, rect.width, rect.height, t.surface.to_xrgb());
                 host_ui::paint_host_ui_text(
                     &mut surface,
                     rect.x + 8,
-                    rect.y + ((36 + line * 28) as f64 * scale) as u32,
-                    value,
-                    t.text,
+                    rect.y + 8,
+                    &card.title,
+                    t.accent,
                     size,
                     rect.width.saturating_sub(16),
                 );
+                for (line, value) in card.lines.iter().take(3).enumerate() {
+                    host_ui::paint_host_ui_text(
+                        &mut surface,
+                        rect.x + 8,
+                        rect.y + ((36 + line * 28) as f64 * scale) as u32,
+                        value,
+                        t.text,
+                        size,
+                        rect.width.saturating_sub(16),
+                    );
+                }
             }
-        }
-        if g.inspector.width > 0 {
-            if let Some(card) = rows
-                .iter()
-                .find(|card| Some(&card.id) == self.harness_workspace.selected.as_ref())
-            {
-                let label = std::iter::once(card.title.as_str())
-                    .chain(card.lines.iter().map(String::as_str))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                host_ui::paint_host_ui_paragraph(&mut surface, g.inspector, &label, t.text, size);
-            } else {
-                host_ui::paint_host_ui_paragraph(
-                    &mut surface,
-                    g.inspector,
-                    text(
-                        self.ui_language,
-                        "Select a card to inspect",
-                        "选择卡片查看详情",
-                        "選擇卡片查看詳情",
-                    ),
-                    t.muted,
-                    size,
-                );
+            if g.inspector.width > 0 {
+                if let Some(card) = rows
+                    .iter()
+                    .find(|card| Some(&card.id) == self.harness_workspace.selected.as_ref())
+                {
+                    let label = std::iter::once(card.title.as_str())
+                        .chain(card.lines.iter().map(String::as_str))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    host_ui::paint_host_ui_paragraph(
+                        &mut surface,
+                        g.inspector,
+                        &label,
+                        t.text,
+                        size,
+                    );
+                } else {
+                    host_ui::paint_host_ui_paragraph(
+                        &mut surface,
+                        g.inspector,
+                        text(
+                            self.ui_language,
+                            "Select a card to inspect",
+                            "选择卡片查看详情",
+                            "選擇卡片查看詳情",
+                        ),
+                        t.muted,
+                        size,
+                    );
+                }
             }
         }
         if self.settings_open {
@@ -1185,14 +1320,41 @@ impl ConApp {
                 ("height", r.height.into()),
             ])
         };
-        let rows = cards(
+        let mut rows = cards(
             self.harness_cached_view(),
             self.harness_workspace.section,
             self.ui_language,
         );
+        if self.harness_workspace.section == Section::Usage {
+            rows.clear();
+        }
+        if let Some(summary) = self.presented_harness_usage()
+            && let Some(card) = rows.iter_mut().find(|c| c.id == "monitoring")
+        {
+            card.lines = vec![usage_report::compact(summary, self.ui_language)];
+        }
         let start = g.start(rows.len(), self.harness_workspace.scroll);
         json::object(vec![
             ("active", self.harness_workspace.active().into()),
+            (
+                "usage",
+                if self.harness_workspace.section == Section::Usage {
+                    let size = scaled_host_ui_font(14, self.host_font_logical(), scale);
+                    let p = self.harness_workspace.report.project(
+                        self.harness_cached_view(),
+                        self.ui_language,
+                        Self::report_body(g),
+                        size,
+                    );
+                    self.harness_workspace.report.snapshot(
+                        &p,
+                        self.harness_cached_view(),
+                        self.ui_language,
+                    )
+                } else {
+                    json::JsonValue::Null
+                },
+            ),
             (
                 "metadata",
                 match self.harness_cached_view().map(|view| view.load_state) {

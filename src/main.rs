@@ -77,6 +77,7 @@ mod provider_accounts;
 mod provider_auth;
 mod provider_cli;
 mod provider_login;
+mod provider_monitoring;
 mod provider_protocol;
 mod provider_runtime;
 mod provider_selection;
@@ -4891,8 +4892,10 @@ impl PixelWindowApplication for ConApp {
         if self.a11y_dirty {
             self.publish_a11y(window);
         }
+        self.service_harness_usage_presentation(window, now);
         let control_deadline = control_deadline
             .into_iter()
+            .chain(self.harness_usage_presentation_deadline())
             .chain(presentation_deadline)
             .chain(self.browser_load_deadline)
             .min();

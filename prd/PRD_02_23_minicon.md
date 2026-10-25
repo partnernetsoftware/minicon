@@ -137,6 +137,9 @@ turn a current endpoint into remote execution authority.
   README's "no auto-update" line stays true under that qualification. Explicit
   browser navigation and OAuth are additional user-initiated network paths;
   opening their panel is not permission for a separate background service.
+  Explicitly opted-in account metadata monitoring is a separately bounded
+  exception owned by [PRD 31.01.03.02](PRD_02_31_01_03_02_account_monitoring.md).
+  It adds no daemon or unsolicited monitoring authority.
   Owner: `prd/PRD_02_25_con_workspace.md`, browser requirements and "Host UI".
   **One consequence that qualification does not absorb (registered
   2026-10-13, resolved 2026-10-14):** an update leaves a **second file behind** —
@@ -353,7 +356,8 @@ Applied to the cases that actually come up:
 |---|---|---|
 | terminal, PTY, rendering, IME, selection, scale | MiniCon | authority test; already here |
 | computer-use **mechanisms** (a11y read, input injection, screenshot, process, clipboard) | MiniCon | authority test; already vendored in `crates/minicon-platform` |
-| computer-use **policy** (grants, receipts, audit, destructive-action safety, browser *flows*, targets) | agenterm | composition test |
+| AgenTerm computer-use policy, plugins and browser flows | agenterm | composition test; no inherited MiniCon runtime authority |
+| planned MiniCon CU product scope | [PRD 38](PRD_02_38_computer_use.md) | later explicit direction; owns selected-target admission/results, not a general permission engine |
 | a wasm/script **execution kernel** | MiniCon, once the engine is stable | authority test |
 | a **plugin or app written in wasm** | agenterm | dead-code test |
 | the plugin/app **discovery index** | the family's `unisa` release/index repo; agenterm consumes it | an index is not a product |

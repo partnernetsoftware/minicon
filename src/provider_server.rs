@@ -1,5 +1,6 @@
 //! Product-owned local model routing. This module never executes model tools.
 
+mod monitoring;
 pub(crate) mod usage;
 use crate::provider_protocol::usage::{BillingDialect, UsageObserver};
 use crate::{
@@ -1114,6 +1115,28 @@ impl Gateway {
         generation: &str,
         budget: Option<&mut CatalogueBudget>,
     ) -> Result<TokenGrant, ServerError> {
+        // Existing inference/catalogue callers keep their accepted mapping.
+        self.grant_budgeted_with_refresh_error(
+            account,
+            cancel,
+            network,
+            generation,
+            budget,
+            |_, _| ServerError::NeedsLogin,
+        )
+    }
+
+    /// One refresh mechanism; metadata may retain its typed response outcome.
+    /// The mapper runs under the refresh mutex only and must perform no I/O.
+    fn grant_budgeted_with_refresh_error(
+        &self,
+        account: &str,
+        cancel: &NetworkHttpCancel,
+        network: &NetworkPolicy,
+        generation: &str,
+        budget: Option<&mut CatalogueBudget>,
+        mut refresh_error: impl FnMut(&NetworkHttpResponse, provider_auth::AuthError) -> ServerError,
+    ) -> Result<TokenGrant, ServerError> {
         if cancel.is_cancelled() {
             return Err(ServerError::Cancelled);
         }
@@ -1166,7 +1189,7 @@ impl Gateway {
                 )?
             };
             let fresh = provider_auth::parse_opencode_refresh(&response, Instant::now())
-                .map_err(|_| ServerError::NeedsLogin)?;
+                .map_err(|error| refresh_error(&response, error))?;
             self.store
                 .replace_grant_if_current(account, generation, fresh)
                 .map_err(credential_error)?;

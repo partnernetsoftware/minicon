@@ -58,7 +58,9 @@ MiniCon — one-file local terminal
 │           │   └── [-] Account catalogues / drafts / verified atomic apply → prd/PRD_02_31_01_02_01_connection_selection.md
 │           │       └── [-] Whole-profile Verify and apply → prd/PRD_02_31_01_02_01_01_profile_verification.md
 │           └── [-] Usage statistics / balance and allowance monitoring → prd/PRD_02_31_01_03_usage_monitoring.md
-│               └── [-] Exact request accounting / private retention → prd/PRD_02_31_01_03_01_request_accounting.md
+│               ├── [-] Exact request accounting / private retention → prd/PRD_02_31_01_03_01_request_accounting.md
+│               ├── [-] Account balances / allowance / opted-in monitoring → prd/PRD_02_31_01_03_02_account_monitoring.md
+│               └── [-] Usage reports / Monitoring presentation → prd/PRD_02_31_01_03_03_usage_reports.md
 ├── Reusable foundations → prd/PRD_02_28_shared_core.md
 │   ├── [-] Commit-aware private publication → prd/PRD_02_28_02_private_publication.md
 │   ├── minicon-core — shared rules; not a complete terminal engine

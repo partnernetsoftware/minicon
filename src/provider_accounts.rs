@@ -323,6 +323,22 @@ impl AccountStore {
         Ok(accept(self.snapshot_locked(id)?))
     }
 
+    /// Metadata completion only: compare the exact used grant and publish a
+    /// bounded in-memory result under the SAME mutation lock. The callback
+    /// performs no IO and must not re-enter Store/Gateway. Grant never escapes
+    /// into View, JSON or diagnostics.
+    pub(crate) fn with_snapshot_and_current_grant<T>(
+        &self,
+        id: &str,
+        accept: impl FnOnce(AccountSnapshot, TokenGrant) -> T,
+    ) -> Result<T, StoreError> {
+        let _guard = self.mutation.lock().map_err(|_| StoreError::Storage)?;
+        let snapshot = self.snapshot_locked(id)?;
+        let credential = self.read_credential(id, snapshot.summary.provider)?;
+        let grant = decode_grant(&credential)?;
+        Ok(accept(snapshot, grant))
+    }
+
     /// One publication admission for all affected account authorities. Caller
     /// already owns Gateway state; callback may only replace preencoded Config
     /// bytes. It must not reacquire Store/Gateway or persist account readiness.

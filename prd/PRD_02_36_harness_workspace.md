@@ -476,3 +476,11 @@ capability/permission guidance, private observation preview, explicit operation/
 disclosure scope, actual step result and Stop. Reuse H2 run identity/events and
 return context; do not add another model loop or operate desktop tasks inside
 Settings / Harness forms. No CU navigation/action is executable in current H0.
+
+## Usage H1 projection owner (design proposal)
+
+[Local usage reports](PRD_02_31_01_03_03_usage_reports.md) owns the proposed full
+Usage read-only selectors/qualified rows and compact Monitoring Settings link.
+This module continues owning workspace entry/return, shared chrome and bounded
+presentation lifetime. No new report consumer/native evidence is claimed by the
+existing H0 receipts; metadata policy remains configured only in Settings.

@@ -2273,8 +2273,24 @@ mod tests {
         let source = include_str!("wry_host.rs");
         assert!(source.contains(".with_url(url)"));
         assert!(source.contains("default_vbox"));
-        assert!(source.contains("webkit_proxy_env"));
-        assert!(source.contains("webkit_proxy_clear"));
+        let library = include_str!("lib.rs")
+            .split("\n#[cfg(test)]\nmod tests {")
+            .next()
+            .unwrap_or_default();
+        assert!(
+            source.contains("crate::resolve_proxy_from_process(&crate::BrowserProxyConfig::default())")
+                && library.contains("apply_proxy_env(&mut command, proxy);")
+                && library.contains("for key in webkit_proxy_clear(proxy) {\n        command.env_remove(key);\n    }")
+                && library.contains("for (key, value) in webkit_proxy_env(proxy) {\n        command.env(key, value);\n    }")
+        );
+        assert!(
+            source.contains("let parts = context.proxy_parts().map_err(|error| error.code())?;")
+                && source.contains("manager.set_network_proxy_settings(NetworkProxyMode::NoProxy, None);")
+                && source.contains("let bypass: Vec<_> = parts.bypass.iter().map(String::as_str).collect();")
+                && source.contains("settings.add_proxy_for_scheme(\"http\", &format!(\"http://{host}:{port}\"));")
+                && source.contains("settings.add_proxy_for_scheme(\"https\", &format!(\"http://{host}:{port}\"));")
+                && source.contains("manager.set_network_proxy_settings(NetworkProxyMode::Custom, Some(&mut settings));")
+        );
         assert!(source.contains("with_proxy_config"));
         assert!(source.contains("with_navigation_handler"));
         assert!(source.contains("webview_must_bypass_proxy"));

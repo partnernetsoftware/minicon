@@ -903,27 +903,35 @@ print(String(decoding: raw, as: UTF8.self))
         for index, section, card_id, row_id in ((0, "Overview", "service", "local_api"),
                                                 (1, "Accounts", "accounts", "accounts"),
                                                 (2, "Clients", "connection", "model"),
-                                                (3, "Usage", "monitoring", "status")):
+                                                (3, "Usage", "monitoring", "monitoring")):
             _, geometry, workspace = state()
             click_rectangle(workspace["navigation"][index], geometry, section)
             current, geometry, workspace = state()
             assert workspace["section"] == section
-            card = next(card for card in workspace["cards"] if card["id"] == card_id)
-            assert card["rect"]["height"] > 0, "deep-link card is not visible"
-            click_rectangle(card["rect"], geometry, card_id)
-            selected, geometry, workspace = state()
-            assert workspace["selected"] == card_id
-            click_rectangle(workspace["settings"], geometry, "H0 Configure")
+            if section == "Usage":
+                # Usage is now the real report, with a presented Monitoring action.
+                report = workspace["usage"]
+                assert workspace["cards"] == [] and report["timezone_basis"] == "utc"
+                action = next(row for row in report["rows"] if row["id"] == "monitoring")
+                assert action["action"] and action["complete"] and action["rect"]["height"] > 0
+                click_rectangle(action["rect"], geometry, "Usage Monitoring settings")
+            else:
+                card = next(card for card in workspace["cards"] if card["id"] == card_id)
+                assert card["rect"]["height"] > 0, "deep-link card is not visible"
+                click_rectangle(card["rect"], geometry, card_id)
+                selected, geometry, workspace = state()
+                assert workspace["selected"] == card_id
+                click_rectangle(workspace["settings"], geometry, "H0 Configure")
             opened = wait(lambda: snap if (snap := cli("ui-snapshot"))["geometry"]["harness_settings"] is not None
                           and not snap["geometry"]["harness_settings"]["busy"] else None,
                           "H0 Settings metadata", 12)
             settings = opened["geometry"]["harness_settings"]
             assert opened["settings_open"] and opened["geometry"]["settings_section"] == "harness"
             assert any(row["id"] == row_id for row in settings["rows"]), f"H0 deep link missed {row_id}"
-            if card_id == "connection":
-                # The model marker may legitimately clamp at the last full page,
+            if card_id in ("connection", "monitoring"):
+                # A late section marker may clamp at the last full page,
                 # but it must never be the default Service position.
-                assert settings["scroll"] > 0, "H0 connection deep link stayed at Service"
+                assert settings["scroll"] > 0, f"H0 {card_id} deep link stayed at Service"
             else:
                 assert settings["rows"][0]["id"] == row_id, f"H0 deep link did not position {row_id}"
             assert settings["listener"] == "stopped" and settings["actual_port"] is None and not settings["login_active"]

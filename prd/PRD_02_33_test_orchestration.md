@@ -312,6 +312,17 @@ inventory proves coverage; the zero-filter result establishes the scope here.
 
 ### Local context and observation interference
 
+On the owner's Windows desktop, use explicitly selected non-clipboard consumers.
+Do not run the unfiltered workspace gate there: existing unignored control tests
+write the real shared clipboard, even when their GUI uses `--no-activate`.
+A per-process clipboard mutex does not isolate the desktop. The complete
+`scripts/build.sh test` workspace/owned-fork gate runs on the existing isolated
+Windows x64 dev-loop runner, before the independent browser/K3 steps, whenever
+the dispatch has no Rust filter and is not a dedicated lifetime/ACL diagnostic.
+Its standard-workspace log and receipt record the checked-out source and actual
+counts; ignored opt-ins remain unqualified. No local desktop emulation or
+assertion skipping substitutes for that execution.
+
 A moved checkout may leave cached source-bound test programs with their old
 `CARGO_MANIFEST_DIR`. Refresh the local source compilation before trusting its
 path-dependent checks; preserve dependency caches and inherited edits. Native
@@ -328,3 +339,48 @@ The canonical build wrapper applies a caller's `--lib` selector to workspace
 packages and avoids forwarding a duplicate to the separately owned fork, which
 already selects its library. The complete standard product gate remains the
 final development obligation; a filtered/failed wrapper call is not a full pass.
+
+### Windows SDK fixture build prerequisite
+
+The Windows main-unit suite includes the existing synchronized native SDK
+journey owned by [TUI compatibility](PRD_02_24_01_tui_compatibility.md).
+It requires the canonical workspace output
+`target/debug/minicon-platform-console-probe.exe`. A filtered
+`build.sh test-suite --bin minicon` invocation does not build another package's
+probe binary. Prepare through `scripts/build.sh dev --workspace --all-targets`,
+matching the native CI workspace build and MiniCon's enabled platform features;
+do not substitute a platform-default-only check.
+
+Observed 2026-10-26: the local main invocation ran852 passes, then reported this
+one missing-fixture failure and two existing opt-in ignores. Its raw receipt is
+`target-six/v0.2.23-provider/monitoring-report-full-regression/receipt.json`.
+The workspace build and unchanged original SDK test then passed, followed by
+the two synthetic worker journeys and alignment, in
+`monitoring-report-regression-resume/receipt.json` under the same evidence root.
+No assertion was weakened; the earlier failed whole invocation remains failed.
+The subsequent standard workspace/fork invocation is retained as FAIL in
+`monitoring-report-standard-gate/receipt.json` under the same evidence root.
+The main unit binary passed 853 tests with two existing opt-in ignores; the
+workspace later stopped at the minicon-web source-contract test requiring
+`webkit_proxy_env` in `wry_host.rs`. Its 35 other package tests passed. The
+owned-fork phase was not reached. Diagnose the actual host/proxy consumer before
+changing its assertion; this failed invocation is not a complete gate pass.
+
+The narrow source-contract repair retains the eight other original assertions
+and checks the actual child environment and explicit context proxy calls.
+Two actual production-call removals each failed the intended assertion; exact
+restoration passed. The isolated default minicon-web package passed 22 tests.
+Root initially expected the workspace-unified count of 36, so the original
+control driver receipt retains an inventory failure; the separate adjudication
+does not rewrite it. Evidence is `wry-host-source-repair-controls/receipt.json`
+and `wry-host-source-repair-controls-adjudication.json` under the same root.
+These structural checks do not qualify native proxy routing.
+
+The subsequent full local run was stopped after the existing Windows composer
+image test had written a synthetic DIB to the shared clipboard. It may have
+replaced the owner's prior contents; they were not read or recoverable here.
+`monitoring-report-standard-gate-resume/stop-receipt.json` records 1,187 completed
+passes, unchanged source and successful fmt/default/native-auth Clippy checks,
+not a complete gate. Its original RUNNING receipt remains alongside the explicit
+stop receipt because the owned process was forcibly stopped. Complete standard
+qualification now requires the isolated CI execution described above.

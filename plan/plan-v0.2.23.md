@@ -81,19 +81,19 @@ Outcome: operate browser controls predictably and connect a model account to a l
 │   safe failure: unverified OAuth is BLOCKED; transport-only API-key evidence is labeled separately
 │   dependency: auth feasibility, single-turn/streaming seam and worker lifecycle repairs
 │   non-goal: automatic pool rotation, llm-gate, ujs/tinyvm integration or all-client compatibility
-├── [_] HARNESS-MONITOR — attribute usage and show account balance/allowance
+├── [-] HARNESS-MONITOR — attribute usage and show account balance/allowance
 │   invariant: local receipts and provider-authoritative snapshots retain their source and coverage
 │   evidence: PRD 31.01.03 UM-01..06; real supported account reads and unknown/partial failures
 │   safe failure: bounded monitoring with no model request, fake zero or auto-top-up
 │   dependency: account/profile/network identity and provider metadata contracts
 │   non-goal: invoice management, rich analytics or automatic quota scheduling
-├── [_] HARNESS-EXPERIENCE — apply the owner's product feedback before release
+├── [-] HARNESS-EXPERIENCE — apply the owner's product feedback before release
 │   invariant: PRD 31.01.01 guides account -> verified model -> local tool with truthful results
 │   evidence: HU-01..09, including a continuous first-use and recovery journey
 │   safe failure: preserve the applied binding and show the affected step's recovery
 │   dependency: existing HARNESS-CONNECT mechanisms, shared controls and typed state
 │   non-goal: another agent loop, new runtime, duplicate Settings window or new provider scope
-├── [_] HARNESS-ENTRY — robot immediately left of Settings and one operational view
+├── [-] HARNESS-ENTRY — robot immediately left of Settings and one operational view
 │   invariant: H0 navigation preserves Console/Web context and reads actual runtime state
 │   evidence: PRD 36 HW-01/02/03/06/07, Settings HU-10/11 and selected PP/UM projections
 │   safe failure: useful setup/unavailable states; no task/service/login side effects on entry
@@ -197,6 +197,22 @@ credentials, real streaming/tool linkage or worker cleanup merely to obtain a
 successful hello-world response. Behavior and initial limits have one owner
 in PRD 31.01 and the worker module, rather than another contract in this plan.
 
+### Monitoring integration sequence (2026-10-26 local continuation)
+
+Request-accounting cache work and native feedback remain owned by
+[accounting](../prd/PRD_02_31_01_03_01_request_accounting.md) and
+[the dev court](../prd/PRD_02_32_dev_loop_crosscheck.md).
+The integrated [account metadata backend](../prd/PRD_02_31_01_03_02_account_monitoring.md)
+and [Monitoring/report consumers](../prd/PRD_02_31_01_03_03_usage_reports.md)
+now record matching-source local consumer, guard and synthetic public evidence.
+Their initial compiler, fixture and navigation failures remain retained.
+Finish explicit local-history clearing and qualify the continuous
+Settings/report/Stop/restart journey and the selected
+two DeepSeek plus OpenCode Go account reads. Keep the current K3 helper cleanup,
+Intel resolver failure and Windows Cookie persistence requirement open under
+their owners. Only after these selected joins proceed to source freeze and
+exact-artifact release; the older Candidate cannot qualify changed source.
+
 ### Current integration checkpoint (2026-10-25)
 
 The [provider owner](../prd/PRD_02_31_01_provider_gateway.md#real-account-checkpoint-and-worker-defects-2026-10-25)
@@ -248,7 +264,7 @@ or overwrite that sealed Candidate, and do not publish it to bypass feedback.
 | 0 `[-]` — pool and state contracts | Account/network identity, keyed profiles, aliases, immutable attribution and operation-local observations; host destination/return and Settings deep links; migrate existing default binding/key | Partial backend migration/key/alias/session proof in PP-04..06; network/attribution/host-destination seams and HU-01/09/10/11 remain open |
 | 1 `[_]` — account authorization | Isolated contexts for two DeepSeek accounts and OpenCode Go; account labels and explicit login/service proxy choices; host-owned result and retry | HU-02 and PP-01..03; real supported grants, observed proxy paths, no inherited cookie/credential crossover; Google-login visibility recorded without assuming inference proxy needs |
 | 2 `[-]` — client allocation and model apply | Create independent profiles/keys, account-scoped aliases and bounded picker, explicit verification and transactional apply | Partial backend routing/shared-limit/scoped-revoke proof in PP-04..06; profile-management UI, HU-03/04 and verified transactional apply remain open |
-| 3 `[_]` — usage and provider readings | Capture terminal usage before adapter normalization, bounded local history/summary, credential-compatible balance/quota reads and explicit/opt-in monitoring | UM-01..06; no double-counted stream usage, no fabricated zero balance/cost, no model-call polling; unsupported exact grants remain BLOCKED for that capability |
+| 3 `[-]` — usage and provider readings | Capture terminal usage before adapter normalization, bounded local history/summary, credential-compatible balance/quota reads and explicit/opt-in monitoring | UM-01..06; no double-counted stream usage, no fabricated zero balance/cost, no model-call polling; unsupported exact grants remain BLOCKED for that capability |
 | 4 `[-]` — complete handoff and H0 | Explicit shared service enable, per-profile key setup and recipes; robot left of Settings, real overview/empty states, back navigation and precise configuration links | HU-05/06/10/11 and HW-01/02/03; H0 development checkpoint in PRD 36; actual tasks work through recipes; opening robot has no start side effect; H2 visual task operation stays later |
 | 5 `[_]` — integrated product acceptance | Account lifecycle, selected languages, narrow/native input, account attention and stop/reopen recovery | HU-07..09 plus continuous first use and the three-account/multiple-client scenario; preserve all selected browser/native/scale obligations |
 | 6 `[_]` — qualify changed source | Upsert actual implementation/evidence status, finish source, then matching final delivery gates | Product feedback resolved by observable journeys; no old-source signed bytes used to qualify the new pool/monitoring product |

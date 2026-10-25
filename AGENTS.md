@@ -192,6 +192,8 @@ current shape exists, not just what it is.
   that loses its `#[test]` attribute compiles as dead code and silently runs
   nothing, and an unused `Result` hides a setup that failed. Add a test and
   confirm the gate's test count went up.
+- Before a local Windows full test run, follow the desktop/clipboard boundary in
+  `prd/PRD_02_33_test_orchestration.md` ("Local context and observation interference").
 - Keep the READMEs (`README.md` index, `README.en.md` / `README.zh.md`) brief and
   human-facing; keep operational agent rules here.
 - Preserve user changes in a dirty tree and stage only exact reviewed paths.

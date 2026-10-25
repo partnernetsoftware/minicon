@@ -123,22 +123,92 @@ def read_clipboard():
         require(bool(user.CloseClipboard()), "clipboard-read-release")
 
 
+_LOCK_CHILD_PHASES = ("opening", "holding", "release-observed", "closed")
+_LOCK_FAILURE_CODES = frozenset((
+    "lock-directory", "lock-authority", "clipboard-lock-unavailable",
+    "clipboard-lock-deadline", "clipboard-lock-release", "clipboard-lock-not-ready",
+    "clipboard-lock-ended-before-adapter-failure", "clipboard-lock-cleanup",
+    "key-operation-no-terminal-feedback", "key-terminal-target-mismatch",
+    "key-terminal-result-mismatch:clipboard_failed", "key-terminal-did-not-ack-new-request",
+))
+
+
+def lock_failure_code(error):
+    if error is None:
+        return None
+    code = str(error) if isinstance(error, Failure) else None
+    return code if code in _LOCK_FAILURE_CODES else "unexpected-error"
+
+
 def clipboard_lock_child(directory, authority):
-    """Private owned helper, not a product flag or clipboard payload sink."""
+    """Finite status only; no clipboard payload or private log is published."""
     user, _ = windows_clipboard()
     require(directory.is_dir() and not directory.is_symlink(), "lock-directory")
     require(json.loads((directory / "authority.json").read_bytes()) == {"authority": authority},
             "lock-authority")
-    require(bool(user.OpenClipboard(None)), "clipboard-lock-unavailable")
+    result = {"phase": "opening", "ready": False, "release_observed": False,
+              "closed": False, "failure": None, "cleanup_failure": None, "win32_error": None}
+    primary_error = cleanup_error = None
+    opened = False
     try:
+        opened = bool(user.OpenClipboard(None))
+        if not opened:
+            result["win32_error"] = ctypes.get_last_error()
+        require(opened, "clipboard-lock-unavailable")
         save(directory / "ready.json", {"locked": True})
+        result.update(phase="holding", ready=True)
         deadline = time.monotonic() + 20
         while not (directory / "release").exists():
             require(time.monotonic() < deadline, "clipboard-lock-deadline")
             time.sleep(0.01)
+        result.update(phase="release-observed", release_observed=True)
+    except BaseException as error:
+        primary_error = error
     finally:
-        require(bool(user.CloseClipboard()), "clipboard-lock-release")
+        if opened:
+            try:
+                closed = bool(user.CloseClipboard())
+                if not closed:
+                    result["win32_error"] = ctypes.get_last_error()
+                require(closed, "clipboard-lock-release")
+                result.update(phase="closed", closed=True)
+            except BaseException as error:
+                cleanup_error = error
+        result.update(failure=lock_failure_code(primary_error),
+                      cleanup_failure=lock_failure_code(cleanup_error))
+        try:
+            save(directory / "result.json", result)
+        except OSError:
+            pass  # Diagnostic failure cannot replace the actual child result.
+        if primary_error is not None:
+            raise primary_error
+        if cleanup_error is not None:
+            raise cleanup_error
     return 0
+
+
+def lock_child_result(directory):
+    """Reconstruct the fixed whitelist; never copy arbitrary child JSON."""
+    try:
+        path = directory / "result.json"
+        if path.is_symlink() or path.stat().st_size > 1024:
+            return {"status": "unavailable"}
+        with path.open("rb") as stream:
+            raw = stream.read(1025)
+        if len(raw) > 1024:
+            return {"status": "unavailable"}
+        value = json.loads(raw)
+        if (set(value) != {"phase", "ready", "release_observed", "closed", "failure", "cleanup_failure", "win32_error"}
+                or value["phase"] not in _LOCK_CHILD_PHASES
+                or any(type(value[k]) is not bool for k in ("ready", "release_observed", "closed"))
+                or any(value[k] not in (*_LOCK_FAILURE_CODES, "unexpected-error", None)
+                       for k in ("failure", "cleanup_failure"))
+                or not (value["win32_error"] is None or (type(value["win32_error"]) is int
+                        and 0 <= value["win32_error"] <= 0xffffffff))):
+            return {"status": "unavailable"}
+        return {"status": "observed", **value}
+    except (OSError, ValueError, TypeError, KeyError):
+        return {"status": "unavailable"}
 
 
 class Replay:
@@ -545,19 +615,44 @@ class Replay:
         logs.mkdir(mode=0o700)
         self.lock = self.module.OwnedProcess([sys.executable, str(Path(__file__).resolve()),
             "--clipboard-lock-child", str(directory), authority], self.env, logs)
+        primary_error = cleanup_error = None
+        observation = {"phase": "wait-ready", "ready": False, "release_requested": False}
         try:
             self.wait(lambda: (directory / "ready.json").exists() and not self.lock.exited(),
                       "clipboard-lock-not-ready", 5)
+            observation.update(phase="copy-under-contention", ready=True)
             self.key_action(1, "clipboard_failed")
             require(not self.lock.exited(), "clipboard-lock-ended-before-adapter-failure")
+        except BaseException as error:
+            primary_error = error
+            observation["primary_phase"] = observation["phase"]
         finally:
-            (directory / "release").touch()
-            end = min(self.deadline, time.monotonic() + 3)
-            while not self.lock.exited() and time.monotonic() < end:
-                time.sleep(0.01)
-            require(self.lock.exited() and self.lock.process.returncode == 0, "clipboard-lock-cleanup")
-            self.lock.close()
-            self.lock = None
+            try:
+                (directory / "release").touch()
+                observation.update(phase="release-wait", release_requested=True)
+                end = min(self.deadline, time.monotonic() + 3)
+                while not self.lock.exited() and time.monotonic() < end:
+                    time.sleep(0.01)
+                require(self.lock.exited() and self.lock.process.returncode == 0, "clipboard-lock-cleanup")
+            except BaseException as error:
+                cleanup_error = error
+            observation.update(exited_before_close=self.lock.exited(),
+                               exit_code_before_close=self.lock.process.returncode)
+            try:
+                self.lock.close()
+            except BaseException as error:
+                if cleanup_error is None:
+                    cleanup_error = error
+            else:
+                self.lock = None
+            observation.update(child=lock_child_result(directory),
+                               primary_failure=lock_failure_code(primary_error),
+                               cleanup_failure=lock_failure_code(cleanup_error))
+            self.receipt["clipboard_lock_observation"] = observation
+            if primary_error is not None:
+                raise primary_error
+            if cleanup_error is not None:
+                raise cleanup_error
         for _ in range(3):
             require(self.state()["client_key"]["feedback"]["kind"] == "clipboard_failed",
                     "clipboard-failure-replayed-or-relabeled")

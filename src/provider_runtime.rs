@@ -6,6 +6,7 @@ pub use crate::provider_accounts::{
 };
 pub use crate::provider_auth::Provider;
 pub use crate::provider_login::AttemptId;
+pub use crate::provider_monitoring::{MonitorError, MonitorOperation, MonitorView, PolicyInput};
 use crate::provider_selection::{
     CatalogueCache, CatalogueRequest, ConnectionAccounts, DraftBook, SelectionError,
 };
@@ -146,6 +147,7 @@ pub struct ConnectionCheckView {
 pub struct View {
     pub load_state: LoadState,
     pub usage: Arc<crate::provider_server::usage::UsageSummary>,
+    pub account_monitoring: Arc<MonitorView>,
     pub port: u16,
     pub actual_port: Option<u16>,
     pub accounts: Vec<AccountSummary>,
@@ -179,6 +181,7 @@ impl Default for View {
         Self {
             load_state: LoadState::Loading,
             usage: Default::default(),
+            account_monitoring: Default::default(),
             port: 28789,
             actual_port: None,
             accounts: Vec::new(),
@@ -211,6 +214,21 @@ impl Default for View {
 
 #[derive(Clone, Debug)]
 pub enum Action {
+    RefreshAccountMetadata {
+        request: u64,
+        account: String,
+    },
+    SetAccountMonitoring {
+        request: u64,
+        account: String,
+        expected_policy_revision: u64,
+        policy: PolicyInput,
+    },
+    ResumeAccountMonitoring {
+        request: u64,
+        account: String,
+        expected_policy_revision: u64,
+    },
     VerifyAndApplyConnectionProfile {
         request: u64,
         profile: String,
@@ -351,6 +369,7 @@ impl std::error::Error for RuntimeError {}
 struct Pending {
     batch_gate: BatchGate,
     keys: profile_keys::KeyPending,
+    monitor: crate::provider_monitoring::MonitorGate,
     view: Option<View>,
     effects: VecDeque<Effect>,
     last_view: Option<View>,
@@ -412,6 +431,14 @@ impl Runtime {
     }
 
     pub fn act(&mut self, action: Action) -> Result<(), RuntimeError> {
+        if matches!(
+            &action,
+            Action::RefreshAccountMetadata { .. }
+                | Action::SetAccountMonitoring { .. }
+                | Action::ResumeAccountMonitoring { .. }
+        ) {
+            return self.monitor_action(action);
+        }
         if matches!(
             &action,
             Action::ProfileKey { .. }
@@ -552,6 +579,11 @@ impl Runtime {
             }
         }
         if matches!(action, Action::Stop) {
+            self.pending
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .monitor
+                .stop();
             gate.stop(&self.stop_requested);
             return Ok(());
         }
@@ -626,6 +658,54 @@ impl Runtime {
         Ok(())
     }
 
+    pub fn next_account_monitoring_request(&self) -> Result<u64, RuntimeError> {
+        self.pending
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .monitor
+            .next_request()
+            .map_err(map_monitor)
+    }
+    fn monitor_action(&mut self, action: Action) -> Result<(), RuntimeError> {
+        let (request, account, operation, off) = match &action {
+            Action::RefreshAccountMetadata { request, account } => {
+                (*request, account, MonitorOperation::Refresh, false)
+            }
+            Action::SetAccountMonitoring {
+                request,
+                account,
+                policy,
+                ..
+            } => {
+                if !crate::provider_monitoring::valid_policy(policy) {
+                    return Err(RuntimeError::InvalidAction);
+                }
+                (*request, account, MonitorOperation::Policy, !policy.enabled)
+            }
+            Action::ResumeAccountMonitoring {
+                request, account, ..
+            } => (*request, account, MonitorOperation::Policy, false),
+            _ => return Err(RuntimeError::InvalidAction),
+        };
+        let epoch = self.stop_requested.load(Ordering::Acquire);
+        let gate = self
+            .pending
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .monitor
+            .clone();
+        gate.reserve(account, request, operation, off, epoch)
+            .map_err(map_monitor)?;
+        let account = account.clone();
+        if let Err(error) = self.commands.try_send((epoch, Vec::new(), action)) {
+            gate.withdraw(&account, request);
+            return Err(match error {
+                TrySendError::Full(_) => RuntimeError::Busy,
+                TrySendError::Disconnected(_) => RuntimeError::WorkerUnavailable,
+            });
+        }
+        Ok(())
+    }
     /// Applies already-produced metadata/effects. No store or transport calls.
     pub fn poll(&mut self) -> Vec<Effect> {
         let pending_arc = self.pending.clone();
@@ -637,6 +717,9 @@ impl Runtime {
                 for receipt in &view.connection_receipts {
                     self.connection_inflight.remove(&receipt.request);
                 }
+                pending
+                    .monitor
+                    .acknowledge(&view.account_monitoring.receipts);
                 self.view = view;
             }
             let effects = pending.effects.drain(..).collect();
@@ -1786,6 +1869,9 @@ impl Owner {
             return Ok(None);
         };
         match action {
+            Action::RefreshAccountMetadata { .. }
+            | Action::SetAccountMonitoring { .. }
+            | Action::ResumeAccountMonitoring { .. } => return Err(RuntimeError::InvalidAction),
             Action::VerifyAndApplyConnectionProfile {
                 request,
                 profile,
@@ -2033,7 +2119,7 @@ fn run_loaded_owner(
     exit: Arc<AtomicBool>,
     stop_requested: Arc<AtomicU64>,
     incoming: mpsc::Receiver<(u64, Vec<u64>, Action)>,
-) {
+) -> bool {
     // Start the accounting lifetime only for the actual background Owner loop,
     // not while constructing a non-running Owner value.
     owner.gateway.install_usage(owner.root.join("usage"));
@@ -2047,17 +2133,33 @@ fn run_loaded_owner(
         pending: pending.clone(),
         notify: notify.clone(),
     });
+    let monitor_gate = pending
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .monitor
+        .clone();
+    let mut monitor = crate::provider_monitoring::Controller::new(
+        owner.store.clone(),
+        owner.gateway.clone(),
+        metadata.clone(),
+        monitor_gate,
+        stop_requested.clone(),
+    );
     let mut login = LoginCoordinator::new(owner.store.clone(), metadata);
     publish(&pending, &notify, owner.view.clone(), None);
     let mut last_stop = 0;
     while !exit.load(Ordering::Acquire) {
         let current_stop = stop_requested.load(Ordering::Acquire);
         if current_stop != last_stop {
+            monitor.stop();
             owner.stop();
             last_stop = current_stop;
         }
         owner.poll_operation();
         owner.drive_batch();
+        let incompatible = owner.operation.as_ref().map(|o| o.account.as_str());
+        owner.view.account_monitoring =
+            monitor.tick(current_stop, incompatible, owner.batch.is_some());
         if let Some(summary) = owner.gateway.usage_summary() {
             owner.view.usage = summary;
         }
@@ -2067,6 +2169,90 @@ fn run_loaded_owner(
         }
         match incoming.recv_timeout(Duration::from_millis(20)) {
             Ok((epoch, delivered, action)) => {
+                let subject = match &action {
+                    Action::RefreshAccountMetadata { request, account } => {
+                        Some((account.clone(), *request, MonitorOperation::Refresh))
+                    }
+                    Action::SetAccountMonitoring {
+                        request, account, ..
+                    }
+                    | Action::ResumeAccountMonitoring {
+                        request, account, ..
+                    } => Some((account.clone(), *request, MonitorOperation::Policy)),
+                    _ => None,
+                };
+                if let Some((account, request, operation)) = subject {
+                    if epoch != stop_requested.load(Ordering::Acquire) {
+                        monitor.reject(account, request, operation, MonitorError::Cancelled);
+                    } else {
+                        match action {
+                            Action::RefreshAccountMetadata { .. } => {
+                                if owner.batch.is_some()
+                                    || owner
+                                        .operation
+                                        .as_ref()
+                                        .is_some_and(|o| o.account == account)
+                                {
+                                    monitor.reject(account, request, operation, MonitorError::Busy);
+                                } else {
+                                    let _ = monitor.refresh(account, request, epoch);
+                                }
+                            }
+                            Action::SetAccountMonitoring {
+                                expected_policy_revision,
+                                policy,
+                                ..
+                            } => {
+                                let resume = policy.enabled;
+                                let _ = monitor.policy(
+                                    account,
+                                    request,
+                                    expected_policy_revision,
+                                    policy,
+                                    epoch,
+                                    resume,
+                                );
+                            }
+                            Action::ResumeAccountMonitoring {
+                                expected_policy_revision,
+                                ..
+                            } => {
+                                let policy = owner
+                                    .view
+                                    .account_monitoring
+                                    .accounts
+                                    .iter()
+                                    .find(|a| a.account == account)
+                                    .map(|a| a.policy.clone());
+                                if let Some(policy) = policy {
+                                    let _ = monitor.policy(
+                                        account,
+                                        request,
+                                        expected_policy_revision,
+                                        policy,
+                                        epoch,
+                                        true,
+                                    );
+                                } else {
+                                    monitor.reject(
+                                        account,
+                                        request,
+                                        operation,
+                                        MonitorError::MissingAccount,
+                                    );
+                                }
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    owner.view.account_monitoring = monitor.tick(
+                        stop_requested.load(Ordering::Acquire),
+                        owner.operation.as_ref().map(|o| o.account.as_str()),
+                        owner.batch.is_some(),
+                    );
+                    publish(&pending, &notify, owner.view.clone(), None);
+                    continue;
+                }
                 owner
                     .view
                     .connection_receipts
@@ -2179,14 +2365,14 @@ fn run_loaded_owner(
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
     }
+    monitor.shutdown();
     owner.stop();
     let _ = login.shutdown(Duration::from_secs(5));
     let usage_close = owner.gateway.usage_close_handle();
     drop(login);
+    drop(monitor);
     drop(owner);
-    if let Some(close) = usage_close {
-        let _ = close.wait_owner();
-    }
+    usage_close.is_none_or(|close| close.wait_owner())
 }
 fn clone_secret(secret: Option<&Secret>) -> Result<Option<Secret>, RuntimeError> {
     secret
@@ -2218,6 +2404,17 @@ fn prepare_root(root: &Path) -> Result<(), RuntimeError> {
     }
     std::fs::create_dir_all(root).map_err(|_| RuntimeError::Storage)?;
     filesystem::protect_private_directory(root).map_err(|_| RuntimeError::Storage)
+}
+fn map_monitor(error: MonitorError) -> RuntimeError {
+    match error {
+        MonitorError::Busy => RuntimeError::Busy,
+        MonitorError::Cancelled => RuntimeError::Cancelled,
+        MonitorError::MissingAccount => RuntimeError::MissingAccount,
+        MonitorError::StaleAuthority => RuntimeError::AccountChanged,
+        MonitorError::InvalidAction | MonitorError::Malformed => RuntimeError::InvalidAction,
+        MonitorError::WorkerUnavailable => RuntimeError::WorkerUnavailable,
+        _ => RuntimeError::ProviderUnavailable,
+    }
 }
 fn map_login(error: crate::provider_login::LoginError) -> RuntimeError {
     use crate::{
@@ -2272,6 +2469,194 @@ fn map_server(error: ServerError) -> RuntimeError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn provider_monitor_actual_poll_act_actor_rejection_keeps_second_terminal() {
+        let root = Root::new();
+        let owner = Owner::load(root.0.clone()).unwrap();
+        let account = owner
+            .store
+            .insert(
+                "Synthetic ack fixture",
+                crate::provider_auth::TokenGrant {
+                    provider: Provider::DeepSeek,
+                    access_token: Secret::new("synthetic-ack").unwrap(),
+                    lifecycle: crate::provider_auth::TokenLifecycle::OpaqueUntilRejected,
+                    organization: None,
+                },
+            )
+            .unwrap()
+            .id;
+        owner.gateway.install_usage(root.0.join("usage"));
+        let metadata = LoginMetadata {
+            version: "synthetic-ack".into(),
+            locale: "en-US".into(),
+            timezone_offset_seconds: 0,
+        };
+        let pending = Arc::new(Mutex::new(Pending::default()));
+        let stop = Arc::new(AtomicU64::new(0));
+        let (commands, incoming) = mpsc::sync_channel(16);
+        let mut runtime = Runtime {
+            commands,
+            connection_inflight: Default::default(),
+            last_connection_request: 0,
+            pending: pending.clone(),
+            view: View::default(),
+            exit: Arc::new(AtomicBool::new(false)),
+            stop_requested: stop.clone(),
+            worker: None,
+        };
+        let gate = pending.lock().unwrap().monitor.clone();
+        let mut controller = crate::provider_monitoring::Controller::new(
+            owner.store.clone(),
+            owner.gateway.clone(),
+            metadata,
+            gate,
+            stop,
+        );
+        let deadline = Instant::now() + Duration::from_secs(4);
+        while controller.tick(0, None, true).persistence
+            == crate::provider_monitoring::Persistence::Opening
+        {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let peer = CataloguePeer::new(|_, _| {
+            br#"{"code":0,"data":{"biz_code":0,"biz_data":{"normal_wallets":[],"bonus_wallets":[]}}}"#.to_vec()
+        });
+        owner.gateway.fixture_catalogue_upstream(peer.url());
+        runtime
+            .act(Action::RefreshAccountMetadata {
+                request: 1,
+                account: account.clone(),
+            })
+            .unwrap();
+        let (epoch, _, action) = incoming.recv_timeout(Duration::from_secs(1)).unwrap();
+        let Action::RefreshAccountMetadata {
+            request,
+            account: received,
+        } = action
+        else {
+            panic!("wrong metadata envelope")
+        };
+        controller.refresh(received, request, epoch).unwrap();
+        let first = loop {
+            let view = controller.tick(0, None, true);
+            if view.receipts.iter().any(|r| r.request == 1) {
+                break view;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        pending.lock().unwrap().view = Some(View {
+            account_monitoring: first,
+            ..View::default()
+        });
+        let _ = runtime.poll();
+        let request = runtime.next_account_monitoring_request().unwrap();
+        assert_eq!(request, 2);
+        runtime
+            .act(Action::RefreshAccountMetadata {
+                request,
+                account: account.clone(),
+            })
+            .unwrap();
+        // Actual command receive BEFORE another Owner tick, reproducing the
+        // acknowledged-old-receipt/immediate-cooldown-rejection interleaving.
+        let (epoch, _, action) = incoming.recv_timeout(Duration::from_secs(1)).unwrap();
+        let Action::RefreshAccountMetadata {
+            request,
+            account: received,
+        } = action
+        else {
+            panic!("wrong metadata envelope")
+        };
+        assert_eq!(
+            controller.refresh(received, request, epoch),
+            Err(MonitorError::Busy)
+        );
+        let second = controller.tick(0, None, true);
+        assert!(
+            second.receipts.iter().any(|r| r.account == account
+                && r.request == 2
+                && r.result == Err(MonitorError::Busy)),
+            "poll-ack then immediate actor rejection permanently lost the second terminal"
+        );
+        assert!(
+            !second
+                .receipts
+                .iter()
+                .any(|r| r.account == account && r.request == 1)
+        );
+        pending.lock().unwrap().view = Some(View {
+            account_monitoring: second,
+            ..View::default()
+        });
+        let _ = runtime.poll();
+        runtime
+            .act(Action::RefreshAccountMetadata {
+                request: 3,
+                account: account.clone(),
+            })
+            .unwrap();
+        for _ in 0..15 {
+            runtime
+                .commands
+                .try_send((0, Vec::new(), Action::RefreshAccounts))
+                .unwrap();
+        }
+        assert_eq!(
+            runtime.act(Action::SetAccountMonitoring {
+                request: 4,
+                account: account.clone(),
+                expected_policy_revision: 0,
+                policy: PolicyInput::default()
+            }),
+            Err(RuntimeError::Busy),
+            "full queue claimed Off saved"
+        );
+        let gate = pending.lock().unwrap().monitor.clone();
+        assert_eq!(
+            gate.reserve(&account, 5, MonitorOperation::Policy, true, 0),
+            Ok(()),
+            "failed enqueue did not release its own priority Off slot"
+        );
+        gate.withdraw(&account, 5);
+        assert_eq!(
+            gate.reserve(&account, 6, MonitorOperation::Refresh, false, 0),
+            Err(MonitorError::Busy),
+            "failed Off withdrew unrelated Refresh reservation"
+        );
+        controller.shutdown();
+        drop(controller);
+        drop(runtime);
+        drop(peer);
+        let close = owner.gateway.usage_close_handle().unwrap();
+        drop(owner);
+        assert!(close.wait_owner());
+    }
+    #[test]
+    fn provider_monitor_runtime_shutdown_releases_last_statistics_producer() {
+        let root = Root::new();
+        let owner = Owner::load(root.0.clone()).unwrap();
+        let (_sender, incoming) = mpsc::sync_channel(16);
+        let closed = run_loaded_owner(
+            owner,
+            LoginMetadata {
+                version: "synthetic-shutdown".into(),
+                locale: "en-US".into(),
+                timezone_offset_seconds: 0,
+            },
+            Arc::new(|| {}),
+            Arc::new(Mutex::new(Pending::default())),
+            Arc::new(AtomicBool::new(true)),
+            Arc::new(AtomicU64::new(0)),
+            incoming,
+        );
+        assert!(
+            closed,
+            "actual Owner kept a metadata statistics producer alive across final close"
+        );
+    }
     #[test]
     fn um_actual_runtime_projects_read_only_history_without_start_or_paid_work() {
         let root = Root::new();
@@ -2758,7 +3143,7 @@ mod tests {
                 stopping,
                 stop,
                 incoming,
-            )
+            );
         });
         let mut runtime = Runtime {
             commands,
@@ -3606,7 +3991,7 @@ mod tests {
                 stopping,
                 stop,
                 incoming,
-            )
+            );
         });
         let mut runtime = Runtime {
             commands,
@@ -3752,7 +4137,7 @@ mod tests {
                 stopping,
                 stop,
                 incoming,
-            )
+            );
         });
         let mut runtime = Runtime {
             commands,
@@ -4319,7 +4704,7 @@ mod tests {
                 stopping,
                 stop,
                 incoming,
-            )
+            );
         });
         let mut runtime = Runtime {
             commands,

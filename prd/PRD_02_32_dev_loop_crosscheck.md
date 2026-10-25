@@ -822,3 +822,31 @@ physical keyboard/IME/scales and release six-cell/signing/Promotion remain
 separate obligations. Uploaded receipts contain no product executable for an
 independent PE/ELF/Mach-O header reread; that particular check stays BLOCKED.
 The audit uses only exact-commit Git blobs, not later local diagnostic changes.
+
+
+### Exact2d7 six-cell feedback: partial success with retained failures
+
+Run `40217399944` at `2d7c3e159f65f2bb5c926cefd04ef19bcf5f3f91` is terminal:
+four cells succeed and two fail. Both macOS settings suites pass all47 consumers,
+including eleven K2 subjects; both half-window courts pass23 canonical browser
+checks and twelve joint phases with four actual assertion REDs. All sixteen UM
+subjects pass by name in each of the five cells that actually run ordinary suites.
+Windows x86_64 stops at the retained K3 failure owned by
+[profile keys](PRD_02_31_01_02_02_profile_keys.md#k3-retained-native-failure-and-public-selector-repair),
+so its later ordinary/shutdown suites are unobserved.
+
+Intel macOS fails the original
+`network_http_stream::tests::delayed_resolver_is_cancelled_or_timed_out_and_reaped`
+assertion: expected Resolve Timeout does not match, with actual variant absent
+from that log. The fixture reached ready/live-process checks. The identical
+platform source blob passed this subject in the earlier2133 run; cause is
+UNKNOWN, not attributed to new accounting or a never-started child. Preserve
+the original assertion and deadlines while adding finite failure observations.
+
+The audit indexes4021 passing execution instances, one failure and110 explicit
+ignored instances across those five ordinary cells (overlap is intentional,
+not unique-test count). All six public ZIPs pass API digest/size/CRC and private
+exclusion checks. Index:
+`target-six/v0.2.23-provider/ci-2d7c3e1-native/verification-index.json`
+(SHA-256 `0135ddd11734d2d817088bd77c657ad4bef1d5dd7e7dfde086c2c093ba9ebe18`).
+Newer source does not borrow this as complete six-cell or release qualification.

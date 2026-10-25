@@ -634,3 +634,35 @@ its three columns and existing recipe retains the worker setup action.
 There is no secret, key hash/epoch, wire URL/header, account label or recipe text.
 Behavior/evidence belongs only to the
 [key lifecycle owner](PRD_02_31_01_02_02_profile_keys.md#k2-selected-applied-profile-consumer-candidate).
+
+
+## Usage report observations (implementation preview, not qualified)
+
+The report contract belongs to [PRD31.01.03.03](PRD_02_31_01_03_03_usage_reports.md).
+`geometry.harness_workspace.usage` is null outside the retained Usage destination;
+the existing workspace `active` bit still identifies the actual input surface.
+Its proposed real consumer whitelist is: `period` (today/days7/days30),
+`timezone_basis` (utc), `traffic` (client/probe), `group_by`
+(account/client_profile/model), `selected`, `picker`, `scroll`, `total_lines`,
+`visible_lines`, `revision`, `source`, `computed_at_unix_ms`, `today_utc_day`,
+`group_incomplete`, `selected_label`, and finite visible `rows`.
+
+`selected.kind` is all/other/account/client_profile/model; named selections
+contain a safe ID, and model selections also contain finite provider/protocol
+identities. All is never the aggregate Other bucket. Rows have safe `id`,
+presented `text`, `action`, `complete`, and shared physical `rect`. Only visible
+rows are returned; a wrapping row may contain its full finite label even when
+partially visible, and complete marks full readable action geometry. Monetary
+lexemes remain strings, with their channel/unit and missing/overflow coverage.
+The source revision is accounting publication identity, not a monotonic
+presentation epoch or provider freshness. UTC day and computed time are nullable;
+unknown time must not be observed as a genuine zero-day/zero-usage window.
+
+`geometry.harness_settings.monitoring` contains only `selected_account`, typed
+`storage`, and matching pending request ID or null. Its sibling
+`monitoring_usage_revision` identifies the same pinned local-usage presentation
+used by the compact row. It does not expose threshold drafts, full metadata
+snapshots, raw grants, organization/proxy authority, keys/hashes, URLs/headers,
+or model content. Existing request/reply limits still apply. Computed rows and
+rectangles are not proof of visible native pixels or real provider reads.
+All new report observations remain unqualified until actual source-bound courts.
