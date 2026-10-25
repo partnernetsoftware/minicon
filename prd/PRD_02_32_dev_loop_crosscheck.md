@@ -1051,3 +1051,23 @@ execution or a CU product capability.
 the current fixture still refuses a local constructor before any native DLL
 call; its initial guard AST is identical to the already counterexample-proven
 guard at `c420449`. No owner clipboard, foreground or input is accessed.
+
+The next exact-source physical replay,
+[run40239947558](https://github.com/partnernetsoftware/minicon/actions/runs/40239947558)
+at `360222fc1d0065b2e69855d031467ac0731654b9`, retains an actual x86_64
+PASS for page-key echo, Ctrl+L and the complete forward/reverse Robot/Settings
+join at1000 permille. Its overall result is still FAIL: the Pinyin check accepts
+the first nonempty preedit too early, while the immediately retained failure
+snapshot already has the expected `ni'hao`. Keep that receipt under
+`target-six/v0.2.23-provider/native-controls-ci-360222f/`. Wait for the complete
+original predicate within the existing four-second bound, then retain the
+original assertion; do not accept a partial syllable or relax the commit oracle.
+Exact empty-clipboard restoration and normal exit0 pass on this failed run.
+
+The same run's aarch64 court is BLOCKED with its activation point obscured;
+it sends no input and needs no clipboard restoration. For the next disposable
+court, revalidate the direct GUI PID and present only its own window using
+SetWindowPos with NOACTIVATE before resolving the actual click target again.
+This neither unlocks the foreground restriction nor clicks an unrelated window;
+keyboard still requires actual foreground readback. A failed/obscured presentation
+remains BLOCKED. Both language-profile restoration receipts remain retained.

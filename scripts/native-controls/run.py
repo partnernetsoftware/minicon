@@ -167,6 +167,7 @@ class Native:
         for dll, name, restype, args in [
             (self.u, "GetForegroundWindow", w.HWND, []),
             (self.u, "SetForegroundWindow", w.BOOL, [w.HWND]),
+            (self.u, "SetWindowPos", w.BOOL, [w.HWND, w.HWND, c.c_int, c.c_int, c.c_int, c.c_int, w.UINT]),
             (self.u, "IsWindowVisible", w.BOOL, [w.HWND]),
             (self.u, "IsChild", w.BOOL, [w.HWND, w.HWND]),
             (self.u, "GetWindowThreadProcessId", w.DWORD, [w.HWND, c.POINTER(w.DWORD)]),
@@ -258,6 +259,12 @@ class Native:
             # This path is confined to the disposable hosted court. Resolve the
             # actual window under the point immediately before the input;
             # never click an overlaid/foreign window or fight for focus.
+            # Present only our own window above overlapping setup windows,
+            # without activating it. Foreground still requires the real click.
+            owner = w.DWORD()
+            self.u.GetWindowThreadProcessId(self.hwnd, c.byref(owner))
+            if owner.value != pid or not self.u.SetWindowPos(self.hwnd, None, 0, 0, 0, 0, 0x53):
+                raise Blocked("owned window could not be presented without activation")
             rect = w.RECT()
             if not self.u.GetClientRect(self.hwnd, c.byref(rect)) or rect.right < 2 or rect.bottom < 2:
                 raise Blocked("owned activation client bounds unavailable")
@@ -599,8 +606,11 @@ def main():
         native.ime(True)
         for key in "nihao":
             native.chord(ord(key.upper()))
-        preedit = wait(lambda: editor(name) if editor(name)["preedit"] else None,
-                       name + " real Pinyin preedit", unavailable=True)
+        def complete_preedit():
+            value = editor(name)
+            normalized = value["preedit"].lower().replace("'", "").replace(" ", "")
+            return value if "nihao" in normalized else None
+        preedit = wait(complete_preedit, name + " complete real Pinyin preedit", unavailable=True)
         assert "nihao" in preedit["preedit"].lower().replace("'", "").replace(" ", ""), "unexpected native Pinyin preedit"
         assert preedit["text"] == "", "preedit changed committed editor text"
         observe(name + "-preedit")

@@ -340,3 +340,21 @@ the original real roots remain intact. Image and frozen handover-support hashes
 remain unchanged. This is a current-image, one-account retained-cache/restart
 journey, not fresh real-provider authorization, full UM-05 retention/failure
 qualification, or automatic/multi-account monitoring evidence.
+
+### Readable current-image restart replay
+
+At exact `360222fc1d0065b2e69855d031467ac0731654b9`, the default developer
+image SHA-256 `9105b785815c2f0715dfb21f9c1db80743a151788d7ecb95a8db0e8dac635c82`
+repeats that two-process cache-only journey with the current human-readable
+status projection. Receipt:
+`target-six/v0.2.23-provider/real-account-cache-restart-readable-attempt-1/receipt.json`.
+Both processes retain two official DeepSeek wallet rows, saved cache, the prior
+attempt, Stale freshness and monitoring off; visible reading/attempt/storage
+labels contain no Rust debug wrappers. The retained readings/source/time/policy
+compare equal in memory across48 public commands. No actual values, IDs/labels,
+raw snapshots or credentials are retained, and the verifier requests no metadata,
+inference, login or policy change. Both directly owned processes exit normally
+with0, their Jobs close, original roots stay intact and image/helper hashes match.
+The source-bound normal build receipt is `presentation-header-public-build/receipt.json`
+under the same evidence root. This remains a one-account cache/presentation
+replay; the second DeepSeek/proxy, OpenCode Go and full UM05/06 gates stay open.
