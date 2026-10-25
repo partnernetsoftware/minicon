@@ -786,26 +786,36 @@ struct CourtApplication {
 impl CourtApplication {
     #[cfg(target_os = "linux")]
     fn record_context_observation(&self) {
-        let Some(auth) = &self.app.browser_auth else {
-            return;
-        };
-        let phase = match auth.attempt.0 {
-            101 => "a",
-            102 => "b",
-            103 => "a-reopen",
-            _ => return,
+        let (phase, release) = match &self.app.browser_auth {
+            Some(auth) => {
+                let phase = match auth.attempt.0 {
+                    101 => "a",
+                    102 => "b",
+                    103 => "a-reopen",
+                    _ => return,
+                };
+                (
+                    phase,
+                    self.app
+                        .auth_context_lifecycle
+                        .release_observation(&auth.context.profile),
+                )
+            }
+            None => ("no-auth-presentation", "not-applicable"),
         };
         let observation = serde_json::json!({
             "phase":phase,
             "native_host_present":self.app.browser_page.is_some(),
-            "owned_profile_release":self.app.auth_context_lifecycle.release_observation(&auth.context.profile),
+            "owned_profile_release":release,
+            "releases":self.app.auth_context_lifecycle.release_diagnostics(),
         });
         if let Ok(mut records) = self.diagnostics.lock()
             && records.last() != Some(&observation)
+            && records.len() < 64
         {
-            if records.len() == 16 {
-                records.remove(0);
-            }
+            // Retain finite stage evidence even if a stuck native teardown
+            // prevents the final driver receipt from being written.
+            eprintln!("linux-native-release-observation: {observation}");
             records.push(observation);
         }
     }

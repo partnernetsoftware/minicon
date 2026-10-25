@@ -312,6 +312,9 @@ fn load_inner(
             });
         let closed = event_loop.create_proxy();
         webview.webview().connect_close(move |_| {
+            emit(serde_json::json!({"release_progress":{
+                "pid":std::process::id(),"stage":"native-close-signalled"
+            }}));
             let _ = closed.send_event(HostEvent::Closed);
         });
         window
@@ -408,6 +411,9 @@ fn load_inner(
                         Some("close") => {
                             use webkit2gtk::WebViewExt;
                             use wry::WebViewExtUnix;
+                            emit(serde_json::json!({"release_progress":{
+                                "pid":std::process::id(),"stage":"command-received"
+                            }}));
                             webview.webview().try_close();
                             None
                         }

@@ -172,6 +172,14 @@ impl AuthContextLifecycle {
                 record.observation.status()
             })
     }
+
+    #[cfg(all(target_os = "linux", feature = "native-auth-court"))]
+    pub(super) fn release_diagnostics(&self) -> Vec<serde_json::Value> {
+        self.releases
+            .iter()
+            .map(|record| record.observation.diagnostic())
+            .collect()
+    }
 }
 
 impl ConApp {

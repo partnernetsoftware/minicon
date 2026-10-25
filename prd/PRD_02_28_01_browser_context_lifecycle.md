@@ -1054,3 +1054,29 @@ remain mandatory independently. Fake-child/pipe controls exercise normal/abnorma
 exit, exact-PID acknowledgement, missing acknowledgement and deadline cleanup
 before the actual native court. Windows local compile/regression gates do not
 qualify this Linux path or its new subjects.
+
+### Linux supported-close replay remains failed
+
+[Run40242901274](https://github.com/partnernetsoftware/minicon/actions/runs/40242901274)
+at `877f51d0963b6946b9902d658e347da32ef0d2b1` is terminal FAIL on both Linux
+architectures. Each passes the six fake-child/pipe subjects and all three
+intended mechanism mutation controls with exact restoration. Both actual
+native initial arms stop after the ordinary/A/B storage observations; neither
+qualifies A reopen or reaches the native negative/restored arms. The x86_64
+driver exceeds its deadline and is cleaned up; aarch64 reports fixture
+rejection with A-reopen host absent and release Pending. Artifacts are under
+`target-six/v0.2.23-provider/linux-release-ci-877f51d/`. The original oracle
+remains unchanged, and neither mechanism passes nor an earlier initial pass
+close this native failure.
+
+The next diagnostic adds two finite exact-child IPC stages: command received
+and native close signalled. They never acknowledge release or replace a page
+snapshot. Only the existing post-drop closed acknowledgement plus actual normal
+child exit can do that. A test-only driver trace records these stages, retained
+child/pipe/exit state and terminal failures even after auth presentation ends;
+it prints at most64 changed snapshots so forced cleanup cannot erase all
+pre-failure evidence. No profile paths, provider data, arbitrary pipe text or
+account stores enter this trace. A seventh mechanism subject and two intended
+mutation controls check wrong-child progress and progress-as-ack refusal.
+Actual Linux execution remains open; the trace is diagnosis, not a storage
+repair or a relaxed release criterion.

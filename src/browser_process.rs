@@ -20,6 +20,8 @@ struct ProcessState {
     latest: Option<serde_json::Value>,
     shortcuts: Vec<char>,
     embedding: Option<(u32, u64)>,
+    close_command_received: bool,
+    native_close_signalled: bool,
     closed: bool,
     reader_finished: bool,
 }
@@ -28,7 +30,15 @@ impl ProcessState {
     fn receive(&mut self, value: serde_json::Value, pid: u32) -> bool {
         // Ready frames are not page snapshots; retain the last URL/title batch.
         let empty = self.latest.is_none() && self.shortcuts.is_empty();
-        if let Some(closed) = value.get("closed") {
+        if let Some(progress) = value.get("release_progress") {
+            if progress["pid"].as_u64() == Some(u64::from(pid)) {
+                match progress["stage"].as_str() {
+                    Some("command-received") => self.close_command_received = true,
+                    Some("native-close-signalled") => self.native_close_signalled = true,
+                    _ => {}
+                }
+            }
+        } else if let Some(closed) = value.get("closed") {
             if closed["pid"].as_u64() == Some(u64::from(pid)) {
                 self.closed = true;
             }
@@ -242,6 +252,26 @@ impl BrowserRelease {
     }
 }
 
+#[cfg(feature = "native-auth-court")]
+impl BrowserRelease {
+    pub(super) fn diagnostic(&self) -> serde_json::Value {
+        let transport = self.transport.borrow();
+        let pipe = transport
+            .as_ref()
+            .and_then(|process| process.state.lock().ok());
+        serde_json::json!({
+            "status":format!("{:?}", self.state.get()),
+            "child_retained":self.child.borrow().is_some(),
+            "exit_success":self.exit.get().map(|exit| exit.success()),
+            "kill_requested":self.kill_requested.get(),
+            "close_command_received":pipe.as_ref().map(|state| state.close_command_received),
+            "native_close_signalled":pipe.as_ref().map(|state| state.native_close_signalled),
+            "closed_ack":pipe.as_ref().map(|state| state.closed),
+            "pipe_finished":pipe.as_ref().map(|state| state.reader_finished),
+        })
+    }
+}
+
 impl Drop for BrowserRelease {
     fn drop(&mut self) {
         // Normally already reaped by nonblocking status(). This fallback is
@@ -256,6 +286,40 @@ impl Drop for BrowserRelease {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn release_progress_requires_the_exact_child_and_never_acknowledges_release() {
+        let mut state = ProcessState::default();
+        let page = serde_json::json!({"title":"Owned"});
+        state.receive(page.clone(), 17);
+        for stage in ["command-received", "native-close-signalled"] {
+            state.receive(
+                serde_json::json!({"release_progress":{"pid":29,"stage":stage}}),
+                17,
+            );
+            assert!(
+                !state.close_command_received && !state.native_close_signalled,
+                "a different helper must not report release progress"
+            );
+        }
+        state.receive(
+            serde_json::json!({"release_progress":{"pid":17,"stage":"unrecognized"}}),
+            17,
+        );
+        assert!(!state.close_command_received && !state.native_close_signalled);
+        for stage in ["command-received", "native-close-signalled"] {
+            state.receive(
+                serde_json::json!({"release_progress":{"pid":17,"stage":stage}}),
+                17,
+            );
+        }
+        assert!(state.close_command_received && state.native_close_signalled);
+        assert!(
+            !state.closed,
+            "release progress is not a native close acknowledgement"
+        );
+        assert_eq!(state.latest, Some(page));
+    }
 
     #[test]
     fn closed_frame_requires_the_exact_child_and_preserves_the_page_snapshot() {

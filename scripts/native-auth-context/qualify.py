@@ -71,7 +71,7 @@ def linux_helper_release_controls(output, env, target, bash):
     source = ROOT / "src/browser_process.rs"
     original = source.read_bytes()
     production, tests = original.decode("utf-8").split("#[cfg(test)]", 1)
-    report = dict(status="FAIL", baseline_subjects=6, controls=[], source_restored_exact=False)
+    report = dict(status="FAIL", baseline_subjects=7, controls=[], source_restored_exact=False)
     receipt = output / "helper-release-controls.json"
 
     def subjects(label, pattern, passed, failed, required=()):
@@ -88,8 +88,15 @@ def linux_helper_release_controls(output, env, target, bash):
         return dict(label=label, passed=passed, failed=failed, log=log.name, sha256=sha(log))
 
     try:
-        report["baseline"] = subjects("baseline", "browser_process::tests::", 6, 0)
+        report["baseline"] = subjects("baseline", "browser_process::tests::", 7, 0)
         variants = (
+            ("progress-pid", 'if progress["pid"].as_u64() == Some(u64::from(pid))',
+             "if progress.is_object()", "release_progress_requires_the_exact_child", 0, 1,
+             ("a different helper must not report release progress",)),
+            ("progress-is-not-ack", 'Some("native-close-signalled") => self.native_close_signalled = true,',
+             'Some("native-close-signalled") => { self.native_close_signalled = true; self.closed = true; },',
+             "release_progress_requires_the_exact_child", 0, 1,
+             ("release progress is not a native close acknowledgement",)),
             ("closed-pid", 'if closed["pid"].as_u64() == Some(u64::from(pid))',
              "if closed.is_object()", "closed_frame_requires_the_exact_child", 0, 1,
              ("a different helper must not acknowledge native close",)),
@@ -111,7 +118,7 @@ def linux_helper_release_controls(output, env, target, bash):
                 red = subjects(label + "-red", pattern, passed, failed, messages)
             finally:
                 source.write_bytes(original)
-            green = subjects(label + "-restored", "browser_process::tests::", 6, 0)
+            green = subjects(label + "-restored", "browser_process::tests::", 7, 0)
             report["controls"].append(dict(red=red, restored=green))
         report["status"] = "PASS"
     finally:
