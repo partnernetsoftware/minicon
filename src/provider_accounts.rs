@@ -481,6 +481,7 @@ impl AccountStore {
         })
     }
 
+    #[cfg(test)]
     pub fn mark_ready_if_current(
         &self,
         id: &str,
@@ -571,6 +572,7 @@ impl AccountStore {
         self.mark_ready_locked(id, None)
     }
 
+    #[cfg(test)]
     fn mark_ready_locked(
         &self,
         id: &str,

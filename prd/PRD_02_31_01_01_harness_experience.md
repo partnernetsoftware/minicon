@@ -269,6 +269,27 @@ allocations. It names the affected entity instead of offering an ambiguous globa
 Save all. Closing Settings retains unapplied in-memory drafts with a small
 indicator; process exit does not auto-save them.
 
+An asynchronous draft acknowledgement must preserve edits made after dispatch,
+including clearing and retyping the same value. Track edit intent per field;
+string equality alone cannot distinguish an untouched field from later input.
+Changing an allocation's account also owns clearing its model selection, even
+when the model text was already empty. Revert and model-choice results may
+reset only fields that have not been edited since that request.
+
+Returning to an existing connection form restores its last legal editable
+field and stable allocation slot, with the retained caret/selection. Leaving
+clears preedit and pointer selection gestures under the shared blur rules.
+A removed slot cannot redirect focus to a different allocation. Keyboard
+highlight in the profile chooser remains distinct from entering that form.
+
+Keep applied alias/account/upstream-model rows visible beside the selected
+draft's changes. A label or allocation count alone cannot explain which
+connection is currently used. Account metadata failure must retain existing
+forms and their applied references. A matching successful Discard result still
+removes that unapplied form and restores a legal selection while metadata is
+unavailable; an unrelated failure cannot clear other forms. These are required
+draft-form behaviors, with implementation and public/native acceptance open.
+
 Status feedback is inline and operation-scoped. Use a non-focus-stealing success
 notice for Save/Copy and preserve a persistent result where it changes the setup
 step. Copy failures say that copying failed, never Copied. Disable a control

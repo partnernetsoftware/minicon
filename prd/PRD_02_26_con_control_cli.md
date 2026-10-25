@@ -254,6 +254,14 @@ inside-click reproduction is an input baseline, not evidence of a repair.
   Windows x86_64 development checkpoint; matching final artifact qualification
   remains open. Harness behavior stays owned by
   [the provider gateway](PRD_02_31_01_provider_gateway.md).
+- [-] Connection drafts add `harness_connection` and
+  `harness_connection_picker` input owners, plus bounded profile, allocation,
+  applied-reference and receipt observations under the existing
+  `geometry.harness_settings` projection. Profile/account labels remain redacted;
+  no credentials, routes or headers are exported. Published visible row cells
+  are the pointer authority. Behavior and the actual eight-form public replay
+  remain with [connection selection](PRD_02_31_01_02_01_connection_selection.md#production-draft-form-join-in-progress);
+  injected CLI input is not native physical-input qualification.
 - [v] `send-wheel` reports the route actually taken (`zoom`, application mouse,
   alternate-screen cursor keys, or local scrollback), the notch count actually
   applied after bounds/clamps, and whether observable state or terminal input

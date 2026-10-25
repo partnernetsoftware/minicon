@@ -168,7 +168,7 @@ pub struct Config {
     #[serde(default)]
     pub models: Vec<ModelRoute>,
     /// Version 1's selected account/model and client-key remain the default
-    /// profile. Additional profiles are admitted only by the version 2 schema.
+    /// profile. Additional profiles are admitted by the version 2/3 schemas.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub profiles: Vec<ClientProfile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1321,6 +1321,7 @@ impl Gateway {
             .unwrap_or(0)
     }
 
+    #[cfg(test)]
     pub fn probe(
         &self,
         account: &str,

@@ -1,6 +1,5 @@
 //! In-memory account catalogues and exact connection candidates. PRD 31.01.02.01.
 //! No network, grants, persistence, admission, or automatic inference lives here.
-#[cfg(test)]
 use crate::provider_server::{MAX_CLIENT_ALLOCATIONS, MAX_CLIENT_PROFILES, safe_model};
 use crate::{
     provider_accounts::{AccountSnapshot, NetworkPolicy, OrganizationAuthority},
@@ -14,9 +13,7 @@ use std::{collections::BTreeMap, fmt, mem::size_of};
 
 pub(crate) const MAX_CATALOGUE_ACCOUNTS: usize = 16;
 pub(crate) const MAX_CACHE_BYTES: usize = 8 * 1024 * 1024;
-#[cfg(test)]
 pub(crate) const MAX_DRAFT_BYTES: usize = 4 * 1024 * 1024;
-#[cfg(test)]
 pub(crate) const DEFAULT_PROFILE: &str = "default";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -33,20 +30,13 @@ pub(crate) enum SelectionError {
     DuplicateCatalogueId,
     DuplicateHeader,
     OrganizationConflict,
-    #[cfg(test)]
     CatalogueUnavailable,
-    #[cfg(test)]
     MissingRoute,
-    #[cfg(test)]
     InvalidDraft,
-    #[cfg(test)]
     ProfileBound,
-    #[cfg(test)]
     MissingProfile,
-    #[cfg(test)]
     MissingAlias,
     RevisionExhausted,
-    #[cfg(test)]
     DraftChanged,
 }
 
@@ -394,7 +384,6 @@ impl CatalogueCache {
             .map_or(0, |data| data.routes.len())
     }
 
-    #[cfg(test)]
     pub(crate) fn select(
         &self,
         current: &AccountSnapshot,
@@ -701,23 +690,21 @@ impl Verification {
 
 /// Immutable selected wire snapshot, deliberately independent of cache IDs and
 /// of the applied registry. Debug cannot print URLs, headers, or raw org values.
-#[cfg(test)]
 #[derive(Clone)]
 pub(crate) struct FrozenRoute {
     authority: ResolvedAuthority,
     route: ModelRoute,
     wire: WireIdentity,
 }
-#[cfg(test)]
 impl fmt::Debug for FrozenRoute {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("FrozenRoute([REDACTED])")
     }
 }
-#[cfg(test)]
 impl FrozenRoute {
     /// Reconstruct a draft from an already applied private route snapshot after
     /// restart/Revert. This creates no catalogue entry or inference proof.
+    #[cfg(test)]
     pub(crate) fn from_applied_snapshot(
         current: &AccountSnapshot,
         route: &ModelRoute,
@@ -739,6 +726,7 @@ impl FrozenRoute {
     pub(crate) fn route(&self) -> &ModelRoute {
         &self.route
     }
+    #[cfg(test)]
     pub(crate) fn authority(&self) -> &ResolvedAuthority {
         &self.authority
     }
@@ -747,20 +735,17 @@ impl FrozenRoute {
     }
 }
 
-#[cfg(test)]
 #[derive(Clone)]
 pub(crate) struct AllocationDraft {
     pub alias: String,
     pub selected: FrozenRoute,
 }
-#[cfg(test)]
 impl fmt::Debug for AllocationDraft {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("AllocationDraft([REDACTED])")
     }
 }
 
-#[cfg(test)]
 #[derive(Clone)]
 pub(crate) struct DraftEdit {
     pub label: String,
@@ -768,7 +753,6 @@ pub(crate) struct DraftEdit {
     pub default_alias: String,
     pub allocations: Vec<AllocationDraft>,
 }
-#[cfg(test)]
 impl fmt::Debug for DraftEdit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DraftEdit")
@@ -776,7 +760,6 @@ impl fmt::Debug for DraftEdit {
             .finish_non_exhaustive()
     }
 }
-#[cfg(test)]
 impl DraftEdit {
     fn compact(&self) -> Self {
         Self {
@@ -835,7 +818,6 @@ impl DraftEdit {
     }
 }
 
-#[cfg(test)]
 #[derive(Clone, Eq, PartialEq)]
 pub(crate) struct CandidateIdentity {
     profile: String,
@@ -843,7 +825,6 @@ pub(crate) struct CandidateIdentity {
     authority: ResolvedAuthority,
     wire: WireIdentity,
 }
-#[cfg(test)]
 impl fmt::Debug for CandidateIdentity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("CandidateIdentity([REDACTED])")
@@ -852,13 +833,11 @@ impl fmt::Debug for CandidateIdentity {
 
 /// Successful explicit inference only. No legacy-applied provenance is minted
 /// here; migration/publication need a separate later product transaction.
-#[cfg(test)]
 #[derive(Clone, Debug)]
 pub(crate) struct Verification {
     identity: CandidateIdentity,
     checked_unix_ms: u64,
 }
-#[cfg(test)]
 impl Verification {
     pub(crate) fn checked_unix_ms(&self) -> u64 {
         self.checked_unix_ms
@@ -870,32 +849,32 @@ pub(crate) struct ProbeTicket {
     identity: CandidateIdentity,
     revision: u64,
 }
-#[cfg(test)]
 pub(crate) struct ConnectionDraft {
     revision: u64,
     edit: DraftEdit,
     proofs: BTreeMap<String, Verification>,
     bytes: usize,
+    form: Option<ProfileForm>,
 }
-#[cfg(test)]
 impl ConnectionDraft {
+    #[cfg(test)]
     pub(crate) fn revision(&self) -> u64 {
         self.revision
     }
+    #[cfg(test)]
     pub(crate) fn edit(&self) -> &DraftEdit {
         &self.edit
     }
 }
 
-#[cfg(test)]
 pub(crate) struct DraftBook {
     drafts: BTreeMap<String, ConnectionDraft>,
     selected: String,
+    applied_registry: BTreeMap<String, std::sync::Arc<ModelRoute>>,
     serial: u64,
     bytes: usize,
 }
 
-#[cfg(test)]
 impl Default for DraftBook {
     fn default() -> Self {
         let edit = DraftEdit {
@@ -913,16 +892,17 @@ impl Default for DraftBook {
                     edit,
                     proofs: BTreeMap::new(),
                     bytes,
+                    form: None,
                 },
             )]),
             selected: DEFAULT_PROFILE.into(),
+            applied_registry: BTreeMap::new(),
             serial: 0,
             bytes,
         }
     }
 }
 
-#[cfg(test)]
 impl DraftBook {
     pub(crate) fn selected(&self) -> &str {
         &self.selected
@@ -991,6 +971,7 @@ impl DraftBook {
                 edit,
                 proofs,
                 bytes,
+                form: None,
             },
         );
         self.serial = revision;
@@ -998,6 +979,7 @@ impl DraftBook {
         Ok(revision)
     }
 
+    #[cfg(test)]
     fn identity(
         &self,
         profile: &str,
@@ -1005,6 +987,19 @@ impl DraftBook {
         current: &AccountSnapshot,
     ) -> Result<CandidateIdentity, SelectionError> {
         let draft = self.get(profile)?;
+        if draft.form.as_ref().is_some_and(|form| {
+            form.error.is_some()
+                || form.input.allocations.iter().any(|row| {
+                    !matches!(
+                        form.selections
+                            .get(&row.slot)
+                            .map(|selection| &selection.source),
+                        Some(FormSource::Selected(_))
+                    )
+                })
+        }) {
+            return Err(SelectionError::DraftChanged);
+        }
         let allocation = draft
             .edit
             .allocations
@@ -1025,6 +1020,7 @@ impl DraftBook {
 
     /// The existing transport must acquire/validate this authority again before
     /// sending paid work. That I/O/lease contract is not implemented by a ticket.
+    #[cfg(test)]
     pub(crate) fn begin_probe(
         &self,
         profile: &str,
@@ -1039,6 +1035,7 @@ impl DraftBook {
 
     /// Revalidate after actual credential acquisition and immediately before
     /// preparing the paid request. The returned wire snapshot is immutable.
+    #[cfg(test)]
     pub(crate) fn probe_candidate(
         &self,
         ticket: &ProbeTicket,
@@ -1062,6 +1059,7 @@ impl DraftBook {
 
     /// Call only after an actual successful explicit inference, with authority
     /// reacquired on response. Failed I/O does not call this method or apply.
+    #[cfg(test)]
     pub(crate) fn accept_probe(
         &mut self,
         ticket: ProbeTicket,
@@ -1084,6 +1082,7 @@ impl DraftBook {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) fn verification(
         &self,
         profile: &str,
@@ -1099,10 +1098,1255 @@ impl DraftBook {
     }
 }
 
+/// Safe editable fields; no endpoint, headers, grant or evidence can be supplied.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConnectionAllocationInput {
+    pub slot: u8,
+    pub alias: String,
+    pub account: Option<String>,
+    pub model: String,
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConnectionDraftInput {
+    pub label: String,
+    pub enabled: bool,
+    pub default_alias: String,
+    pub allocations: Vec<ConnectionAllocationInput>,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConnectionInputError {
+    InvalidLabel,
+    InvalidAlias,
+    DuplicateAlias,
+    InvalidDefaultAlias,
+    IncompleteAllocation,
+    UnselectedModel,
+    DefaultCompatibility,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConnectionAvailability {
+    Available,
+    MissingAccount,
+    DisabledAccount,
+    CredentialUnavailable,
+    AuthorityChanged,
+    NotSelected,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConnectionEvidence {
+    Unverified,
+    LegacyApplied,
+    Verified,
+    StaleAuthority,
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConnectionAllocationView {
+    pub slot: u8,
+    pub upstream_model: Option<String>,
+    pub protocol: Option<WireProtocol>,
+    pub availability: ConnectionAvailability,
+    pub evidence: ConnectionEvidence,
+    pub checked_unix_ms: Option<u64>,
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConnectionProfileView {
+    pub id: String,
+    pub revision: u64,
+    pub input: ConnectionDraftInput,
+    pub applied: Option<ConnectionDraftInput>,
+    pub dirty: bool,
+    pub error: Option<ConnectionInputError>,
+    pub allocations: Vec<ConnectionAllocationView>,
+}
+
+/// An observation is not a new authority. Missing/corrupt accounts are retained
+/// as finite observations, independently of the immutable applied route.
+pub(crate) type ConnectionAccounts =
+    BTreeMap<String, Result<AccountSnapshot, ConnectionAvailability>>;
+
+#[derive(Clone)]
+struct AppliedReference {
+    profile: String,
+    alias: String,
+    account: String,
+    route: std::sync::Arc<ModelRoute>,
+    origin: crate::provider_server::AppliedOrigin,
+}
+#[derive(Clone)]
+enum FormSource {
+    Applied(AppliedReference),
+    Selected(FrozenRoute),
+}
+impl FormSource {
+    fn account(&self) -> &str {
+        match self {
+            Self::Applied(reference) => &reference.account,
+            Self::Selected(selected) => selected.authority.account(),
+        }
+    }
+    fn route(&self) -> &ModelRoute {
+        match self {
+            Self::Applied(reference) => &reference.route,
+            Self::Selected(selected) => selected.route(),
+        }
+    }
+    fn bytes(&self) -> usize {
+        match self {
+            Self::Applied(reference) => {
+                size_of::<AppliedReference>()
+                    + reference.profile.len()
+                    + reference.alias.len()
+                    + reference.account.len()
+                    // Immutable applied routes are charged once in DraftBook's
+                    // registry; account/alias/evidence remain per allocation.
+                    // Applied evidence originated from bounded Config bytes.
+                    + match &reference.origin {
+                        crate::provider_server::AppliedOrigin::LegacyApplied { snapshot_digest } => snapshot_digest.len(),
+                        crate::provider_server::AppliedOrigin::Inference { proof } => proof.retained_bytes(),
+                    }
+            }
+            Self::Selected(selected) => selected.bytes(),
+        }
+    }
+}
+#[derive(Clone)]
+struct FormSelection {
+    text: String,
+    source: FormSource,
+}
+#[derive(Clone)]
+struct ProfileForm {
+    input: ConnectionDraftInput,
+    applied: Option<ConnectionDraftInput>,
+    selections: BTreeMap<u8, FormSelection>,
+    error: Option<ConnectionInputError>,
+}
+
+impl ConnectionDraftInput {
+    fn compact(&self) -> Self {
+        Self {
+            label: self.label.as_str().into(),
+            enabled: self.enabled,
+            default_alias: self.default_alias.as_str().into(),
+            allocations: self
+                .allocations
+                .iter()
+                .map(|row| ConnectionAllocationInput {
+                    slot: row.slot,
+                    alias: row.alias.as_str().into(),
+                    account: row.account.as_deref().map(Into::into),
+                    model: row.model.as_str().into(),
+                })
+                .collect(),
+        }
+    }
+    pub(crate) fn bounded(&self) -> Result<(), SelectionError> {
+        let text =
+            |value: &str, limit| value.len() <= limit && !value.chars().any(char::is_control);
+        if !text(&self.label, 128)
+            || !text(&self.default_alias, 200)
+            || self.allocations.len() > MAX_CLIENT_ALLOCATIONS
+        {
+            return Err(SelectionError::InvalidDraft);
+        }
+        let mut slots = std::collections::BTreeSet::new();
+        for row in &self.allocations {
+            if usize::from(row.slot) >= MAX_CLIENT_ALLOCATIONS
+                || !slots.insert(row.slot)
+                || !text(&row.alias, 200)
+                || !text(&row.model, 200)
+                || row.account.as_ref().is_some_and(|id| !opaque_id(id))
+            {
+                return Err(SelectionError::InvalidDraft);
+            }
+        }
+        Ok(())
+    }
+    fn bytes(&self) -> usize {
+        size_of::<Self>()
+            + self.label.len()
+            + self.default_alias.len()
+            + self.allocations.len() * size_of::<ConnectionAllocationInput>()
+            + self
+                .allocations
+                .iter()
+                .map(|row| {
+                    row.alias.len() + row.model.len() + row.account.as_ref().map_or(0, String::len)
+                })
+                .sum::<usize>()
+    }
+}
+impl ProfileForm {
+    fn validate(&self, profile: &str) -> Option<ConnectionInputError> {
+        use ConnectionInputError as E;
+        if self.input.label.trim().is_empty() {
+            return Some(E::InvalidLabel);
+        }
+        if profile == DEFAULT_PROFILE
+            && (!self.input.enabled
+                || self.input.label != "Default"
+                || self.input.allocations.len() > 1
+                || self
+                    .input
+                    .allocations
+                    .iter()
+                    .any(|row| row.slot != 0 || row.alias != crate::provider_server::MODEL_ALIAS)
+                || (!self.input.default_alias.is_empty()
+                    && self.input.default_alias != crate::provider_server::MODEL_ALIAS))
+        {
+            return Some(E::DefaultCompatibility);
+        }
+        let mut aliases = std::collections::BTreeSet::new();
+        for row in &self.input.allocations {
+            if !safe_model(&row.alias, false) || row.alias.chars().any(char::is_whitespace) {
+                return Some(E::InvalidAlias);
+            }
+            if !aliases.insert(&row.alias) {
+                return Some(E::DuplicateAlias);
+            }
+        }
+        for row in &self.input.allocations {
+            if row.account.is_none() || row.model.trim().is_empty() {
+                return Some(E::IncompleteAllocation);
+            }
+            if !self.selections.contains_key(&row.slot) {
+                return Some(E::UnselectedModel);
+            }
+        }
+        if self.input.allocations.is_empty() != self.input.default_alias.is_empty()
+            || (!self.input.allocations.is_empty() && !aliases.contains(&self.input.default_alias))
+        {
+            return Some(E::InvalidDefaultAlias);
+        }
+        None
+    }
+    fn bytes(&self) -> Result<usize, SelectionError> {
+        self.selections.values().try_fold(
+            self.input.bytes() + self.applied.as_ref().map_or(0, ConnectionDraftInput::bytes),
+            |total, selected| {
+                total
+                    .checked_add(
+                        selected.text.len()
+                            + selected.source.bytes()
+                            + size_of::<(u8, FormSelection)>(),
+                    )
+                    .ok_or(SelectionError::AggregateBound)
+            },
+        )
+    }
+}
+
+impl InferenceProof {
+    fn retained_bytes(&self) -> usize {
+        size_of::<Self>()
+            + self.candidate.profile.len()
+            + self.candidate.alias.len()
+            + self.candidate.wire_digest.len()
+            + self
+                .candidate
+                .authority()
+                .map_or(0, |authority| authority.bytes())
+    }
+    /// Imports only already persisted exact evidence. No clock is read and no
+    /// successful inference is simulated by calling accept_probe.
+    fn restore(
+        &self,
+        profile: &str,
+        alias: &str,
+        account: &str,
+        route: &ModelRoute,
+    ) -> Result<Verification, SelectionError> {
+        if !self.matches_route(profile, alias, account, route) {
+            return Err(SelectionError::InvalidDraft);
+        }
+        let authority = self.candidate.authority()?;
+        let wire = wire_identity(&authority, route)?;
+        Ok(Verification {
+            identity: CandidateIdentity {
+                profile: profile.into(),
+                alias: alias.into(),
+                authority,
+                wire,
+            },
+            checked_unix_ms: self.checked_unix_ms,
+        })
+    }
+}
+
+impl DraftBook {
+    pub(crate) fn from_applied(
+        config: &crate::provider_server::Config,
+    ) -> Result<Self, SelectionError> {
+        config
+            .validate()
+            .map_err(|_| SelectionError::InvalidDraft)?;
+        let mut book = Self::default();
+        for route in &config.models {
+            let route = compact_route(route);
+            let bytes = route_bytes(&route)
+                + route.id.len()
+                + size_of::<(String, std::sync::Arc<ModelRoute>)>();
+            book.bytes = book
+                .bytes
+                .checked_add(bytes)
+                .ok_or(SelectionError::AggregateBound)?;
+            if book.bytes > MAX_DRAFT_BYTES {
+                return Err(SelectionError::AggregateBound);
+            }
+            book.applied_registry
+                .insert(route.id.clone(), std::sync::Arc::new(route));
+        }
+        book.install_applied(config, DEFAULT_PROFILE)?;
+        for profile in &config.profiles {
+            book.install_applied(config, &profile.id)?;
+        }
+        Ok(book)
+    }
+
+    pub(crate) fn referenced_accounts(&self) -> Vec<String> {
+        self.drafts
+            .values()
+            .filter_map(|draft| draft.form.as_ref())
+            .flat_map(|form| {
+                form.input
+                    .allocations
+                    .iter()
+                    .filter_map(|row| row.account.clone())
+            })
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
+    fn applied_form(
+        config: &crate::provider_server::Config,
+        profile: &str,
+        registry: &BTreeMap<String, std::sync::Arc<ModelRoute>>,
+    ) -> Result<(ProfileForm, BTreeMap<String, Verification>), SelectionError> {
+        use crate::provider_server::{AppliedOrigin, MODEL_ALIAS};
+        let mut selections = BTreeMap::new();
+        let mut proofs = BTreeMap::new();
+        let mut allocations = Vec::new();
+        let shared_route = |route: &ModelRoute| {
+            registry
+                .get(&route.id)
+                .filter(|cached| cached.as_ref() == route)
+                .cloned()
+                .ok_or(SelectionError::LateResult)
+        };
+        let (label, enabled, default_alias) = if profile == DEFAULT_PROFILE {
+            if let Ok(resolved) = config.resolve_allocation(profile, None) {
+                let origin = resolved
+                    .evidence
+                    .ok_or(SelectionError::InvalidDraft)?
+                    .origin
+                    .clone();
+                let model = resolved.route.model_id.clone();
+                allocations.push(ConnectionAllocationInput {
+                    slot: 0,
+                    alias: MODEL_ALIAS.into(),
+                    account: Some(resolved.account.into()),
+                    model: model.clone(),
+                });
+                if let AppliedOrigin::Inference { proof } = &origin {
+                    proofs.insert(
+                        MODEL_ALIAS.into(),
+                        proof.restore(profile, MODEL_ALIAS, resolved.account, resolved.route)?,
+                    );
+                }
+                selections.insert(
+                    0,
+                    FormSelection {
+                        text: model,
+                        source: FormSource::Applied(AppliedReference {
+                            profile: profile.into(),
+                            alias: MODEL_ALIAS.into(),
+                            account: resolved.account.into(),
+                            route: shared_route(resolved.route)?,
+                            origin,
+                        }),
+                    },
+                );
+            } else if config.selected_account.is_some() || !config.model.is_empty() {
+                allocations.push(ConnectionAllocationInput {
+                    slot: 0,
+                    alias: MODEL_ALIAS.into(),
+                    account: config.selected_account.clone(),
+                    model: config.model.clone(),
+                });
+            }
+            (
+                "Default".into(),
+                true,
+                if allocations.is_empty() {
+                    String::new()
+                } else {
+                    MODEL_ALIAS.into()
+                },
+            )
+        } else {
+            let applied = config
+                .profiles
+                .iter()
+                .find(|entry| entry.id == profile)
+                .ok_or(SelectionError::MissingProfile)?;
+            for (index, row) in applied.allocations.iter().enumerate() {
+                let slot = u8::try_from(index).map_err(|_| SelectionError::RouteBound)?;
+                let resolved = config
+                    .resolve_allocation(profile, Some(&row.alias))
+                    .map_err(|_| SelectionError::MissingRoute)?;
+                let origin = resolved
+                    .evidence
+                    .ok_or(SelectionError::InvalidDraft)?
+                    .origin
+                    .clone();
+                let model = resolved.route.model_id.clone();
+                allocations.push(ConnectionAllocationInput {
+                    slot,
+                    alias: row.alias.clone(),
+                    account: Some(row.account.clone()),
+                    model: model.clone(),
+                });
+                if let AppliedOrigin::Inference { proof } = &origin {
+                    proofs.insert(
+                        row.alias.clone(),
+                        proof.restore(profile, &row.alias, &row.account, resolved.route)?,
+                    );
+                }
+                selections.insert(
+                    slot,
+                    FormSelection {
+                        text: model,
+                        source: FormSource::Applied(AppliedReference {
+                            profile: profile.into(),
+                            alias: row.alias.clone(),
+                            account: row.account.clone(),
+                            route: shared_route(resolved.route)?,
+                            origin,
+                        }),
+                    },
+                );
+            }
+            (
+                applied.label.clone(),
+                applied.enabled,
+                applied.default_model.clone(),
+            )
+        };
+        let input = ConnectionDraftInput {
+            label,
+            enabled,
+            default_alias,
+            allocations,
+        };
+        input.bounded()?;
+        let mut form = ProfileForm {
+            applied: Some(input.clone()),
+            input,
+            selections,
+            error: None,
+        };
+        form.error = form.validate(profile);
+        Ok((form, proofs))
+    }
+
+    fn install_applied(
+        &mut self,
+        config: &crate::provider_server::Config,
+        profile: &str,
+    ) -> Result<u64, SelectionError> {
+        let (form, proofs) = Self::applied_form(config, profile, &self.applied_registry)?;
+        self.commit_form(profile, form, Some(proofs))
+    }
+
+    fn check_revision(&self, profile: &str, expected: u64) -> Result<(), SelectionError> {
+        if self.get(profile)?.revision != expected {
+            return Err(SelectionError::DraftChanged);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn revision(&self, profile: &str) -> Option<u64> {
+        self.drafts.get(profile).map(|draft| draft.revision)
+    }
+
+    fn form(&self, profile: &str) -> Result<&ProfileForm, SelectionError> {
+        self.get(profile)?
+            .form
+            .as_ref()
+            .ok_or(SelectionError::InvalidDraft)
+    }
+
+    fn commit_form(
+        &mut self,
+        profile: &str,
+        mut form: ProfileForm,
+        imported: Option<BTreeMap<String, Verification>>,
+    ) -> Result<u64, SelectionError> {
+        form.input.bounded()?;
+        form.input = form.input.compact();
+        form.error = form.validate(profile);
+        // The original tested semantic DraftEdit remains the checked candidate
+        // layer. Incomplete raw forms cannot use its last valid candidate.
+        let mut edit = DraftEdit {
+            label: form.input.label.clone(),
+            enabled: form.input.enabled,
+            default_alias: String::new(),
+            allocations: Vec::new(),
+        };
+        if edit.label.trim().is_empty() {
+            edit.label = "Draft".into();
+        }
+        if form.error.is_none()
+            && form
+                .selections
+                .values()
+                .all(|selected| matches!(selected.source, FormSource::Selected(_)))
+        {
+            edit.default_alias = form.input.default_alias.clone();
+            for row in &form.input.allocations {
+                let Some(FormSelection {
+                    source: FormSource::Selected(selected),
+                    ..
+                }) = form.selections.get(&row.slot)
+                else {
+                    return Err(SelectionError::InvalidDraft);
+                };
+                edit.allocations.push(AllocationDraft {
+                    alias: row.alias.clone(),
+                    selected: selected.clone(),
+                });
+            }
+        } else if let Some(previous) = self.drafts.get(profile) {
+            // Keep the last validated candidate while raw text is incomplete.
+            // Form validation/ownership still blocks any use of this snapshot.
+            edit = previous.edit.clone();
+        }
+        let compact = edit.compact();
+        let edit_bytes = compact.validate()?;
+        let bytes = edit_bytes
+            .checked_add(form.bytes()?)
+            .ok_or(SelectionError::AggregateBound)?;
+        let old = self.drafts.get(profile).map_or(0, |draft| draft.bytes);
+        let total = self
+            .bytes
+            .checked_sub(old)
+            .and_then(|value| value.checked_add(bytes))
+            .ok_or(SelectionError::AggregateBound)?;
+        if total > MAX_DRAFT_BYTES {
+            return Err(SelectionError::AggregateBound);
+        }
+        if profile != DEFAULT_PROFILE && !opaque_id(profile) {
+            return Err(SelectionError::InvalidDraft);
+        }
+        if !self.drafts.contains_key(profile) && self.drafts.len() >= MAX_CLIENT_PROFILES {
+            return Err(SelectionError::ProfileBound);
+        }
+        let proofs = imported.unwrap_or_else(|| {
+            self.drafts
+                .get(profile)
+                .map(|draft| {
+                    draft
+                        .proofs
+                        .iter()
+                        .filter(|(alias, _)| {
+                            form.input.allocations.iter().any(|row| {
+                                &row.alias == *alias
+                                    && draft.form.as_ref().is_none_or(|old| {
+                                        old.input.allocations.iter().any(|previous| {
+                                            previous.slot == row.slot && previous.alias == row.alias
+                                        })
+                                    })
+                            })
+                        })
+                        .map(|(alias, proof)| (alias.clone(), proof.clone()))
+                        .collect()
+                })
+                .unwrap_or_default()
+        });
+        let revision = self.replace(profile, compact)?;
+        let draft = self
+            .drafts
+            .get_mut(profile)
+            .ok_or(SelectionError::MissingProfile)?;
+        draft.proofs = proofs;
+        draft.bytes = bytes;
+        draft.form = Some(form);
+        self.bytes = total;
+        Ok(revision)
+    }
+
+    pub(crate) fn create_profile(&mut self, id: &str) -> Result<u64, SelectionError> {
+        if id == DEFAULT_PROFILE || self.drafts.contains_key(id) {
+            return Err(SelectionError::InvalidDraft);
+        }
+        let input = ConnectionDraftInput {
+            label: "New client".into(),
+            enabled: true,
+            default_alias: String::new(),
+            allocations: Vec::new(),
+        };
+        let revision = self.commit_form(
+            id,
+            ProfileForm {
+                input,
+                applied: None,
+                selections: BTreeMap::new(),
+                error: None,
+            },
+            None,
+        )?;
+        self.selected = id.into();
+        Ok(revision)
+    }
+
+    pub(crate) fn edit_input(
+        &mut self,
+        profile: &str,
+        expected: u64,
+        input: ConnectionDraftInput,
+    ) -> Result<u64, SelectionError> {
+        self.check_revision(profile, expected)?;
+        input.bounded()?;
+        let mut form = self.form(profile)?.clone();
+        form.selections.retain(|slot, selected| {
+            input.allocations.iter().any(|row| {
+                row.slot == *slot
+                    && row.account.as_deref() == Some(selected.source.account())
+                    && row.model == selected.text
+            })
+        });
+        form.input = input;
+        self.commit_form(profile, form, None)
+    }
+
+    pub(crate) fn choose(
+        &mut self,
+        profile: &str,
+        expected: u64,
+        slot: u8,
+        selected: FrozenRoute,
+        catalogue_id: &str,
+    ) -> Result<u64, SelectionError> {
+        self.check_revision(profile, expected)?;
+        if !safe_model(catalogue_id, false) {
+            return Err(SelectionError::InvalidDraft);
+        }
+        let mut form = self.form(profile)?.clone();
+        let row = form
+            .input
+            .allocations
+            .iter_mut()
+            .find(|row| row.slot == slot)
+            .ok_or(SelectionError::MissingAlias)?;
+        row.account = Some(selected.authority.account().into());
+        row.model = catalogue_id.into();
+        form.selections.insert(
+            slot,
+            FormSelection {
+                text: catalogue_id.into(),
+                source: FormSource::Selected(selected),
+            },
+        );
+        self.commit_form(profile, form, None)
+    }
+
+    pub(crate) fn remove_allocation(
+        &mut self,
+        profile: &str,
+        expected: u64,
+        slot: u8,
+    ) -> Result<u64, SelectionError> {
+        self.check_revision(profile, expected)?;
+        let mut input = self.form(profile)?.input.clone();
+        if !input.allocations.iter().any(|row| row.slot == slot) {
+            return Err(SelectionError::MissingAlias);
+        }
+        input.allocations.retain(|row| row.slot != slot);
+        if input.allocations.is_empty() {
+            input.default_alias.clear();
+        }
+        self.edit_input(profile, expected, input)
+    }
+
+    pub(crate) fn revert(
+        &mut self,
+        profile: &str,
+        expected: u64,
+        config: &crate::provider_server::Config,
+    ) -> Result<u64, SelectionError> {
+        self.check_revision(profile, expected)?;
+        if self.form(profile)?.applied.is_none() {
+            return Err(SelectionError::MissingProfile);
+        }
+        self.install_applied(config, profile)
+    }
+
+    pub(crate) fn discard(&mut self, profile: &str, expected: u64) -> Result<(), SelectionError> {
+        self.check_revision(profile, expected)?;
+        if profile == DEFAULT_PROFILE || self.form(profile)?.applied.is_some() {
+            return Err(SelectionError::InvalidDraft);
+        }
+        let serial = self
+            .serial
+            .checked_add(1)
+            .ok_or(SelectionError::RevisionExhausted)?;
+        let removed = self
+            .drafts
+            .remove(profile)
+            .ok_or(SelectionError::MissingProfile)?;
+        self.bytes -= removed.bytes;
+        self.serial = serial;
+        if self.selected == profile {
+            self.selected = DEFAULT_PROFILE.into();
+        }
+        Ok(())
+    }
+
+    pub(crate) fn views(&self, accounts: &ConnectionAccounts) -> Vec<ConnectionProfileView> {
+        self.drafts.iter().filter_map(|(id, draft)| {
+            let form = draft.form.as_ref()?;
+            let allocations = form.input.allocations.iter().map(|row| {
+                let selected = form.selections.get(&row.slot);
+                let observation = row.account.as_ref().and_then(|account| accounts.get(account));
+                let current = observation.and_then(|value| value.as_ref().ok());
+                let availability = match observation {
+                    Some(Err(reason)) => *reason,
+                    None => ConnectionAvailability::MissingAccount,
+                    Some(Ok(snapshot)) if !snapshot.preferences.enabled => ConnectionAvailability::DisabledAccount,
+                    Some(Ok(snapshot)) => match selected.map(|selected| &selected.source) {
+                        Some(FormSource::Selected(selected)) => {
+                            if ResolvedAuthority::from_snapshot(snapshot).is_ok_and(|authority| authority == selected.authority) {
+                                ConnectionAvailability::Available
+                            } else { ConnectionAvailability::AuthorityChanged }
+                        }
+                        Some(FormSource::Applied(reference)) => {
+                            if snapshot.summary.provider != reference.route.provider {
+                                ConnectionAvailability::AuthorityChanged
+                            } else { match &reference.origin {
+                                crate::provider_server::AppliedOrigin::Inference { proof } if !proof.matches_current(snapshot) => ConnectionAvailability::AuthorityChanged,
+                                _ => ConnectionAvailability::Available,
+                            } }
+                        }
+                        None => ConnectionAvailability::NotSelected,
+                    },
+                };
+                let proof = draft.proofs.get(&row.alias).filter(|proof| selected.is_some_and(|selected| {
+                    proof.identity.profile == *id && proof.identity.alias == row.alias
+                        && proof.identity.authority.account() == selected.source.account()
+                        && wire_identity(&proof.identity.authority, selected.source.route()).is_ok_and(|wire| wire == proof.identity.wire)
+                }));
+                let legacy = selected.is_some_and(|selected| match &selected.source {
+                    FormSource::Applied(reference) => reference.profile == *id && reference.alias == row.alias
+                        && matches!(reference.origin, crate::provider_server::AppliedOrigin::LegacyApplied { .. }),
+                    FormSource::Selected(_) => false,
+                });
+                let evidence = if let Some(proof) = proof {
+                    if current.and_then(|snapshot| ResolvedAuthority::from_snapshot(snapshot).ok()).as_ref() == Some(&proof.identity.authority) {
+                        ConnectionEvidence::Verified
+                    } else { ConnectionEvidence::StaleAuthority }
+                } else if legacy { ConnectionEvidence::LegacyApplied } else { ConnectionEvidence::Unverified };
+                ConnectionAllocationView { slot: row.slot,
+                    upstream_model: selected.map(|selected| selected.source.route().model_id.clone()),
+                    protocol: selected.map(|selected| selected.source.route().protocol),
+                    availability, evidence, checked_unix_ms: proof.map(|proof| proof.checked_unix_ms()) }
+            }).collect();
+            Some(ConnectionProfileView { id: id.clone(), revision: draft.revision,
+                input: form.input.clone(), applied: form.applied.clone(),
+                dirty: form.applied.as_ref() != Some(&form.input)
+                    || form.selections.values().any(|selected| matches!(selected.source, FormSource::Selected(_))),
+                error: form.error, allocations })
+        }).collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::provider_accounts::{AccountPreferences, AccountState, AccountSummary};
+
+    fn cs02_applied_fixture() -> crate::provider_server::Config {
+        use crate::provider_server::{ClientAllocation, ClientProfile, Config};
+        let current = account('a', None);
+        let row = route("catalogue-id", "fixture/v1");
+        let mut config = Config::fresh().unwrap();
+        config.version = 2;
+        config.selected_account = Some(current.summary.id.clone());
+        config.model = row.id.clone();
+        config.models = vec![row];
+        for index in 1..8 {
+            config.profiles.push(ClientProfile {
+                id: format!("{index:032x}"),
+                label: format!("Client {index}"),
+                enabled: index != 7,
+                default_model: "model".into(),
+                allocations: vec![ClientAllocation {
+                    alias: "model".into(),
+                    account: current.summary.id.clone(),
+                    route: config.model.clone(),
+                }],
+            });
+        }
+        config.upgrade_applied().unwrap()
+    }
+
+    #[test]
+    fn cs02_production_import_keeps_225_large_applied_references_and_account_proofs_independent() {
+        use crate::provider_server::{AppliedOrigin, ClientAllocation, MODEL_ALIAS};
+        let a = account('a', None);
+        let b = account('b', None);
+        let mut config = cs02_applied_fixture();
+        config.version = 2;
+        config.applied_evidence.clear();
+        let mut large = route("shared-registry", &"x".repeat(8000));
+        large.model_id = "m".repeat(200);
+        config.model = large.id.clone();
+        config.models = vec![large.clone()];
+        for profile in &mut config.profiles {
+            profile.allocations = (0..32)
+                .map(|index| ClientAllocation {
+                    alias: format!("m{index:02}{}", "x".repeat(197)),
+                    account: if index % 2 == 0 {
+                        a.summary.id.clone()
+                    } else {
+                        b.summary.id.clone()
+                    },
+                    route: large.id.clone(),
+                })
+                .collect();
+            profile.default_model = profile.allocations[0].alias.clone();
+        }
+        config = config.upgrade_applied().unwrap();
+        let target = config.profiles[0].clone();
+        let mut checked = DraftBook::default();
+        let mut input = edit(selection(&a, large.clone()));
+        input.default_alias = target.allocations[0].alias.clone();
+        input.allocations = vec![
+            AllocationDraft {
+                alias: target.allocations[0].alias.clone(),
+                selected: selection(&a, large.clone()),
+            },
+            AllocationDraft {
+                alias: target.allocations[1].alias.clone(),
+                selected: selection(&b, large.clone()),
+            },
+        ];
+        checked.replace(&target.id, input).unwrap();
+        for (index, current) in [&a, &b].into_iter().enumerate() {
+            let alias = &target.allocations[index].alias;
+            let ticket = checked.begin_probe(&target.id, alias, current).unwrap();
+            checked
+                .accept_probe(ticket, current, if index == 0 { 111 } else { 222 })
+                .unwrap();
+            let proof = checked
+                .verification(&target.id, alias, current)
+                .unwrap()
+                .unwrap()
+                .persisted();
+            config
+                .applied_evidence
+                .iter_mut()
+                .find(|entry| entry.profile == target.id && entry.alias == *alias)
+                .unwrap()
+                .origin = AppliedOrigin::Inference {
+                proof: Box::new(proof),
+            };
+        }
+        let encoded = config.encode_applied().unwrap();
+        assert!(encoded.len() <= crate::provider_server::CONFIG_BYTES);
+        let book = DraftBook::from_applied(&config)
+            .expect("legal Config must retain every applied reference");
+        let mut accounts = ConnectionAccounts::from([
+            (a.summary.id.clone(), Ok(a.clone())),
+            (b.summary.id.clone(), Ok(b.clone())),
+        ]);
+        let views = book.views(&accounts);
+        assert_eq!(views.len(), 8);
+        assert_eq!(
+            views
+                .iter()
+                .map(|profile| profile.allocations.len())
+                .sum::<usize>(),
+            225
+        );
+        assert!(views.iter().all(|profile| profile.allocations.len()
+            == if profile.id == DEFAULT_PROFILE { 1 } else { 32 }));
+        assert!(
+            views
+                .iter()
+                .all(|profile| profile
+                    .allocations
+                    .iter()
+                    .all(
+                        |row| row.upstream_model.as_deref() == Some(large.model_id.as_str())
+                            && row.availability == ConnectionAvailability::Available
+                    ))
+        );
+        let selected = views
+            .iter()
+            .find(|profile| profile.id == target.id)
+            .unwrap();
+        assert_eq!(
+            selected.input.allocations[0].account.as_deref(),
+            Some(a.summary.id.as_str())
+        );
+        assert_eq!(
+            selected.input.allocations[1].account.as_deref(),
+            Some(b.summary.id.as_str())
+        );
+        assert_eq!(selected.allocations[0].checked_unix_ms, Some(111));
+        assert_eq!(selected.allocations[1].checked_unix_ms, Some(222));
+        assert_eq!(
+            selected.allocations[0].evidence,
+            ConnectionEvidence::Verified
+        );
+        assert_eq!(
+            selected.allocations[1].evidence,
+            ConnectionEvidence::Verified
+        );
+        let mut changed_b = b.clone();
+        changed_b.generation = "f".repeat(32);
+        accounts.insert(b.summary.id.clone(), Ok(changed_b));
+        let changed = book.views(&accounts);
+        let selected = changed
+            .iter()
+            .find(|profile| profile.id == target.id)
+            .unwrap();
+        assert_eq!(
+            selected.allocations[0].evidence,
+            ConnectionEvidence::Verified
+        );
+        assert_eq!(
+            selected.allocations[1].evidence,
+            ConnectionEvidence::StaleAuthority
+        );
+        assert_eq!(
+            changed
+                .iter()
+                .find(|profile| profile.id == DEFAULT_PROFILE)
+                .unwrap()
+                .input
+                .default_alias,
+            MODEL_ALIAS
+        );
+        assert_eq!(config.encode_applied().unwrap(), encoded);
+        assert!(views.iter().all(|profile| !profile.dirty));
+    }
+
+    #[test]
+    fn cs02_production_book_retains_all_eight_applied_profiles_without_account_authority() {
+        let config = cs02_applied_fixture();
+        let mut book = DraftBook::from_applied(&config).unwrap();
+        let missing = ConnectionAccounts::new();
+        let initial = book.views(&missing);
+        assert_eq!(initial.len(), 8);
+        assert!(
+            initial
+                .iter()
+                .all(|view| view.allocations.len() == 1 && !view.dirty)
+        );
+        assert!(
+            initial
+                .iter()
+                .all(|view| view.allocations[0].availability
+                    == ConnectionAvailability::MissingAccount)
+        );
+        assert!(initial.iter().all(|view| view.allocations[0].evidence
+            == ConnectionEvidence::LegacyApplied
+            && view.allocations[0].checked_unix_ms.is_none()));
+        assert_eq!(book.referenced_accounts(), vec!["a".repeat(32)]);
+        let first = format!("{:032x}", 1);
+        let second = format!("{:032x}", 2);
+        let mut input = book.form(&first).unwrap().input.clone();
+        input.label = "Retained edit".into();
+        book.edit_input(&first, book.revision(&first).unwrap(), input)
+            .unwrap();
+        let mut input = book.form(&second).unwrap().input.clone();
+        input.label.clear();
+        book.edit_input(&second, book.revision(&second).unwrap(), input.clone())
+            .unwrap();
+        assert_eq!(
+            book.form(&second).unwrap().error,
+            Some(ConnectionInputError::InvalidLabel)
+        );
+        let before = book.revision(&first).unwrap();
+        book.revert(&first, before, &config).unwrap();
+        assert!(book.revision(&first).unwrap() > before);
+        assert_eq!(book.form(&second).unwrap().input, input);
+        assert_eq!(
+            book.form(&first).unwrap().input,
+            initial.iter().find(|view| view.id == first).unwrap().input
+        );
+        assert_eq!(
+            book.create_profile(&"f".repeat(32)),
+            Err(SelectionError::ProfileBound)
+        );
+    }
+
+    #[test]
+    fn cs02_production_book_restores_only_persisted_exact_evidence_without_a_new_check() {
+        use crate::provider_server::{AppliedOrigin, MODEL_ALIAS};
+        let current = account('a', None);
+        let mut config = cs02_applied_fixture();
+        let mut checked = DraftBook::default();
+        let mut input = edit(selection(&current, config.models[0].clone()));
+        input.default_alias = MODEL_ALIAS.into();
+        input.allocations[0].alias = MODEL_ALIAS.into();
+        checked.replace(DEFAULT_PROFILE, input).unwrap();
+        let ticket = checked
+            .begin_probe(DEFAULT_PROFILE, MODEL_ALIAS, &current)
+            .unwrap();
+        checked.accept_probe(ticket, &current, 1234).unwrap();
+        let proof = checked
+            .verification(DEFAULT_PROFILE, MODEL_ALIAS, &current)
+            .unwrap()
+            .unwrap()
+            .persisted();
+        let record = serde_json::to_vec(&proof).unwrap();
+        config
+            .applied_evidence
+            .iter_mut()
+            .find(|entry| entry.profile == DEFAULT_PROFILE)
+            .unwrap()
+            .origin = AppliedOrigin::Inference {
+            proof: Box::new(proof),
+        };
+        let mut book = DraftBook::from_applied(&config).unwrap();
+        let mut accounts =
+            ConnectionAccounts::from([(current.summary.id.clone(), Ok(current.clone()))]);
+        let default = |views: Vec<ConnectionProfileView>| {
+            views
+                .into_iter()
+                .find(|view| view.id == DEFAULT_PROFILE)
+                .unwrap()
+        };
+        let restored = default(book.views(&accounts));
+        assert_eq!(
+            restored.allocations[0].evidence,
+            ConnectionEvidence::Verified
+        );
+        assert_eq!(restored.allocations[0].checked_unix_ms, Some(1234));
+        let imported = book
+            .get(DEFAULT_PROFILE)
+            .unwrap()
+            .proofs
+            .get(MODEL_ALIAS)
+            .unwrap()
+            .persisted();
+        assert_eq!(serde_json::to_vec(&imported).unwrap(), record);
+        let mut changed = current.clone();
+        changed.generation = "e".repeat(32);
+        accounts.insert(changed.summary.id.clone(), Ok(changed));
+        let stale = default(book.views(&accounts));
+        assert_eq!(
+            stale.allocations[0].evidence,
+            ConnectionEvidence::StaleAuthority
+        );
+        assert_eq!(
+            stale.allocations[0].availability,
+            ConnectionAvailability::AuthorityChanged
+        );
+        assert_eq!(stale.allocations[0].checked_unix_ms, Some(1234));
+        let revision = book.revision(DEFAULT_PROFILE).unwrap();
+        book.revert(DEFAULT_PROFILE, revision, &config).unwrap();
+        assert_eq!(
+            default(book.views(&accounts)).allocations[0].evidence,
+            ConnectionEvidence::StaleAuthority
+        );
+        let other = format!("{:032x}", 1);
+        let mut forged = config.clone();
+        let copied = forged
+            .applied_evidence
+            .iter()
+            .find(|entry| entry.profile == DEFAULT_PROFILE)
+            .unwrap()
+            .origin
+            .clone();
+        forged
+            .applied_evidence
+            .iter_mut()
+            .find(|entry| entry.profile == other)
+            .unwrap()
+            .origin = copied;
+        assert!(matches!(
+            DraftBook::from_applied(&forged),
+            Err(SelectionError::InvalidDraft)
+        ));
+    }
+
+    #[test]
+    fn cs02_production_raw_edits_use_slot_identity_and_cas_without_resurrecting_late_proofs() {
+        let current = account('a', None);
+        let mut book = DraftBook::from_applied(&cs02_applied_fixture()).unwrap();
+        let profile = format!("{:032x}", 1);
+        let row = route("catalogue-choice", "different/v1");
+        let mut cache = CatalogueCache::default();
+        load(&mut cache, &current, vec![row]);
+        let rev = book.revision(&profile).unwrap();
+        book.choose(
+            &profile,
+            rev,
+            0,
+            cache.select(&current, "catalogue-choice").unwrap(),
+            "catalogue-choice",
+        )
+        .unwrap();
+        let ticket = book.begin_probe(&profile, "model", &current).unwrap();
+        let mut invalid = book.form(&profile).unwrap().input.clone();
+        invalid.label.clear();
+        let revision = book.revision(&profile).unwrap();
+        let accepted = book
+            .edit_input(&profile, revision, invalid.clone())
+            .unwrap();
+        assert!(accepted > revision);
+        assert_eq!(book.form(&profile).unwrap().input, invalid);
+        assert_eq!(
+            book.form(&profile).unwrap().error,
+            Some(ConnectionInputError::InvalidLabel)
+        );
+        assert!(matches!(
+            book.begin_probe(&profile, "model", &current),
+            Err(SelectionError::DraftChanged)
+        ));
+        assert_eq!(
+            book.accept_probe(ticket, &current, 5000),
+            Err(SelectionError::DraftChanged)
+        );
+        invalid.label = "Later".into();
+        assert_eq!(
+            book.edit_input(&profile, revision, invalid.clone()),
+            Err(SelectionError::DraftChanged)
+        );
+        assert!(book.form(&profile).unwrap().input.label.is_empty());
+        invalid.allocations[0].model = "x".repeat(201);
+        assert_eq!(
+            book.edit_input(&profile, accepted, invalid),
+            Err(SelectionError::InvalidDraft)
+        );
+        assert_eq!(book.revision(&profile), Some(accepted));
+        let mut repaired = book.form(&profile).unwrap().input.clone();
+        repaired.label = "Repaired".into();
+        book.edit_input(&profile, accepted, repaired).unwrap();
+        let ticket = book.begin_probe(&profile, "model", &current).unwrap();
+        book.accept_probe(ticket, &current, 5001).unwrap();
+        let mut moved = book.form(&profile).unwrap().input.clone();
+        moved.allocations[0].slot = 3;
+        book.edit_input(&profile, book.revision(&profile).unwrap(), moved)
+            .unwrap();
+        assert!(book.get(&profile).unwrap().proofs.is_empty());
+        assert_eq!(
+            book.form(&profile).unwrap().error,
+            Some(ConnectionInputError::UnselectedModel)
+        );
+        let views = book.views(&ConnectionAccounts::from([(
+            current.summary.id.clone(),
+            Ok(current),
+        )]));
+        assert_eq!(
+            views
+                .iter()
+                .find(|view| view.id == profile)
+                .unwrap()
+                .allocations[0]
+                .evidence,
+            ConnectionEvidence::Unverified
+        );
+    }
+
+    #[test]
+    fn cs02_production_revert_discards_candidate_only_proof_and_preserves_other_profiles() {
+        let current = account('a', None);
+        let config = cs02_applied_fixture();
+        let mut book = DraftBook::from_applied(&config).unwrap();
+        let profile = format!("{:032x}", 1);
+        let mut cache = CatalogueCache::default();
+        load(&mut cache, &current, vec![route("choice", "new/v1")]);
+        book.choose(
+            &profile,
+            book.revision(&profile).unwrap(),
+            0,
+            cache.select(&current, "choice").unwrap(),
+            "choice",
+        )
+        .unwrap();
+        let ticket = book.begin_probe(&profile, "model", &current).unwrap();
+        book.accept_probe(ticket, &current, 6000).unwrap();
+        assert!(!book.get(&profile).unwrap().proofs.is_empty());
+        book.revert(&profile, book.revision(&profile).unwrap(), &config)
+            .unwrap();
+        assert!(book.get(&profile).unwrap().proofs.is_empty());
+        let views = book.views(&ConnectionAccounts::from([(
+            current.summary.id.clone(),
+            Ok(current),
+        )]));
+        assert!(views.iter().all(|view| !view.dirty));
+        assert!(
+            views
+                .iter()
+                .all(|view| view.allocations[0].evidence == ConnectionEvidence::LegacyApplied)
+        );
+        let mut default = book.form(DEFAULT_PROFILE).unwrap().input.clone();
+        default.allocations[0].alias = "new-alias".into();
+        book.edit_input(
+            DEFAULT_PROFILE,
+            book.revision(DEFAULT_PROFILE).unwrap(),
+            default.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            book.form(DEFAULT_PROFILE).unwrap().error,
+            Some(ConnectionInputError::DefaultCompatibility)
+        );
+        assert_eq!(book.form(DEFAULT_PROFILE).unwrap().input, default);
+    }
+
+    #[test]
+    fn cs02_production_raw_duplicate_alias_and_budget_rejections_keep_last_state() {
+        let mut config = cs02_applied_fixture();
+        config.profiles.pop();
+        config
+            .applied_evidence
+            .retain(|entry| entry.profile != format!("{:032x}", 7));
+        let mut book = DraftBook::from_applied(&config).unwrap();
+        let profile = "f".repeat(32);
+        let first = book.create_profile(&profile).unwrap();
+        let mut input = book.form(&profile).unwrap().input.clone();
+        input.default_alias = "duplicate".into();
+        input.allocations = (0..2)
+            .map(|slot| ConnectionAllocationInput {
+                slot,
+                alias: "duplicate".into(),
+                account: None,
+                model: String::new(),
+            })
+            .collect();
+        let revision = book.edit_input(&profile, first, input.clone()).unwrap();
+        // Alias duplicate is detected before incomplete model state.
+        assert_eq!(book.form(&profile).unwrap().input, input);
+        assert_eq!(
+            book.form(&profile).unwrap().error,
+            Some(ConnectionInputError::DuplicateAlias)
+        );
+        input.allocations[1].slot = 0;
+        assert_eq!(
+            book.edit_input(&profile, revision, input),
+            Err(SelectionError::InvalidDraft)
+        );
+        assert_eq!(book.revision(&profile), Some(revision));
+        // Explicit pure accounting fault, not evidence of process RSS or a
+        // naturally reached 4 MiB form. The actual rejection is exercised.
+        book.bytes = MAX_DRAFT_BYTES;
+        let mut larger = book.form(&profile).unwrap().input.clone();
+        larger.label = "x".repeat(128);
+        assert_eq!(
+            book.edit_input(&profile, revision, larger),
+            Err(SelectionError::AggregateBound)
+        );
+        assert_eq!(book.revision(&profile), Some(revision));
+        book.discard(&profile, revision).unwrap();
+        assert_eq!(book.selected(), DEFAULT_PROFILE);
+        assert!(book.revision(&profile).is_none());
+    }
 
     fn account(id: char, organization: Option<&str>) -> AccountSnapshot {
         let id = id.to_string().repeat(32);

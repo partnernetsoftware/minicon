@@ -349,5 +349,59 @@ The frozen local join passes 46 Rust executions, fifteen Python checks and all
 22 default ordinary-browser checks, with formatting and both strict Clippy
 profiles: `target-six/v0.2.23-provider/cookie-v2-final-gate-receipt.json`.
 Only this owning PRD's evidence is updated afterward. Independent postcommit
-verification and a new matching-source Windows SDK/cookie court remain open.
-The old verified-directory storage failure remains the current native verdict.
+verification of `f49d7ff7e8f03bb0b9aefe6fb9637cceebb2c3df` passes 25 Rust and
+fifteen Python checks and audits the producer's raw gates and restoration chain:
+`target-six/v0.2.23-provider/cookie-v2-independent-f49d7ff/receipt.json`.
+It uses the shared build cache, not an isolated checkout. Native persistence
+is a separate observation below.
+
+### Actual finite-cookie Windows pilot
+
+Windows x86_64 development run `40185187494`, exact source
+`f49d7ff7e8f03bb0b9aefe6fb9637cceebb2c3df`, executes the diagnostic feature
+and retains the original native failure. Of eight fixture oracles, three pass,
+reopened-A inheritance fails and four are not observed. Reopened A reports
+cookie `missing`, localStorage `matches`; the two native fault variants and
+restored execution do not run after the initial failure.
+
+All four actual SDK samples return `observed`: A before navigation has zero
+cookies; live A before context release has one persistent cookie with future
+expiry and zero session cookies; B and reopened A before navigation each have
+zero. Thus a future-expiring persistent cookie is visible to the SDK before
+release and absent from that URI's SDK snapshot after reopening. These counts
+do not expose or establish cookie identity or explain where persistence failed.
+
+All three hosts verify persistent mode, the requested UDF and finite layout
+`EBWebView/Default`. Reopened A observes matching normal exit and the same
+verified profile directory. Fixed and verified-directory DB candidates remain
+`not-found` before and after owned cleanup; row counts remain unavailable.
+Local State reports configured encryption-key booleans and stable clock
+observations. None establishes database absence, access failure, decryption
+failure or a missing flush. Sampling still perturbs release timing.
+
+The ordinary-browser court passes all 22 checks. Dedicated protocol checks pass
+fifteen positives and eleven actual assertion counterexamples; shutdown and
+ordinary filtered Rust suites are not run after the native failure. The author
+audit checks source/feature identity, both archive API digests/sizes, private
+carrier exclusions and 102 raw-file digests:
+`target-six/v0.2.23-provider/ci-f49d7ff-cookie-native/verification-index.json`.
+That audit is explicitly not independent whole-change verification. The native
+cookie-persistence result remains FAIL; no production repair is claimed.
+
+The next planned diagnostic compares two fresh fixture-only permission policies
+using one exact diagnostic binary and the unchanged eight oracles: existing
+owner-only directory protection versus ordinary inherited directory permissions.
+Its actual initial/final finite ACL observations must establish a meaningful
+difference; otherwise the comparison is inconclusive. Python directory creation
+also affects the initial Windows ACL, so this is an entire fixture permission
+policy comparison rather than an assumed single Rust-call difference. No
+existing directory, real account profile or credential ACL is relaxed.
+
+[Microsoft's WebView2 guidance](https://learn.microsoft.com/en-us/deployedge/webview2-security-tools#preserve-default-access-control-lists-acls-on-the-apps-user-data-folder-udf)
+requires preserving default UDF access for sandboxed processes. The current
+private-directory helper replaces its DACL with current-user access; this is
+a concrete investigation hypothesis, not proof that the observed cookie loss
+was an access denial. Any later production browser-directory mechanism must
+remain separate from private credential protection and preserve SDK-owned
+permissions across account-store writes and browser reuse. The permission
+contrast is planned, not an executed comparison or a persistence fix.

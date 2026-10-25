@@ -3,8 +3,8 @@
 Parent: [provider pool](PRD_02_31_01_02_provider_pool.md). User-facing forms and
 actions remain with [Harness experience](PRD_02_31_01_01_harness_experience.md).
 Sequence: [0.2.23 plan](../plan/plan-v0.2.23.md#harness-product-redesign-before-publication).
-Status: `[-]` organization-authority prerequisite and production catalogue join
-in development; draft/verify/apply delivery remains open.
+Status: `[-]` organization authority, production catalogue, migration and draft
+form joins in development; draft acceptance and verify/apply delivery remain open.
 
 This module owns catalogue identity, connection drafts, verification evidence
 and publication of applied routes. The parent owns account/profile/key lifecycle;
@@ -20,7 +20,7 @@ Outcome: safely prepare one client's model connection while other clients keep w
 │   safe failure: retain prior readings as stale; discard results from superseded authority
 │   dependency: private account snapshots and existing bounded catalogue transport
 │   non-goal: automatic metadata polling or inference while selecting a model
-├── [_] DRAFT — retain separate bounded edits for default and additional profiles
+├── [-] DRAFT — retain separate bounded edits for default and additional profiles
 │   invariant: highlighted account/model/alias is never an applied routing mutation
 │   evidence: CS-02 edit/switch/revert/reopen with unchanged disk and live sessions
 │   safe failure: invalid edits retain the last valid applied connection and the user's draft
@@ -155,8 +155,9 @@ in private state and user-visible status.
 
 ## Evidence frontier
 
-CS-01 is `[-]` in development. The version-3 resolver/migration prerequisite is
-also `[-]`; the full CS-02..07 draft/verify/atomic-apply obligations remain open.
+CS-01 is `[-]` in development. The version-3 resolver/migration prerequisite and
+production draft-form join are also `[-]`; the full CS-02..07
+draft/verify/atomic-apply obligations remain open.
 Each trusted
 regression must fail at runtime when its guarded identity/transaction condition
 is removed, then pass after exact restoration. Public Settings journeys must
@@ -404,9 +405,10 @@ checks current authority. The proof creation bridge remains test-only until
 the real paid-probe consumer is integrated.
 
 Both loaded and fresh Owner configurations become version 3. The old immediate
-SelectAccount/SelectModel actions now return VerificationRequired. The existing
-GUI callers still require replacement with the complete draft/verify/apply
-flow. This intentionally incomplete development checkpoint cannot qualify that
+SelectAccount/SelectModel actions now return VerificationRequired. At this
+prerequisite checkpoint, GUI replacement was still pending; the draft join below
+replaces those callers, while verification/application remain open.
+This intentionally incomplete development checkpoint cannot qualify that
 connection experience or a releasable Candidate. Existing applied routes remain
 usable independently of those new-selection actions.
 
@@ -452,3 +454,80 @@ It uses a shared Cargo cache (`isolated=false`); the verifier is distinct from
 the source producers. The later matching-source native development followup
 is owned by [PRD 32](PRD_02_32_dev_loop_crosscheck.md#version-3-compatibility-and-h0-native-feedback).
 Complete CS-02..07 and release qualification remain open.
+
+### Production draft-form join (in progress)
+
+The existing DraftBook now serves all eight actual Owner forms. Raw bounded
+input and stable allocation slots remain separate from the last valid semantic
+candidate. Applied references share immutable validated routes while retaining
+allocation-specific provenance and unavailable accounts. Import/revert checks
+persisted exact evidence without inventing a new authority or check time.
+
+Runtime exposes bounded draft commands, revisions and exact terminal receipts.
+The next command acknowledges only receipts actually delivered by poll; nine
+unconsumed commands produce backpressure without arbitrary eviction, and a
+failed channel send does not mark an unsent request in flight. Atomic Stop
+remains independent. Legal Config/keys with unreadable account metadata retain
+the book; explicit metadata recovery preserves dirty forms.
+
+Settings consumes these forms through the existing editor and row geometry.
+Per-field activity protects later input and selection from Revert/Choose
+acknowledgements, including text ABA and account-dependent model clearing.
+Successful Discard consumes its exact receipt even when metadata is unavailable.
+Form return restores its last legal field/slot; profile-chooser navigation needs
+confirmation. Applied alias/account/upstream-model rows remain visible beside
+the draft. The experience owner specifies the product behavior. The old
+immediate-selector GUI callers are gone. Verify and Apply remain unavailable;
+the retired unused runtime applied-only probe path is removed, while existing
+server probe regressions remain test-only. CS-03 must add a real candidate probe.
+
+Initial strict-wrapper integration passes 49 selected consumers: ten existing
+CS-02 regressions, fifteen new backend tests and all 24 Settings tests (including
+twelve nested form tests). Main inventory grows from 679 to 712. Receipt:
+`target-six/v0.2.23-provider/cs02-leaf2-initial-green-receipt.json`.
+Earlier compilation/lint failures and incomplete synthetic Discard/Host-port
+fixtures remain failed attempts, not guarded counterevidence.
+
+Eight backend guards produce actual assertion failures in one temporary compound
+test image, one exact tag/test per fresh process, with reviewed panic locations
+and messages. All 84 selection/runtime/Settings consumers pass without a tag
+and again through the strict wrapper after byte-exact source restoration:
+`target-six/v0.2.23-provider/leaf2-batch8-v3-controls/receipt.json`.
+The two earlier launcher/inventory failures are retained and supply no RED.
+The remaining six backend controls also produce their original consumer
+assertion REDs and restore all 84 consumers:
+`target-six/v0.2.23-provider/leaf2-batch6-controls/receipt.json`.
+The real send-ownership reorder is tested separately, with its original
+assertion RED and all 36 runtime consumers passing after exact restoration:
+`target-six/v0.2.23-provider/leaf2-send-ownership-control/receipt.json`.
+Together these cover all fifteen new backend tests. All eighteen new UI tests
+also produce their intended original consumer assertion REDs in two temporary
+compound-source images, with one tagged exact test per fresh process:
+`target-six/v0.2.23-provider/leaf2-ui12-v2-controls/receipt.json` and
+`target-six/v0.2.23-provider/leaf2-ui6-controls/receipt.json`.
+Both restore all three modified files byte-exactly, keep runtime source
+unchanged, and pass all 84 consumers without a tag and after restoration.
+These are process-isolated controls, not eighteen separately rebuilt mutants.
+The earlier temporary-slice compilation failure is retained under
+`leaf2-ui12-controls/receipt.json`; it supplies no runtime RED.
+
+An explicit fresh default dev build and public CLI replay pass nine observations
+covering eight independent model/caret/selection buffers, A-to-B-to-A typing,
+201-byte local retention without resubmission, Discard/recreate, applied/Revert,
+and observed 760/narrow/short row reachability. Applied Config/key bytes remain
+unchanged and the owned GUI exits cleanly:
+`target-six/v0.2.23-provider/leaf2-dev-build-receipt.json` and
+`target-six/v0.2.23-provider/leaf2-public-eight-forms-initial/receipt.json`.
+This is injected public input with a synthetic unavailable account, not physical
+input, pixels, actual provider/paid work, full native or release qualification.
+The broader original-source development gate passes 330 Rust consumers with
+one named Pi opt-in ignored, both strict all-target Clippy configurations,
+format checking, nine fresh public form checks and 22 ordinary-browser checks:
+`target-six/v0.2.23-provider/leaf2-broader-gate-receipt.json`.
+Its explicit default build has SHA-256
+`c5f4cb33fd0f71e891aed5f1d26b708e494450a5816036dd63adc64fce00aee4`.
+The UI controls restore exactly the source qualified by this broader gate;
+the later documentation-only evidence closeout does not change those product
+bytes. Independent postcommit verification remains required before push.
+This draft-form join does not complete candidate verification, atomic Apply,
+native auth-cookie persistence, actual provider/client journeys or the release.

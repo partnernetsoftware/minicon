@@ -206,10 +206,12 @@ keeps catalogue ownership, per-profile drafts, verification identities and
 applied-route migration in product-owned `provider_*` modules. Reuse shared
 private atomic publication, bounded HTTP and cancellation mechanisms; do not
 move provider organization or allocation policy into shared native adapters.
-The product-private `provider_selection.rs` cache now joins the production
-Owner/Gateway/account-detail consumer under development; draft/frozen-candidate/
-proof mechanisms retain their test gate. Its acceptance and scoped evidence
-remain with that owner.
+The product-private `provider_selection.rs` cache and DraftBook now join the
+production Owner/Gateway/Settings consumers under development. The private
+`harness_settings_ui/connection_forms.rs` owns per-form editor buffers and
+acknowledgement rebasing, reusing the shared field editor; it exports no shared
+account, route or permission policy. Frozen-candidate/proof mechanisms retain
+their test gate. Acceptance and scoped evidence remain with that owner.
 Its [version-3 resolver/migration prerequisite](PRD_02_31_01_02_01_connection_selection.md#version-3-resolver-and-migration-prerequisite-in-progress)
 also keeps private provenance and compatibility resolution in these product
 modules; its production consumer does not promote the future paid-probe/draft

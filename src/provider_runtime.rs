@@ -6,7 +6,9 @@ pub use crate::provider_accounts::{
 };
 pub use crate::provider_auth::Provider;
 pub use crate::provider_login::AttemptId;
-use crate::provider_selection::{CatalogueCache, CatalogueRequest, SelectionError};
+use crate::provider_selection::{
+    CatalogueCache, CatalogueRequest, ConnectionAccounts, DraftBook, SelectionError,
+};
 pub use crate::provider_selection::{CatalogueModel, CatalogueStatus};
 use crate::provider_server::CatalogueResult;
 use crate::{
@@ -25,6 +27,30 @@ use std::{
     thread::JoinHandle,
     time::{Duration, Instant},
 };
+
+pub use crate::provider_selection::{
+    ConnectionAllocationInput, ConnectionAvailability, ConnectionDraftInput, ConnectionEvidence,
+    ConnectionProfileView,
+};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConnectionChange {
+    Create,
+    Edit,
+    Choose,
+    Remove,
+    Revert,
+    Discard,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConnectionEditReceipt {
+    pub request: u64,
+    pub profile: String,
+    pub change: ConnectionChange,
+    pub revision: Option<u64>,
+    pub result: Result<(), RuntimeError>,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ListenerState {
@@ -79,6 +105,9 @@ pub struct View {
     pub models: Vec<String>,
     pub catalogues: Vec<AccountCatalogueView>,
     pub catalogue_bytes: usize,
+    pub connection_profile: String,
+    pub connection_profiles: Vec<ConnectionProfileView>,
+    pub connection_receipts: Vec<ConnectionEditReceipt>,
     pub listener: ListenerState,
     pub busy: bool,
     pub login_active: bool,
@@ -103,6 +132,9 @@ impl Default for View {
             models: Vec::new(),
             catalogues: Vec::new(),
             catalogue_bytes: 0,
+            connection_profile: String::new(),
+            connection_profiles: Vec::new(),
+            connection_receipts: Vec::new(),
             listener: ListenerState::Stopped,
             busy: true,
             login_active: false,
@@ -117,6 +149,41 @@ impl Default for View {
 
 #[derive(Clone, Debug)]
 pub enum Action {
+    FocusConnectionProfile(String),
+    CreateConnectionProfile {
+        request: u64,
+    },
+    EditConnectionProfile {
+        request: u64,
+        profile: String,
+        expected_revision: u64,
+        input: Box<ConnectionDraftInput>,
+    },
+    ChooseConnectionModel {
+        request: u64,
+        profile: String,
+        expected_revision: u64,
+        slot: u8,
+        account: String,
+        catalogue_id: String,
+    },
+    RemoveConnectionAllocation {
+        request: u64,
+        profile: String,
+        expected_revision: u64,
+        slot: u8,
+    },
+    RevertConnectionProfile {
+        request: u64,
+        profile: String,
+        expected_revision: u64,
+    },
+    DiscardUnappliedProfile {
+        request: u64,
+        profile: String,
+        expected_revision: u64,
+    },
+
     Connect {
         provider: Provider,
         label: String,
@@ -126,16 +193,16 @@ pub enum Action {
     Reconnect(String),
     CancelLogin,
     RefreshAccounts,
-    RefreshModels,
     RefreshAccountModels(String),
+    #[cfg(test)]
     SelectAccount(String),
     SaveAccount {
         request: u64,
         edit: Box<AccountEdit>,
     },
+    #[cfg(test)]
     SelectModel(String),
     SetPort(u16),
-    TestModel,
     Start,
     Stop,
     RemoveAccount(String),
@@ -172,6 +239,7 @@ pub enum RuntimeError {
     MissingAccount,
     MissingModel,
     VerificationRequired,
+    DraftChanged,
     Cancelled,
     AccountChanged,
     MissingClientKey,
@@ -194,7 +262,9 @@ struct Pending {
 }
 
 pub struct Runtime {
-    commands: SyncSender<(u64, Action)>,
+    commands: SyncSender<(u64, Vec<u64>, Action)>,
+    connection_inflight: std::collections::BTreeMap<u64, String>,
+    last_connection_request: u64,
     pending: Arc<Mutex<Pending>>,
     view: View,
     exit: Arc<AtomicBool>,
@@ -236,6 +306,8 @@ impl Runtime {
             .map_err(|_| RuntimeError::WorkerUnavailable)?;
         Ok(Self {
             commands,
+            connection_inflight: Default::default(),
+            last_connection_request: 0,
             pending,
             view: View::default(),
             exit,
@@ -245,6 +317,79 @@ impl Runtime {
     }
 
     pub fn act(&mut self, action: Action) -> Result<(), RuntimeError> {
+        let profile_id = |id: &str| id == "default" || crate::provider_server::opaque_id(id);
+        let invalid = match &action {
+            Action::FocusConnectionProfile(profile) => !profile_id(profile),
+            Action::CreateConnectionProfile { request } => *request == 0,
+            Action::EditConnectionProfile {
+                request,
+                profile,
+                input,
+                ..
+            } => *request == 0 || !profile_id(profile) || input.bounded().is_err(),
+            Action::ChooseConnectionModel {
+                request,
+                profile,
+                slot,
+                account,
+                catalogue_id,
+                ..
+            } => {
+                *request == 0
+                    || !profile_id(profile)
+                    || usize::from(*slot) >= 32
+                    || !crate::provider_server::opaque_id(account)
+                    || !crate::provider_server::safe_model(catalogue_id, false)
+            }
+            Action::RemoveConnectionAllocation {
+                request,
+                profile,
+                slot,
+                ..
+            } => *request == 0 || !profile_id(profile) || usize::from(*slot) >= 32,
+            Action::RevertConnectionProfile {
+                request, profile, ..
+            }
+            | Action::DiscardUnappliedProfile {
+                request, profile, ..
+            } => *request == 0 || !profile_id(profile),
+            _ => false,
+        };
+        if invalid {
+            return Err(RuntimeError::InvalidAction);
+        }
+        let connection = match &action {
+            Action::CreateConnectionProfile { request } => Some((*request, String::new())),
+            Action::EditConnectionProfile {
+                request, profile, ..
+            }
+            | Action::ChooseConnectionModel {
+                request, profile, ..
+            }
+            | Action::RemoveConnectionAllocation {
+                request, profile, ..
+            }
+            | Action::RevertConnectionProfile {
+                request, profile, ..
+            }
+            | Action::DiscardUnappliedProfile {
+                request, profile, ..
+            } => Some((*request, profile.clone())),
+            _ => None,
+        };
+        if let Some((request, profile)) = &connection {
+            if *request <= self.last_connection_request {
+                return Err(RuntimeError::InvalidAction);
+            }
+            if self.connection_inflight.len() >= 9
+                || self
+                    .connection_inflight
+                    .values()
+                    .any(|pending| pending == profile)
+            {
+                return Err(RuntimeError::Busy);
+            }
+        }
         if matches!(action, Action::Stop) {
             self.stop_requested.fetch_add(1, Ordering::AcqRel);
             return Ok(());
@@ -258,12 +403,29 @@ impl Runtime {
         {
             return Err(RuntimeError::InvalidAction);
         }
+        // Only receipts delivered by poll are acknowledged. Merely accepting
+        // a command does not grant the owner permission to drop its response.
+        let delivered = self
+            .view
+            .connection_receipts
+            .iter()
+            .map(|receipt| receipt.request)
+            .collect();
         self.commands
-            .try_send((self.stop_requested.load(Ordering::Acquire), action))
+            .try_send((
+                self.stop_requested.load(Ordering::Acquire),
+                delivered,
+                action,
+            ))
             .map_err(|error| match error {
                 TrySendError::Full(_) => RuntimeError::Busy,
                 TrySendError::Disconnected(_) => RuntimeError::WorkerUnavailable,
-            })
+            })?;
+        if let Some((request, profile)) = connection {
+            self.connection_inflight.insert(request, profile);
+            self.last_connection_request = request;
+        }
+        Ok(())
     }
 
     /// Applies already-produced metadata/effects. No store or transport calls.
@@ -273,6 +435,9 @@ impl Runtime {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         if let Some(view) = pending.view.take() {
+            for receipt in &view.connection_receipts {
+                self.connection_inflight.remove(&receipt.request);
+            }
             self.view = view;
         }
         pending.effects.drain(..).collect()
@@ -409,7 +574,6 @@ use std::path::Path;
 
 enum OperationResult {
     Catalog(CatalogueResult),
-    Tested,
 }
 
 pub const CONFIG_DURABILITY_WARNING: &str = "Settings saved and applied; disk durability could not be confirmed. Save again when storage is available.";
@@ -428,6 +592,8 @@ struct Owner {
     server: Option<Server>,
     operation: Option<Operation>,
     catalogues: CatalogueCache,
+    drafts: DraftBook,
+    connection_accounts: ConnectionAccounts,
     catalogue_errors: std::collections::BTreeMap<String, RuntimeError>,
     removing: Option<(crate::provider_login::AttemptId, String)>,
     view: View,
@@ -459,6 +625,7 @@ impl Owner {
                     .map_err(map_server)?;
             }
         }
+        let drafts = DraftBook::from_applied(&config).map_err(map_selection)?;
         let mut owner = Self {
             root,
             store,
@@ -468,14 +635,200 @@ impl Owner {
             server: None,
             operation: None,
             catalogues: CatalogueCache::default(),
+            drafts,
+            connection_accounts: ConnectionAccounts::new(),
             catalogue_errors: Default::default(),
             removing: None,
             view: View::default(),
         };
-        owner.refresh_view()?;
-        owner.view.load_state = LoadState::Loaded;
+        if let Err(error) = owner.refresh_view() {
+            // Valid applied references remain observable even when account
+            // metadata is unavailable. Config/key decode failures above still
+            // fail construction; this does not manufacture usable accounts.
+            owner.view.load_state = LoadState::Unavailable(error);
+            owner.view.status = Some(error.to_string());
+        }
         Ok(owner)
     }
+    fn connection_snapshot(
+        &self,
+        account: &str,
+    ) -> Result<crate::provider_accounts::AccountSnapshot, ConnectionAvailability> {
+        use crate::provider_accounts::StoreError;
+        match self.store.snapshot(account) {
+            Ok(snapshot) if !snapshot.preferences.enabled => {
+                Err(ConnectionAvailability::DisabledAccount)
+            }
+            Ok(snapshot) => Ok(snapshot),
+            Err(StoreError::Missing) => Err(ConnectionAvailability::MissingAccount),
+            Err(_) => Err(ConnectionAvailability::CredentialUnavailable),
+        }
+    }
+
+    fn observe_connection_accounts(&mut self, metadata_available: bool) {
+        let accounts = self
+            .drafts
+            .referenced_accounts()
+            .into_iter()
+            .chain(self.view.accounts.iter().map(|account| account.id.clone()))
+            .collect::<std::collections::BTreeSet<_>>();
+        self.connection_accounts = accounts
+            .into_iter()
+            .map(|account| {
+                let snapshot = if metadata_available {
+                    self.connection_snapshot(&account)
+                } else {
+                    Err(ConnectionAvailability::CredentialUnavailable)
+                };
+                (account, snapshot)
+            })
+            .collect();
+    }
+
+    fn project_connection_drafts(&mut self) {
+        self.view.connection_profile = self.drafts.selected().into();
+        self.view.connection_profiles = self.drafts.views(&self.connection_accounts);
+    }
+
+    fn connection_receipt(
+        &mut self,
+        request: u64,
+        profile: String,
+        change: ConnectionChange,
+        result: Result<(), RuntimeError>,
+    ) {
+        let revision = self.drafts.revision(&profile);
+        self.view
+            .connection_receipts
+            .retain(|receipt| receipt.profile != profile);
+        // Runtime admits at most nine unresolved commands and acknowledges
+        // delivered receipts in the next command envelope. Never evict one.
+        self.view.connection_receipts.push(ConnectionEditReceipt {
+            request,
+            profile,
+            change,
+            revision,
+            result,
+        });
+        self.project_connection_drafts();
+    }
+
+    /// Consumes only draft commands. Returning None leaves all other existing
+    /// actions unchanged. These branches never save Config or start network
+    /// I/O. Explicit Choose reads a bounded private account snapshot on Owner.
+    fn connection_action(&mut self, action: Action) -> Option<Action> {
+        let (request, profile, change, result) = match action {
+            Action::FocusConnectionProfile(profile) => {
+                if let Err(error) = self.drafts.select(&profile) {
+                    self.view.status = Some(map_selection(error).to_string());
+                }
+                self.project_connection_drafts();
+                return None;
+            }
+            Action::CreateConnectionProfile { request } => {
+                // Entropy creates only a process draft ID, never a key/profile file.
+                let created = crate::provider_server::random_id()
+                    .map_err(map_server)
+                    .and_then(|id| {
+                        self.drafts.create_profile(&id).map_err(map_selection)?;
+                        Ok(id)
+                    });
+                match created {
+                    Ok(id) => (request, id, ConnectionChange::Create, Ok(())),
+                    Err(error) => (request, String::new(), ConnectionChange::Create, Err(error)),
+                }
+            }
+            Action::EditConnectionProfile {
+                request,
+                profile,
+                expected_revision,
+                input,
+            } => {
+                let result = self
+                    .drafts
+                    .edit_input(&profile, expected_revision, *input)
+                    .map(|_| ())
+                    .map_err(map_selection);
+                (request, profile, ConnectionChange::Edit, result)
+            }
+            Action::ChooseConnectionModel {
+                request,
+                profile,
+                expected_revision,
+                slot,
+                account,
+                catalogue_id,
+            } => {
+                let result = (|| {
+                    // This is bounded private snapshot reading on Owner, never
+                    // catalogue HTTP or a paid inference. Cache checks Fresh
+                    // plus exact current authority before freezing the row.
+                    if self.drafts.revision(&profile) != Some(expected_revision) {
+                        return Err(RuntimeError::DraftChanged);
+                    }
+                    let snapshot =
+                        self.connection_snapshot(&account)
+                            .map_err(|reason| match reason {
+                                ConnectionAvailability::MissingAccount => {
+                                    RuntimeError::MissingAccount
+                                }
+                                ConnectionAvailability::DisabledAccount => RuntimeError::NeedsLogin,
+                                _ => RuntimeError::Storage,
+                            })?;
+                    let selected = self
+                        .catalogues
+                        .select(&snapshot, &catalogue_id)
+                        .map_err(map_selection)?;
+                    self.drafts
+                        .choose(&profile, expected_revision, slot, selected, &catalogue_id)
+                        .map_err(map_selection)?;
+                    self.connection_accounts.insert(account, Ok(snapshot));
+                    Ok(())
+                })();
+                (request, profile, ConnectionChange::Choose, result)
+            }
+            Action::RemoveConnectionAllocation {
+                request,
+                profile,
+                expected_revision,
+                slot,
+            } => {
+                let result = self
+                    .drafts
+                    .remove_allocation(&profile, expected_revision, slot)
+                    .map(|_| ())
+                    .map_err(map_selection);
+                (request, profile, ConnectionChange::Remove, result)
+            }
+            Action::RevertConnectionProfile {
+                request,
+                profile,
+                expected_revision,
+            } => {
+                let result = self
+                    .drafts
+                    .revert(&profile, expected_revision, &self.config)
+                    .map(|_| ())
+                    .map_err(map_selection);
+                (request, profile, ConnectionChange::Revert, result)
+            }
+            Action::DiscardUnappliedProfile {
+                request,
+                profile,
+                expected_revision,
+            } => {
+                let result = self
+                    .drafts
+                    .discard(&profile, expected_revision)
+                    .map_err(map_selection);
+                (request, profile, ConnectionChange::Discard, result)
+            }
+            other => return Some(other),
+        };
+        self.connection_receipt(request, profile, change, result);
+        None
+    }
+
     fn refresh_view(&mut self) -> Result<(), RuntimeError> {
         let metadata = (|| {
             let accounts = self.store.list().map_err(|_| RuntimeError::Storage)?;
@@ -500,6 +853,7 @@ impl Owner {
                     self.catalogues.observe(&account, None);
                     self.catalogue_errors.insert(account, error);
                 }
+                self.observe_connection_accounts(false);
                 self.view.load_state = LoadState::Unavailable(error);
                 self.refresh_connection_view();
                 return Err(error);
@@ -527,6 +881,7 @@ impl Owner {
             }
         }
         self.view.accounts = accounts;
+        self.observe_connection_accounts(true);
         self.view.account_preferences = preferences;
         self.view.load_state = LoadState::Loaded;
         self.refresh_connection_view();
@@ -563,6 +918,7 @@ impl Owner {
             })
             .collect();
         self.view.catalogue_bytes = self.catalogues.retained_bytes();
+        self.project_connection_drafts();
         self.view.local_key_exists = self.key.is_some();
         self.view.busy = self.operation.is_some() || self.view.login_active;
     }
@@ -658,7 +1014,6 @@ impl Owner {
                             })
                             .and_then(|result| result.map_err(map_selection))
                     }
-                    Ok(OperationResult::Tested) => Err(RuntimeError::InvalidAction),
                     Err(error) => Err(error),
                 }
             };
@@ -674,9 +1029,6 @@ impl Owner {
             }
         } else {
             match result {
-                Ok(OperationResult::Tested) => {
-                    self.view.status = Some("Model authorization verified.".into())
-                }
                 Ok(OperationResult::Catalog(_)) => {
                     self.view.status = Some(RuntimeError::InvalidAction.to_string())
                 }
@@ -740,48 +1092,6 @@ impl Owner {
         Ok(())
     }
 
-    fn begin_operation(&mut self, probe: bool) -> Result<(), RuntimeError> {
-        if self.operation.is_some() || self.view.login_active {
-            return Err(RuntimeError::Busy);
-        }
-        let account = self
-            .config
-            .selected_account
-            .clone()
-            .ok_or(RuntimeError::MissingAccount)?;
-        if !probe {
-            return self.begin_catalogue(account);
-        }
-        let route = self
-            .config
-            .resolve_allocation("default", None)
-            .map_err(map_server)?
-            .route
-            .clone();
-        let gateway = self.gateway.clone();
-        let identity = self.config.identity.clone();
-        let cancel = Arc::new(NetworkHttpCancel::new());
-        let network = cancel.clone();
-        let selected = account.clone();
-        let worker = std::thread::Builder::new()
-            .name("minicon-provider-operation".into())
-            .spawn(move || {
-                gateway
-                    .probe(&selected, &route, &identity, &network)
-                    .map_err(map_server)?;
-                Ok(OperationResult::Tested)
-            })
-            .map_err(|_| RuntimeError::WorkerUnavailable)?;
-        self.operation = Some(Operation {
-            cancel,
-            worker,
-            account,
-            catalogue: None,
-        });
-        self.view.busy = true;
-        self.view.status = None;
-        Ok(())
-    }
     fn login_event(&mut self, event: LoginEvent) -> Option<Effect> {
         if let Some((pending, account)) = &self.removing {
             let terminal = match &event {
@@ -821,6 +1131,9 @@ impl Owner {
         action: Action,
         login: &mut LoginCoordinator,
     ) -> Result<Option<Effect>, RuntimeError> {
+        let Some(action) = self.connection_action(action) else {
+            return Ok(None);
+        };
         match action {
             Action::Stop => self.stop(),
             Action::CancelLogin => {
@@ -898,9 +1211,7 @@ impl Owner {
                 }
                 self.view.status = Some("Account settings saved.".into());
             }
-            Action::RefreshModels => self.begin_operation(false)?,
             Action::RefreshAccountModels(account) => self.begin_catalogue(account)?,
-            Action::TestModel => self.begin_operation(true)?,
             Action::SetPort(port) => {
                 if port < 1024
                     || !matches!(
@@ -916,41 +1227,17 @@ impl Owner {
                 self.view.listener = ListenerState::Stopped;
                 self.view.actual_port = None;
             }
-            Action::SelectAccount(id) => {
-                if self.config.version == 3 {
-                    return Err(RuntimeError::VerificationRequired);
-                }
-                if self.operation.is_some() {
-                    return Err(RuntimeError::Busy);
-                }
-                if !self
-                    .store
-                    .list()
-                    .map_err(|_| RuntimeError::Storage)?
-                    .iter()
-                    .any(|account| account.id == id)
-                {
-                    return Err(RuntimeError::MissingAccount);
-                }
-                let mut config = self.config.clone();
-                config.selected_account = Some(id);
-                config.model.clear();
-                self.save(config)?;
+            #[cfg(test)]
+            Action::SelectAccount(_legacy_selection) | Action::SelectModel(_legacy_selection) => {
+                return Err(RuntimeError::VerificationRequired);
             }
-            Action::SelectModel(id) => {
-                if self.config.version == 3 {
-                    return Err(RuntimeError::VerificationRequired);
-                }
-                if self.operation.is_some() {
-                    return Err(RuntimeError::Busy);
-                }
-                if !self.view.models.contains(&id) {
-                    return Err(RuntimeError::MissingModel);
-                }
-                let mut config = self.config.clone();
-                config.model = id;
-                self.save(config)?;
-            }
+            Action::FocusConnectionProfile(_)
+            | Action::CreateConnectionProfile { .. }
+            | Action::EditConnectionProfile { .. }
+            | Action::ChooseConnectionModel { .. }
+            | Action::RemoveConnectionAllocation { .. }
+            | Action::RevertConnectionProfile { .. }
+            | Action::DiscardUnappliedProfile { .. } => return Err(RuntimeError::InvalidAction),
             Action::Start => {
                 if self.server.is_some() || self.operation.is_some() {
                     return Err(RuntimeError::Busy);
@@ -1037,7 +1324,7 @@ fn run_owner(
     pending: Arc<Mutex<Pending>>,
     exit: Arc<AtomicBool>,
     stop_requested: Arc<AtomicU64>,
-    incoming: mpsc::Receiver<(u64, Action)>,
+    incoming: mpsc::Receiver<(u64, Vec<u64>, Action)>,
 ) {
     let mut owner = match Owner::load(root) {
         Ok(owner) => owner,
@@ -1071,19 +1358,28 @@ fn run_owner(
             publish(&pending, &notify, owner.view.clone(), effect);
         }
         match incoming.recv_timeout(Duration::from_millis(20)) {
-            Ok((epoch, action)) => {
-                if epoch != stop_requested.load(Ordering::Acquire)
-                    && matches!(
-                        action,
-                        Action::Start
-                            | Action::RefreshModels
-                            | Action::RefreshAccountModels(_)
-                            | Action::TestModel
-                    )
-                {
+            Ok((epoch, delivered, action)) => {
+                owner
+                    .view
+                    .connection_receipts
+                    .retain(|receipt| !delivered.contains(&receipt.request));
+                let stale_network_action =
+                    matches!(&action, Action::Start | Action::RefreshAccountModels(_));
+                if epoch != stop_requested.load(Ordering::Acquire) && stale_network_action {
                     continue;
                 }
-                owner.view.status = None;
+                if !matches!(
+                    &action,
+                    Action::FocusConnectionProfile(_)
+                        | Action::CreateConnectionProfile { .. }
+                        | Action::EditConnectionProfile { .. }
+                        | Action::ChooseConnectionModel { .. }
+                        | Action::RemoveConnectionAllocation { .. }
+                        | Action::RevertConnectionProfile { .. }
+                        | Action::DiscardUnappliedProfile { .. }
+                ) {
+                    owner.view.status = None;
+                }
                 let effect = match owner.action(action, &mut login) {
                     Ok(effect) => effect,
                     Err(error) => {
@@ -1155,7 +1451,15 @@ fn map_selection(error: SelectionError) -> RuntimeError {
         | SelectionError::AuthorityChanged
         | SelectionError::LateResult => RuntimeError::AccountChanged,
         SelectionError::Disabled => RuntimeError::NeedsLogin,
-        SelectionError::AccountBound => RuntimeError::Busy,
+        SelectionError::AccountBound
+        | SelectionError::ProfileBound
+        | SelectionError::AggregateBound => RuntimeError::Busy,
+        SelectionError::DraftChanged => RuntimeError::DraftChanged,
+        SelectionError::MissingProfile
+        | SelectionError::MissingAlias
+        | SelectionError::InvalidDraft => RuntimeError::InvalidAction,
+        SelectionError::CatalogueUnavailable => RuntimeError::VerificationRequired,
+        SelectionError::MissingRoute => RuntimeError::MissingModel,
         _ => RuntimeError::ProviderUnavailable,
     }
 }
@@ -1178,6 +1482,727 @@ fn map_server(error: ServerError) -> RuntimeError {
 mod tests {
     use super::*;
     use std::{net::TcpListener, time::Instant};
+
+    fn cs02_eight_profile_owner() -> (Root, Owner, [String; 2]) {
+        let (root, owner, accounts) = catalogue_owner();
+        let mut config = owner.config.clone();
+        config.version = 2;
+        config.port = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let template = config.profiles[0].clone();
+        for index in 1..7 {
+            let mut profile = template.clone();
+            profile.id = format!("{index:032x}");
+            profile.label = format!("Client {index}");
+            config.profiles.push(profile);
+        }
+        let owner = load_legacy_fixture(owner, config);
+        owner
+            .gateway
+            .set_key(Some(Secret::new("synthetic-default").unwrap()))
+            .unwrap();
+        owner
+            .gateway
+            .set_client_key(
+                &"b".repeat(32),
+                Some(Secret::new("synthetic-custom").unwrap()),
+            )
+            .unwrap();
+        (root, owner, accounts)
+    }
+
+    #[test]
+    fn cs02_all_profile_draft_actions_preserve_private_bytes_and_actual_named_bindings() {
+        let (root, mut owner, _) = cs02_eight_profile_owner();
+        let original = filesystem::read_private_bounded(
+            &root.0.join("gateway.json"),
+            crate::provider_server::CONFIG_BYTES,
+        )
+        .unwrap();
+        let config = owner.config.clone();
+        let mut server = owner.gateway.start(owner.config.port).unwrap();
+        let address = server.address();
+        let bindings = [
+            catalogue_binding(address, "synthetic-default"),
+            catalogue_binding(address, "synthetic-custom"),
+        ];
+        let mut login = LoginCoordinator::new(
+            owner.store.clone(),
+            LoginMetadata {
+                version: "synthetic-court".into(),
+                locale: "en".into(),
+                timezone_offset_seconds: 0,
+            },
+        );
+        let profiles = owner.view.connection_profiles.clone();
+        assert_eq!(profiles.len(), 8);
+        owner.view.status = Some("unrelated service error".into());
+        for (index, profile) in profiles.iter().enumerate() {
+            let mut input = profile.input.clone();
+            if profile.id == "default" {
+                input.allocations[0].model = "unapplied default text".into();
+            } else {
+                input.label = format!("Edited client {index}");
+            }
+            owner
+                .action(
+                    Action::EditConnectionProfile {
+                        request: index as u64 + 1,
+                        profile: profile.id.clone(),
+                        expected_revision: profile.revision,
+                        input: Box::new(input.clone()),
+                    },
+                    &mut login,
+                )
+                .unwrap();
+            let row = owner
+                .view
+                .connection_profiles
+                .iter()
+                .find(|view| view.id == profile.id)
+                .unwrap();
+            assert_eq!(row.input, input);
+            assert!(row.dirty);
+            let receipt = owner
+                .view
+                .connection_receipts
+                .iter()
+                .find(|receipt| receipt.profile == profile.id)
+                .unwrap();
+            assert_eq!(receipt.result, Ok(()));
+            assert_eq!(receipt.revision, Some(row.revision));
+            owner
+                .action(
+                    Action::FocusConnectionProfile(profile.id.clone()),
+                    &mut login,
+                )
+                .unwrap();
+            assert_eq!(owner.view.connection_profile, profile.id);
+            assert_eq!(
+                owner.view.status.as_deref(),
+                Some("unrelated service error")
+            );
+            assert_eq!(owner.config, config);
+            assert_eq!(
+                std::fs::read(root.0.join("gateway.json")).unwrap(),
+                original
+            );
+            assert!(owner.operation.is_none());
+            assert!(owner.server.is_none());
+            assert_eq!(
+                [
+                    catalogue_binding(address, "synthetic-default"),
+                    catalogue_binding(address, "synthetic-custom")
+                ],
+                bindings
+            );
+        }
+        assert_eq!(owner.view.connection_receipts.len(), 8);
+        let edited = owner.view.connection_profiles.clone();
+        let target = edited
+            .iter()
+            .find(|view| view.id != "default")
+            .unwrap()
+            .clone();
+        owner
+            .action(
+                Action::RevertConnectionProfile {
+                    request: 50,
+                    profile: target.id.clone(),
+                    expected_revision: target.revision,
+                },
+                &mut login,
+            )
+            .unwrap();
+        for view in &owner.view.connection_profiles {
+            if view.id == target.id {
+                assert!(!view.dirty);
+            } else {
+                assert_eq!(Some(view), edited.iter().find(|old| old.id == view.id));
+            }
+        }
+        assert_eq!(
+            std::fs::read(root.0.join("gateway.json")).unwrap(),
+            original
+        );
+        assert_eq!(
+            [
+                catalogue_binding(address, "synthetic-default"),
+                catalogue_binding(address, "synthetic-custom")
+            ],
+            bindings
+        );
+        server.stop();
+    }
+
+    #[test]
+    fn cs02_owner_receipts_cas_revert_and_create_failures_do_not_lose_other_form_results() {
+        let (root, mut owner, _) = cs02_eight_profile_owner();
+        let mut login = LoginCoordinator::new(
+            owner.store.clone(),
+            LoginMetadata {
+                version: "synthetic-court".into(),
+                locale: "en".into(),
+                timezone_offset_seconds: 0,
+            },
+        );
+        let profiles = owner.view.connection_profiles.clone();
+        for (index, profile) in profiles.iter().enumerate() {
+            owner
+                .action(
+                    Action::EditConnectionProfile {
+                        request: index as u64 + 1,
+                        profile: profile.id.clone(),
+                        expected_revision: profile.revision,
+                        input: Box::new(profile.input.clone()),
+                    },
+                    &mut login,
+                )
+                .unwrap();
+        }
+        owner
+            .action(Action::CreateConnectionProfile { request: 9 }, &mut login)
+            .unwrap();
+        assert_eq!(owner.view.connection_receipts.len(), 9);
+        assert!(
+            owner
+                .view
+                .connection_receipts
+                .iter()
+                .any(|receipt| receipt.request == 9
+                    && receipt.profile.is_empty()
+                    && receipt.result == Err(RuntimeError::Busy))
+        );
+        for (index, profile) in profiles.iter().enumerate() {
+            assert!(
+                owner
+                    .view
+                    .connection_receipts
+                    .iter()
+                    .any(|receipt| receipt.request == index as u64 + 1
+                        && receipt.profile == profile.id
+                        && receipt.result == Ok(()))
+            );
+        }
+        let target = owner.view.connection_profiles[0].clone();
+        let mut later = target.input.clone();
+        later.allocations[0].model = "later text".into();
+        owner
+            .action(
+                Action::EditConnectionProfile {
+                    request: 10,
+                    profile: target.id.clone(),
+                    expected_revision: target.revision - 1,
+                    input: Box::new(later),
+                },
+                &mut login,
+            )
+            .unwrap();
+        let failed = owner
+            .view
+            .connection_receipts
+            .iter()
+            .find(|receipt| receipt.request == 10)
+            .unwrap();
+        assert_eq!(failed.result, Err(RuntimeError::DraftChanged));
+        assert_eq!(failed.revision, Some(target.revision));
+        assert_eq!(
+            owner
+                .view
+                .connection_profiles
+                .iter()
+                .find(|view| view.id == target.id)
+                .unwrap(),
+            &target
+        );
+        let disk = std::fs::read(root.0.join("gateway.json")).unwrap();
+        let restarted = Owner::load(root.0.clone()).unwrap();
+        assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), disk);
+        assert!(
+            restarted
+                .view
+                .connection_profiles
+                .iter()
+                .all(|view| !view.dirty)
+        );
+    }
+
+    #[test]
+    fn cs02_corrupt_credentials_remain_visible_after_real_owner_reload_and_revert() {
+        let (root, mut owner, accounts) = catalogue_owner();
+        let applied = owner.config.clone();
+        let bytes = std::fs::read(root.0.join("gateway.json")).unwrap();
+        filesystem::write_private_atomic(
+            &root
+                .0
+                .join(format!("accounts/credentials/{}.json", accounts[0])),
+            b"corrupt synthetic credential",
+        )
+        .unwrap();
+        owner.refresh_view().unwrap();
+        let default = owner
+            .view
+            .connection_profiles
+            .iter()
+            .find(|view| view.id == "default")
+            .unwrap();
+        assert_eq!(default.allocations.len(), 1);
+        assert_eq!(
+            default.allocations[0].availability,
+            ConnectionAvailability::CredentialUnavailable
+        );
+        assert_eq!(
+            default.allocations[0].evidence,
+            ConnectionEvidence::LegacyApplied
+        );
+        let reloaded = Owner::load(root.0.clone()).unwrap();
+        assert_eq!(reloaded.config, applied);
+        assert_eq!(
+            reloaded
+                .view
+                .connection_profiles
+                .iter()
+                .find(|view| view.id == "default")
+                .unwrap()
+                .allocations,
+            default.allocations
+        );
+        owner
+            .drafts
+            .revert("default", default.revision, &owner.config)
+            .unwrap();
+        owner.project_connection_drafts();
+        assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), bytes);
+        assert_eq!(
+            owner
+                .view
+                .connection_profiles
+                .iter()
+                .find(|view| view.id == "default")
+                .unwrap()
+                .allocations[0]
+                .availability,
+            ConnectionAvailability::CredentialUnavailable
+        );
+    }
+
+    #[test]
+    fn cs02_initial_unreadable_account_registry_keeps_all_applied_references_observable() {
+        let (root, owner, _) = cs02_eight_profile_owner();
+        let expected = owner
+            .view
+            .connection_profiles
+            .iter()
+            .map(|profile| (profile.id.clone(), profile.input.clone()))
+            .collect::<Vec<_>>();
+        let applied = std::fs::read(root.0.join("gateway.json")).unwrap();
+        drop(owner);
+        let registry_path = root.0.join("accounts/accounts.json");
+        let registry = std::fs::read(&registry_path).unwrap();
+        let key = b"synthetic-persistent-key";
+        filesystem::write_private_atomic(&root.0.join("client-key"), key).unwrap();
+        filesystem::write_private_atomic(&registry_path, b"unavailable registry").unwrap();
+        let mut owner = Owner::load(root.0.clone()).unwrap();
+        assert_eq!(
+            owner.view.load_state,
+            LoadState::Unavailable(RuntimeError::Storage)
+        );
+        assert!(!owner.view.busy);
+        assert_eq!(
+            owner
+                .view
+                .connection_profiles
+                .iter()
+                .map(|profile| (profile.id.clone(), profile.input.clone()))
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert!(owner.view.connection_profiles.iter().all(|profile| {
+            profile
+                .allocations
+                .iter()
+                .all(|row| row.availability == ConnectionAvailability::CredentialUnavailable)
+        }));
+        assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), applied);
+        assert_eq!(std::fs::read(root.0.join("client-key")).unwrap(), key);
+        assert!(owner.operation.is_none() && owner.server.is_none());
+        assert!(
+            owner
+                .view
+                .connection_profiles
+                .iter()
+                .flat_map(|profile| &profile.allocations)
+                .all(|row| row.evidence == ConnectionEvidence::LegacyApplied
+                    && row.checked_unix_ms.is_none())
+        );
+        let target = owner
+            .view
+            .connection_profiles
+            .iter()
+            .find(|profile| profile.id != "default")
+            .unwrap()
+            .clone();
+        let mut input = target.input.clone();
+        input.label = "Dirty while account storage is unavailable".into();
+        let mut login = LoginCoordinator::new(
+            owner.store.clone(),
+            LoginMetadata {
+                version: "synthetic-court".into(),
+                locale: "en".into(),
+                timezone_offset_seconds: 0,
+            },
+        );
+        owner
+            .action(
+                Action::EditConnectionProfile {
+                    request: 1,
+                    profile: target.id.clone(),
+                    expected_revision: target.revision,
+                    input: Box::new(input.clone()),
+                },
+                &mut login,
+            )
+            .unwrap();
+        filesystem::write_private_atomic(&registry_path, &registry).unwrap();
+        owner.action(Action::RefreshAccounts, &mut login).unwrap();
+        assert_eq!(owner.view.load_state, LoadState::Loaded);
+        assert_eq!(
+            owner
+                .view
+                .connection_profiles
+                .iter()
+                .find(|profile| profile.id == target.id)
+                .unwrap()
+                .input,
+            input
+        );
+        assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), applied);
+        assert_eq!(std::fs::read(root.0.join("client-key")).unwrap(), key);
+        assert!(owner.operation.is_none() && owner.server.is_none());
+        assert!(
+            owner
+                .view
+                .connection_profiles
+                .iter()
+                .flat_map(|profile| &profile.allocations)
+                .all(|row| row.evidence == ConnectionEvidence::LegacyApplied
+                    && row.checked_unix_ms.is_none())
+        );
+    }
+
+    #[test]
+    fn cs02_receipt_delivery_survives_more_than_nine_create_discard_cycles_without_eviction() {
+        let root = Root::new();
+        let mut runtime = root.runtime();
+        until(&mut runtime, |view| view.load_state == LoadState::Loaded);
+        for index in 0..16u64 {
+            let create = 2 * index + 1;
+            runtime
+                .act(Action::CreateConnectionProfile { request: create })
+                .unwrap();
+            until(&mut runtime, |view| {
+                view.connection_receipts
+                    .iter()
+                    .any(|receipt| receipt.request == create)
+            });
+            let receipt = runtime
+                .view()
+                .connection_receipts
+                .iter()
+                .find(|receipt| receipt.request == create)
+                .unwrap()
+                .clone();
+            assert_eq!(receipt.result, Ok(()));
+            assert!(crate::provider_server::opaque_id(&receipt.profile));
+            let discard = create + 1;
+            runtime
+                .act(Action::DiscardUnappliedProfile {
+                    request: discard,
+                    profile: receipt.profile.clone(),
+                    expected_revision: receipt.revision.unwrap(),
+                })
+                .unwrap();
+            until(&mut runtime, |view| {
+                view.connection_receipts
+                    .iter()
+                    .any(|receipt| receipt.request == discard)
+            });
+            let removed = runtime
+                .view()
+                .connection_receipts
+                .iter()
+                .find(|receipt| receipt.request == discard)
+                .unwrap();
+            assert_eq!(removed.profile, receipt.profile);
+            assert_eq!(removed.result, Ok(()));
+            assert_eq!(removed.revision, None);
+            assert!(runtime.view().connection_receipts.len() <= 9);
+            assert_eq!(runtime.view().connection_profiles.len(), 1);
+            assert!(runtime.connection_inflight.is_empty());
+        }
+        assert!(!root.0.join("gateway.json").exists());
+    }
+
+    #[test]
+    fn cs02_nine_unconsumed_receipts_backpressure_without_losing_acknowledgements_or_stop() {
+        let (root, owner, _) = cs02_eight_profile_owner();
+        drop(owner);
+        let mut runtime = root.runtime();
+        until(&mut runtime, |view| view.load_state == LoadState::Loaded);
+        let profiles = runtime.view().connection_profiles.clone();
+        for (index, profile) in profiles.iter().enumerate() {
+            runtime
+                .act(Action::EditConnectionProfile {
+                    request: index as u64 + 1,
+                    profile: profile.id.clone(),
+                    expected_revision: profile.revision,
+                    input: Box::new(profile.input.clone()),
+                })
+                .unwrap();
+        }
+        runtime
+            .act(Action::CreateConnectionProfile { request: 9 })
+            .unwrap();
+        // Distinct otherwise-valid request, not the same-profile guard.
+        assert_eq!(
+            runtime.act(Action::EditConnectionProfile {
+                request: 10,
+                profile: "f".repeat(32),
+                expected_revision: 0,
+                input: Box::new(profiles[0].input.clone())
+            }),
+            Err(RuntimeError::Busy)
+        );
+        assert_eq!(runtime.connection_inflight.len(), 9);
+        let stop_epoch = runtime.stop_requested.load(Ordering::Acquire);
+        runtime.act(Action::Stop).unwrap();
+        assert_eq!(
+            runtime.stop_requested.load(Ordering::Acquire),
+            stop_epoch + 1
+        );
+        until(&mut runtime, |view| view.connection_receipts.len() == 9);
+        for request in 1..=9 {
+            assert!(
+                runtime
+                    .view()
+                    .connection_receipts
+                    .iter()
+                    .any(|receipt| receipt.request == request)
+            );
+        }
+        assert!(runtime.connection_inflight.is_empty());
+        assert_eq!(
+            runtime
+                .view()
+                .connection_receipts
+                .iter()
+                .find(|receipt| receipt.request == 9)
+                .unwrap()
+                .result,
+            Err(RuntimeError::Busy)
+        );
+    }
+
+    #[test]
+    fn cs02_failed_try_send_does_not_mark_an_unsent_draft_request_as_inflight() {
+        // A real bounded channel with no worker is a deterministic saturation
+        // fixture for Runtime::act itself, not a replacement implementation.
+        let (commands, incoming) = mpsc::sync_channel(1);
+        let mut runtime = Runtime {
+            commands,
+            connection_inflight: Default::default(),
+            last_connection_request: 0,
+            pending: Arc::new(Mutex::new(Pending::default())),
+            view: View::default(),
+            exit: Arc::new(AtomicBool::new(false)),
+            stop_requested: Arc::new(AtomicU64::new(0)),
+            worker: None,
+        };
+        runtime.act(Action::RefreshAccounts).unwrap();
+        assert_eq!(
+            runtime.act(Action::CreateConnectionProfile { request: 1 }),
+            Err(RuntimeError::Busy)
+        );
+        assert!(runtime.connection_inflight.is_empty());
+        assert_eq!(runtime.last_connection_request, 0);
+        let (_, _, first) = incoming.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(matches!(first, Action::RefreshAccounts));
+        runtime
+            .act(Action::CreateConnectionProfile { request: 1 })
+            .unwrap();
+        assert_eq!(runtime.last_connection_request, 1);
+        assert_eq!(
+            runtime.connection_inflight.get(&1).map(String::as_str),
+            Some("")
+        );
+        let (_, delivered, action) = incoming.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(delivered.is_empty());
+        assert!(matches!(
+            action,
+            Action::CreateConnectionProfile { request: 1 }
+        ));
+    }
+
+    #[test]
+    fn cs02_owner_explicit_fresh_account_local_choices_never_overwrite_applied_routes() {
+        let (root, mut owner, accounts) = catalogue_owner();
+        let peer = CataloguePeer::new(catalogue_reply);
+        owner.gateway.fixture_catalogue_upstream(peer.url());
+        let applied = owner.config.clone();
+        let bytes = std::fs::read(root.0.join("gateway.json")).unwrap();
+        let mut login = LoginCoordinator::new(
+            owner.store.clone(),
+            LoginMetadata {
+                version: "synthetic-court".into(),
+                locale: "en".into(),
+                timezone_offset_seconds: 0,
+            },
+        );
+        for account in &accounts {
+            owner
+                .action(Action::RefreshAccountModels(account.clone()), &mut login)
+                .unwrap();
+            finish_catalogue(&mut owner);
+        }
+        let profile = "b".repeat(32);
+        for (index, account) in accounts.iter().enumerate() {
+            let revision = owner.drafts.revision(&profile).unwrap();
+            owner
+                .action(
+                    Action::ChooseConnectionModel {
+                        request: index as u64 + 1,
+                        profile: profile.clone(),
+                        expected_revision: revision,
+                        slot: 0,
+                        account: account.clone(),
+                        catalogue_id: "opencode/remote/same".into(),
+                    },
+                    &mut login,
+                )
+                .unwrap();
+            let current = owner
+                .view
+                .connection_profiles
+                .iter()
+                .find(|entry| entry.id == profile)
+                .unwrap();
+            assert_eq!(
+                current.input.allocations[0].account.as_deref(),
+                Some(account.as_str())
+            );
+            assert_eq!(
+                current.allocations[0].upstream_model.as_deref(),
+                Some(if index == 0 { "wire-a" } else { "wire-b" })
+            );
+            assert_eq!(
+                current.allocations[0].evidence,
+                ConnectionEvidence::Unverified
+            );
+            assert_eq!(current.allocations[0].checked_unix_ms, None);
+            assert_eq!(owner.config, applied);
+            assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), bytes);
+            assert!(owner.operation.is_none());
+        }
+        let revision = owner.drafts.revision(&profile).unwrap();
+        owner.catalogues.invalidate(&accounts[1]);
+        owner
+            .action(
+                Action::ChooseConnectionModel {
+                    request: 3,
+                    profile: profile.clone(),
+                    expected_revision: revision,
+                    slot: 0,
+                    account: accounts[1].clone(),
+                    catalogue_id: "opencode/remote/same".into(),
+                },
+                &mut login,
+            )
+            .unwrap();
+        assert_eq!(owner.drafts.revision(&profile), Some(revision));
+        assert_eq!(
+            owner
+                .view
+                .connection_receipts
+                .iter()
+                .find(|receipt| receipt.request == 3)
+                .unwrap()
+                .result,
+            Err(RuntimeError::VerificationRequired)
+        );
+        assert_eq!(owner.config, applied);
+    }
+
+    #[test]
+    fn cs02_runtime_accepts_only_bounded_draft_messages_and_reports_create_discard_identity() {
+        let root = Root::new();
+        let mut runtime = root.runtime();
+        until(&mut runtime, |view| view.load_state == LoadState::Loaded);
+        runtime
+            .act(Action::CreateConnectionProfile { request: 1 })
+            .unwrap();
+        until(&mut runtime, |view| {
+            view.connection_receipts
+                .iter()
+                .any(|receipt| receipt.request == 1)
+        });
+        let created = runtime
+            .view()
+            .connection_receipts
+            .iter()
+            .find(|receipt| receipt.request == 1)
+            .unwrap()
+            .clone();
+        assert_eq!(created.result, Ok(()));
+        assert!(crate::provider_server::opaque_id(&created.profile));
+        assert_eq!(runtime.view().connection_profile, created.profile);
+        let mut input = runtime
+            .view()
+            .connection_profiles
+            .iter()
+            .find(|view| view.id == created.profile)
+            .unwrap()
+            .input
+            .clone();
+        input.label = "x".repeat(129);
+        assert_eq!(
+            runtime.act(Action::EditConnectionProfile {
+                request: 2,
+                profile: created.profile.clone(),
+                expected_revision: created.revision.unwrap(),
+                input: Box::new(input)
+            }),
+            Err(RuntimeError::InvalidAction)
+        );
+        runtime
+            .act(Action::DiscardUnappliedProfile {
+                request: 3,
+                profile: created.profile.clone(),
+                expected_revision: created.revision.unwrap(),
+            })
+            .unwrap();
+        until(&mut runtime, |view| {
+            view.connection_receipts
+                .iter()
+                .any(|receipt| receipt.request == 3)
+        });
+        let discarded = runtime
+            .view()
+            .connection_receipts
+            .iter()
+            .find(|receipt| receipt.request == 3)
+            .unwrap();
+        assert_eq!(discarded.profile, created.profile);
+        assert_eq!(discarded.revision, None);
+        assert_eq!(discarded.result, Ok(()));
+        assert_eq!(runtime.view().connection_profile, "default");
+        assert!(!root.0.join("gateway.json").exists());
+        assert!(!root.0.join("client-key").exists());
+        assert_eq!(runtime.view().listener, ListenerState::Stopped);
+    }
+
     struct Root(PathBuf);
     impl Root {
         fn new() -> Self {

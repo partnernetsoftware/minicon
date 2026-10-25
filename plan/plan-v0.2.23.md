@@ -293,9 +293,11 @@ under qualification. Continue through the complete
 runtime, migration and UI transaction; these prerequisites do not close slice 2.
 The same owner now records the partial
 [version-3 resolver/migration prerequisite](../prd/PRD_02_31_01_02_01_connection_selection.md#version-3-resolver-and-migration-prerequisite-in-progress).
-Next integrate independent default/custom drafts and their real Settings callers,
-then exact paid verification and atomic Apply; old-selector refusal alone does
-not deliver the new connection flow.
+The [production draft-form join](../prd/PRD_02_31_01_02_01_connection_selection.md#production-draft-form-join-in-progress)
+now integrates independent default/custom forms and real Settings callers under
+qualification. Complete its guard/final/independent gates, then implement exact
+paid candidate verification and atomic Apply; draft editing alone does not
+deliver the complete connection flow.
 
 Use focused assertions for each changed guard and the continuous public journey
 for product acceptance. Native IME/clipboard/scale and real provider grants keep

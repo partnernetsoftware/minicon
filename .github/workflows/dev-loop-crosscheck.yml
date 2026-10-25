@@ -297,7 +297,7 @@ jobs:
           fi
           if [ -z "$filter" ] || [[ "$filter" == *provider* ]] || [[ "$filter" == *harness* ]] || [[ "$filter" == *auth* ]]; then
             run_suite minicon-auth-presentation bash scripts/build.sh test-suite --target "$triple" --bin minicon harness_auth_ui::tests -- --test-threads 1
-            run_suite minicon-auth-settings bash scripts/build.sh test-suite --target "$triple" --bin minicon harness_settings_ui::tests -- --test-threads 1
+            run_suite minicon-auth-settings bash scripts/build.sh test-suite --target "$triple" --bin minicon harness_settings_ui:: -- --test-threads 1
             run_suite minicon-web-context bash scripts/build.sh test-suite --target "$triple" -p minicon-web --lib profile::tests -- --test-threads 1
             run_suite minicon-web-process-selector bash scripts/build.sh test-suite --target "$triple" -p minicon-web --lib embedded_process_ -- --test-threads 1
             if [[ "$CELL" == win-* || "$CELL" == osx-* ]]; then

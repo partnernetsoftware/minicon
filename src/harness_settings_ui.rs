@@ -1,6 +1,9 @@
 //! Harness settings presentation. Runtime authority stays with provider_runtime.
 use super::*;
+mod connection_forms;
+use connection_forms::{ConnectionForms, FormFocus, ProfileField};
 use minicon_core::field_editor::{self, Command, Intent, Limits};
+use provider_runtime::ConnectionChange;
 use provider_runtime::{AccountEdit, AccountPreferences, AccountSummary, NetworkPolicy};
 use provider_runtime::{Action, Effect, ListenerState, Provider, View};
 
@@ -17,6 +20,8 @@ const MODEL_LIMITS: Limits = Limits {
 enum Field {
     Port,
     Model,
+    Profile(ProfileField),
+    ProfileChooser,
     AccountLabel,
     LoginProxy,
     ServiceProxy,
@@ -54,6 +59,20 @@ enum Row {
     ModelActions,
     ProbeNotice,
     ModelChoice(usize),
+    Profile(usize),
+    ProfileCreate,
+    ProfileState,
+    ProfileInput(ProfileField),
+    ProfileToggle,
+    ProfileApplied,
+    AppliedAlias(usize),
+    AppliedAccount(usize),
+    AppliedModel(usize),
+    Allocation(u8),
+    AllocationActions,
+    AllocationAccount,
+    AllocationAccountChoice(usize),
+    ProfileCommands,
     Connect,
     KeyState,
     KeyActions,
@@ -159,7 +178,9 @@ fn row_field(row: Row) -> Option<Field> {
     match row {
         Row::Port => Some(Field::Port),
         Row::ModelInput => Some(Field::Model),
+        Row::Model => Some(Field::ProfileChooser),
         Row::AccountInput(field) | Row::ConnectInput(field) => Some(field),
+        Row::ProfileInput(field) => Some(Field::Profile(field)),
         _ => None,
     }
 }
@@ -167,6 +188,18 @@ fn field_limits(field: Field) -> Limits {
     match field {
         Field::Port => PORT_LIMITS,
         Field::Model => MODEL_LIMITS,
+        Field::ProfileChooser => Limits {
+            max_bytes: 0,
+            preedit_chars: 0,
+        },
+        Field::Profile(ProfileField::Label) => Limits {
+            max_bytes: 128,
+            preedit_chars: 128,
+        },
+        Field::Profile(_) => Limits {
+            max_bytes: 200,
+            preedit_chars: 200,
+        },
         Field::AccountLabel | Field::ConnectLabel => Limits {
             max_bytes: 128,
             preedit_chars: 128,
@@ -187,6 +220,8 @@ pub(super) struct HarnessSettings {
     view: View,
     port: composer::ComposerState,
     model: composer::ComposerState,
+    forms: ConnectionForms,
+    profile_navigation: Option<usize>,
     focused: Option<Field>,
     scroll: usize,
     drag: Option<usize>,
@@ -360,6 +395,8 @@ impl HarnessSettings {
             view,
             port,
             model: composer::ComposerState::default(),
+            forms: ConnectionForms::default(),
+            profile_navigation: None,
             focused: None,
             scroll: 0,
             drag: None,
@@ -421,13 +458,48 @@ impl HarnessSettings {
                 rows.extend((0..catalogue.models.len()).map(Row::CatalogueModel));
             }
         }
-        rows.extend([
-            Row::Model,
-            Row::ModelInput,
-            Row::ModelActions,
-            Row::ProbeNotice,
-        ]);
-        rows.extend((0..self.view.models.len()).map(Row::ModelChoice));
+        rows.push(Row::Model);
+        rows.extend((0..self.view.connection_profiles.len()).map(Row::Profile));
+        rows.push(Row::ProfileCreate);
+        if let Some(form) = self.forms.current() {
+            rows.push(Row::ProfileState);
+            if self.forms.selected.as_deref() != Some("default") {
+                rows.extend([
+                    Row::ProfileInput(ProfileField::Label),
+                    Row::ProfileToggle,
+                    Row::ProfileInput(ProfileField::DefaultAlias),
+                ]);
+            }
+            rows.push(Row::ProfileApplied);
+            for index in 0..self.applied_allocations().len() {
+                rows.extend([
+                    Row::AppliedAlias(index),
+                    Row::AppliedAccount(index),
+                    Row::AppliedModel(index),
+                ]);
+            }
+            rows.extend(form.allocations.keys().copied().map(Row::Allocation));
+            rows.push(Row::AllocationActions);
+            if let Some(slot) = form.selected_slot {
+                if self.forms.selected.as_deref() != Some("default") {
+                    rows.push(Row::ProfileInput(ProfileField::Alias(slot)));
+                }
+                rows.push(Row::AllocationAccount);
+                if form.account_picker {
+                    rows.extend((0..self.view.accounts.len()).map(Row::AllocationAccountChoice));
+                }
+            }
+            rows.extend([Row::ModelInput, Row::ModelActions, Row::ProbeNotice]);
+            if let Some(catalogue) = self.current_catalogue()
+                && catalogue.status == provider_runtime::CatalogueStatus::Fresh
+            {
+                rows.extend((0..catalogue.models.len()).map(Row::ModelChoice));
+            }
+            rows.push(Row::ProfileCommands);
+        } else {
+            // Loading/unavailable does not invent an authoritative default form.
+            rows.extend([Row::ProfileState, Row::ModelInput]);
+        }
         rows.extend([
             Row::Connect,
             Row::KeyState,
@@ -450,7 +522,16 @@ impl HarnessSettings {
     fn editor(&self, field: Field) -> &composer::ComposerState {
         match field {
             Field::Port => &self.port,
-            Field::Model => &self.model,
+            Field::Model => self
+                .forms
+                .current()
+                .map_or(&self.model, |form| form.model()),
+            Field::ProfileChooser => unreachable!("profile chooser is not a text editor"),
+            Field::Profile(field) => self
+                .forms
+                .current()
+                .expect("published profile field")
+                .field(field),
             Field::AccountLabel => &self.account_draft.label,
             Field::LoginProxy => &self.account_draft.login,
             Field::ServiceProxy => &self.account_draft.service,
@@ -463,7 +544,16 @@ impl HarnessSettings {
     fn editor_mut(&mut self, field: Field) -> &mut composer::ComposerState {
         match field {
             Field::Port => &mut self.port,
-            Field::Model => &mut self.model,
+            Field::Model => self
+                .forms
+                .current_mut()
+                .map_or(&mut self.model, |form| form.model_mut()),
+            Field::ProfileChooser => unreachable!("profile chooser is not a text editor"),
+            Field::Profile(field) => self
+                .forms
+                .current_mut()
+                .expect("published profile field")
+                .field_mut(field),
             Field::AccountLabel => &mut self.account_draft.label,
             Field::LoginProxy => &mut self.account_draft.login,
             Field::ServiceProxy => &mut self.account_draft.service,
@@ -474,6 +564,8 @@ impl HarnessSettings {
     }
 
     fn blur(&mut self) {
+        self.remember_connection_focus();
+        self.forms.blur();
         field_editor::apply(&mut self.port, Command::Blur, PORT_LIMITS);
         field_editor::apply(&mut self.model, Command::Blur, MODEL_LIMITS);
         for field in [
@@ -492,10 +584,175 @@ impl HarnessSettings {
     }
 
     fn act(&mut self, action: Action) {
-        self.error = self.runtime.as_mut().map_or_else(
-            || Some(provider_runtime::RuntimeError::WorkerUnavailable.to_string()),
-            |runtime| runtime.act(action).err().map(|error| error.to_string()),
+        let result = self.runtime.as_mut().map_or(
+            Err(provider_runtime::RuntimeError::WorkerUnavailable),
+            |runtime| runtime.act(action.clone()),
         );
+        if let Err(error) = result {
+            self.forms.send_failed(&action, error);
+        }
+        self.error = result.err().map(|error| error.to_string());
+    }
+
+    fn current_catalogue(&self) -> Option<&provider_runtime::AccountCatalogueView> {
+        let account = self.forms.current()?.selected_account()?;
+        self.view
+            .catalogues
+            .iter()
+            .find(|entry| entry.account == account)
+    }
+
+    fn applied_allocations(&self) -> &[provider_runtime::ConnectionAllocationInput] {
+        self.forms
+            .current()
+            .and_then(|form| form.view.applied.as_ref())
+            .map_or(&[], |applied| applied.allocations.as_slice())
+    }
+
+    fn remember_connection_focus(&mut self) {
+        if let Some(form) = self.forms.current_mut() {
+            let focus = match self.focused {
+                Some(Field::Model) => Some(FormFocus::Model(form.selected_slot)),
+                Some(Field::Profile(field)) => Some(FormFocus::Field(field)),
+                _ => None,
+            };
+            if let Some(focus) = focus {
+                form.remember_focus(focus);
+            }
+        }
+    }
+
+    fn note_connection_activity(&mut self, field: Field) {
+        if let Some(form) = self.forms.current_mut() {
+            match field {
+                Field::Model => {
+                    form.note_model_activity();
+                }
+                Field::Profile(field) => {
+                    form.note_field_activity(field);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn restore_connection_focus(&mut self) {
+        self.focused = self
+            .forms
+            .current_mut()
+            .and_then(|form| form.restore_focus())
+            .map(|focus| match focus {
+                FormFocus::Model(_) => Field::Model,
+                FormFocus::Field(field) => Field::Profile(field),
+            });
+    }
+
+    fn navigate_connection_profiles(&mut self, delta: isize) -> Option<usize> {
+        if self.view.connection_profiles.is_empty() {
+            return None;
+        }
+        let current = self
+            .profile_navigation
+            .or_else(|| {
+                self.view
+                    .connection_profiles
+                    .iter()
+                    .position(|profile| Some(&profile.id) == self.forms.selected.as_ref())
+            })
+            .unwrap_or(0);
+        let next = current
+            .saturating_add_signed(delta)
+            .min(self.view.connection_profiles.len() - 1);
+        self.profile_navigation = Some(next);
+        Some(next)
+    }
+
+    fn confirm_connection_profile(&mut self) {
+        let Some(index) = self.profile_navigation else {
+            return;
+        };
+        if let Some(profile) = self.view.connection_profiles.get(index) {
+            let id = profile.id.clone();
+            self.focus_connection(&id);
+        }
+    }
+
+    fn flush_connection_edits(&mut self) {
+        // At most one request per form. Rejected generations remain blocked
+        // until a new local edit or an explicit Retry.
+        for _ in 0..8 {
+            let Some(action) = self.forms.next_edit() else {
+                break;
+            };
+            self.act(action);
+        }
+    }
+
+    fn sync_connection_forms(&mut self) {
+        let previous = self.forms.selected.clone();
+        self.forms.sync(&self.view);
+        if previous != self.forms.selected {
+            self.focused = None;
+            self.drag = None;
+            self.clicks = Default::default();
+            let initial = self
+                .rows()
+                .iter()
+                .position(|row| matches!(row, Row::Model))
+                .unwrap_or(0);
+            self.scroll = self.forms.current().map_or(self.scroll, |form| {
+                if previous.is_some() && !form.visited {
+                    initial
+                } else {
+                    form.scroll
+                }
+            });
+            self.restore_connection_focus();
+        }
+        if let Some(Field::Profile(field)) = self.focused
+            && !self
+                .forms
+                .current()
+                .is_some_and(|form| form.has_field(field))
+        {
+            self.blur();
+        }
+        if matches!(self.focused, Some(Field::Model | Field::Profile(_)))
+            && self
+                .forms
+                .current_mut()
+                .and_then(|form| form.restore_focus())
+                .is_none()
+        {
+            self.focused = None;
+        }
+        self.flush_connection_edits();
+    }
+
+    fn focus_connection(&mut self, id: &str) {
+        self.blur();
+        let initial = self
+            .rows()
+            .iter()
+            .position(|row| matches!(row, Row::Model))
+            .unwrap_or(0);
+        if let Some(form) = self.forms.forms.get_mut(id)
+            && !form.visited
+        {
+            form.scroll = initial;
+            form.visited = true;
+        }
+        if let Some(scroll) = self.forms.focus(id, self.scroll) {
+            self.scroll = scroll;
+            self.restore_connection_focus();
+            self.act(Action::FocusConnectionProfile(id.into()));
+        }
+    }
+
+    fn connection_command(&mut self, change: ConnectionChange, choice: Option<(String, String)>) {
+        if let Some(action) = self.forms.command(change, choice) {
+            self.act(action);
+        }
     }
 
     fn focus_account(&mut self, id: &str) {
@@ -539,6 +796,12 @@ impl HarnessSettings {
     fn status(&self) -> Option<String> {
         self.error
             .clone()
+            .or_else(|| {
+                self.forms
+                    .current()
+                    .and_then(|form| form.local_error.clone())
+            })
+            .or_else(|| self.forms.error.clone())
             .or_else(|| self.auth_error.as_ref().map(|(_, message)| message.clone()))
             .or_else(|| self.account_draft.save_error.map(|error| error.to_string()))
             .or_else(|| {
@@ -671,14 +934,11 @@ impl HarnessSettings {
             Field::Port => {
                 self.error = Some("Stop the listener before changing its port.".to_owned())
             }
-            Field::Model => {
-                let model = self.model.text.trim();
-                if model.is_empty() {
-                    self.error = Some("Enter or select a model first.".to_owned());
-                } else {
-                    self.act(Action::SelectModel(model.to_owned()));
-                }
+            Field::Model | Field::Profile(_) => {
+                self.forms.retry();
+                self.flush_connection_edits();
             }
+            Field::ProfileChooser => self.confirm_connection_profile(),
             Field::AccountLabel | Field::LoginProxy | Field::ServiceProxy => self.save_account(),
             Field::ConnectLabel | Field::ConnectLoginProxy | Field::ConnectServiceProxy => {
                 self.connect_account(self.connection_draft.provider)
@@ -687,6 +947,22 @@ impl HarnessSettings {
     }
 
     fn activate(&mut self, row: Row, column: usize) -> Option<String> {
+        if self.forms.current().is_some_and(|form| form.discarding())
+            && matches!(
+                row,
+                Row::ProfileToggle
+                    | Row::AllocationActions
+                    | Row::AllocationAccountChoice(_)
+                    | Row::ModelChoice(_)
+                    | Row::ModelInput
+                    | Row::ModelActions
+                    | Row::ProfileCommands
+            )
+        {
+            self.error =
+                Some("This unapplied connection is being removed. Wait before editing it.".into());
+            return None;
+        }
         match row {
             Row::Port if column == 1 => self.submit(Field::Port),
             Row::ListenerActions => self.act(if column == 0 {
@@ -738,9 +1014,7 @@ impl HarnessSettings {
                 }
             }
             Row::AccountConnection if column == 0 => {
-                if let Some(id) = self.account_focus.clone() {
-                    self.act(Action::SelectAccount(id));
-                }
+                self.scroll=self.rows().iter().position(|row|matches!(row,Row::Model)).unwrap_or(0);
             }
             Row::AccountConnection => {
                 self.account_draft.enabled = !self.account_draft.enabled;
@@ -758,27 +1032,48 @@ impl HarnessSettings {
                 }
             }
             Row::CatalogueStatus | Row::CatalogueModel(_) => {}
-            Row::ModelInput if column == 1 => self.submit(Field::Model),
-            Row::ModelActions if column == 0 => {
-                if let Some(account) = self.view.selected_account.clone() {
-                    self.focus_account(&account);
-                    self.scroll = self
-                        .rows()
-                        .iter()
-                        .position(|row| matches!(row, Row::CatalogueStatus))
-                        .unwrap_or(0);
-                }
-                self.act(Action::RefreshModels);
+            Row::Profile(index) => {
+                self.profile_navigation=Some(index);self.confirm_connection_profile();
             }
-            Row::ModelActions => self.act(Action::TestModel),
+            Row::ProfileCreate => {if let Some(action)=self.forms.create(){self.act(action);}}
+            Row::ProfileToggle => {if let Some(form)=self.forms.current_mut(){form.toggle_enabled();}self.flush_connection_edits();}
+            Row::Allocation(slot) => {
+                if let Some(form)=self.forms.current_mut(){form.blur();form.selected_slot=Some(slot);form.account_picker=false;}
+            }
+            Row::AllocationActions if column==0 => {
+                if let Some(id)=self.forms.selected.clone()
+                    && let Some(form)=self.forms.current_mut(){form.add_slot(&id);}
+                self.flush_connection_edits();
+            }
+            Row::AllocationActions => self.connection_command(ConnectionChange::Remove,None),
+            Row::AllocationAccount => {if let Some(form)=self.forms.current_mut(){form.account_picker = !form.account_picker;}}
+            Row::AllocationAccountChoice(index) => {
+                let account=self.view.accounts[index].id.clone();
+                if let Some(form)=self.forms.current_mut(){form.assign_account(&account);}self.flush_connection_edits();
+            }
+            Row::ModelInput if column==1 => self.submit(Field::Model),
+            Row::ModelActions if column==0 => {
+                if let Some(account)=self.forms.current().and_then(|form|form.selected_account()).map(str::to_owned) {
+                    self.act(Action::RefreshAccountModels(account));
+                } else {self.error=Some("Choose an account for this model slot before refreshing its catalogue.".into());}
+            }
+            Row::ModelActions => {self.forms.retry();self.flush_connection_edits();}
             Row::ModelChoice(index) => {
-                let model = self.view.models[index].clone();
-                self.model.text.clone_from(&model);
-                self.model.caret = model.len();
-                self.model.anchor = None;
-                self.model.select_all = false;
-                self.act(Action::SelectModel(model));
+                if let Some(catalogue)=self.current_catalogue()
+                    && catalogue.status==provider_runtime::CatalogueStatus::Fresh
+                    && let Some(model)=catalogue.models.get(index) {
+                    let choice=(catalogue.account.clone(),model.id.clone());
+                    self.connection_command(ConnectionChange::Choose,Some(choice));
+                }
             }
+            Row::ProfileCommands if column==0 => {
+                if self.forms.current().is_some_and(|form|form.view.applied.is_some()) {
+                    self.connection_command(ConnectionChange::Revert,None);
+                } else if self.forms.selected.as_deref()!=Some("default") {
+                    self.connection_command(ConnectionChange::Discard,None);
+                } else {self.error=Some("There is no applied default connection to revert. Remove its model entry to clear this draft.".into());}
+            }
+            Row::ProfileCommands => self.error=Some("Draft verification and atomic Apply are not available yet. The applied connection is unchanged.".into()),
             Row::KeyActions => self.act(match column {
                 0 => Action::CreateClientKey,
                 1 => Action::CopyClientKey,
@@ -813,7 +1108,10 @@ fn row_columns(row: Row) -> usize {
         | Row::AccountActions
         | Row::AccountConnection
         | Row::ModelInput
-        | Row::ModelActions => 2,
+        | Row::ModelActions
+        | Row::ProfileInput(_)
+        | Row::AllocationActions
+        | Row::ProfileCommands => 2,
         _ => 1,
     }
 }
@@ -860,6 +1158,22 @@ fn row_id(row: Row) -> String {
         Row::Status => "status",
         Row::Account(index) => return format!("account_{index}"),
         Row::ModelChoice(index) => return format!("model_{index}"),
+        Row::Profile(index) => return format!("connection_profile_{index}"),
+        Row::ProfileCreate => "connection_profile_create",
+        Row::ProfileState => "connection_profile_state",
+        Row::ProfileInput(ProfileField::Label) => "connection_profile_label",
+        Row::ProfileInput(ProfileField::DefaultAlias) => "connection_default_alias",
+        Row::ProfileInput(ProfileField::Alias(slot)) => return format!("connection_alias_{slot}"),
+        Row::ProfileToggle => "connection_profile_enabled",
+        Row::ProfileApplied => "connection_applied",
+        Row::AppliedAlias(index) => return format!("connection_applied_{index}_alias"),
+        Row::AppliedAccount(index) => return format!("connection_applied_{index}_account"),
+        Row::AppliedModel(index) => return format!("connection_applied_{index}_model"),
+        Row::Allocation(slot) => return format!("connection_allocation_{slot}"),
+        Row::AllocationActions => "connection_allocation_actions",
+        Row::AllocationAccount => "connection_allocation_account",
+        Row::AllocationAccountChoice(index) => return format!("connection_account_{index}"),
+        Row::ProfileCommands => "connection_profile_commands",
     }
     .to_owned()
 }
@@ -897,6 +1211,14 @@ impl ConApp {
             size,
             scale,
         );
+        let tr =
+            |english: &'static str, chinese: &'static str, traditional: &'static str| match self
+                .ui_language
+            {
+                ui::UiLanguage::English => english,
+                ui::UiLanguage::ChineseSimplified => chinese,
+                ui::UiLanguage::ChineseTraditional => traditional,
+            };
         let button = |surface: &mut Surface<'_>, rect: ui::Rect, label: &str, active: bool| {
             surface.fill_rect(
                 rect.x,
@@ -935,11 +1257,12 @@ impl ConApp {
                     heading = true;
                 }
                 Row::Model => {
-                    label = "Model / manual account binding".to_owned();
+                    label = tr("Connection drafts / applied connection unchanged","连接草稿 / 当前连接保持不变","連線草稿 / 目前連線保持不變").to_owned();
+                    if settings.focused==Some(Field::ProfileChooser){stroke_rect(surface,rect,scale.max(1.0)as u32,theme.accent);label.push_str(tr(" / ↑↓ choose, Enter open"," / ↑↓选择，回车打开"," / ↑↓選擇，Enter開啟"));}
                     heading = true;
                 }
                 Row::Connect => {
-                    label = "Connect a client".to_owned();
+                    label = tr("Connect a client to the applied default","将客户端连接到当前默认连接","將用戶端連接到目前預設連線").to_owned();
                     heading = true;
                 }
                 Row::Listener => {
@@ -1091,7 +1414,7 @@ impl ConApp {
                     button(
                         surface,
                         cell(0, 2),
-                        "Use for default client",
+                        tr("Open connection drafts","打开连接草稿","開啟連線草稿"),
                         settings.account_focus == settings.view.selected_account,
                     );
                     button(
@@ -1162,32 +1485,88 @@ impl ConApp {
                             .to_owned()
                 }
                 Row::NoAccounts => label = "No account. Add a provider to continue.".to_owned(),
+                Row::Profile(index) => {
+                    let profile=&settings.view.connection_profiles[index];
+                    let local=settings.forms.forms.get(&profile.id);
+                    let name=local.map_or(profile.input.label.as_str(),|form|form.label.text.as_str());
+                    button(surface,rect,&format!("{}{} [{}]{}",if settings.focused==Some(Field::ProfileChooser)&&settings.profile_navigation==Some(index){"› "}else{""},name,if profile.id=="default"{"default"}else{profile.id.get(..8).unwrap_or(&profile.id)},if profile.dirty{" / staged"}else{""}),settings.forms.selected.as_deref()==Some(profile.id.as_str()));
+                }
+                Row::ProfileCreate => button(surface,rect,if settings.forms.create_request.is_some(){tr("Creating profile...","正在创建连接…","正在建立連線…")}else{tr("New connection profile (up to 8 total)","新建连接（最多 8 个）","建立連線（最多 8 個）")},false),
+                Row::ProfileState => {
+                    label=settings.forms.current().map_or_else(||format!("Connection drafts: {:?}",settings.view.load_state),|form|format!("Draft / {} / {}",if form.waiting(){"saving changes"}else if form.unsent(){"local edits"}else{"staged"},form.local_error.clone().unwrap_or_else(||form.view.error.map_or_else(||"not applied".into(),|error|format!("{error:?}")))));
+                }
+                Row::ProfileInput(field) => {
+                    let name=match field {ProfileField::Label=>tr("Connection label","连接名称","連線名稱"),ProfileField::DefaultAlias=>tr("Default public alias","默认公开别名","預設公開別名"),ProfileField::Alias(_)=>tr("Public model alias","公开模型别名","公開模型別名")};
+                    host_ui::paint_single_line_host_editor(surface,cell(0,2),settings.editor(Field::Profile(field)),settings.focused==Some(Field::Profile(field)),name,theme,size,scale);
+                    paint_host_ui_text(surface,cell(1,2).x+(8.0*scale)as u32,rect.y+rect.height.saturating_sub(font::cell_metrics(size).height)/2,name,theme.text,size,cell(1,2).width.saturating_sub((16.0*scale)as u32));
+                }
+                Row::ProfileToggle => button(surface,rect,if settings.forms.current().is_some_and(|form|form.enabled){tr("Enabled in draft (click to disable)","草稿已启用（点击停用）","草稿已啟用（點擊停用）")}else{tr("Disabled in draft (click to enable)","草稿已停用（点击启用）","草稿已停用（點擊啟用）")},false),
+                Row::ProfileApplied => {
+                    label=settings.forms.current().map_or_else(String::new,|form|form.view.applied.as_ref().map_or_else(||"Applied: none / this is an unsaved profile".into(),|applied|format!("Applied: {} / {} model allocation(s); edits are separate",applied.label,applied.allocations.len())));
+                }
+                Row::AppliedAlias(index)|Row::AppliedAccount(index)|Row::AppliedModel(index) => {
+                    if let Some(allocation)=settings.applied_allocations().get(index) {
+                        let account=allocation.account.as_deref().map_or_else(||tr("No account","未选择账号","未選擇帳號").into(),|id|settings.view.accounts.iter().find(|account|account.id==id).map_or_else(||format!("{} [{}]",tr("Unavailable account","账号不可用","帳號不可用"),id.get(..8).unwrap_or(id)),|account|format!("{} [{}]",account.label,id.get(..8).unwrap_or(id))));
+                        label=match row {
+                            Row::AppliedAlias(_)=>format!("{}: {}",tr("Applied alias","生效别名","生效別名"),allocation.alias),
+                            Row::AppliedAccount(_)=>format!("{}: {}",tr("Applied account","生效账号","生效帳號"),account),
+                            _=>format!("{}: {}",tr("Applied model","生效模型","生效模型"),allocation.model),
+                        };
+                    }
+                }
+                Row::Allocation(slot) => {
+                    if let Some(form)=settings.forms.current()
+                        && let Some(allocation)=form.allocations.get(&slot) {
+                        let same_input=form.view.input.allocations.iter().any(|old|old.slot==slot&&old.alias==allocation.alias.text&&old.account==allocation.account&&old.model==allocation.model.text);
+                        let state=form.view.allocations.iter().find(|entry|same_input&&entry.slot==slot).map_or_else(||tr("Choose a model","请选择模型","請選擇模型").into(),|entry|{
+                            use provider_runtime::{ConnectionAvailability as A,ConnectionEvidence as E};
+                            let availability=match entry.availability {
+                                A::Available=>tr("Account available","账号可用","帳號可用"),
+                                A::MissingAccount=>tr("Account removed","账号已移除","帳號已移除"),
+                                A::DisabledAccount=>tr("Account disabled","账号已停用","帳號已停用"),
+                                A::CredentialUnavailable=>tr("Sign in required","需要登录","需要登入"),
+                                A::AuthorityChanged=>tr("Account changed; choose again","账号已变更，请重新选择","帳號已變更，請重新選擇"),
+                                A::NotSelected=>tr("Choose a model","请选择模型","請選擇模型"),
+                            };
+                            let evidence=match entry.evidence {
+                                E::Unverified=>tr("Not verified","尚未验证","尚未驗證"),
+                                E::LegacyApplied=>tr("Previously applied","已应用旧连接","已套用舊連線"),
+                                E::Verified=>tr("Verified","已验证","已驗證"),
+                                E::StaleAuthority=>tr("Verification out of date","验证已过期","驗證已過期"),
+                            };format!("{availability} / {evidence}")
+                        });
+                        button(surface,rect,&format!("{} / {} / {}",allocation.alias.text,allocation.model.text,state),form.selected_slot==Some(slot));
+                    }
+                }
+                Row::AllocationActions => {
+                    button(surface,cell(0,2),tr("Add model entry","添加模型","新增模型"),false);button(surface,cell(1,2),tr("Remove selected entry","移除选中模型","移除所選模型"),false);
+                }
+                Row::AllocationAccount => {
+                    let account=settings.forms.current().and_then(|form|form.selected_account());
+                    let name=account.map_or_else(||"Not selected".into(),|id|settings.view.accounts.iter().find(|entry|entry.id==id).map_or_else(||format!("Unavailable [{}]",id.get(..8).unwrap_or(id)),|entry|format!("{} [{}]",entry.label,id.get(..8).unwrap_or(id))));
+                    button(surface,rect,&format!("Model account: {name} / choose"),false);
+                }
+                Row::AllocationAccountChoice(index) => {
+                    let account=&settings.view.accounts[index];
+                    button(surface,rect,&format!("Choose {} [{}]",account.label,account.id.get(..8).unwrap_or(&account.id)),settings.forms.current().and_then(|form|form.selected_account())==Some(account.id.as_str()));
+                }
                 Row::ModelInput => {
-                    host_ui::paint_single_line_host_editor(
-                        surface,
-                        cell(0, 2),
-                        &settings.model,
-                        settings.focused == Some(Field::Model),
-                        "Provider model ID",
-                        theme,
-                        size,
-                        scale,
-                    );
-                    button(surface, cell(1, 2), "Apply model", false);
+                    host_ui::paint_single_line_host_editor(surface,cell(0,2),settings.editor(Field::Model),settings.focused==Some(Field::Model),tr("Model selector (choose a catalogue row)","模型（从目录中选择）","模型（從目錄中選擇）"),theme,size,scale);
+                    button(surface,cell(1,2),tr("Stage / retry edits","暂存 / 重试编辑","暫存 / 重試編輯"),false);
                 }
                 Row::ModelActions => {
-                    button(surface, cell(0, 2), "Refresh models", false);
-                    button(surface, cell(1, 2), "Test model", false);
+                    button(surface,cell(0,2),tr("Refresh this account catalogue","刷新此账号模型目录","重新整理此帳號模型目錄"),false);button(surface,cell(1,2),tr("Retry staged edits","重试暂存编辑","重試暫存編輯"),false);
                 }
-                Row::ProbeNotice => {
-                    label = "Test model sends a small paid inference request.".to_owned()
+                Row::ProbeNotice => label=settings.forms.current().and_then(|form|form.local_error.clone()).unwrap_or_else(||"Choose from this account's fresh catalogue. Verify / Apply are not yet available; no paid probe is sent.".into()),
+                Row::ModelChoice(index) => {
+                    if let Some(model)=settings.current_catalogue().and_then(|entry|entry.models.get(index)) {
+                        button(surface,rect,&format!("Choose {} / {:?}",model.id,model.protocol),false);
+                    }
                 }
-                Row::ModelChoice(model_index) => button(
-                    surface,
-                    rect,
-                    &settings.view.models[model_index],
-                    settings.view.model == settings.view.models[model_index],
-                ),
+                Row::ProfileCommands => {
+                    button(surface,cell(0,2),if settings.forms.current().is_some_and(|form|form.view.applied.is_some()){tr("Revert this profile","还原此连接","還原此連線")}else if settings.forms.selected.as_deref()==Some("default"){tr("No applied connection to revert","尚无已应用连接可还原","尚無已套用連線可還原")}else{tr("Discard unapplied profile","放弃未应用连接","捨棄未套用連線")},false);
+                    button(surface,cell(1,2),tr("Verify / Apply unavailable","验证 / 应用暂不可用","驗證 / 套用暫不可用"),false);
+                }
                 Row::KeyState => {
                     label = if settings.view.local_key_exists {
                         "Local client key: stored privately"
@@ -1405,6 +1784,57 @@ impl ConApp {
             ),
             ("port_editor", editor(Field::Port)),
             ("model_editor", editor(Field::Model)),
+            ("connection_profile",settings.forms.selected.as_deref().map_or(json::JsonValue::Null,Into::into)),
+            ("connection_profile_navigation",settings.profile_navigation.map_or(json::JsonValue::Null,Into::into)),
+            ("connection_picker_focused",(active&&settings.focused==Some(Field::ProfileChooser)).into()),
+            ("connection_profiles",json::JsonValue::Array(settings.view.connection_profiles.iter().map(|profile|{
+                let form=settings.forms.forms.get(&profile.id);
+                let input=form.map_or_else(||profile.input.clone(),|form|form.input());
+                json::object(vec![
+                    ("id",profile.id.as_str().into()),("revision",profile.revision.into()),
+                    ("enabled",input.enabled.into()),("default_alias",input.default_alias.into()),
+                    ("dirty",profile.dirty.into()),("has_applied",profile.applied.is_some().into()),
+                    ("applied",profile.applied.as_ref().map_or(json::JsonValue::Null,|applied|json::object(vec![
+                        ("enabled",applied.enabled.into()),("default_alias",applied.default_alias.as_str().into()),
+                        ("allocations",json::JsonValue::Array(applied.allocations.iter().map(|row|json::object(vec![
+                            ("slot",u32::from(row.slot).into()),("alias",row.alias.as_str().into()),
+                            ("account",row.account.as_deref().map_or(json::JsonValue::Null,Into::into)),("model",row.model.as_str().into()),
+                            ("account_present",row.account.as_ref().is_some_and(|id|settings.view.accounts.iter().any(|account|&account.id==id)).into()),
+                        ])).collect())),
+                    ]))),
+                    ("pending",form.is_some_and(|form|form.waiting()).into()),
+                    ("local_unsent",form.is_some_and(|form|form.unsent()).into()),
+                    ("error",form.and_then(|form|form.local_error.as_deref()).map_or_else(||profile.error.map_or(json::JsonValue::Null,|error|format!("{error:?}").into()),Into::into)),
+                    ("selected_slot",form.and_then(|form|form.selected_slot).map_or(json::JsonValue::Null,|slot|u32::from(slot).into())),
+                    ("allocations",json::JsonValue::Array(input.allocations.iter().map(|allocation|{
+                        let same_input=profile.input.allocations.iter().any(|old|old==allocation);
+                        let observation=profile.allocations.iter().find(|entry|same_input&&entry.slot==allocation.slot);
+                        json::object(vec![
+                            ("slot",u32::from(allocation.slot).into()),("alias",allocation.alias.as_str().into()),
+                            ("account",allocation.account.as_deref().map_or(json::JsonValue::Null,Into::into)),("model",allocation.model.as_str().into()),
+                            ("availability",observation.map_or(json::JsonValue::Null,|entry|format!("{:?}",entry.availability).into())),
+                            ("evidence",observation.map_or(json::JsonValue::Null,|entry|format!("{:?}",entry.evidence).into())),
+                            ("upstream_model",observation.and_then(|entry|entry.upstream_model.as_deref()).map_or(json::JsonValue::Null,Into::into)),
+                            ("protocol",observation.and_then(|entry|entry.protocol).map_or(json::JsonValue::Null,|protocol|format!("{protocol:?}").into())),
+                        ])
+                    }).collect())),
+                ])
+            }).collect())),
+            ("connection_receipts",json::JsonValue::Array(settings.view.connection_receipts.iter().map(|receipt|json::object(vec![
+                ("request",receipt.request.into()),("profile",receipt.profile.as_str().into()),
+                ("change",format!("{:?}",receipt.change).into()),
+                ("revision",receipt.revision.map_or(json::JsonValue::Null,Into::into)),
+                ("ok",receipt.result.is_ok().into()),("error",receipt.result.err().map_or(json::JsonValue::Null,|error|error.to_string().into())),
+            ])).collect())),
+            ("connection_editors",settings.forms.current().map_or(json::JsonValue::Null,|form|{
+                json::object(vec![
+                    // Profile names receive the same snapshot redaction as account names.
+                    ("label_bytes",form.label.text.len().into()),("label_caret",form.label.caret.into()),
+                    ("label_focused",(active&&settings.focused==Some(Field::Profile(ProfileField::Label))).into()),
+                    ("default_alias",if settings.forms.selected.as_deref()==Some("default"){json::JsonValue::Null}else{editor(Field::Profile(ProfileField::DefaultAlias))}),
+                    ("alias",form.selected_slot.filter(|_|settings.forms.selected.as_deref()!=Some("default")).map_or(json::JsonValue::Null,|slot|editor(Field::Profile(ProfileField::Alias(slot))))),
+                ])
+            })),
             (
                 "account_focus",
                 settings
@@ -1479,6 +1909,7 @@ impl ConApp {
             settings.drag = None;
             field_editor::apply(&mut settings.port, Command::Blur, PORT_LIMITS);
             field_editor::apply(&mut settings.model, Command::Blur, MODEL_LIMITS);
+            settings.forms.blur();
             for field in [
                 Field::AccountLabel,
                 Field::LoginProxy,
@@ -1504,6 +1935,8 @@ impl ConApp {
         {
             Some(Field::Port) => "harness_port",
             Some(Field::Model) => "harness_model",
+            Some(Field::Profile(_)) => "harness_connection",
+            Some(Field::ProfileChooser) => "harness_connection_picker",
             Some(Field::AccountLabel) => "harness_account_label",
             Some(Field::LoginProxy) => "harness_login_proxy",
             Some(Field::ServiceProxy) => "harness_service_proxy",
@@ -1529,6 +1962,7 @@ impl ConApp {
             // Menus suspend a settings field; real route changes explicitly blur.
             field_editor::apply(&mut settings.port, Command::Blur, PORT_LIMITS);
             field_editor::apply(&mut settings.model, Command::Blur, MODEL_LIMITS);
+            settings.forms.blur();
             for field in [
                 Field::AccountLabel,
                 Field::LoginProxy,
@@ -1578,12 +2012,6 @@ impl ConApp {
                 settings.port.anchor = None;
                 settings.port.select_all = false;
             }
-            if settings.model.text == settings.view.model {
-                settings.model.text.clone_from(&next.model);
-                settings.model.caret = settings.model.text.len();
-                settings.model.anchor = None;
-                settings.model.select_all = false;
-            }
             if !next.login_active {
                 settings.challenge = None;
                 settings.challenge_expired = false;
@@ -1591,6 +2019,7 @@ impl ConApp {
             settings.view = next;
             settings.reconcile_auth_result();
             settings.sync_account_drafts();
+            settings.sync_connection_forms();
             changed = true;
         }
         for effect in effects {
@@ -1698,7 +2127,20 @@ impl ConApp {
                         scale,
                         size,
                     );
+                    let before = (
+                        settings.editor(field).caret,
+                        settings.editor(field).anchor,
+                        settings.editor(field).select_all,
+                    );
                     field_editor::drag(settings.editor_mut(field), anchor, offset);
+                    let after = (
+                        settings.editor(field).caret,
+                        settings.editor(field).anchor,
+                        settings.editor(field).select_all,
+                    );
+                    if before != after {
+                        settings.note_connection_activity(field);
+                    }
                 } else {
                     consumed = false;
                 }
@@ -1738,10 +2180,16 @@ impl ConApp {
                         let field = match (row, column) {
                             (Row::Port, 0) if settings.port_editable() => Some(Field::Port),
                             (Row::ModelInput, 0) => Some(Field::Model),
+                            (Row::Model, 0) => Some(Field::ProfileChooser),
                             (Row::AccountInput(field) | Row::ConnectInput(field), 0) => Some(field),
+                            (Row::ProfileInput(field), 0) => Some(Field::Profile(field)),
                             _ => None,
                         };
-                        if let Some(field) = field {
+                        if field == Some(Field::ProfileChooser) {
+                            settings.blur();
+                            settings.focused = Some(Field::ProfileChooser);
+                            settings.navigate_connection_profiles(0);
+                        } else if let Some(field) = field {
                             let rect = geometry.cell(index, 0, 2, scale);
                             let offset = super::browser_ui::host_field_offset(
                                 settings.editor(field),
@@ -1756,12 +2204,25 @@ impl ConApp {
                             }
                             settings.focused = Some(field);
                             let clicks = settings.clicks.register(offset, Instant::now());
+                            let selection_before = (
+                                settings.editor(field).caret,
+                                settings.editor(field).anchor,
+                                settings.editor(field).select_all,
+                            );
                             settings.drag = field_editor::press(
                                 settings.editor_mut(field),
                                 offset,
                                 modifiers.shift,
                                 clicks,
                             );
+                            let selection_after = (
+                                settings.editor(field).caret,
+                                settings.editor(field).anchor,
+                                settings.editor(field).select_all,
+                            );
+                            if selection_before != selection_after {
+                                settings.note_connection_activity(field);
+                            }
                             let _ = window.set_pointer_capture(settings.drag.is_some());
                             self.composer.focused = false;
                             self.settings_proxy_focused = false;
@@ -1825,20 +2286,87 @@ impl ConApp {
                     settings.scroll = geometry.rows.reveal(index);
                 }
             }
+            PixelWindowEvent::Keyboard(key) if settings.focused == Some(Field::ProfileChooser) => {
+                if key.state == KeyPressState::Pressed {
+                    match &key.logical {
+                        LogicalKey::Named(NamedKey::ArrowUp) => {
+                            settings.navigate_connection_profiles(-1);
+                        }
+                        LogicalKey::Named(NamedKey::ArrowDown) => {
+                            settings.navigate_connection_profiles(1);
+                        }
+                        LogicalKey::Named(NamedKey::Enter | NamedKey::Space) => {
+                            settings.confirm_connection_profile()
+                        }
+                        LogicalKey::Character(text) if text == " " => {
+                            settings.confirm_connection_profile()
+                        }
+                        LogicalKey::Named(NamedKey::Escape) => settings.blur(),
+                        _ => {}
+                    }
+                    if settings.focused == Some(Field::ProfileChooser)
+                        && let Some(choice) = settings.profile_navigation
+                        && let Some(index) = rows
+                            .iter()
+                            .position(|row| matches!(row,Row::Profile(index) if *index==choice))
+                    {
+                        settings.scroll = geometry.rows.reveal(index);
+                    }
+                }
+            }
+            PixelWindowEvent::Ime(_) if settings.focused == Some(Field::ProfileChooser) => {}
             PixelWindowEvent::Keyboard(_) | PixelWindowEvent::Ime(_) => {
                 if let Some(field) = settings.focused {
                     let limits = field_limits(field);
                     if field == Field::Port && !settings.port_editable() {
                         settings.blur();
-                    } else if let Some(outcome) = super::browser_ui::edit_host_field(
-                        settings.editor_mut(field),
-                        event,
-                        limits,
-                    ) {
-                        match outcome.intent {
-                            Intent::Submit => settings.submit(field),
-                            Intent::Cancel => settings.blur(),
-                            Intent::None => {}
+                    } else if matches!(field, Field::Model | Field::Profile(_))
+                        && settings
+                            .forms
+                            .current()
+                            .is_some_and(|form| form.discarding())
+                    {
+                        settings.error = Some(
+                            "This unapplied connection is being removed. Wait before editing it."
+                                .into(),
+                        );
+                    } else if matches!(field, Field::Model | Field::Profile(_))
+                        && settings.forms.current().is_none()
+                    {
+                        settings.error =
+                            Some("Wait for connection settings to load before editing.".into());
+                    } else {
+                        let before = settings.editor(field).text.clone();
+                        if let Some(outcome) = super::browser_ui::edit_host_field(
+                            settings.editor_mut(field),
+                            event,
+                            limits,
+                        ) {
+                            if before != settings.editor(field).text
+                                && matches!(field, Field::Model | Field::Profile(_))
+                            {
+                                if let Some(id) = settings.forms.selected.clone()
+                                    && let Some(form) = settings.forms.current_mut()
+                                {
+                                    match field {
+                                        Field::Model => {
+                                            form.commit_model_edit(&id);
+                                        }
+                                        Field::Profile(field) => {
+                                            form.edit_field(field);
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                settings.flush_connection_edits();
+                            } else if outcome.changed && !outcome.rejected {
+                                settings.note_connection_activity(field);
+                            }
+                            match outcome.intent {
+                                Intent::Submit => settings.submit(field),
+                                Intent::Cancel => settings.blur(),
+                                Intent::None => {}
+                            }
                         }
                     }
                 } else if matches!(event, PixelWindowEvent::Keyboard(key)
@@ -1849,7 +2377,16 @@ impl ConApp {
             }
             _ => consumed = false,
         }
-        if let Some(field) = settings.focused {
+        let rows = settings.rows();
+        if let Some(form) = settings.forms.current_mut() {
+            form.scroll = settings.scroll;
+            form.visited = true;
+        }
+        settings.remember_connection_focus();
+        if let Some(field) = settings
+            .focused
+            .filter(|field| *field != Field::ProfileChooser)
+        {
             let index = rows
                 .iter()
                 .position(|row| row_field(*row) == Some(field))
@@ -1887,6 +2424,305 @@ impl ConApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn connection_profile(id: &str, account: &str) -> provider_runtime::ConnectionProfileView {
+        provider_runtime::ConnectionProfileView {
+            id: id.into(),
+            revision: 1,
+            input: provider_runtime::ConnectionDraftInput {
+                label: id.into(),
+                enabled: true,
+                default_alias: "minicon-selected".into(),
+                allocations: vec![provider_runtime::ConnectionAllocationInput {
+                    slot: 0,
+                    alias: "minicon-selected".into(),
+                    account: Some(account.into()),
+                    model: "same-catalogue-id".into(),
+                }],
+            },
+            applied: None,
+            dirty: false,
+            error: None,
+            allocations: vec![],
+        }
+    }
+
+    #[test]
+    fn connection_form_catalogue_choices_follow_slot_account_and_preserve_applied_view() {
+        let mut settings = HarnessSettings::default();
+        settings.view.load_state = provider_runtime::LoadState::Loaded;
+        settings.view.selected_account = Some("applied".into());
+        settings.view.model = "applied-wire".into();
+        settings.view.connection_profile = "default".into();
+        settings.view.connection_profiles = vec![connection_profile("default", "account-b")];
+        settings.view.models = vec!["wrong-global-model".into()];
+        let catalogue =
+            |account: &str, wire: &str, status| provider_runtime::AccountCatalogueView {
+                account: account.into(),
+                status,
+                retained_rows: 1,
+                error: None,
+                models: vec![provider_runtime::CatalogueModel {
+                    id: "same-catalogue-id".into(),
+                    upstream_model: wire.into(),
+                    protocol: provider_server::WireProtocol::Chat,
+                }],
+            };
+        settings.view.catalogues = vec![
+            catalogue(
+                "account-a",
+                "wire-a",
+                provider_runtime::CatalogueStatus::Fresh,
+            ),
+            catalogue(
+                "account-b",
+                "wire-b",
+                provider_runtime::CatalogueStatus::Fresh,
+            ),
+        ];
+        settings.forms.sync(&settings.view);
+        assert_eq!(
+            settings
+                .current_catalogue()
+                .map(|entry| entry.account.as_str()),
+            Some("account-b")
+        );
+        assert_eq!(
+            settings.current_catalogue().unwrap().models[0].upstream_model,
+            "wire-b"
+        );
+        assert_eq!(
+            settings
+                .rows()
+                .iter()
+                .filter(|row| matches!(row, Row::ModelChoice(_)))
+                .count(),
+            1
+        );
+        settings.view.catalogues[1].status = provider_runtime::CatalogueStatus::Error;
+        assert!(
+            !settings
+                .rows()
+                .iter()
+                .any(|row| matches!(row, Row::ModelChoice(_)))
+        );
+        assert_eq!(settings.view.selected_account.as_deref(), Some("applied"));
+        assert_eq!(settings.view.model, "applied-wire");
+    }
+
+    #[test]
+    fn connection_profiles_remain_distinct_and_unavailable_allocations_remain_editable() {
+        let mut settings = HarnessSettings::default();
+        settings.view.load_state = provider_runtime::LoadState::Loaded;
+        settings.view.connection_profile = "default".into();
+        settings.view.connection_profiles = (0..8)
+            .map(|n| {
+                connection_profile(
+                    if n == 0 {
+                        "default"
+                    } else {
+                        ["one", "two", "three", "four", "five", "six", "seven"][n - 1]
+                    },
+                    "removed-account",
+                )
+            })
+            .collect();
+        settings.forms.sync(&settings.view);
+        assert_eq!(
+            settings
+                .rows()
+                .iter()
+                .filter(|row| matches!(row, Row::Profile(_)))
+                .count(),
+            8
+        );
+        assert!(
+            settings
+                .rows()
+                .iter()
+                .any(|row| matches!(row, Row::Allocation(0)))
+        );
+        assert_eq!(
+            settings.forms.current().unwrap().selected_account(),
+            Some("removed-account")
+        );
+        assert!(settings.current_catalogue().is_none());
+        let applied = settings.view.clone();
+        settings.activate(Row::AccountConnection, 0);
+        assert_eq!(settings.view, applied);
+        assert!(settings.error.is_none());
+    }
+
+    #[test]
+    fn connection_rows_use_existing_reveal_and_hit_geometry_in_narrow_short_windows() {
+        let mut settings = HarnessSettings::default();
+        settings.view.load_state = provider_runtime::LoadState::Loaded;
+        settings.view.connection_profile = "custom".into();
+        settings.view.connection_profiles = vec![connection_profile("custom", "missing")];
+        settings.forms.sync(&settings.view);
+        let rows = settings.rows();
+        for (width, height) in [(760, 420), (420, 360), (760, 300)] {
+            let layout = ui::Layout::new(width, height, 1.0);
+            for target in [Row::Model, Row::ProfileCommands] {
+                let position = rows
+                    .iter()
+                    .position(|row| std::mem::discriminant(row) == std::mem::discriminant(&target));
+                assert!(
+                    position.is_some(),
+                    "missing connection control {}",
+                    row_id(target)
+                );
+                let index = position.unwrap();
+                let initial = layout.harness_settings(1.0, rows.len(), 0);
+                let geometry = layout.harness_settings(1.0, rows.len(), initial.rows.reveal(index));
+                let rect = geometry.cell(index, 0, row_columns(rows[index]), 1.0);
+                assert!(
+                    rect.width > 0 && rect.height > 0,
+                    "{width}x{height}: {}",
+                    row_id(rows[index])
+                );
+                assert_eq!(
+                    geometry
+                        .rows
+                        .hit(rect.x + rect.width / 2, rect.y + rect.height / 2),
+                    Some(index)
+                );
+                assert!(rect.x + rect.width <= width && rect.y + rect.height <= height);
+            }
+        }
+    }
+
+    #[test]
+    fn connection_editor_submit_stages_only_and_does_not_mutate_applied_selection() {
+        let mut settings = HarnessSettings::default();
+        settings.view.load_state = provider_runtime::LoadState::Loaded;
+        settings.view.connection_profile = "default".into();
+        settings.view.connection_profiles = vec![connection_profile("default", "a")];
+        settings.view.selected_account = Some("applied".into());
+        settings.view.model = "applied-wire".into();
+        settings.forms.sync(&settings.view);
+        settings.editor_mut(Field::Model).text = "later-local-model".into();
+        settings.editor_mut(Field::Model).caret = 5;
+        settings.submit(Field::Model);
+        assert_eq!(settings.editor(Field::Model).text, "later-local-model");
+        assert_eq!(settings.editor(Field::Model).caret, 5);
+        assert_eq!(settings.view.selected_account.as_deref(), Some("applied"));
+        assert_eq!(settings.view.model, "applied-wire");
+        assert!(settings.forms.current().unwrap().unsent());
+        assert!(!settings.forms.current().unwrap().waiting());
+        assert!(settings.forms.current().unwrap().local_error.is_some());
+    }
+
+    #[test]
+    fn connection_profile_return_restores_its_field_selection_and_navigation_requires_confirmation()
+    {
+        let mut settings = HarnessSettings::default();
+        settings.view.load_state = provider_runtime::LoadState::Loaded;
+        settings.view.connection_profile = "default".into();
+        settings.view.connection_profiles = vec![
+            connection_profile("default", "a"),
+            connection_profile("custom", "b"),
+        ];
+        settings.forms.sync(&settings.view);
+        settings.focused = Some(Field::Model);
+        let editor = settings.editor_mut(Field::Model);
+        editor.text = "abcd".into();
+        editor.caret = 3;
+        editor.anchor = Some(1);
+        settings.forms.current_mut().unwrap().edit_model();
+        settings.remember_connection_focus();
+        settings.blur();
+        settings.focused = Some(Field::ProfileChooser);
+        settings.navigate_connection_profiles(1);
+        assert_eq!(settings.forms.selected.as_deref(), Some("default"));
+        settings.confirm_connection_profile();
+        assert_eq!(settings.forms.selected.as_deref(), Some("custom"));
+        assert!(settings.focused.is_none());
+        settings.focused = Some(Field::Model);
+        settings.remember_connection_focus();
+        let b = settings.editor(Field::Model).text.clone();
+        settings.focus_connection("default");
+        assert!(settings.focused == Some(Field::Model));
+        assert_eq!(
+            (
+                settings.editor(Field::Model).caret,
+                settings.editor(Field::Model).anchor
+            ),
+            (3, Some(1))
+        );
+        field_editor::apply(
+            settings.editor_mut(Field::Model),
+            Command::Commit("X"),
+            MODEL_LIMITS,
+        );
+        settings.forms.current_mut().unwrap().edit_model();
+        assert_eq!(settings.editor(Field::Model).text, "aXd");
+        assert_eq!(settings.forms.forms["custom"].model().text, b);
+        settings.focus_connection("custom");
+        let form = settings.forms.forms.get_mut("default").unwrap();
+        let mut remaining = form.allocations.remove(&0).unwrap();
+        remaining.slot = 1;
+        form.allocations.insert(1, remaining);
+        form.selected_slot = Some(1);
+        settings.focus_connection("default");
+        assert!(
+            settings.focused.is_none(),
+            "deleted model field must not retarget another entry"
+        );
+    }
+
+    #[test]
+    fn connection_applied_rows_remain_visible_and_distinct_from_later_draft_choices() {
+        let mut settings = HarnessSettings::default();
+        settings.view.load_state = provider_runtime::LoadState::Loaded;
+        settings.view.connection_profile = "default".into();
+        let mut profile = connection_profile("default", "missing-applied-account");
+        profile.input.allocations[0].model = "applied-wire".into();
+        profile.applied = Some(profile.input.clone());
+        settings.view.connection_profiles = vec![profile];
+        settings.forms.sync(&settings.view);
+        settings
+            .forms
+            .current_mut()
+            .unwrap()
+            .assign_account("new-account");
+        settings.editor_mut(Field::Model).text = "new-catalogue-model".into();
+        settings.forms.current_mut().unwrap().edit_model();
+        let applied = settings.applied_allocations();
+        assert_eq!(applied.len(), 1);
+        assert_eq!(applied[0].model, "applied-wire");
+        assert_eq!(
+            applied[0].account.as_deref(),
+            Some("missing-applied-account")
+        );
+        assert_eq!(settings.editor(Field::Model).text, "new-catalogue-model");
+        let rows = settings.rows();
+        for target in [
+            Row::AppliedAlias(0),
+            Row::AppliedAccount(0),
+            Row::AppliedModel(0),
+        ] {
+            let position = rows
+                .iter()
+                .position(|row| std::mem::discriminant(row) == std::mem::discriminant(&target));
+            assert!(position.is_some(), "missing applied row {}", row_id(target));
+            let index = position.unwrap();
+            for (width, height) in [(760, 420), (420, 360), (760, 300)] {
+                let layout = ui::Layout::new(width, height, 1.0);
+                let first = layout.harness_settings(1.0, rows.len(), 0);
+                let geometry = layout.harness_settings(1.0, rows.len(), first.rows.reveal(index));
+                let rect = geometry.cell(index, 0, 1, 1.0);
+                assert!(rect.width > 0 && rect.height > 0);
+                assert!(rect.x + rect.width <= width && rect.y + rect.height <= height);
+                assert_eq!(
+                    geometry
+                        .rows
+                        .hit(rect.x + rect.width / 2, rect.y + rect.height / 2),
+                    Some(index)
+                );
+            }
+        }
+    }
 
     #[test]
     fn cs01_account_catalogue_rows_are_scoped_read_only_and_do_not_apply_models() {
