@@ -1082,23 +1082,16 @@ lost; it stops input, closes the GUI normally and verifies clipboard restoration
 ARM64 is separately BLOCKED before input by the obscured activation point.
 Do not report this run as a complete physical-input PASS.
 
-The six-cell `360222f` run40239951153 remains in flight while its Linux x86_64
-job has failed the intended native authorization-context qualifier.
-[PRD28.01](PRD_02_28_01_browser_context_lifecycle.md) owns its reopened-storage
-observation and lifecycle investigation. An earlier positive arm does not
-override the terminal failed cell or substitute for its missing restored arm.
-
-Linux native-context qualification now first runs six helper-transport/lifetime
-subjects through the strict product wrapper. Three actual source mutations
-exercise five new subjects: wrong-PID acknowledgement admission, reversed exit
-classification and a wrong deadline failure cause. Each must reach the intended
-original assertion(s), restore exact source, then pass all six subjects again.
-Build failure, zero tests or controller timeout are never RED. The receipts/logs
-are finite synthetic child/pipe observations, with no desktop, provider or real
-profile access. Only after those controls does the unchanged eight-observation
-native context court run. `src/browser_process.rs` joins the qualifier's tracked
-source identities; final source and canonical product preservation remain
-mandatory. Actual hosted outcomes for this new join are still pending.
+Linux native-context qualification first runs the helper-transport/lifetime
+subjects and actual source mutations through the strict product wrapper.
+[PRD28.01](PRD_02_28_01_browser_context_lifecycle.md#linux-supported-close-replay-remains-failed)
+owns the current subjects, controls, terminal hosted results and next finite
+release-stage diagnosis. Each control must reach the intended original
+assertion(s), restore exact source, then pass the complete mechanism group.
+Build failure, zero tests or controller timeout are never RED. Only then does
+the unchanged eight-observation native context court run. The transport joins
+the qualifier's tracked source identities; final source and canonical product
+preservation remain mandatory. Mechanism success does not qualify storage.
 
 The older exact `360222f` six-cell run40239951153 is now terminal FAIL:
 Linux ARM64, Windows x86_64 and both macOS cells succeed; Linux x86_64 fails
@@ -1128,3 +1121,14 @@ assertions remain. This establishes the actual failed step before changing
 product editing logic; it does not claim the old ARM64 failure was fixture-only.
 The shared prerequisite is the existing public metadata projection; the only
 implementation hot file for this preparation is the public browser court.
+
+The follow-up Windows physical court records at most16 refusal observations:
+foreground and hit-window class, process basename, geometry and equality to the
+owned GUI. It reads no titles, command lines or full image paths, and captures
+no foreign-window screenshots. Every physical click now also verifies the
+actual point still belongs to the owned GUI immediately before admission;
+foreground or overlay mismatch stops input. This diagnoses the existing
+ARM64 activation and x86_64 later-focus failures without reclaiming foreground,
+clicking setup windows or weakening the original native editor predicates.
+These observations remain hosted-court-only and do not qualify physical input
+until the actual replay succeeds.

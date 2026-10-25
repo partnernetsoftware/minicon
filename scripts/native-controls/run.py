@@ -171,6 +171,8 @@ class Native:
             (self.u, "IsWindowVisible", w.BOOL, [w.HWND]),
             (self.u, "IsChild", w.BOOL, [w.HWND, w.HWND]),
             (self.u, "GetWindowThreadProcessId", w.DWORD, [w.HWND, c.POINTER(w.DWORD)]),
+            (self.u, "GetClassNameW", c.c_int, [w.HWND, w.LPWSTR, c.c_int]),
+            (self.u, "GetWindowRect", w.BOOL, [w.HWND, c.POINTER(w.RECT)]),
             (self.u, "GetKeyboardLayout", c.c_void_p, [w.DWORD]),
             (self.u, "GetKeyboardLayoutList", c.c_int, [c.c_int, c.POINTER(c.c_void_p)]),
             (self.u, "GetGUIThreadInfo", w.BOOL, [w.DWORD, c.POINTER(GuiThreadInfo)]),
@@ -196,6 +198,10 @@ class Native:
             (self.k, "GlobalUnlock", w.BOOL, [w.HGLOBAL]),
             (self.k, "GlobalFree", w.HGLOBAL, [w.HGLOBAL]),
             (self.k, "GlobalSize", c.c_size_t, [w.HGLOBAL]),
+            (self.k, "OpenProcess", w.HANDLE, [w.DWORD, w.BOOL, w.DWORD]),
+            (self.k, "QueryFullProcessImageNameW", w.BOOL,
+             [w.HANDLE, w.DWORD, w.LPWSTR, c.POINTER(w.DWORD)]),
+            (self.k, "CloseHandle", w.BOOL, [w.HANDLE]),
             (self.g, "CreateCompatibleDC", w.HDC, [w.HDC]),
             (self.g, "CreateCompatibleBitmap", w.HBITMAP, [w.HDC, c.c_int, c.c_int]),
             (self.g, "SelectObject", w.HANDLE, [w.HDC, w.HANDLE]),
@@ -226,6 +232,7 @@ class Native:
         self.pointer = w.POINT()
         self.u.GetCursorPos(c.byref(self.pointer))
         self.hwnd = None
+        self.focus_observations = []
         self.pressed = set()
         self.original_layout = None
         self.thread = None
@@ -277,6 +284,7 @@ class Native:
             owner = w.DWORD()
             self.u.GetWindowThreadProcessId(hit, c.byref(owner))
             if owner.value != pid or self.u.GetAncestor(hit, 2) != self.hwnd:
+                self.record_focus("activation-point-obscured", hit, point)
                 raise Blocked("owned activation point is obscured; no input sent")
             pair = (Input * 2)(Input(kind=0, mouse=MouseInput(flags=2)),
                                Input(kind=0, mouse=MouseInput(flags=4)))
@@ -288,12 +296,51 @@ class Native:
         end = time.monotonic() + 3
         while self.u.GetForegroundWindow() != self.hwnd:
             if time.monotonic() >= end:
+                self.record_focus("initial-foreground-unconfirmed")
                 raise Blocked("owned GUI foreground activation unconfirmed after 3s "
                               f"(SetForegroundWindow requested={requested})")
             time.sleep(0.05)
 
+    def window_fact(self, hwnd):
+        """Finite hosted-court metadata; never titles, command lines or paths."""
+        if not hwnd:
+            return {"present": False}
+        owner = w.DWORD()
+        self.u.GetWindowThreadProcessId(hwnd, c.byref(owner))
+        expected = w.DWORD()
+        self.u.GetWindowThreadProcessId(self.hwnd, c.byref(expected))
+        name = c.create_unicode_buffer(128)
+        self.u.GetClassNameW(hwnd, name, len(name))
+        rect = w.RECT()
+        observed = bool(self.u.GetWindowRect(hwnd, c.byref(rect)))
+        process_name = None
+        handle = self.k.OpenProcess(0x1000, False, owner.value)
+        if handle:
+            try:
+                image = c.create_unicode_buffer(32768)
+                length = w.DWORD(len(image))
+                if self.k.QueryFullProcessImageNameW(handle, 0, image, c.byref(length)):
+                    process_name = Path(image.value).name
+            finally:
+                self.k.CloseHandle(handle)
+        return {"present": True, "same_process_as_gui": owner.value == expected.value,
+                "owned_root": self.u.GetAncestor(hwnd, 2) == self.hwnd,
+                "class": name.value, "process_basename": process_name,
+                "bounds": [rect.left, rect.top, rect.right, rect.bottom] if observed else None}
+
+    def record_focus(self, stage, hit=None, point=None):
+        if len(self.focus_observations) >= 16:
+            return
+        self.focus_observations.append({
+            "stage": stage, "foreground": self.window_fact(self.u.GetForegroundWindow()),
+            "owned_gui": self.window_fact(self.hwnd),
+            "hit": self.window_fact(hit),
+            "point": [point.x, point.y] if point is not None else None,
+        })
+
     def foreground(self):
         if self.u.GetForegroundWindow() != self.hwnd:
+            self.record_focus("input-refused-foreign-foreground")
             raise Blocked("owned GUI lost foreground; input stopped")
 
     def send(self, event):
@@ -331,6 +378,14 @@ class Native:
                         round(rect["y"] + rect["height"] / 2))
         assert self.u.ClientToScreen(self.hwnd, c.byref(point)), "ClientToScreen failed"
         assert self.u.SetCursorPos(point.x, point.y), "SetCursorPos failed"
+        hit = self.u.WindowFromPoint(point)
+        owner = w.DWORD()
+        expected = w.DWORD()
+        self.u.GetWindowThreadProcessId(hit, c.byref(owner))
+        self.u.GetWindowThreadProcessId(self.hwnd, c.byref(expected))
+        if owner.value != expected.value or self.u.GetAncestor(hit, 2) != self.hwnd:
+            self.record_focus("input-refused-obscured-hit-target", hit, point)
+            raise Blocked("owned input point is obscured; no click sent")
         self.send(Input(kind=0, mouse=MouseInput(flags=2)))
         try:
             self.send(Input(kind=0, mouse=MouseInput(flags=4)))
@@ -833,6 +888,7 @@ def main():
                 receipt["failure_snapshot_unavailable"] = True
         cleanup = {}
         if native is not None:
+            receipt["native_focus_observations"] = native.focus_observations
             try:
                 cleanup["clipboard_restored"] = native.restore()
             except (OSError, Blocked):
