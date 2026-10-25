@@ -1,6 +1,7 @@
 //! Harness settings presentation. Runtime authority stays with provider_runtime.
 use super::*;
 use minicon_core::field_editor::{self, Command, Intent, Limits};
+use provider_runtime::{AccountEdit, AccountPreferences, AccountSummary, NetworkPolicy};
 use provider_runtime::{Action, Effect, ListenerState, Provider, View};
 
 const PORT_LIMITS: Limits = Limits {
@@ -16,6 +17,9 @@ const MODEL_LIMITS: Limits = Limits {
 enum Field {
     Port,
     Model,
+    AccountLabel,
+    LoginProxy,
+    ServiceProxy,
 }
 
 #[derive(Clone, Copy)]
@@ -30,6 +34,10 @@ enum Row {
     Challenge,
     ChallengeActions,
     Account(usize),
+    AccountInput(Field),
+    AccountActions,
+    AccountConnection,
+    AccountNetworkHint,
     NoAccounts,
     Model,
     ModelInput,
@@ -52,6 +60,95 @@ struct DeviceChallenge {
     remaining_seconds: u64,
 }
 
+#[derive(Default)]
+struct AccountDraft {
+    label: composer::ComposerState,
+    login: composer::ComposerState,
+    service: composer::ComposerState,
+    enabled: bool,
+    applied_label: String,
+    applied: Option<AccountPreferences>,
+    submitted: Option<u64>,
+    save_error: Option<provider_runtime::RuntimeError>,
+}
+impl AccountDraft {
+    fn from_account(account: &AccountSummary, preferences: &AccountPreferences) -> Self {
+        let editor = |text: &str| {
+            let mut state = composer::ComposerState::default();
+            state.text = text.to_owned();
+            state.caret = text.len();
+            state
+        };
+        Self {
+            label: editor(&account.label),
+            login: editor(preferences.login.proxy().unwrap_or("")),
+            service: editor(preferences.service.proxy().unwrap_or("")),
+            enabled: preferences.enabled,
+            applied_label: account.label.clone(),
+            applied: Some(preferences.clone()),
+            submitted: None,
+            save_error: None,
+        }
+    }
+    fn matches(&self, account: &AccountSummary, preferences: &AccountPreferences) -> bool {
+        self.label.text == account.label
+            && self.enabled == preferences.enabled
+            && NetworkPolicy::from_input(&self.login.text).as_ref() == Ok(&preferences.login)
+            && NetworkPolicy::from_input(&self.service.text).as_ref() == Ok(&preferences.service)
+    }
+    fn dirty(&self) -> bool {
+        self.applied.as_ref().is_some_and(|applied| {
+            self.label.text != self.applied_label
+                || self.login.text != applied.login.proxy().unwrap_or("")
+                || self.service.text != applied.service.proxy().unwrap_or("")
+                || self.enabled != applied.enabled
+        })
+    }
+    fn acknowledge(
+        &mut self,
+        account: &AccountSummary,
+        preferences: &AccountPreferences,
+        receipt: Option<&provider_runtime::AccountSaveReceipt>,
+    ) {
+        let Some(receipt) = receipt.filter(|receipt| {
+            receipt.account == account.id && self.submitted == Some(receipt.request)
+        }) else {
+            return;
+        };
+        if receipt.result.is_ok() {
+            // Acknowledge this form's save without replacing later edits,
+            // selection, preedit or caret with the older submitted contents.
+            self.applied_label.clone_from(&account.label);
+            self.applied = Some(preferences.clone());
+        }
+        self.save_error = receipt.result.err();
+        self.submitted = None;
+    }
+}
+
+fn row_field(row: Row) -> Option<Field> {
+    match row {
+        Row::Port => Some(Field::Port),
+        Row::ModelInput => Some(Field::Model),
+        Row::AccountInput(field) => Some(field),
+        _ => None,
+    }
+}
+fn field_limits(field: Field) -> Limits {
+    match field {
+        Field::Port => PORT_LIMITS,
+        Field::Model => MODEL_LIMITS,
+        Field::AccountLabel => Limits {
+            max_bytes: 128,
+            preedit_chars: 128,
+        },
+        Field::LoginProxy | Field::ServiceProxy => Limits {
+            max_bytes: 2048,
+            preedit_chars: 256,
+        },
+    }
+}
+
 pub(super) struct HarnessSettings {
     runtime: Option<provider_runtime::Runtime>,
     view: View,
@@ -64,6 +161,10 @@ pub(super) struct HarnessSettings {
     error: Option<String>,
     challenge: Option<DeviceChallenge>,
     challenge_expired: bool,
+    account_focus: Option<String>,
+    account_draft: AccountDraft,
+    account_drafts: std::collections::HashMap<String, AccountDraft>,
+    account_save_sequence: u64,
 }
 
 impl HarnessSettings {
@@ -124,6 +225,10 @@ impl HarnessSettings {
             error,
             challenge: None,
             challenge_expired: false,
+            account_focus: None,
+            account_draft: AccountDraft::default(),
+            account_drafts: Default::default(),
+            account_save_sequence: 0,
         }
     }
 
@@ -145,6 +250,16 @@ impl HarnessSettings {
             rows.push(Row::NoAccounts);
         }
         rows.extend((0..self.view.accounts.len()).map(Row::Account));
+        if self.account_focus.is_some() {
+            rows.extend([
+                Row::AccountInput(Field::AccountLabel),
+                Row::AccountInput(Field::LoginProxy),
+                Row::AccountInput(Field::ServiceProxy),
+                Row::AccountNetworkHint,
+                Row::AccountActions,
+                Row::AccountConnection,
+            ]);
+        }
         rows.extend([
             Row::Model,
             Row::ModelInput,
@@ -175,6 +290,9 @@ impl HarnessSettings {
         match field {
             Field::Port => &self.port,
             Field::Model => &self.model,
+            Field::AccountLabel => &self.account_draft.label,
+            Field::LoginProxy => &self.account_draft.login,
+            Field::ServiceProxy => &self.account_draft.service,
         }
     }
 
@@ -182,12 +300,18 @@ impl HarnessSettings {
         match field {
             Field::Port => &mut self.port,
             Field::Model => &mut self.model,
+            Field::AccountLabel => &mut self.account_draft.label,
+            Field::LoginProxy => &mut self.account_draft.login,
+            Field::ServiceProxy => &mut self.account_draft.service,
         }
     }
 
     fn blur(&mut self) {
         field_editor::apply(&mut self.port, Command::Blur, PORT_LIMITS);
         field_editor::apply(&mut self.model, Command::Blur, MODEL_LIMITS);
+        for field in [Field::AccountLabel, Field::LoginProxy, Field::ServiceProxy] {
+            field_editor::apply(self.editor_mut(field), Command::Blur, field_limits(field));
+        }
         self.focused = None;
         self.drag = None;
         self.clicks = Default::default();
@@ -198,6 +322,139 @@ impl HarnessSettings {
             || Some(provider_runtime::RuntimeError::WorkerUnavailable.to_string()),
             |runtime| runtime.act(action).err().map(|error| error.to_string()),
         );
+    }
+
+    fn focus_account(&mut self, id: &str) {
+        let current = self
+            .view
+            .accounts
+            .iter()
+            .find(|account| account.id == id)
+            .cloned();
+        let preferences = self
+            .view
+            .account_preferences
+            .iter()
+            .find(|(account, _)| account == id)
+            .map(|(_, preferences)| preferences.clone());
+        let (Some(account), Some(preferences)) = (current, preferences) else {
+            return;
+        };
+        if self.account_focus.as_deref() != Some(id) {
+            self.blur();
+            if let Some(previous) = self.account_focus.replace(id.to_owned()) {
+                self.account_drafts
+                    .insert(previous, std::mem::take(&mut self.account_draft));
+            }
+            self.account_draft = self
+                .account_drafts
+                .remove(id)
+                .unwrap_or_else(|| AccountDraft::from_account(&account, &preferences));
+        }
+        if (self.account_draft.applied.as_ref() != Some(&preferences)
+            || self.account_draft.applied_label != account.label)
+            && self.account_draft.submitted.is_none()
+            && (!self.account_draft.dirty() || self.account_draft.matches(&account, &preferences))
+        {
+            let save_error = self.account_draft.save_error;
+            self.account_draft = AccountDraft::from_account(&account, &preferences);
+            self.account_draft.save_error = save_error;
+        }
+    }
+
+    fn status(&self) -> Option<String> {
+        self.error
+            .clone()
+            .or_else(|| self.account_draft.save_error.map(|error| error.to_string()))
+            .or_else(|| self.view.status.clone())
+    }
+
+    fn sync_account_drafts(&mut self) {
+        for account in &self.view.accounts {
+            if let Some((_, preferences)) = self
+                .view
+                .account_preferences
+                .iter()
+                .find(|(id, _)| id == &account.id)
+            {
+                let draft = if self.account_focus.as_ref() == Some(&account.id) {
+                    Some(&mut self.account_draft)
+                } else {
+                    self.account_drafts.get_mut(&account.id)
+                };
+                if let Some(draft) = draft {
+                    draft.acknowledge(
+                        account,
+                        preferences,
+                        self.view
+                            .account_save_receipts
+                            .iter()
+                            .find(|receipt| receipt.account == account.id),
+                    );
+                }
+            }
+        }
+        self.account_drafts
+            .retain(|id, _| self.view.accounts.iter().any(|account| &account.id == id));
+        if !self
+            .account_focus
+            .as_ref()
+            .is_some_and(|id| self.view.accounts.iter().any(|account| &account.id == id))
+        {
+            if self.account_focus.is_some() {
+                self.blur();
+            }
+            self.account_focus = None;
+            self.account_draft = AccountDraft::default();
+        }
+        let id = self
+            .account_focus
+            .clone()
+            .or_else(|| self.view.selected_account.clone())
+            .or_else(|| self.view.accounts.first().map(|account| account.id.clone()));
+        if let Some(id) = id {
+            self.focus_account(&id);
+        }
+    }
+
+    fn save_account(&mut self) {
+        if self.account_draft.submitted.is_some() {
+            return;
+        }
+        let (Some(account), Some(expected)) = (
+            self.account_focus.clone(),
+            self.account_draft.applied.clone(),
+        ) else {
+            return;
+        };
+        let login = NetworkPolicy::from_input(&self.account_draft.login.text);
+        let service = NetworkPolicy::from_input(&self.account_draft.service.text);
+        let (Ok(login), Ok(service)) = (login, service) else {
+            self.error =
+                Some("Use a plain HTTP proxy URL, or leave the field empty for Direct.".into());
+            return;
+        };
+        let Some(request) = self.account_save_sequence.checked_add(1) else {
+            self.error = Some("Account save sequence exhausted. Reopen MiniCon.".into());
+            return;
+        };
+        self.account_save_sequence = request;
+        self.act(Action::SaveAccount {
+            request,
+            edit: Box::new(AccountEdit {
+                account,
+                label: self.account_draft.label.text.clone(),
+                login,
+                service,
+                enabled: self.account_draft.enabled,
+                expected,
+                expected_label: self.account_draft.applied_label.clone(),
+            }),
+        });
+        if self.error.is_none() {
+            self.account_draft.submitted = Some(request);
+            self.account_draft.save_error = None;
+        }
     }
 
     fn submit(&mut self, field: Field) {
@@ -223,6 +480,7 @@ impl HarnessSettings {
                     self.act(Action::SelectModel(model.to_owned()));
                 }
             }
+            Field::AccountLabel | Field::LoginProxy | Field::ServiceProxy => self.save_account(),
         }
     }
 
@@ -259,11 +517,29 @@ impl HarnessSettings {
             }
             Row::Account(index) => {
                 let id = self.view.accounts[index].id.clone();
-                self.act(if column == 0 {
-                    Action::SelectAccount(id)
+                if column == 0 {
+                    self.focus_account(&id);
                 } else {
-                    Action::RemoveAccount(id)
-                });
+                    self.act(Action::RemoveAccount(id));
+                }
+            }
+            Row::AccountActions if column == 0 => self.save_account(),
+            Row::AccountActions => {
+                if self.account_draft.submitted.is_some() {
+                    return None;
+                }
+                if let Some(id) = self.account_focus.clone() {
+                    self.account_draft = AccountDraft::default();
+                    self.focus_account(&id);
+                }
+            }
+            Row::AccountConnection if column == 0 => {
+                if let Some(id) = self.account_focus.clone() {
+                    self.act(Action::SelectAccount(id));
+                }
+            }
+            Row::AccountConnection => {
+                self.account_draft.enabled = !self.account_draft.enabled;
             }
             Row::ModelInput if column == 1 => self.submit(Field::Model),
             Row::ModelActions => self.act(if column == 0 {
@@ -308,6 +584,9 @@ fn row_columns(row: Row) -> usize {
         | Row::LoginActions
         | Row::ChallengeActions
         | Row::Account(_)
+        | Row::AccountInput(_)
+        | Row::AccountActions
+        | Row::AccountConnection
         | Row::ModelInput
         | Row::ModelActions => 2,
         _ => 1,
@@ -326,6 +605,13 @@ fn row_id(row: Row) -> String {
         Row::Challenge => "device_challenge",
         Row::ChallengeActions => "device_actions",
         Row::NoAccounts => "no_accounts",
+        Row::AccountInput(Field::AccountLabel) => "account_label",
+        Row::AccountInput(Field::LoginProxy) => "account_login_proxy",
+        Row::AccountInput(Field::ServiceProxy) => "account_service_proxy",
+        Row::AccountInput(_) => "account_input",
+        Row::AccountActions => "account_edit_actions",
+        Row::AccountConnection => "account_connection",
+        Row::AccountNetworkHint => "account_network_hint",
         Row::Model => "model",
         Row::ModelInput => "model_input",
         Row::ModelActions => "model_actions",
@@ -509,9 +795,71 @@ impl ConApp {
                             account.label,
                             account.id.get(..8).unwrap_or(&account.id)
                         ),
-                        settings.view.selected_account.as_ref() == Some(&account.id),
+                        settings.account_focus.as_ref() == Some(&account.id),
                     );
                     button(surface, cell(1, 2), "Remove account", false);
+                }
+                Row::AccountInput(field) => {
+                    let name = match field {
+                        Field::AccountLabel => "Account name",
+                        Field::LoginProxy => "Login proxy",
+                        Field::ServiceProxy => "Service proxy",
+                        _ => "Account setting",
+                    };
+                    host_ui::paint_single_line_host_editor(
+                        surface,
+                        cell(0, 2),
+                        settings.editor(field),
+                        settings.focused == Some(field),
+                        name,
+                        theme,
+                        size,
+                        scale,
+                    );
+                    paint_host_ui_text(
+                        surface,
+                        cell(1, 2).x + (8.0 * scale) as u32,
+                        rect.y + rect.height.saturating_sub(font::cell_metrics(size).height) / 2,
+                        name,
+                        theme.text,
+                        size,
+                        cell(1, 2).width.saturating_sub((16.0 * scale) as u32),
+                    );
+                }
+                Row::AccountActions => {
+                    button(
+                        surface,
+                        cell(0, 2),
+                        if settings.account_draft.submitted.is_some() {
+                            "Saving account..."
+                        } else {
+                            "Save account"
+                        },
+                        settings.account_draft.dirty(),
+                    );
+                    button(surface, cell(1, 2), "Revert changes", false);
+                }
+                Row::AccountConnection => {
+                    button(
+                        surface,
+                        cell(0, 2),
+                        "Use for default client",
+                        settings.account_focus == settings.view.selected_account,
+                    );
+                    button(
+                        surface,
+                        cell(1, 2),
+                        if settings.account_draft.enabled {
+                            "Disable (save to apply)"
+                        } else {
+                            "Enable (save to apply)"
+                        },
+                        false,
+                    );
+                }
+                Row::AccountNetworkHint => {
+                    label = "Empty proxy = Direct. Login and service networks are independent."
+                        .to_owned();
                 }
                 Row::NoAccounts => label = "No account. Add a provider to continue.".to_owned(),
                 Row::ModelInput => {
@@ -575,10 +923,7 @@ impl ConApp {
                 }
                 Row::Status => {
                     label = settings
-                        .error
-                        .as_ref()
-                        .or(settings.view.status.as_ref())
-                        .cloned()
+                        .status()
                         .unwrap_or_else(|| "Start and model tests are explicit actions.".to_owned())
                 }
             }
@@ -700,13 +1045,20 @@ impl ConApp {
             (
                 "status",
                 settings
-                    .error
+                    .status()
                     .as_deref()
-                    .or(settings.view.status.as_deref())
                     .map_or(json::JsonValue::Null, Into::into),
             ),
             ("port_editor", editor(Field::Port)),
             ("model_editor", editor(Field::Model)),
+            (
+                "account_focus",
+                settings
+                    .account_focus
+                    .as_deref()
+                    .map_or(json::JsonValue::Null, Into::into),
+            ),
+            ("account_draft_dirty", settings.account_draft.dirty().into()),
             ("scroll", geometry.rows.start.into()),
             ("row_count", rows.len().into()),
             ("visible_rows", geometry.rows.visible_rows.into()),
@@ -772,6 +1124,13 @@ impl ConApp {
             settings.drag = None;
             field_editor::apply(&mut settings.port, Command::Blur, PORT_LIMITS);
             field_editor::apply(&mut settings.model, Command::Blur, MODEL_LIMITS);
+            for field in [Field::AccountLabel, Field::LoginProxy, Field::ServiceProxy] {
+                field_editor::apply(
+                    settings.editor_mut(field),
+                    Command::Blur,
+                    field_limits(field),
+                );
+            }
         }
     }
 
@@ -783,6 +1142,9 @@ impl ConApp {
         {
             Some(Field::Port) => "harness_port",
             Some(Field::Model) => "harness_model",
+            Some(Field::AccountLabel) => "harness_account_label",
+            Some(Field::LoginProxy) => "harness_login_proxy",
+            Some(Field::ServiceProxy) => "harness_service_proxy",
             None => "harness_settings",
         }
     }
@@ -802,6 +1164,13 @@ impl ConApp {
             // Menus suspend a settings field; real route changes explicitly blur.
             field_editor::apply(&mut settings.port, Command::Blur, PORT_LIMITS);
             field_editor::apply(&mut settings.model, Command::Blur, MODEL_LIMITS);
+            for field in [Field::AccountLabel, Field::LoginProxy, Field::ServiceProxy] {
+                field_editor::apply(
+                    settings.editor_mut(field),
+                    Command::Blur,
+                    field_limits(field),
+                );
+            }
             settings.drag = None;
         }
         let effects = settings
@@ -848,6 +1217,7 @@ impl ConApp {
                 settings.challenge_expired = false;
             }
             settings.view = next;
+            settings.sync_account_drafts();
             changed = true;
         }
         for effect in effects {
@@ -919,12 +1289,7 @@ impl ConApp {
                 if let (Some(field), Some(anchor)) = (settings.focused, settings.drag) {
                     let row = rows
                         .iter()
-                        .position(|row| {
-                            matches!(
-                                (field, row),
-                                (Field::Port, Row::Port) | (Field::Model, Row::ModelInput)
-                            )
-                        })
+                        .position(|row| row_field(*row) == Some(field))
                         .unwrap_or(0);
                     let rect = geometry.cell(row, 0, 2, scale);
                     let offset = super::browser_ui::host_field_offset(
@@ -974,6 +1339,7 @@ impl ConApp {
                         let field = match (row, column) {
                             (Row::Port, 0) if settings.port_editable() => Some(Field::Port),
                             (Row::ModelInput, 0) => Some(Field::Model),
+                            (Row::AccountInput(field), 0) => Some(field),
                             _ => None,
                         };
                         if let Some(field) = field {
@@ -1036,33 +1402,33 @@ impl ConApp {
             }
             PixelWindowEvent::Keyboard(key) if key.logical == LogicalKey::Named(NamedKey::Tab) => {
                 if key.state == KeyPressState::Pressed {
-                    let next = if settings.focused == Some(Field::Port) || !settings.port_editable()
-                    {
-                        Field::Model
-                    } else {
-                        Field::Port
+                    let fields: Vec<_> = rows
+                        .iter()
+                        .filter_map(|row| row_field(*row))
+                        .filter(|field| *field != Field::Port || settings.port_editable())
+                        .collect();
+                    let current = fields
+                        .iter()
+                        .position(|field| Some(*field) == settings.focused);
+                    let next_index = match (current, key.modifiers.shift) {
+                        (Some(index), true) => (index + fields.len() - 1) % fields.len(),
+                        (Some(index), false) => (index + 1) % fields.len(),
+                        (None, true) => fields.len() - 1,
+                        (None, false) => 0,
                     };
+                    let next = fields[next_index];
                     settings.blur();
                     settings.focused = Some(next);
                     let index = rows
                         .iter()
-                        .position(|row| {
-                            matches!(
-                                (next, row),
-                                (Field::Port, Row::Port) | (Field::Model, Row::ModelInput)
-                            )
-                        })
+                        .position(|row| row_field(*row) == Some(next))
                         .unwrap_or(0);
                     settings.scroll = geometry.rows.reveal(index);
                 }
             }
             PixelWindowEvent::Keyboard(_) | PixelWindowEvent::Ime(_) => {
                 if let Some(field) = settings.focused {
-                    let limits = if field == Field::Port {
-                        PORT_LIMITS
-                    } else {
-                        MODEL_LIMITS
-                    };
+                    let limits = field_limits(field);
                     if field == Field::Port && !settings.port_editable() {
                         settings.blur();
                     } else if let Some(outcome) = super::browser_ui::edit_host_field(
@@ -1087,12 +1453,7 @@ impl ConApp {
         if let Some(field) = settings.focused {
             let index = rows
                 .iter()
-                .position(|row| {
-                    matches!(
-                        (field, row),
-                        (Field::Port, Row::Port) | (Field::Model, Row::ModelInput)
-                    )
-                })
+                .position(|row| row_field(*row) == Some(field))
                 .unwrap_or(0);
             let rect = layout
                 .harness_settings(scale, rows.len(), settings.scroll)
@@ -1121,5 +1482,58 @@ impl ConApp {
             self.mark_host_ui_full_and_repaint(window);
         }
         Ok(consumed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_acknowledgement_rebases_only_its_form_and_keeps_later_draft_and_caret() {
+        let original = AccountSummary {
+            id: "a".repeat(32),
+            provider: Provider::DeepSeek,
+            label: "Original".into(),
+            state: provider_accounts::AccountState::CredentialStored,
+        };
+        let preferences = AccountPreferences::legacy(&original.id);
+        let mut draft = AccountDraft::from_account(&original, &preferences);
+        draft.label.text = "Later unsaved edit".into();
+        draft.label.caret = 5;
+        draft.label.anchor = Some(2);
+        draft.submitted = Some(2);
+        let saved = AccountSummary {
+            label: "Saved label".into(),
+            ..original.clone()
+        };
+        let mut receipt = provider_runtime::AccountSaveReceipt {
+            account: original.id.clone(),
+            request: 1,
+            result: Ok(()),
+        };
+        draft.acknowledge(&saved, &preferences, Some(&receipt));
+        assert_eq!(draft.applied_label, "Original");
+        assert_eq!(draft.submitted, Some(2));
+        receipt.request = 2;
+        draft.acknowledge(&saved, &preferences, Some(&receipt));
+        assert_eq!(draft.applied_label, "Saved label");
+        assert_eq!(draft.submitted, None);
+        assert_eq!(draft.label.text, "Later unsaved edit");
+        assert_eq!(draft.save_error, None);
+        assert_eq!(draft.label.caret, 5);
+        assert_eq!(draft.label.anchor, Some(2));
+        assert!(draft.dirty());
+        draft.submitted = Some(3);
+        receipt.request = 3;
+        receipt.result = Err(provider_runtime::RuntimeError::AccountChanged);
+        draft.acknowledge(&original, &preferences, Some(&receipt));
+        assert_eq!(draft.applied_label, "Saved label");
+        assert_eq!(draft.submitted, None);
+        assert_eq!(draft.label.text, "Later unsaved edit");
+        assert_eq!(
+            draft.save_error,
+            Some(provider_runtime::RuntimeError::AccountChanged)
+        );
     }
 }

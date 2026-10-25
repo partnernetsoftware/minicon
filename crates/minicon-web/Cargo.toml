@@ -18,7 +18,7 @@ path = "src/bin/minicon-web-host.rs"
 default = []
 # Same-process child WebView for a GUI-owned content panel. The MiniCon macOS/Windows
 # binary enables this; core/headless consumers do not.
-native-page-host = ["dep:wry", "wry/mac-proxy", "dep:webview2-com", "dep:block2", "dep:objc2", "dep:objc2-app-kit"]
+native-page-host = ["dep:wry", "wry/mac-proxy", "dep:webview2-com", "dep:windows-core", "dep:block2", "dep:objc2", "dep:objc2-app-kit"]
 # Optional page loader. Core `minicon` must not enable this. Without it,
 # `minicon-web-host --probe` and `--load` stay Unavailable (exit 69).
 # gtk is Linux-only (below). Naming it here must not pull gtk onto macOS or
@@ -42,3 +42,4 @@ objc2-app-kit = { version = "0.3.2", optional = true, default-features = false, 
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = { version = "0.38.2", optional = true }
+windows-core = { version = "0.61", optional = true }

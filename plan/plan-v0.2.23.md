@@ -258,6 +258,12 @@ Start with slices 0 and 1 under one integrator. Hot files are
 `provider_server.rs`, `provider_login.rs`, protocol usage extraction, `ui.rs`,
 host control snapshots and browser/input fixtures. The shared boundaries are
 private storage/native HTTP and minicon-web login-context isolation.
+The [pool development join](../prd/PRD_02_31_01_02_provider_pool.md#development-join-private-account-policy-and-service-transport)
+records private policy persistence, service routing and save-receipt work;
+its browser integration frontier owns the still-open authorization context,
+Linux embedding and role-redaction joins. Keep the failed macOS ARM legacy
+worker continuation from run `40159013816` open until new-source evidence
+explains and closes it. The earlier five successful cells do not waive it.
 The H0 header/host-view join also owns `src/main.rs`, `host_ui.rs` and
 `host_paint.rs`; agree their shared ownership before concurrent source work.
 Agree ownership and freeze the state/action seam before parallelizing. Bounded metrics/presentation work and client

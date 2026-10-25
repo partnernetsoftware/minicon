@@ -1956,6 +1956,7 @@ dependencies = [
  "tao",
  "webkit2gtk",
  "webview2-com",
+ "windows-core",
  "wry",
 ]
 

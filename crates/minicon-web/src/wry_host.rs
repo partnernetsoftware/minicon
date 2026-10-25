@@ -49,19 +49,42 @@ pub fn load(
     slot: Option<crate::PanelSlot>,
     redirect_smoke: Option<&str>,
 ) -> Result<(), &'static str> {
-    // The parent installed MINICON_BROWSER_*. WebKit reads http_proxy.
-    let proxy = crate::resolve_proxy_from_process(&crate::BrowserProxyConfig::default());
-    // The host process is single-threaded until the event loop starts.
-    for key in crate::webkit_proxy_clear(&proxy) {
-        unsafe { std::env::remove_var(key) };
-    }
-    for (key, value) in crate::webkit_proxy_env(&proxy) {
-        unsafe { std::env::set_var(key, value) };
-    }
+    load_inner(url, smoke, slot, redirect_smoke, None)
+}
+
+#[cfg(target_os = "linux")]
+pub fn load_with_context(
+    url: &str,
+    slot: Option<crate::PanelSlot>,
+    context: &crate::PageContext,
+) -> Result<(), crate::PageContextError> {
+    context.validate()?;
+    load_inner(url, false, slot, None, Some(context))
+        .map_err(|_| crate::PageContextError::NativeCreateFailed)
+}
+
+fn load_inner(
+    url: &str,
+    smoke: bool,
+    slot: Option<crate::PanelSlot>,
+    redirect_smoke: Option<&str>,
+    context: Option<&crate::PageContext>,
+) -> Result<(), &'static str> {
+    // Legacy helpers inherit their already prepared environment from spawn.
+    // Explicit contexts bypass that resolver and set the native manager below.
+    let proxy = context
+        .map(|context| context.proxy.clone())
+        .unwrap_or_else(
+            || crate::resolve_proxy_from_process(&crate::BrowserProxyConfig::default()),
+        );
     let event_loop = EventLoopBuilder::<HostEvent>::with_user_event().build();
     let page_loaded = event_loop.create_proxy();
     let redirect_delivered = event_loop.create_proxy();
-    let ipc = std::env::var("MINICON_BROWSER_HOST_IPC").as_deref() == Ok("1");
+    let ipc = if context.is_some() {
+        slot.is_some()
+    } else {
+        std::env::var("MINICON_BROWSER_HOST_IPC").as_deref() == Ok("1")
+    };
     // The reader may outpace GTK while a navigation blocks. Keep commands and
     // their wake events bounded together rather than queueing JSON in Tao.
     let (command_input, command_output) = std::sync::mpsc::sync_channel::<serde_json::Value>(8);
@@ -113,30 +136,34 @@ pub fn load(
     let navigation_origin = local_origin.clone();
     let navigation_events = event_loop.create_proxy();
     let expected_redirect = redirect_smoke.map(str::to_owned);
-    let mut builder = WebViewBuilder::new()
-        .with_url(url)
-        .with_navigation_handler(move |next| {
-            // ProxyConfig::Http cannot list ignore hosts. A loopback redirect
-            // would otherwise leave this process and miss the OAuth bridge.
-            // The initial URL remains a valid localhost page for live smoke
-            // and preview use; only a later loopback navigation is a redirect.
-            let explicitly_local = navigation_origin
-                .borrow()
-                .as_ref()
-                .is_some_and(|origin| next.starts_with(origin));
-            if !explicitly_local && crate::webview_must_bypass_proxy(&next) {
-                let delivered = crate::deliver_loopback_get(&next).is_ok();
-                if delivered && expected_redirect.as_deref() == Some(next.as_str()) {
-                    let _ = redirect_delivered.send_event(HostEvent::Loaded);
-                }
-                false
-            } else {
-                if ipc && next.len() <= 8192 {
-                    let _ = navigation_events.send_event(HostEvent::Changed(true, next));
-                }
-                true
+    let mut native_context =
+        context.map(|context| wry::WebContext::new(Some(context.profile.data_directory.clone())));
+    let builder = match native_context.as_mut() {
+        Some(context) => WebViewBuilder::new_with_web_context(context),
+        None => WebViewBuilder::new().with_url(url),
+    };
+    let mut builder = builder.with_navigation_handler(move |next| {
+        // ProxyConfig::Http cannot list ignore hosts. A loopback redirect
+        // would otherwise leave this process and miss the OAuth bridge.
+        // The initial URL remains a valid localhost page for live smoke
+        // and preview use; only a later loopback navigation is a redirect.
+        let explicitly_local = navigation_origin
+            .borrow()
+            .as_ref()
+            .is_some_and(|origin| next.starts_with(origin));
+        if !explicitly_local && crate::webview_must_bypass_proxy(&next) {
+            let delivered = crate::deliver_loopback_get(&next).is_ok();
+            if delivered && expected_redirect.as_deref() == Some(next.as_str()) {
+                let _ = redirect_delivered.send_event(HostEvent::Loaded);
             }
-        });
+            false
+        } else {
+            if ipc && next.len() <= 8192 {
+                let _ = navigation_events.send_event(HostEvent::Changed(true, next));
+            }
+            true
+        }
+    });
     if smoke && redirect_smoke.is_none() {
         builder = builder.with_on_page_load_handler(move |event, _loaded| {
             if matches!(event, wry::PageLoadEvent::Finished) {
@@ -165,7 +192,9 @@ pub fn load(
                 let _ = titles.send_event(HostEvent::Title(title));
             });
     }
-    if let Some((host, port)) = crate::wry_proxy_endpoint(&proxy) {
+    if context.is_none()
+        && let Some((host, port)) = crate::wry_proxy_endpoint(&proxy)
+    {
         builder =
             builder.with_proxy_config(wry::ProxyConfig::Http(wry::ProxyEndpoint { host, port }));
     }
@@ -184,6 +213,54 @@ pub fn load(
     let webview = builder
         .build(&window)
         .map_err(|_| "webkit-host-not-linked")?;
+    #[cfg(target_os = "linux")]
+    if let Some(context) = context {
+        use webkit2gtk::{
+            NetworkProxyMode, NetworkProxySettings, WebViewExt, WebsiteDataManagerExt,
+        };
+        use wry::WebViewExtUnix;
+        let manager = webview
+            .webview()
+            .website_data_manager()
+            .ok_or("browser-context-profile-unavailable")?;
+        let expected = context
+            .profile
+            .data_directory
+            .canonicalize()
+            .map_err(|_| "browser-context-profile-unavailable")?;
+        let data = manager
+            .base_data_directory()
+            .map(|value| std::path::PathBuf::from(value.as_str()))
+            .and_then(|path| path.canonicalize().ok());
+        let cache = manager
+            .base_cache_directory()
+            .map(|value| std::path::PathBuf::from(value.as_str()))
+            .and_then(|path| path.canonicalize().ok());
+        if manager.is_ephemeral()
+            || data.as_ref() != Some(&expected)
+            || cache.as_ref() != Some(&expected)
+        {
+            return Err("browser-context-profile-unavailable");
+        }
+        let parts = context.proxy_parts().map_err(|error| error.code())?;
+        if parts.http.is_none() && parts.https.is_none() {
+            manager.set_network_proxy_settings(NetworkProxyMode::NoProxy, None);
+        } else {
+            let bypass: Vec<_> = parts.bypass.iter().map(String::as_str).collect();
+            let mut settings = NetworkProxySettings::new(None, &bypass);
+            if let Some((host, port)) = parts.http {
+                settings.add_proxy_for_scheme("http", &format!("http://{host}:{port}"));
+            }
+            if let Some((host, port)) = parts.https {
+                settings.add_proxy_for_scheme("https", &format!("http://{host}:{port}"));
+            }
+            manager.set_network_proxy_settings(NetworkProxyMode::Custom, Some(&mut settings));
+        }
+        // The builder had no remote URL. No request precedes native policy.
+        webview
+            .load_url(url)
+            .map_err(|_| "browser-context-load-failed")?;
+    }
     if let Some(slot) = slot {
         // Size after the WebView is packed, then reparent the outer frame.
         size_embedded_view(&window, slot);
@@ -251,6 +328,7 @@ pub fn load(
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
         let _keep = &webview;
+        let _keep_context = &native_context;
         if smoke {
             if let Event::UserEvent(HostEvent::Loaded) = event {
                 *control_flow = ControlFlow::Exit;

@@ -23,7 +23,7 @@ Outcome: share several separately authenticated accounts across local harnesses
 │   safe failure: refuse ambiguous identity; preserve other accounts
 │   dependency: parent verified authentication and private storage
 │   non-goal: importing another agent's cookies or credentials
-├── [_] NETWORK — one account can use a proxy for its Google login
+├── [-] NETWORK — one account can use a proxy for its Google login
 │   invariant: browser authorization and service HTTP use their explicit account policy
 │   evidence: PP-02/03 isolated login contexts and actual proxy/direct transport traces
 │   safe failure: proxy failure is visible; no silent direct fallback or cross-account reuse
@@ -259,3 +259,88 @@ draft/apply durability recovery remain separate open product work.
 Product profile/network composition stays in MiniCon-owned code. Native
 HTTP, private storage and browser isolation stay in their existing shared owners;
 do not add another agent loop, account service daemon or plugin system.
+
+### Development join: private account policy and service transport
+
+The next development slice keeps account labels, enabled state, stable browser
+context identity and independent login/service policies in the private account
+registry. Legacy records retain Direct for both policies. Readiness changes and
+credential refresh preserve this metadata; public account summaries exclude it.
+An edit compares its original label/policy before publication, so a stale form
+cannot silently overwrite another change. Account service changes rotate the
+binding generation; a login-only or label change does not. Each admitted request
+retains its service-policy snapshot. Disable cancels that account's registered
+work and blocks new admission without erasing the credential.
+
+Named Windows x86_64 development regressions:
+
+- `provider_accounts::tests::private_account_preferences_survive_readiness_and_stay_out_of_public_metadata`
+- `provider_accounts::tests::account_edits_persist_without_sharing_context_or_changing_grants`
+- `provider_server::tests::account_network_edits_invalidate_only_service_bindings_and_preserve_admitted_policy`
+- `provider_server::tests::service_proxy_is_account_scoped_and_failed_proxy_never_falls_back_direct`
+- `provider_runtime::tests::login_completion_immediately_publishes_account_preferences_and_preserves_completion_effect`
+- `provider_runtime::tests::queued_account_saves_publish_each_receipt_and_keep_failed_and_stale_edits_out_of_storage`
+- `harness_settings_ui::tests::save_acknowledgement_rebases_only_its_form_and_keeps_later_draft_and_caret`
+
+The transport journey uses real loopback HTTP and CONNECT peers, two synthetic
+grants and the actual local model listener. It observes an old proxied SSE
+finishing after a policy edit, new Direct work, the other account's independent
+Direct route and a refused proxy with no direct fallback. It does not establish
+real-provider authorization or native browser isolation. Retained logs under
+`target-six/v0.2.23-provider/` include `account-preferences-red.log`,
+`account-login-view-red.log` and `account-network-provider-green-2.log`
+(75 passes, one unselected opt-in test). The first attempted integration logs
+retain compilation/fixture failures and must not be described as passing proof.
+
+The restored-source local join is recorded in
+`account-network-final-gate-receipt.json`: provider 76 passes and one unselected
+opt-in test, form acknowledgement 1 pass, explicit browser-context mechanisms
+5 passes, public worker 2 passes, formatting and strict all-target Clippy pass.
+The development main test inventory is 599. Five executed guard removals fail
+at runtime and restore byte-exact source (`account-network-guard-receipt.json`).
+Earlier incorrect-assertion trials and an interrupted cache-lock wait are
+retained separately and excluded from that counterexample claim. These are
+Windows x86_64 local development results, not independent clean-build, native
+browser isolation, real-provider or release qualification.
+
+Account settings separate detail selection from applying the default client
+binding. Per-account drafts survive switching, and matching save receipts rebase
+the submitted form while retaining later text/caret/selection. New authorization
+completion must publish both summaries and policy projections immediately.
+Receipts are retained per account across coalesced runtime views; a failed save
+remains visible on that account even when another account subsequently succeeds.
+Native form acceptance, login-policy consumption and the shared explicit browser
+context's product integration remain open. A persisted login proxy alone is not
+proof that authorization uses it. Remote sign-out and later balance readers
+still need to consume the service policy explicitly.
+
+### Browser-context integration frontier
+
+The shared adapter entry points and platform limits are owned by
+[PRD 28](PRD_02_28_shared_core.md#explicit-browser-context-development-join).
+Product integration must attach a stable pending/account context and attempt ID
+to authorization, device verification and completion effects. Reuse is decided
+from the actual host context, never just an existing Browser root or matching URL.
+Preserve unrelated terminal and ordinary Web drafts across the serial auth view.
+
+The current Linux embedding helpers address all same-class children below the
+parent. Parking an ordinary helper and an authorization helper together is not
+safe until an owned child-window identity is available. A serial host replacement
+may restore the ordinary URL and drafts, but cannot claim retained DOM/history.
+The product must make that lifecycle choice explicit before native qualification.
+Authorization observation also needs an explicit presentation role: URL-domain
+redaction alone misses Google SSO and other provider redirects. All authorization
+context URLs, titles and editor observations use the role's redaction boundary.
+
+### Native feedback retained from the profile checkpoint
+
+Development run `40159013816`, source
+`8937d9bb5319906d76e1e48a02a44fafa3f6ce44`, finished with five successful cells
+and a failed macOS ARM cell. Provider checks passed in all cells, but the macOS
+ARM legacy worker alias-removal/resume journey reported a changed binding.
+The failure's root cause remains unproven; random fixture directory allocation
+and redacted changed-field diagnostics prepare a new-source investigation,
+not a certified fix. The retained index is
+`target-six/v0.2.23-provider/ci-8937d9b-native/verification-index.json`.
+This filtered development run is not a release gate or native evidence for the
+subsequent account/network/browser changes.

@@ -502,3 +502,36 @@ Product editing, candidate persistence and page-reset meaning remain in
 
 Released Windows proxy-environment qualification and the earlier failed-source
 observation are owned by [0.2.22 release history](archive/v0.2.22-release-history.md).
+
+### Explicit browser context development join
+
+`minicon-web::PageProfile/PageContext` and the typed `PageContextError` describe
+caller-owned persistent storage and explicit network settings without account or
+Harness semantics. The caller pre-creates a private canonical directory and pairs
+it with a stable nonzero 16-byte store identifier. Product account/attempt binding,
+ordinary-page restoration and authorization redaction belong to
+[PRD 31.01.02](PRD_02_31_01_02_provider_pool.md#browser-context-integration-frontier).
+The existing ordinary browser entry points remain distinct from these explicit
+context entry points.
+
+`NativePageHost::new_with_context` is behind `native-page-host` on Windows/macOS.
+Windows uses a persistent WebView2 environment, verifies its actual data folder
+and refuses a conflicting user-data environment override. Its optional
+`windows-core` dependency uses the existing 0.61 ABI family. macOS requires
+14+ for the persistent identified store and explicit proxy handling; Direct
+clears old proxy settings on that store. General bypass lists and distinct
+HTTP/HTTPS proxies are explicitly unsupported on that adapter. Deleting a
+directory does not establish deletion of the OS-managed macOS store.
+
+Linux's `spawn_page_host_in_context` and optional `wry-host` helper use a bounded
+startup stdin frame before the existing command stream. Profile/proxy metadata
+is not placed in argv. The private WebsiteDataManager applies its Direct or
+Custom proxy policy before the first remote URL; helper creation does not mutate
+process-global proxy variables. Shared validation refuses linked profile ancestry
+and unsupported proxy shapes. The headless crate does not gain a native or JSON
+dependency from this framing mechanism.
+
+These are development adapter mechanisms. Compilation and frame/parser tests do
+not prove same-origin cookies/localStorage isolation between ordinary/A/B/A views,
+persistence after reopen, native proxy routing or loopback callback delivery.
+Those native journeys and the product integration remain open.

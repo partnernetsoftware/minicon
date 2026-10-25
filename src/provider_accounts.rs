@@ -25,6 +25,97 @@ pub struct AccountSummary {
     pub state: AccountState,
 }
 
+/// Private account policy. Debug and public account summaries never disclose
+/// endpoints; the GUI may expose a value only in its explicit edit field.
+#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
+pub enum NetworkPolicy {
+    Direct,
+    Proxy(String),
+}
+impl std::fmt::Debug for NetworkPolicy {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Direct => "Direct",
+            Self::Proxy(_) => "Proxy([REDACTED])",
+        })
+    }
+}
+impl NetworkPolicy {
+    pub fn from_input(input: &str) -> Result<Self, StoreError> {
+        if input.trim().is_empty() {
+            return Ok(Self::Direct);
+        }
+        let proxy = minicon_web::proxy_override(&minicon_web::BrowserProxy::default(), input)
+            .map_err(|_| StoreError::InvalidAccount)?;
+        proxy
+            .http
+            .map(Self::Proxy)
+            .ok_or(StoreError::InvalidAccount)
+    }
+    pub fn proxy(&self) -> Option<&str> {
+        match self {
+            Self::Direct => None,
+            Self::Proxy(endpoint) => Some(endpoint),
+        }
+    }
+    pub fn validate(&self) -> Result<(), StoreError> {
+        if let Self::Proxy(endpoint) = self {
+            let canonical =
+                minicon_web::proxy_override(&minicon_web::BrowserProxy::default(), endpoint)
+                    .map_err(|_| StoreError::InvalidAccount)?;
+            if canonical.http.as_deref() != Some(endpoint.as_str()) {
+                return Err(StoreError::InvalidAccount);
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AccountPreferences {
+    pub context_id: String,
+    pub service_generation: String,
+    pub enabled: bool,
+    pub login: NetworkPolicy,
+    pub service: NetworkPolicy,
+}
+impl AccountPreferences {
+    pub fn legacy(account: &str) -> Self {
+        Self {
+            context_id: account.to_owned(),
+            service_generation: account.to_owned(),
+            enabled: true,
+            login: NetworkPolicy::Direct,
+            service: NetworkPolicy::Direct,
+        }
+    }
+    pub fn validate(&self) -> Result<(), StoreError> {
+        for id in [&self.context_id, &self.service_generation] {
+            if id.len() != 32
+                || !id
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            {
+                return Err(StoreError::InvalidAccount);
+            }
+        }
+        self.login.validate()?;
+        self.service.validate()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct AccountEdit {
+    pub account: String,
+    pub label: String,
+    pub login: NetworkPolicy,
+    pub service: NetworkPolicy,
+    pub enabled: bool,
+    pub expected: AccountPreferences,
+    pub expected_label: String,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StoreError {
     InvalidRoot,
@@ -46,7 +137,15 @@ impl std::error::Error for StoreError {}
 #[derive(Deserialize, Serialize)]
 struct Registry {
     version: u8,
-    accounts: Vec<AccountSummary>,
+    accounts: Vec<AccountRecord>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct AccountRecord {
+    #[serde(flatten)]
+    summary: AccountSummary,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    preferences: Option<AccountPreferences>,
 }
 
 // Deliberately not Debug: only this file, inside the private directory, contains
@@ -81,11 +180,24 @@ impl AccountStore {
     pub fn list(&self) -> Result<Vec<AccountSummary>, StoreError> {
         let _guard = self.mutation.lock().map_err(|_| StoreError::Storage)?;
         self.read_registry()
+            .map(|accounts| accounts.into_iter().map(|record| record.summary).collect())
     }
 
     pub fn insert(&self, label: &str, grant: TokenGrant) -> Result<AccountSummary, StoreError> {
+        self.insert_with_preferences(label, grant, None)
+    }
+
+    pub fn insert_with_preferences(
+        &self,
+        label: &str,
+        grant: TokenGrant,
+        preferences: Option<AccountPreferences>,
+    ) -> Result<AccountSummary, StoreError> {
         if !valid_label(label) {
             return Err(StoreError::InvalidAccount);
+        }
+        if let Some(preferences) = &preferences {
+            preferences.validate()?;
         }
         let _guard = self.mutation.lock().map_err(|_| StoreError::Storage)?;
         let mut accounts = self.read_registry()?;
@@ -109,7 +221,10 @@ impl AccountStore {
         let credential = encode_grant(grant)?;
         let encoded = serde_json::to_vec(&credential).map_err(|_| StoreError::Storage)?;
         filesystem::write_private_atomic(&path, &encoded).map_err(|_| StoreError::Storage)?;
-        accounts.push(summary.clone());
+        accounts.push(AccountRecord {
+            summary: summary.clone(),
+            preferences,
+        });
         if let Err(error) = self.write_registry(accounts) {
             let _ = std::fs::remove_file(path);
             return Err(error);
@@ -122,9 +237,9 @@ impl AccountStore {
         let accounts = self.read_registry()?;
         let summary = accounts
             .iter()
-            .find(|account| account.id == id)
+            .find(|account| account.summary.id == id)
             .ok_or(StoreError::Missing)?;
-        self.read_grant(id, summary.provider)
+        self.read_grant(id, summary.summary.provider)
     }
 
     /// Refresh cannot recreate an account removed while its HTTP request ran.
@@ -135,9 +250,9 @@ impl AccountStore {
         let accounts = self.read_registry()?;
         let account = accounts
             .iter()
-            .find(|account| account.id == id)
+            .find(|account| account.summary.id == id)
             .ok_or(StoreError::Missing)?;
-        if account.provider != grant.provider {
+        if account.summary.provider != grant.provider {
             return Err(StoreError::InvalidAccount);
         }
         let path = self.credential_path(id)?;
@@ -154,11 +269,11 @@ impl AccountStore {
         let mut accounts = self.read_registry()?;
         let account = accounts
             .iter_mut()
-            .find(|account| account.id == id)
+            .find(|account| account.summary.id == id)
             .ok_or(StoreError::Missing)?;
-        self.read_grant(id, account.provider)?;
-        account.state = AccountState::AccountReady;
-        let summary = account.clone();
+        self.read_grant(id, account.summary.provider)?;
+        account.summary.state = AccountState::AccountReady;
+        let summary = account.summary.clone();
         self.write_registry(accounts)?;
         Ok(summary)
     }
@@ -170,11 +285,11 @@ impl AccountStore {
         let mut accounts = self.read_registry()?;
         let index = accounts
             .iter()
-            .position(|account| account.id == id)
+            .position(|account| account.summary.id == id)
             .ok_or(StoreError::Missing)?;
         // A missing/corrupt token must not trap the user in an account they
         // cannot disconnect. Remote revocation is unavailable in that case.
-        let grant = self.read_grant(id, accounts[index].provider).ok();
+        let grant = self.read_grant(id, accounts[index].summary.provider).ok();
         self.prepare()?;
         accounts.remove(index);
         self.write_registry(accounts)?;
@@ -184,6 +299,43 @@ impl AccountStore {
             Err(_) => return Err(StoreError::Storage),
         }
         Ok(grant)
+    }
+
+    pub fn preferences(&self, id: &str) -> Result<AccountPreferences, StoreError> {
+        let _guard = self.mutation.lock().map_err(|_| StoreError::Storage)?;
+        let accounts = self.read_registry()?;
+        let record = accounts
+            .iter()
+            .find(|record| record.summary.id == id)
+            .ok_or(StoreError::Missing)?;
+        Ok(record
+            .preferences
+            .clone()
+            .unwrap_or_else(|| AccountPreferences::legacy(id)))
+    }
+
+    /// Gateway serializes this publication with admission. No credential,
+    /// readiness or other account is replaced by an account form edit.
+    pub fn update_preferences(
+        &self,
+        id: &str,
+        label: &str,
+        preferences: AccountPreferences,
+    ) -> Result<(), StoreError> {
+        if !valid_label(label) {
+            return Err(StoreError::InvalidAccount);
+        }
+        preferences.validate()?;
+        let _guard = self.mutation.lock().map_err(|_| StoreError::Storage)?;
+        let mut accounts = self.read_registry()?;
+        let record = accounts
+            .iter_mut()
+            .find(|record| record.summary.id == id)
+            .ok_or(StoreError::Missing)?;
+        record.summary.label = label.to_owned();
+        record.preferences = Some(preferences);
+        self.prepare()?;
+        self.write_registry(accounts)
     }
 
     fn prepare(&self) -> Result<(), StoreError> {
@@ -213,7 +365,7 @@ impl AccountStore {
         Ok(self.root.join("credentials").join(format!("{id}.json")))
     }
 
-    fn read_registry(&self) -> Result<Vec<AccountSummary>, StoreError> {
+    fn read_registry(&self) -> Result<Vec<AccountRecord>, StoreError> {
         let bytes = match filesystem::read_private_bounded(
             &self.root.join("accounts.json"),
             MAX_STORE_BYTES,
@@ -223,29 +375,70 @@ impl AccountStore {
             Err(_) => return Err(StoreError::Storage),
         };
         let registry: Registry = serde_json::from_slice(&bytes).map_err(|_| StoreError::Corrupt)?;
-        if registry.version != 1 || registry.accounts.len() > MAX_ACCOUNTS {
+        if !matches!(registry.version, 1 | 2) || registry.accounts.len() > MAX_ACCOUNTS {
             return Err(StoreError::Corrupt);
         }
         for (index, account) in registry.accounts.iter().enumerate() {
-            self.credential_path(&account.id)
+            self.credential_path(&account.summary.id)
                 .map_err(|_| StoreError::Corrupt)?;
-            if !valid_label(&account.label)
+            if !valid_label(&account.summary.label)
                 || registry.accounts[..index]
                     .iter()
-                    .any(|other| other.id == account.id)
+                    .any(|other| other.summary.id == account.summary.id)
             {
+                return Err(StoreError::Corrupt);
+            }
+            if let Some(preferences) = &account.preferences {
+                preferences.validate().map_err(|_| StoreError::Corrupt)?;
+            }
+            let context = account
+                .preferences
+                .as_ref()
+                .map_or(account.summary.id.as_str(), |preferences| {
+                    preferences.context_id.as_str()
+                });
+            if registry.accounts[..index].iter().any(|other| {
+                other
+                    .preferences
+                    .as_ref()
+                    .map_or(other.summary.id.as_str(), |preferences| {
+                        preferences.context_id.as_str()
+                    })
+                    == context
+            }) {
                 return Err(StoreError::Corrupt);
             }
         }
         Ok(registry.accounts)
     }
 
-    fn write_registry(&self, accounts: Vec<AccountSummary>) -> Result<(), StoreError> {
-        let bytes = serde_json::to_vec(&Registry {
-            version: 1,
-            accounts,
-        })
-        .map_err(|_| StoreError::Storage)?;
+    fn write_registry(&self, accounts: Vec<AccountRecord>) -> Result<(), StoreError> {
+        for (index, record) in accounts.iter().enumerate() {
+            let context = record
+                .preferences
+                .as_ref()
+                .map_or(record.summary.id.as_str(), |preferences| {
+                    preferences.context_id.as_str()
+                });
+            if accounts[..index].iter().any(|other| {
+                other
+                    .preferences
+                    .as_ref()
+                    .map_or(other.summary.id.as_str(), |preferences| {
+                        preferences.context_id.as_str()
+                    })
+                    == context
+            }) {
+                return Err(StoreError::InvalidAccount);
+            }
+        }
+        let version = if accounts.iter().any(|record| record.preferences.is_some()) {
+            2
+        } else {
+            1
+        };
+        let bytes =
+            serde_json::to_vec(&Registry { version, accounts }).map_err(|_| StoreError::Storage)?;
         if bytes.len() > MAX_STORE_BYTES {
             return Err(StoreError::Capacity);
         }
@@ -388,6 +581,112 @@ mod tests {
             first.load_grant("../../escape").unwrap_err(),
             StoreError::Missing
         );
+    }
+
+    #[test]
+    fn private_account_preferences_survive_readiness_and_stay_out_of_public_metadata() {
+        let fixture = Fixture::new();
+        let store = AccountStore::new(fixture.0.clone()).unwrap();
+        let account = store
+            .insert(
+                "Synthetic labelled account",
+                grant("synthetic-private-grant"),
+            )
+            .unwrap();
+        let path = fixture.0.join("accounts.json");
+        let mut registry: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let preferences = serde_json::json!({
+            "context_id":"b".repeat(32), "service_generation":"c".repeat(32), "enabled":true,
+            "login":{"Proxy":"http://login-proxy.invalid:8080"}, "service":"Direct"
+        });
+        registry["accounts"][0]["preferences"] = preferences.clone();
+        filesystem::write_private_atomic(&path, &serde_json::to_vec(&registry).unwrap()).unwrap();
+        store.mark_ready(&account.id).unwrap();
+        store
+            .replace_grant_if_present(&account.id, grant("synthetic-rotated-grant"))
+            .unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(saved["accounts"][0]["preferences"], preferences);
+        let public = serde_json::to_string(&store.list().unwrap()).unwrap();
+        assert!(!public.contains("login-proxy.invalid"));
+        assert!(!public.contains("synthetic-private-grant"));
+        assert_eq!(
+            store.load_grant(&account.id).unwrap().access_token.expose(),
+            "synthetic-rotated-grant"
+        );
+    }
+
+    #[test]
+    fn account_edits_persist_without_sharing_context_or_changing_grants() {
+        let fixture = Fixture::new();
+        let store = AccountStore::new(fixture.0.clone()).unwrap();
+        let first = store
+            .insert("First", grant("synthetic-first-grant"))
+            .unwrap();
+        let second = store
+            .insert("Second", grant("synthetic-second-grant"))
+            .unwrap();
+        store.mark_ready(&first.id).unwrap();
+        let legacy = store.preferences(&first.id).unwrap();
+        assert_eq!(legacy, AccountPreferences::legacy(&first.id));
+        let preferences = AccountPreferences {
+            context_id: "e".repeat(32),
+            service_generation: "f".repeat(32),
+            enabled: false,
+            login: NetworkPolicy::from_input(" http://login.invalid:8080 ").unwrap(),
+            service: NetworkPolicy::Direct,
+        };
+        store
+            .update_preferences(&first.id, "Renamed", preferences.clone())
+            .unwrap();
+        let reopened = AccountStore::new(fixture.0.clone()).unwrap();
+        assert_eq!(reopened.preferences(&first.id).unwrap(), preferences);
+        assert_eq!(
+            reopened.preferences(&second.id).unwrap(),
+            AccountPreferences::legacy(&second.id)
+        );
+        let accounts = reopened.list().unwrap();
+        assert_eq!(accounts[0].label, "Renamed");
+        assert_eq!(accounts[0].state, AccountState::AccountReady);
+        assert_eq!(accounts[1], second);
+        assert_eq!(
+            reopened
+                .load_grant(&first.id)
+                .unwrap()
+                .access_token
+                .expose(),
+            "synthetic-first-grant"
+        );
+        assert_eq!(
+            reopened
+                .load_grant(&second.id)
+                .unwrap()
+                .access_token
+                .expose(),
+            "synthetic-second-grant"
+        );
+        assert!(!format!("{preferences:?}").contains("login.invalid"));
+        assert!(matches!(
+            NetworkPolicy::from_input("https://proxy.invalid:443"),
+            Err(StoreError::InvalidAccount)
+        ));
+        let before = std::fs::read(fixture.0.join("accounts.json")).unwrap();
+        assert_eq!(
+            reopened.update_preferences(&second.id, "Collision", preferences.clone()),
+            Err(StoreError::InvalidAccount)
+        );
+        assert_eq!(
+            std::fs::read(fixture.0.join("accounts.json")).unwrap(),
+            before
+        );
+        reopened.remove(&first.id).unwrap();
+        assert_eq!(
+            reopened.update_preferences(&first.id, "Stale", preferences),
+            Err(StoreError::Missing)
+        );
+        assert_eq!(reopened.list().unwrap(), vec![second]);
     }
 
     #[test]

@@ -181,7 +181,14 @@ pub fn run_harness(args: &[String]) -> Result<String, String> {
         let binding =
             transport.binding(&key, budget.check().map_err(|error| error.to_string())?)?;
         if is_continue && state.gateway_binding.as_ref() != Some(&binding) {
-            return Err("harness: session gateway binding changed; start a new session".into());
+            let field = state
+                .gateway_binding
+                .as_ref()
+                .and_then(|previous| previous.changed_field(&binding))
+                .unwrap_or("identity");
+            return Err(format!(
+                "harness: session gateway binding changed ({field}); start a new session"
+            ));
         }
         state.gateway_binding = Some(binding);
         Some(transport)

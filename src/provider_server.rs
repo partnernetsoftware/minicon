@@ -1,7 +1,9 @@
 //! Product-owned local model routing. This module never executes model tools.
 
 use crate::{
-    provider_accounts::{AccountState, AccountStore},
+    provider_accounts::{
+        AccountEdit, AccountPreferences, AccountState, AccountStore, NetworkPolicy,
+    },
     provider_auth::{self, AuthClient, Provider, Secret, TokenGrant, TokenLifecycle},
     provider_protocol::{self as protocol, Protocol, SseBridge},
 };
@@ -480,6 +482,54 @@ impl Gateway {
         }
     }
 
+    pub fn update_account(&self, edit: &AccountEdit) -> Result<(), ServerError> {
+        edit.login
+            .validate()
+            .map_err(|_| ServerError::InvalidConfig)?;
+        edit.service
+            .validate()
+            .map_err(|_| ServerError::InvalidConfig)?;
+        let state = self.state.lock().map_err(|_| ServerError::Storage)?;
+        let account = edit.account.as_str();
+        let mut preferences = self
+            .store
+            .preferences(account)
+            .map_err(|_| ServerError::MissingAccount)?;
+        let summary = self
+            .store
+            .list()
+            .map_err(|_| ServerError::Storage)?
+            .into_iter()
+            .find(|account| account.id == edit.account)
+            .ok_or(ServerError::MissingAccount)?;
+        if preferences != edit.expected || summary.label != edit.expected_label {
+            return Err(ServerError::BindingChanged);
+        }
+        if preferences.service != edit.service || preferences.enabled != edit.enabled {
+            preferences.service_generation = random_id()?;
+        }
+        preferences.login = edit.login.clone();
+        preferences.service = edit.service.clone();
+        preferences.enabled = edit.enabled;
+        self.store
+            .update_preferences(account, &edit.label, preferences)
+            .map_err(|error| match error {
+                crate::provider_accounts::StoreError::InvalidAccount => ServerError::InvalidConfig,
+                crate::provider_accounts::StoreError::Missing => ServerError::MissingAccount,
+                _ => ServerError::Storage,
+            })?;
+        if !edit.enabled {
+            for active in &state.active {
+                if active.account == account
+                    && let Some(cancel) = active.cancel.upgrade()
+                {
+                    cancel.cancel();
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn start(self: &Arc<Self>, port: u16) -> Result<local::Server, ServerError> {
         let state = self.state.lock().map_err(|_| ServerError::Storage)?;
         let mut candidates = Vec::new();
@@ -580,6 +630,13 @@ impl Gateway {
         if summary.state != AccountState::AccountReady {
             return Err(ServerError::NeedsLogin);
         }
+        let preferences = self
+            .store
+            .preferences(account)
+            .map_err(|_| ServerError::Storage)?;
+        if !preferences.enabled {
+            return Err(ServerError::NeedsLogin);
+        }
         let route = state
             .config
             .models
@@ -601,7 +658,7 @@ impl Gateway {
                 provider: summary.provider,
                 account: account.clone(),
                 model: route.model_id.clone(),
-                generation,
+                generation: format!("{generation}:{}", preferences.service_generation),
             },
             route,
         ))
@@ -656,7 +713,12 @@ impl Gateway {
         authorized_profile(&state, head).is_some()
     }
 
-    fn grant(&self, account: &str, cancel: &NetworkHttpCancel) -> Result<TokenGrant, ServerError> {
+    fn grant(
+        &self,
+        account: &str,
+        cancel: &NetworkHttpCancel,
+        network: &NetworkPolicy,
+    ) -> Result<TokenGrant, ServerError> {
         if cancel.is_cancelled() {
             return Err(ServerError::Cancelled);
         }
@@ -689,7 +751,12 @@ impl Gateway {
             let request =
                 provider_auth::opencode_refresh(&AuthClient::available(Provider::OpenCode), &grant)
                     .map_err(|_| ServerError::NeedsLogin)?;
-            let response = self.collect(request, cancel, provider_auth::AUTH_MAX_RESPONSE_BYTES)?;
+            let response = self.collect(
+                request,
+                cancel,
+                provider_auth::AUTH_MAX_RESPONSE_BYTES,
+                network,
+            )?;
             let mut fresh = provider_auth::parse_opencode_refresh(&response, Instant::now())
                 .map_err(|_| ServerError::NeedsLogin)?;
             if fresh.organization.is_none() {
@@ -722,7 +789,9 @@ impl Gateway {
         mut request: NetworkHttpRequest,
         cancel: &NetworkHttpCancel,
         limit: usize,
+        network: &NetworkPolicy,
     ) -> Result<NetworkHttpResponse, ServerError> {
+        request.proxy = network.proxy().map(str::to_owned);
         request.max_redirects = 0;
         request.max_response_bytes = limit;
         let mut status = 0;
@@ -758,8 +827,9 @@ impl Gateway {
         account: &str,
         cancel: &Arc<NetworkHttpCancel>,
     ) -> Result<Vec<ModelRoute>, ServerError> {
-        let _lease = BorrowedLease::acquire(self, account, cancel, None)?;
-        let mut grant = self.grant(account, cancel)?;
+        let lease = BorrowedLease::acquire(self, account, cancel, None)?;
+        let network = &lease.preferences.service;
+        let mut grant = self.grant(account, cancel, network)?;
         match grant.provider {
             Provider::DeepSeek => {
                 let response = self.collect(
@@ -772,6 +842,7 @@ impl Gateway {
                     ),
                     cancel,
                     CATALOG_BYTES,
+                    network,
                 )?;
                 check_status(response.status)?;
                 parse_deepseek_catalog(&response.body)
@@ -787,6 +858,7 @@ impl Gateway {
                     ),
                     cancel,
                     CATALOG_BYTES,
+                    network,
                 )?;
                 check_status(user.status)?;
                 let user: Value =
@@ -806,6 +878,7 @@ impl Gateway {
                     ),
                     cancel,
                     CATALOG_BYTES,
+                    network,
                 )?;
                 check_status(orgs.status)?;
                 let selected = select_organization(&orgs.body, grant.organization.as_deref())?;
@@ -829,6 +902,7 @@ impl Gateway {
                     ),
                     cancel,
                     CATALOG_BYTES,
+                    network,
                 )?;
                 check_status(response.status)?;
                 parse_opencode_catalog(&response.body, grant.organization.as_deref())
@@ -844,8 +918,9 @@ impl Gateway {
         cancel: &Arc<NetworkHttpCancel>,
     ) -> Result<(), ServerError> {
         validate_route(route)?;
-        let _lease = BorrowedLease::acquire(self, account, cancel, None)?;
-        let grant = self.grant(account, cancel)?;
+        let lease = BorrowedLease::acquire(self, account, cancel, None)?;
+        let network = &lease.preferences.service;
+        let grant = self.grant(account, cancel, network)?;
         if grant.provider != route.provider {
             return Err(ServerError::InvalidConfig);
         }
@@ -859,7 +934,7 @@ impl Gateway {
         };
         let mut request = route_request(route, &grant, identity, &random_id()?);
         request.body = serde_json::to_vec(&body).map_err(|_| ServerError::InvalidConfig)?;
-        let response = self.collect(request, cancel, NON_STREAM_BYTES)?;
+        let response = self.collect(request, cancel, NON_STREAM_BYTES, network)?;
         check_status(response.status)?;
         protocol::convert_response(
             route.protocol.protocol(),
@@ -1018,13 +1093,14 @@ impl Gateway {
         }
         // The Handler receives &self; retain a lease through a narrow borrowed
         // guard rather than transferring tool or route authority elsewhere.
-        let _lease = BorrowedLease::acquire(
+        let lease = BorrowedLease::acquire(
             self,
             &binding.account,
             &cancel,
             Some((&request.head, &binding)),
         )?;
-        let grant = self.grant(&binding.account, &cancel)?;
+        let network = &lease.preferences.service;
+        let grant = self.grant(&binding.account, &cancel, network)?;
         let identity = self
             .state
             .lock()
@@ -1033,6 +1109,7 @@ impl Gateway {
             .identity
             .clone();
         let mut upstream = route_request(&route, &grant, &identity, &upstream_session);
+        upstream.proxy = network.proxy().map(str::to_owned);
         upstream.body = prepared.body;
         if prepared.requires_thinking_disabled {
             let mut body: Value =
@@ -1041,7 +1118,7 @@ impl Gateway {
             upstream.body = serde_json::to_vec(&body).map_err(|_| ServerError::InvalidConfig)?;
         }
         if !prepared.streaming {
-            let response = self.collect(upstream, &cancel, NON_STREAM_BYTES)?;
+            let response = self.collect(upstream, &cancel, NON_STREAM_BYTES, network)?;
             check_status(response.status)?;
             let body = protocol::convert_response(
                 downstream,
@@ -1122,6 +1199,7 @@ impl Gateway {
 struct BorrowedLease<'a> {
     gateway: &'a Gateway,
     account: String,
+    preferences: AccountPreferences,
 }
 impl<'a> BorrowedLease<'a> {
     fn acquire(
@@ -1152,6 +1230,13 @@ impl<'a> BorrowedLease<'a> {
                 Ok(profile.to_owned())
             })
             .transpose()?;
+        let preferences = gateway
+            .store
+            .preferences(account)
+            .map_err(|_| ServerError::MissingAccount)?;
+        if !preferences.enabled {
+            return Err(ServerError::NeedsLogin);
+        }
         if state.leases.values().sum::<usize>() >= 8 {
             return Err(ServerError::Busy);
         }
@@ -1171,6 +1256,7 @@ impl<'a> BorrowedLease<'a> {
         Ok(Self {
             gateway,
             account: account.to_owned(),
+            preferences,
         })
     }
 }
@@ -1665,6 +1751,10 @@ mod tests {
         }
         String::from_utf8(bytes).unwrap()
     }
+    fn read_binding(response: String) -> Value {
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+        serde_json::from_str(response.split_once("\r\n\r\n").unwrap().1).unwrap()
+    }
     fn upstream_request(stream: &mut TcpStream) -> String {
         stream.set_nonblocking(false).unwrap();
         stream
@@ -1796,6 +1886,239 @@ mod tests {
             assert_eq!(before[field], after[field]);
         }
     }
+    #[test]
+    fn account_network_edits_invalidate_only_service_bindings_and_preserve_admitted_policy() {
+        let fixture = Fixture::new();
+        let server = fixture.server();
+        let before = read_binding(server.get(
+            "/v1/minicon/binding",
+            "x-minicon-session: policy-stable\r\n",
+        ));
+        let expected = fixture.gateway.store.preferences(&fixture.account).unwrap();
+        let mut edit = AccountEdit {
+            account: fixture.account.clone(),
+            label: "Renamed account".into(),
+            login: NetworkPolicy::from_input("http://login.invalid:8080").unwrap(),
+            service: NetworkPolicy::Direct,
+            enabled: true,
+            expected: expected.clone(),
+            expected_label: "Synthetic fixture".into(),
+        };
+        fixture.gateway.update_account(&edit).unwrap();
+        assert_eq!(
+            before,
+            read_binding(server.get(
+                "/v1/minicon/binding",
+                "x-minicon-session: policy-stable\r\n"
+            ))
+        );
+        // A stale settings form cannot undo another save or change the network.
+        assert_eq!(
+            fixture.gateway.update_account(&edit),
+            Err(ServerError::BindingChanged)
+        );
+        let after_login = fixture.gateway.store.preferences(&fixture.account).unwrap();
+        assert_eq!(after_login.service_generation, expected.service_generation);
+        assert_eq!(after_login.context_id, expected.context_id);
+        let cancel = Arc::new(NetworkHttpCancel::new());
+        let lease =
+            BorrowedLease::acquire(&fixture.gateway, &fixture.account, &cancel, None).unwrap();
+        edit.expected = after_login;
+        edit.expected_label = edit.label.clone();
+        edit.service = NetworkPolicy::from_input("http://service.invalid:8081").unwrap();
+        fixture.gateway.update_account(&edit).unwrap();
+        assert!(!cancel.is_cancelled());
+        assert_eq!(lease.preferences.service, NetworkPolicy::Direct);
+        assert!(
+            server
+                .get(
+                    "/v1/minicon/binding",
+                    "x-minicon-session: policy-stable\r\n"
+                )
+                .starts_with("HTTP/1.1 409")
+        );
+        let fresh =
+            read_binding(server.get("/v1/minicon/binding", "x-minicon-session: policy-fresh\r\n"));
+        assert_ne!(before["generation"], fresh["generation"]);
+        let fresh_cancel = Arc::new(NetworkHttpCancel::new());
+        let fresh_lease =
+            BorrowedLease::acquire(&fixture.gateway, &fixture.account, &fresh_cancel, None)
+                .unwrap();
+        assert_eq!(fresh_lease.preferences.service, edit.service);
+        edit.expected = fixture.gateway.store.preferences(&fixture.account).unwrap();
+        edit.enabled = false;
+        fixture.gateway.update_account(&edit).unwrap();
+        assert!(cancel.is_cancelled());
+        assert!(fresh_cancel.is_cancelled());
+        let disabled_models = read_binding(server.get("/v1/models", ""));
+        assert_eq!(disabled_models["data"], json!([]));
+        assert!(disabled_models["binding"].is_null());
+        assert!(
+            server
+                .get("/v1/minicon/binding", "x-minicon-session: disabled\r\n")
+                .starts_with("HTTP/1.1 401")
+        );
+        assert!(matches!(
+            BorrowedLease::acquire(
+                &fixture.gateway,
+                &fixture.account,
+                &Arc::new(NetworkHttpCancel::new()),
+                None
+            ),
+            Err(ServerError::NeedsLogin)
+        ));
+        drop(fresh_lease);
+        drop(lease);
+        // Re-enabling creates a new generation; it cannot resurrect old sessions.
+        edit.expected = fixture.gateway.store.preferences(&fixture.account).unwrap();
+        edit.enabled = true;
+        fixture.gateway.update_account(&edit).unwrap();
+        assert!(
+            server
+                .get("/v1/minicon/binding", "x-minicon-session: policy-fresh\r\n")
+                .starts_with("HTTP/1.1 409")
+        );
+        assert!(server.get("/v1/models", "").starts_with("HTTP/1.1 200"));
+    }
+
+    #[test]
+    fn service_proxy_is_account_scoped_and_failed_proxy_never_falls_back_direct() {
+        let fixture = Fixture::new();
+        let direct = TcpListener::bind("127.0.0.1:0").unwrap();
+        let proxy = TcpListener::bind("127.0.0.1:0").unwrap();
+        let target = direct.local_addr().unwrap();
+        *fixture.gateway.fixture_upstream.lock().unwrap() = Some(format!("http://{target}/"));
+        let second = fixture
+            .gateway
+            .store
+            .insert(
+                "Direct account",
+                TokenGrant {
+                    provider: Provider::OpenCode,
+                    access_token: Secret::new("synthetic-direct-grant").unwrap(),
+                    lifecycle: TokenLifecycle::ExpiringRefresh {
+                        refresh_token: Secret::new("synthetic-direct-refresh").unwrap(),
+                        expires_at: Instant::now() + Duration::from_secs(3600),
+                    },
+                    organization: None,
+                },
+            )
+            .unwrap();
+        fixture.gateway.store.mark_ready(&second.id).unwrap();
+        add_profile(&fixture, &second.id);
+        let mut edit = AccountEdit {
+            account: fixture.account.clone(),
+            label: "Synthetic fixture".into(),
+            login: NetworkPolicy::from_input("http://login-only.invalid:8080").unwrap(),
+            service: NetworkPolicy::from_input(&format!("http://{}", proxy.local_addr().unwrap()))
+                .unwrap(),
+            enabled: true,
+            expected: fixture.gateway.store.preferences(&fixture.account).unwrap(),
+            expected_label: "Synthetic fixture".into(),
+        };
+        fixture.gateway.update_account(&edit).unwrap();
+        let (release, wait) = mpsc::channel();
+        thread::scope(|scope| {
+            let proxy_peer = scope.spawn(move || {
+                let mut stream = accept_upstream(&proxy);
+                stream.set_nonblocking(false).unwrap();
+                stream.set_read_timeout(Some(Duration::from_secs(4))).unwrap();
+                stream.set_write_timeout(Some(Duration::from_secs(4))).unwrap();
+                let connect = read_headers(&mut stream);
+                assert!(connect.starts_with(&format!("CONNECT {target} HTTP/1.1\r\n")), "{connect}");
+                assert!(!connect.to_ascii_lowercase().contains("authorization:"));
+                stream.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").unwrap();
+                upstream_request(&mut stream);
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n{FIRST}", FIRST.len() + END.len()).unwrap();
+                stream.flush().unwrap();
+                wait.recv_timeout(Duration::from_secs(4)).unwrap();
+                stream.write_all(END.as_bytes()).unwrap();
+            });
+            let direct_peer = scope.spawn(|| {
+                for token in ["synthetic-direct-grant", "synthetic-access"] {
+                    let mut stream = accept_upstream(&direct);
+                    stream.set_nonblocking(false).unwrap();
+                    stream.set_read_timeout(Some(Duration::from_secs(4))).unwrap();
+                    stream.set_write_timeout(Some(Duration::from_secs(4))).unwrap();
+                    let headers = read_headers(&mut stream);
+                    assert!(headers.starts_with("POST / HTTP/1.1\r\n"));
+                    assert!(headers.to_ascii_lowercase().contains(&format!("authorization: bearer {token}\r\n")));
+                    let length: usize = headers.lines().find_map(|line| line.split_once(':')
+                        .filter(|(key, _)| key.eq_ignore_ascii_case("content-length"))
+                        .map(|(_, value)| value.trim().parse().unwrap())).unwrap();
+                    let mut body = vec![0; length];
+                    stream.read_exact(&mut body).unwrap();
+                    assert_eq!(serde_json::from_slice::<Value>(&body).unwrap()["model"], "fixture-wire");
+                    let response = r#"{"id":"synthetic","model":"fixture-wire","choices":[{"index":0,"message":{"role":"assistant","content":"direct"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#;
+                    write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response}", response.len()).unwrap();
+                }
+            });
+            let server = fixture.server();
+            let mut ongoing = server.request(
+                "/v1/chat/completions",
+                "x-minicon-session: old-proxy\r\n",
+                Some(BODY),
+            );
+            assert!(read_headers(&mut ongoing).starts_with("HTTP/1.1 200"));
+            assert_eq!(
+                sse_event(&mut ongoing)["choices"][0]["delta"]["content"],
+                "hello"
+            );
+            edit.expected = fixture.gateway.store.preferences(&fixture.account).unwrap();
+            edit.service = NetworkPolicy::Direct;
+            fixture.gateway.update_account(&edit).unwrap();
+            // Existing I/O finishes through its original proxy, while new A
+            // requests and unrelated B requests use their own Direct policy.
+            for (key, model, session) in [
+                ("synthetic-other", "work", "direct-b"),
+                ("synthetic-local", MODEL_ALIAS, "new-direct-a"),
+            ] {
+                let body = format!(
+                    r#"{{"model":"{model}","stream":false,"messages":[{{"role":"user","content":"test"}}]}}"#
+                );
+                let mut client = server.request_key(
+                    "/v1/chat/completions",
+                    key,
+                    &format!("x-minicon-session: {session}\r\n"),
+                    Some(&body),
+                );
+                let mut response = String::new();
+                client.read_to_string(&mut response).unwrap();
+                assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+                assert!(response.contains("direct"));
+            }
+            release.send(()).unwrap();
+            assert_eq!(
+                sse_event(&mut ongoing)["choices"][0]["finish_reason"],
+                "stop"
+            );
+            let mut tail = Vec::new();
+            ongoing.read_to_end(&mut tail).unwrap();
+            assert_eq!(tail, b"data: [DONE]\n\n");
+            proxy_peer.join().unwrap();
+            direct_peer.join().unwrap();
+            let unreachable = TcpListener::bind("127.0.0.1:0").unwrap();
+            let endpoint = format!("http://{}", unreachable.local_addr().unwrap());
+            drop(unreachable);
+            edit.expected = fixture.gateway.store.preferences(&fixture.account).unwrap();
+            edit.service = NetworkPolicy::from_input(&endpoint).unwrap();
+            fixture.gateway.update_account(&edit).unwrap();
+            let body = BODY.replace("true", "false");
+            let mut client = server.request(
+                "/v1/chat/completions",
+                "x-minicon-session: failed-proxy\r\n",
+                Some(&body),
+            );
+            let mut response = String::new();
+            client.read_to_string(&mut response).unwrap();
+            assert!(response.starts_with("HTTP/1.1 502"), "{response}");
+            direct.set_nonblocking(true).unwrap();
+            assert!(
+                matches!(direct.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock)
+            );
+        });
+    }
+
     #[test]
     fn account_lease_is_bounded_and_revoke_cancels_registered_io() {
         let fixture = Fixture::new();

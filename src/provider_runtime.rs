@@ -1,7 +1,9 @@
 //! Process-owned Harness runtime. GUI methods only exchange bounded messages;
 //! filesystem, login and listener work belongs to the background owner.
 
-pub use crate::provider_accounts::AccountSummary;
+pub use crate::provider_accounts::{
+    AccountEdit, AccountPreferences, AccountSummary, NetworkPolicy,
+};
 pub use crate::provider_auth::Provider;
 use crate::{
     provider_accounts::AccountStore,
@@ -30,10 +32,19 @@ pub enum ListenerState {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AccountSaveReceipt {
+    pub account: String,
+    pub request: u64,
+    pub result: Result<(), RuntimeError>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct View {
     pub port: u16,
     pub actual_port: Option<u16>,
     pub accounts: Vec<AccountSummary>,
+    pub account_preferences: Vec<(String, AccountPreferences)>,
+    pub account_save_receipts: Vec<AccountSaveReceipt>,
     pub selected_account: Option<String>,
     pub model: String,
     pub models: Vec<String>,
@@ -50,6 +61,8 @@ impl Default for View {
             port: 28789,
             actual_port: None,
             accounts: Vec::new(),
+            account_preferences: Vec::new(),
+            account_save_receipts: Vec::new(),
             selected_account: None,
             model: String::new(),
             models: Vec::new(),
@@ -69,6 +82,10 @@ pub enum Action {
     RefreshAccounts,
     RefreshModels,
     SelectAccount(String),
+    SaveAccount {
+        request: u64,
+        edit: Box<AccountEdit>,
+    },
     SelectModel(String),
     SetPort(u16),
     TestModel,
@@ -101,6 +118,7 @@ pub enum RuntimeError {
     MissingAccount,
     MissingModel,
     CatalogConflict,
+    AccountChanged,
     MissingClientKey,
     NeedsLogin,
     WorkerUnavailable,
@@ -367,7 +385,21 @@ impl Owner {
         Ok(owner)
     }
     fn refresh_view(&mut self) -> Result<(), RuntimeError> {
-        self.view.accounts = self.store.list().map_err(|_| RuntimeError::Storage)?;
+        let accounts = self.store.list().map_err(|_| RuntimeError::Storage)?;
+        let preferences = accounts
+            .iter()
+            .map(|account| {
+                self.store
+                    .preferences(&account.id)
+                    .map(|preferences| (account.id.clone(), preferences))
+                    .map_err(|_| RuntimeError::Storage)
+            })
+            .collect::<Result<_, _>>()?;
+        self.view
+            .account_save_receipts
+            .retain(|receipt| accounts.iter().any(|account| account.id == receipt.account));
+        self.view.accounts = accounts;
+        self.view.account_preferences = preferences;
         let provider = self
             .view
             .accounts
@@ -584,7 +616,12 @@ impl Owner {
                 self.removing = None;
             }
         }
-        login_event(event, &mut self.view, &self.store)
+        let terminal = !matches!(&event, LoginEvent::Challenge { .. });
+        let effect = login_event(event, &mut self.view, &self.store);
+        if terminal && let Err(error) = self.refresh_view() {
+            self.view.status = Some(error.to_string());
+        }
+        effect
     }
     fn action(
         &mut self,
@@ -613,6 +650,33 @@ impl Owner {
                 self.view.login_active = true;
             }
             Action::RefreshAccounts => self.refresh_view()?,
+            Action::SaveAccount { request, edit } => {
+                let result = self.gateway.update_account(&edit).map_err(|error| {
+                    if error == ServerError::BindingChanged {
+                        RuntimeError::AccountChanged
+                    } else if error == ServerError::InvalidConfig {
+                        RuntimeError::InvalidAction
+                    } else {
+                        map_server(error)
+                    }
+                });
+                self.view
+                    .account_save_receipts
+                    .retain(|receipt| receipt.account != edit.account);
+                if self.view.account_save_receipts.len() >= 16 {
+                    self.view.account_save_receipts.remove(0);
+                }
+                self.view.account_save_receipts.push(AccountSaveReceipt {
+                    account: edit.account,
+                    request,
+                    result,
+                });
+                if let Err(error) = result {
+                    self.refresh_view()?;
+                    return Err(error);
+                }
+                self.view.status = Some("Account settings saved.".into());
+            }
             Action::RefreshModels => self.begin_operation(false)?,
             Action::TestModel => self.begin_operation(true)?,
             Action::SetPort(port) => {
@@ -904,6 +968,151 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
     }
+    #[test]
+    fn login_completion_immediately_publishes_account_preferences_and_preserves_completion_effect()
+    {
+        use crate::provider_auth::{TokenGrant, TokenLifecycle};
+        let root = Root::new();
+        let mut owner = Owner::load(root.0.clone()).unwrap();
+        let account = owner
+            .store
+            .insert(
+                "New account",
+                TokenGrant {
+                    provider: Provider::DeepSeek,
+                    access_token: Secret::new("synthetic-new-account").unwrap(),
+                    lifecycle: TokenLifecycle::OpaqueUntilRejected,
+                    organization: None,
+                },
+            )
+            .unwrap();
+        let effect = owner.login_event(LoginEvent::CredentialStored {
+            attempt: crate::provider_login::AttemptId(1),
+            account: account.clone(),
+            completion_url: Some(
+                Secret::new("https://platform.deepseek.com/synthetic-complete").unwrap(),
+            ),
+        });
+        assert!(matches!(effect, Some(Effect::OpenBrowser(_))));
+        assert_eq!(owner.view.accounts, vec![account.clone()]);
+        assert_eq!(
+            owner.view.account_preferences,
+            vec![(account.id.clone(), AccountPreferences::legacy(&account.id))]
+        );
+        assert!(
+            owner
+                .view
+                .status
+                .as_deref()
+                .unwrap()
+                .contains("Credential stored")
+        );
+        let mut login = LoginCoordinator::new(
+            owner.store.clone(),
+            LoginMetadata {
+                version: "fixture".into(),
+                locale: "en-US".into(),
+                timezone_offset_seconds: 0,
+            },
+        );
+        owner
+            .action(Action::SelectAccount(account.id.clone()), &mut login)
+            .unwrap();
+        assert_eq!(owner.view.selected_account.as_ref(), Some(&account.id));
+    }
+
+    #[test]
+    fn queued_account_saves_publish_each_receipt_and_keep_failed_and_stale_edits_out_of_storage() {
+        use crate::provider_auth::{TokenGrant, TokenLifecycle};
+        let root = Root::new();
+        let store = AccountStore::new(root.0.join("accounts")).unwrap();
+        let mut accounts = Vec::new();
+        for label in ["First", "Second"] {
+            accounts.push(
+                store
+                    .insert(
+                        label,
+                        TokenGrant {
+                            provider: Provider::DeepSeek,
+                            access_token: Secret::new("synthetic-account-save").unwrap(),
+                            lifecycle: TokenLifecycle::OpaqueUntilRejected,
+                            organization: None,
+                        },
+                    )
+                    .unwrap(),
+            );
+        }
+        let mut runtime = root.runtime();
+        until(&mut runtime, |view| view.accounts.len() == 2 && !view.busy);
+        let edit = |index: usize, label: &str| AccountEdit {
+            account: accounts[index].id.clone(),
+            label: label.into(),
+            login: NetworkPolicy::Direct,
+            service: NetworkPolicy::Direct,
+            enabled: true,
+            expected: AccountPreferences::legacy(&accounts[index].id),
+            expected_label: accounts[index].label.clone(),
+        };
+        runtime
+            .act(Action::SaveAccount {
+                request: 1,
+                edit: Box::new(edit(0, "Invalid\nlabel")),
+            })
+            .unwrap();
+        runtime
+            .act(Action::SaveAccount {
+                request: 2,
+                edit: Box::new(edit(1, "Renamed second")),
+            })
+            .unwrap();
+        until(&mut runtime, |view| view.account_save_receipts.len() == 2);
+        let receipts = &runtime.view().account_save_receipts;
+        assert_eq!(
+            receipts
+                .iter()
+                .find(|receipt| receipt.account == accounts[0].id)
+                .unwrap()
+                .result,
+            Err(RuntimeError::InvalidAction)
+        );
+        assert_eq!(
+            receipts
+                .iter()
+                .find(|receipt| receipt.account == accounts[1].id)
+                .unwrap()
+                .result,
+            Ok(())
+        );
+        let stored = store.list().unwrap();
+        assert_eq!(stored[0].label, "First");
+        assert_eq!(stored[1].label, "Renamed second");
+        // A second queued form still carrying the old label is a real CAS
+        // failure, with an updated view for an explicit revert/retry.
+        runtime
+            .act(Action::SaveAccount {
+                request: 3,
+                edit: Box::new(edit(1, "Stale replacement")),
+            })
+            .unwrap();
+        until(&mut runtime, |view| {
+            view.account_save_receipts
+                .iter()
+                .any(|receipt| receipt.request == 3)
+        });
+        assert_eq!(
+            runtime
+                .view()
+                .account_save_receipts
+                .iter()
+                .find(|receipt| receipt.request == 3)
+                .unwrap()
+                .result,
+            Err(RuntimeError::AccountChanged)
+        );
+        assert_eq!(runtime.view().accounts[1].label, "Renamed second");
+        assert_eq!(store.list().unwrap()[1].label, "Renamed second");
+    }
+
     #[test]
     fn client_profiles_load_private_keys_and_keep_sessions_and_revocation_isolated() {
         use crate::provider_auth::{TokenGrant, TokenLifecycle};

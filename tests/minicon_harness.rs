@@ -88,15 +88,11 @@ fn gateway_worker_journey(alias: Option<&'static str>) {
         },
         time::{Duration, Instant},
     };
-    let root = std::env::temp_dir().join(format!(
-        "minicon-gateway-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    std::fs::create_dir_all(&root).unwrap();
+    let entropy = minicon_platform::entropy::secure_random_array::<16>().unwrap();
+    let nonce: String = entropy.iter().map(|byte| format!("{byte:02x}")).collect();
+    let root = std::env::temp_dir().join(format!("minicon-gateway-{}-{nonce}", std::process::id()));
+    // An existing directory is a hard fixture failure, never shared state.
+    std::fs::create_dir(&root).unwrap();
     // A literal echo cannot distinguish the task root from CMD's silent
     // Windows-directory fallback. Only a relative read can return this value;
     // the command and model prompt never carry the challenge contents.
@@ -230,6 +226,10 @@ fn gateway_worker_journey(alias: Option<&'static str>) {
         )
     };
     let first = invoke(false);
+    let first_binding = std::fs::read(root.join(".minicon-harness-sessions/bound-session.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .map(|saved| saved["gateway_binding"].clone());
     if alias.is_none() && first.status.success() {
         // The default profile must also resume sessions saved before the
         // additive alias field existed, rather than treating them as corrupt.
@@ -248,7 +248,13 @@ fn gateway_worker_journey(alias: Option<&'static str>) {
     done.store(true, Ordering::Release);
     peer.join().unwrap();
     assert!(first.status.success(), "{}", stderr_of(&first));
-    assert!(second.status.success(), "{}", stderr_of(&second));
+    assert!(
+        second.status.success(),
+        "{}; synthetic first binding: {:?}; expected alias: {}",
+        stderr_of(&second),
+        first_binding,
+        alias.unwrap_or("minicon-selected")
+    );
     assert_eq!(third.status.code(), Some(2));
     assert!(
         stderr_of(&third).contains("binding changed"),

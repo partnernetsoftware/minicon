@@ -22,7 +22,9 @@
 /// unbounded header.
 const PROXY_VALUE_MAX_BYTES: usize = 512;
 
+mod profile;
 mod session;
+pub use profile::{PageContext, PageContextError, PageProfile};
 pub use session::{
     NodeReference, PageCommand, PageError, PageSession, PageState, PageView, SemanticNode,
 };
@@ -461,6 +463,63 @@ pub fn spawn_page_host_in_panel(
         apply_proxy_env(&mut command, proxy);
     }
     command.spawn().map_err(|error| error.to_string())
+}
+
+/// Start an explicitly isolated Linux page helper. Startup context travels on
+/// bounded stdin, followed by the existing command stream; it never changes
+/// process-global environment or uses legacy proxy/profile resolution.
+pub fn spawn_page_host_in_context(
+    program: &std::path::Path,
+    url: &str,
+    context: &PageContext,
+    slot: Option<PanelSlot>,
+) -> Result<std::process::Child, PageContextError> {
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (program, url, context, slot);
+        Err(PageContextError::Unsupported(
+            "browser-context-helper-unsupported",
+        ))
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use std::io::Write;
+        let frame = context.frame()?;
+        let (program, mut args) =
+            page_host_request(program, url).map_err(|_| PageContextError::InvalidProfile)?;
+        args[0] = "--load-context".to_owned();
+        if let Some(slot) = slot {
+            args.extend(
+                page_host_embed_args(url, Some(slot))
+                    .map_err(|_| PageContextError::InvalidProfile)?
+                    .into_iter()
+                    .skip(2),
+            );
+        }
+        let mut child = std::process::Command::new(program)
+            .args(args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(if slot.is_some() {
+                std::process::Stdio::piped()
+            } else {
+                std::process::Stdio::null()
+            })
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map_err(|_| PageContextError::NativeCreateFailed)?;
+        // A fresh Linux pipe has at least PIPE_BUF (4096) bytes available;
+        // this complete frame fits before the helper starts reading it.
+        if child
+            .stdin
+            .as_mut()
+            .is_none_or(|input| input.write_all(&frame).and_then(|_| input.flush()).is_err())
+        {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(PageContextError::NativeCreateFailed);
+        }
+        Ok(child)
+    }
 }
 
 /// True when an X window class is the page host we reparented.
@@ -1234,6 +1293,14 @@ fn percent_encode(value: &str) -> String {
 /// on and the system WebView accepts the call. Neither path opens the OS browser.
 pub fn host_reply(args: &[String]) -> Result<(), &'static str> {
     match args {
+        [flag, url] if flag == "--load-context" => load_context_host(url, None),
+        [flag, url, parent_flag, parent, bounds_flag, bounds]
+            if flag == "--load-context"
+                && parent_flag == "--parent"
+                && bounds_flag == "--bounds" =>
+        {
+            load_context_host(url, Some(parse_slot(parent, bounds)?))
+        }
         [flag] if flag == "--probe" => probe_webview(),
         [flag, url] if flag == "--load" || flag == "--smoke" => {
             let _ = http_url_at(url, 0)
@@ -1259,6 +1326,33 @@ pub fn host_reply(args: &[String]) -> Result<(), &'static str> {
         }
         _ => Err("usage"),
     }
+}
+
+fn load_context_host(url: &str, slot: Option<PanelSlot>) -> Result<(), &'static str> {
+    let result = (|| {
+        if http_url_at(url, 0).as_deref() != Some(url) {
+            return Err(PageContextError::InvalidProfile);
+        }
+        let context = PageContext::read_frame(&mut std::io::stdin().lock())?;
+        #[cfg(all(feature = "wry-host", target_os = "linux"))]
+        {
+            wry_host::load_with_context(url, slot, &context)
+        }
+        #[cfg(not(all(feature = "wry-host", target_os = "linux")))]
+        {
+            let _ = (context, slot);
+            Err(PageContextError::Unsupported(
+                "browser-context-helper-unsupported",
+            ))
+        }
+    })();
+    result.map_err(|error| {
+        // Codes contain no paths, endpoint strings, or underlying errors.
+        if slot.is_some() {
+            println!("{{\"error\":\"{}\"}}", error.code());
+        }
+        error.code()
+    })
 }
 
 fn probe_webview() -> Result<(), &'static str> {

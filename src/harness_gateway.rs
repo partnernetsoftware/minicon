@@ -26,6 +26,23 @@ pub struct Binding {
     pub session: String,
 }
 
+impl Binding {
+    pub fn changed_field(&self, other: &Self) -> Option<&'static str> {
+        [
+            ("gateway", &self.gateway, &other.gateway),
+            ("profile", &self.profile, &other.profile),
+            ("provider", &self.provider, &other.provider),
+            ("account", &self.account, &other.account),
+            ("model", &self.model, &other.model),
+            ("alias", &self.alias, &other.alias),
+            ("generation", &self.generation, &other.generation),
+            ("session", &self.session, &other.session),
+        ]
+        .into_iter()
+        .find_map(|(name, previous, current)| (previous != current).then_some(name))
+    }
+}
+
 #[derive(serde::Deserialize)]
 struct RemoteBinding {
     profile: String,

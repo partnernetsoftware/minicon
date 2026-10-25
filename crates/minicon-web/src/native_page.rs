@@ -19,7 +19,7 @@ use wry::{
     raw_window_handle::{HandleError, HasWindowHandle, RawWindowHandle, WindowHandle},
 };
 
-use crate::{BrowserProxy, PanelSlot};
+use crate::{BrowserProxy, PageContext, PageContextError, PageProfile, PanelSlot};
 use std::{cell::RefCell, rc::Rc};
 
 #[cfg(target_os = "macos")]
@@ -160,8 +160,25 @@ pub struct NativePageHost {
     #[cfg(target_os = "macos")]
     _shortcuts: macos_shortcuts::ShortcutMonitor,
     webview: WebView,
+    #[cfg(windows)]
+    _context: Option<wry::WebContext>,
     state: Rc<RefCell<NativePageState>>,
     local_origin: Rc<RefCell<Option<String>>>,
+}
+
+enum CreateFailure {
+    Legacy(String),
+    Context(PageContextError),
+}
+impl From<String> for CreateFailure {
+    fn from(value: String) -> Self {
+        Self::Legacy(value)
+    }
+}
+impl From<PageContextError> for CreateFailure {
+    fn from(value: PageContextError) -> Self {
+        Self::Context(value)
+    }
 }
 
 impl crate::PageSession for NativePageHost {
@@ -211,6 +228,38 @@ impl NativePageHost {
         proxy: &BrowserProxy,
         wake: impl Fn() + 'static,
     ) -> Result<Self, String> {
+        Self::create(slot, proxy, None, wake).map_err(|error| match error {
+            CreateFailure::Legacy(reason) => reason,
+            CreateFailure::Context(error) => error.code().to_owned(),
+        })
+    }
+
+    /// Explicit persistent storage and network context. The caller serializes
+    /// replacement of views using this profile. Ownership: PRD 28.
+    pub fn new_with_context(
+        slot: PanelSlot,
+        context: &PageContext,
+        wake: impl Fn() + 'static,
+    ) -> Result<Self, PageContextError> {
+        context.validate()?;
+        #[cfg(target_os = "macos")]
+        validate_macos_context(context)?;
+        #[cfg(windows)]
+        validate_windows_context_environment()?;
+        Self::create(slot, &context.proxy, Some(&context.profile), wake).map_err(
+            |error| match error {
+                CreateFailure::Context(error) => error,
+                CreateFailure::Legacy(_) => PageContextError::NativeCreateFailed,
+            },
+        )
+    }
+
+    fn create(
+        slot: PanelSlot,
+        proxy: &BrowserProxy,
+        profile: Option<&PageProfile>,
+        wake: impl Fn() + 'static,
+    ) -> Result<Self, CreateFailure> {
         let parent = native_parent(slot)?;
         let state = Rc::new(RefCell::new(NativePageState::default()));
         let title_state = state.clone();
@@ -223,9 +272,17 @@ impl NativePageHost {
         let navigation_origin = local_origin.clone();
         let native_wake = wake.clone();
         #[cfg(windows)]
-        let windows_arguments = windows_proxy_arguments(proxy)?;
+        let windows_arguments = if let Some(profile) = profile {
+            Some(windows_context_arguments(profile, proxy)?)
+        } else {
+            windows_proxy_arguments(proxy)?
+        };
         #[cfg(windows)]
-        let mut windows_context = windows_page_context(windows_arguments.as_deref())?;
+        let mut windows_context = if let Some(profile) = profile {
+            Some(wry::WebContext::new(Some(profile.data_directory.clone())))
+        } else {
+            windows_page_context(windows_arguments.as_deref())?
+        };
         #[cfg(windows)]
         let builder = match windows_context.as_mut() {
             Some(context) => WebViewBuilder::new_with_web_context(context),
@@ -233,6 +290,13 @@ impl NativePageHost {
         };
         #[cfg(not(windows))]
         let builder = WebViewBuilder::new();
+        #[cfg(target_os = "macos")]
+        let builder = if let Some(profile) = profile {
+            use wry::WebViewBuilderExtDarwin;
+            builder.with_data_store_identifier(profile.store_identifier)
+        } else {
+            builder
+        };
         let mut builder = builder
             .with_html(HOME_HTML)
             .with_bounds(bounds(slot))
@@ -273,22 +337,35 @@ impl NativePageHost {
             });
         #[cfg(target_os = "macos")]
         if let Some((host, port)) = macos_proxy_endpoint(proxy, macos_proxy_available())? {
+            if profile.is_none() {
+                builder = builder.with_incognito(true);
+            }
             builder = builder
-                // A fresh private store prevents the old view's proxy from
-                // contaminating a later view after the field is cleared.
-                .with_incognito(true)
                 .with_proxy_config(wry::ProxyConfig::Http(wry::ProxyEndpoint { host, port }));
         }
         #[cfg(windows)]
         if let Some(arguments) = windows_arguments {
             use wry::WebViewBuilderExtWindows;
-            builder = builder
-                .with_additional_browser_args(arguments)
-                .with_incognito(true);
+            builder = builder.with_additional_browser_args(arguments);
+            if profile.is_none() {
+                builder = builder.with_incognito(true);
+            }
         }
         let webview = builder
             .build_as_child(&parent)
             .map_err(|_| "browser-native-create-failed".to_owned())?;
+        #[cfg(windows)]
+        if let Some(profile) = profile {
+            verify_windows_profile(&webview, profile)?;
+        }
+        #[cfg(target_os = "macos")]
+        if let Some(profile) = profile {
+            verify_macos_profile(
+                &webview,
+                profile,
+                proxy.http.is_none() && proxy.https.is_none(),
+            )?;
+        }
         #[cfg(windows)]
         install_windows_events(&webview, state.clone(), native_wake)
             .map_err(|_| "browser-native-events-failed".to_owned())?;
@@ -299,6 +376,8 @@ impl NativePageHost {
             #[cfg(target_os = "macos")]
             _shortcuts: shortcuts,
             webview,
+            #[cfg(windows)]
+            _context: windows_context,
             state,
             local_origin,
         })
@@ -521,6 +600,159 @@ fn install_windows_events(
 }
 
 #[cfg(windows)]
+fn validate_windows_context_environment() -> Result<(), PageContextError> {
+    if [
+        "WEBVIEW2_USER_DATA_FOLDER",
+        "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+    ]
+    .iter()
+    .any(|key| std::env::var_os(key).is_some_and(|value| !value.is_empty()))
+    {
+        return Err(PageContextError::Unsupported(
+            "browser-context-environment-override",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn windows_context_arguments(
+    profile: &PageProfile,
+    proxy: &BrowserProxy,
+) -> Result<String, PageContextError> {
+    let context = PageContext {
+        profile: profile.clone(),
+        proxy: proxy.clone(),
+    };
+    let parts = context.proxy_parts()?;
+    let mut args = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required".to_owned();
+    let mut servers = Vec::new();
+    if let Some((host, port)) = parts.http {
+        servers.push(format!("http=http://{host}:{port}"));
+    }
+    if let Some((host, port)) = parts.https {
+        servers.push(format!("https=http://{host}:{port}"));
+    }
+    if servers.is_empty() {
+        args.push_str(" --no-proxy-server");
+    } else {
+        args.push_str(" --proxy-server=");
+        args.push_str(&servers.join(";"));
+        if !parts.bypass.is_empty() {
+            args.push_str(" --proxy-bypass-list=");
+            args.push_str(&parts.bypass.join(";"));
+        }
+    }
+    Ok(args)
+}
+
+#[cfg(windows)]
+fn verify_windows_profile(
+    webview: &WebView,
+    profile: &PageProfile,
+) -> Result<(), PageContextError> {
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment7;
+    use windows_core::Interface;
+    use wry::WebViewExtWindows;
+    let environment = webview
+        .environment()
+        .cast::<ICoreWebView2Environment7>()
+        .map_err(|_| {
+            PageContextError::Unsupported("browser-context-profile-verification-unsupported")
+        })?;
+    let mut folder = Default::default();
+    unsafe { environment.UserDataFolder(&mut folder) }
+        .map_err(|_| PageContextError::ProfileUnavailable)?;
+    let actual = std::path::PathBuf::from(webview2_com::take_pwstr(folder));
+    let actual = actual
+        .canonicalize()
+        .map_err(|_| PageContextError::ProfileUnavailable)?;
+    let expected = profile
+        .data_directory
+        .canonicalize()
+        .map_err(|_| PageContextError::ProfileUnavailable)?;
+    if actual != expected {
+        return Err(PageContextError::ProfileUnavailable);
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn validate_macos_context(context: &PageContext) -> Result<(), PageContextError> {
+    use objc2::{class, msg_send, runtime::Bool, sel};
+    let available: Bool = unsafe {
+        msg_send![class!(WKWebsiteDataStore), respondsToSelector: sel!(dataStoreForIdentifier:)]
+    };
+    if !available.as_bool() || !macos_proxy_available() {
+        return Err(PageContextError::Unsupported(
+            "browser-context-persistent-store-unsupported",
+        ));
+    }
+    let parts = context.proxy_parts()?;
+    if !parts.bypass.is_empty() {
+        return Err(PageContextError::Unsupported(
+            "browser-context-proxy-bypass-unsupported",
+        ));
+    }
+    if parts.http != parts.https {
+        return Err(PageContextError::Unsupported(
+            "browser-context-proxy-schemes-unsupported",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn verify_macos_profile(
+    webview: &WebView,
+    profile: &PageProfile,
+    direct: bool,
+) -> Result<(), PageContextError> {
+    use objc2::{
+        class, msg_send,
+        runtime::{AnyObject, Bool},
+    };
+    use wry::WebViewExtMacOS;
+    let view = webview.webview();
+    // The initial document is local HOME_HTML. Clear stale store proxy state
+    // and verify identity before the caller can load a remote URL.
+    unsafe {
+        let config: *mut AnyObject = msg_send![&*view, configuration];
+        let store: *mut AnyObject = msg_send![config, websiteDataStore];
+        if store.is_null() {
+            return Err(PageContextError::ProfileUnavailable);
+        }
+        let persistent: Bool = msg_send![store, isPersistent];
+        let identifier: *mut AnyObject = msg_send![store, identifier];
+        if !persistent.as_bool() || identifier.is_null() {
+            return Err(PageContextError::ProfileUnavailable);
+        }
+        let string: *mut AnyObject = msg_send![identifier, UUIDString];
+        let raw: *const std::ffi::c_char = msg_send![string, UTF8String];
+        if raw.is_null() {
+            return Err(PageContextError::ProfileUnavailable);
+        }
+        let actual = std::ffi::CStr::from_ptr(raw)
+            .to_str()
+            .map_err(|_| PageContextError::ProfileUnavailable)?;
+        let actual: String = actual.chars().filter(|c| *c != '-').collect();
+        let expected: String = profile
+            .store_identifier
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        if !actual.eq_ignore_ascii_case(&expected) {
+            return Err(PageContextError::ProfileUnavailable);
+        }
+        if direct {
+            let empty: *mut AnyObject = msg_send![class!(NSArray), array];
+            let _: () = msg_send![store, setProxyConfigurations: empty];
+        }
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
 fn windows_page_context(arguments: Option<&str>) -> Result<Option<wry::WebContext>, String> {
     use sha2::Digest;
     let root = std::env::var_os("MINICON_BROWSER_PROFILE_ROOT")
@@ -623,6 +855,31 @@ fn bounds(slot: PanelSlot) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn explicit_windows_context_distinguishes_direct_scheme_proxies_and_exact_bypass() {
+        let profile = PageProfile {
+            data_directory: "unused-by-argument-validation".into(),
+            store_identifier: [1; 16],
+        };
+        let direct = windows_context_arguments(&profile, &BrowserProxy::default()).unwrap();
+        assert!(direct.contains(" --no-proxy-server"));
+        assert!(!direct.contains(" --proxy-server="));
+        let proxy = BrowserProxy {
+            http: Some("http://127.0.0.1:18080".into()),
+            https: Some("http://127.0.0.1:18081".into()),
+            no_proxy: Some("localhost,127.0.0.1".into()),
+        };
+        let arguments = windows_context_arguments(&profile, &proxy).unwrap();
+        assert!(
+            arguments.contains(
+                " --proxy-server=http=http://127.0.0.1:18080;https=http://127.0.0.1:18081"
+            )
+        );
+        assert!(arguments.contains(" --proxy-bypass-list=localhost;127.0.0.1"));
+        assert!(!arguments.contains(" --no-proxy-server"));
+    }
 
     #[cfg(target_os = "macos")]
     #[test]
