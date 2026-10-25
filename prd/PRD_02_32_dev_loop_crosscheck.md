@@ -1160,3 +1160,22 @@ cleanup. Do not terminate or interact with the obscuring process. Subsequent
 foreground/point competition still stops input; there is no repeated raising
 or activation loop. This is fixture setup, not a claim of ordinary desktop
 z-order or another process's behavior.
+
+The exact `09a869f` [run40245030208](https://github.com/partnernetsoftware/minicon/actions/runs/40245030208)
+remains BLOCKED. x86_64 now reaches the Harness phase; its refused hit is the
+actual Explorer taskbar (`MSTaskSwWClass`) at the published target point. The
+owned outer rectangle extends below the hosted screen/work area. No click is
+sent to Explorer, and clipboard, presentation, GUI and thread cleanup pass.
+ARM64 remains obscured by the same WWAHost window even with the single owned
+topmost presentation; it sends no input and restores the window level. Local
+artifacts: `target-six/v0.2.23-provider/native-controls-ci-09a869f/`.
+
+The next fixture fits only its own window within its actual monitor's
+[work area](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getmonitorinfow),
+verifies the resulting outer bounds, and records that geometry instead of
+requesting a fixed800-pixel client height. The original scrolling, field and
+native-input assertions remain; taskbar hits remain refused. For the unresolved
+WWAHost blocker, finite metadata may additionally contain its public package
+family from [GetPackageFamilyName](https://learn.microsoft.com/en-us/windows/win32/api/appmodel/nf-appmodel-getpackagefamilyname).
+It still reads no package files, application content, titles or command lines.
+This is a diagnostic identity, never authority to stop or interact with it.

@@ -60,6 +60,11 @@ class GuiThreadInfo(c.Structure):
                 ("caret_rect", w.RECT)]
 
 
+class MonitorInfo(c.Structure):
+    _fields_ = [("size", w.DWORD), ("monitor", w.RECT),
+                ("work", w.RECT), ("flags", w.DWORD)]
+
+
 class StartupInfo(c.Structure):
     _fields_ = [("size", w.DWORD), ("reserved", w.LPWSTR), ("desktop", w.LPWSTR),
                 ("title", w.LPWSTR), *[(name, w.DWORD) for name in
@@ -174,6 +179,8 @@ class Native:
             (self.u, "GetWindowThreadProcessId", w.DWORD, [w.HWND, c.POINTER(w.DWORD)]),
             (self.u, "GetClassNameW", c.c_int, [w.HWND, w.LPWSTR, c.c_int]),
             (self.u, "GetWindowRect", w.BOOL, [w.HWND, c.POINTER(w.RECT)]),
+            (self.u, "MonitorFromWindow", w.HANDLE, [w.HWND, w.DWORD]),
+            (self.u, "GetMonitorInfoW", w.BOOL, [w.HANDLE, c.POINTER(MonitorInfo)]),
             (self.u, "GetKeyboardLayout", c.c_void_p, [w.DWORD]),
             (self.u, "GetKeyboardLayoutList", c.c_int, [c.c_int, c.POINTER(c.c_void_p)]),
             (self.u, "GetGUIThreadInfo", w.BOOL, [w.DWORD, c.POINTER(GuiThreadInfo)]),
@@ -203,6 +210,7 @@ class Native:
             (self.k, "QueryFullProcessImageNameW", w.BOOL,
              [w.HANDLE, w.DWORD, w.LPWSTR, c.POINTER(w.DWORD)]),
             (self.k, "IsProcessInJob", w.BOOL, [w.HANDLE, w.HANDLE, c.POINTER(w.BOOL)]),
+            (self.k, "GetPackageFamilyName", w.LONG, [w.HANDLE, c.POINTER(w.DWORD), w.LPWSTR]),
             (self.k, "CloseHandle", w.BOOL, [w.HANDLE]),
             (self.g, "CreateCompatibleDC", w.HDC, [w.HDC]),
             (self.g, "CreateCompatibleBitmap", w.HBITMAP, [w.HDC, c.c_int, c.c_int]),
@@ -263,6 +271,7 @@ class Native:
         if len(handles) != 1:
             raise Blocked("expected one visible top-level window owned by this GUI PID")
         self.hwnd = handles[0]
+        self.fit_work_area()
         self.thread = self.u.GetWindowThreadProcessId(self.hwnd, None)
         self.original_layout = self.u.GetKeyboardLayout(self.thread)
         requested = bool(self.u.SetForegroundWindow(self.hwnd))
@@ -316,6 +325,31 @@ class Native:
                               f"(SetForegroundWindow requested={requested})")
             time.sleep(0.05)
 
+    def fit_work_area(self):
+        """Keep this owned fixture's hit targets above the actual taskbar."""
+        owner = w.DWORD()
+        self.u.GetWindowThreadProcessId(self.hwnd, c.byref(owner))
+        if owner.value != self.owned_pid:
+            raise Blocked("work-area placement lost the exact owned GUI")
+        info = MonitorInfo(size=c.sizeof(MonitorInfo))
+        monitor = self.u.MonitorFromWindow(self.hwnd, 2)
+        if not monitor or not self.u.GetMonitorInfoW(monitor, c.byref(info)):
+            raise Blocked("owned monitor work area unavailable")
+        width = min(1100, info.work.right - info.work.left - 16)
+        height = min(800, info.work.bottom - info.work.top - 16)
+        if width < 480 or height < 360:
+            raise Blocked("hosted work area too small for native controls")
+        if not self.u.SetWindowPos(self.hwnd, None, info.work.left + 8, info.work.top + 8,
+                                   width, height, 0x14):  # NOZORDER | NOACTIVATE
+            raise Blocked("owned work-area placement failed")
+        actual = w.RECT()
+        if (not self.u.GetWindowRect(self.hwnd, c.byref(actual))
+                or actual.left < info.work.left or actual.top < info.work.top
+                or actual.right > info.work.right or actual.bottom > info.work.bottom):
+            raise Blocked("owned native bounds exceed the monitor work area")
+        self.window_placement = {"work_area": [info.work.left, info.work.top, info.work.right, info.work.bottom],
+                                 "outer_bounds": [actual.left, actual.top, actual.right, actual.bottom]}
+
     def owned_hit(self, hwnd):
         if not hwnd or self.u.GetAncestor(hwnd, 2) != self.hwnd:
             return False
@@ -350,12 +384,19 @@ class Native:
         observed = bool(self.u.GetWindowRect(hwnd, c.byref(rect)))
         process_name = None
         in_owned_job = None
+        package = {"status": "unavailable"}
         handle = self.k.OpenProcess(0x1000, False, owner.value)
         if handle:
             try:
                 member = w.BOOL()
                 if self.owned_job and self.k.IsProcessInJob(handle, self.owned_job, c.byref(member)):
                     in_owned_job = bool(member.value)
+                family = c.create_unicode_buffer(512)
+                family_size = w.DWORD(len(family))
+                package_code = self.k.GetPackageFamilyName(handle, c.byref(family_size), family)
+                package = ({"status": "observed", "family": family.value} if package_code == 0
+                           else {"status": "not-packaged" if package_code == 15700 else "unavailable",
+                                 "error_code": package_code})
                 image = c.create_unicode_buffer(32768)
                 length = w.DWORD(len(image))
                 if self.k.QueryFullProcessImageNameW(handle, 0, image, c.byref(length)):
@@ -365,6 +406,7 @@ class Native:
         return {"present": True, "same_process_as_gui": owner.value == expected.value,
                 "owned_root": self.u.GetAncestor(hwnd, 2) == self.hwnd,
                 "in_owned_job": in_owned_job,
+                "package": package,
                 "class": name.value, "process_basename": process_name,
                 "bounds": [rect.left, rect.top, rect.right, rect.bottom] if observed else None}
 
@@ -801,7 +843,7 @@ def main():
         native.attach(child.pid, child.job)
         receipt["owned_pid"] = child.pid
         receipt["native_activation"] = native.activation
-        cli("resize-window", "--width", "1100", "--height", "800")
+        receipt["native_window_placement"] = native.window_placement
         wait(lambda: geo()["scale_permille"] > 0, "published geometry")
         click("new_root")
         wait(lambda: geo()["new_tab_menu_open"], "New menu")
