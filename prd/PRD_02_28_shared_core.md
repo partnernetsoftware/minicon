@@ -212,7 +212,11 @@ production Owner/Gateway/Settings consumers under development. The private
 acknowledgement rebasing, reusing the shared field editor; it exports no shared
 account, route or permission policy. The exact-candidate transport and proof
 consumer are being joined in these same product modules; the earlier applied-only
-server probe remains test-only. Acceptance and scoped evidence remain with that owner.
+server probe remains test-only. The product Store's bounded multi-account
+publication seam and Gateway-to-Store lock join now consume the existing shared
+atomic-write result for plain Apply under development; account authority and
+profile policy remain private to MiniCon. Acceptance and scoped evidence remain
+with that owner.
 Its [version-3 resolver/migration prerequisite](PRD_02_31_01_02_01_connection_selection.md#version-3-resolver-and-migration-prerequisite-in-progress)
 also keeps private provenance and compatibility resolution in these product
 modules; its production consumer does not promote the future paid-probe/draft

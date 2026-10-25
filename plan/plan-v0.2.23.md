@@ -395,3 +395,31 @@ Join the independent postcommit verification before pushing this slice, then
 implement plain atomic Apply through the existing private-publication contract.
 Batch Verify-and-Apply and remaining profile/key/usage experience stay selected
 subsequent work; no Candidate or release is claimed by this checkpoint.
+
+The exact-candidate slice is now independently verified and pushed; its six-cell
+development feedback is still live. Plain atomic Apply is the current integrated
+slice, starting with compiler/runtime review and fourteen unrun test candidates.
+Its actual acceptance/evidence status stays in the owning module above. Keep
+production-source changes and final local mutation/GUI gates serial; matching
+older-source CI feedback may proceed independently.
+
+Plain Apply's current source now passes all fourteen new consumers and fifteen
+actual original-assertion guard controls, with exact restoration GREEN. Complete
+the real public Apply replay and independent postcommit proof before pushing;
+keep whole-profile Verify-and-Apply as the next selected capability rather than
+calling plain Apply the complete connection workflow. Source and failure history
+stay in the connection-selection owner, including the test-only lock-order
+assertion strengthening and initial exhaustive-match compiler failure.
+
+The current plain-Apply public replay now observes real version-3 replacement,
+explicit no-op byte stability, unchanged keys and seven independent draft/editor
+states. Its fifteen observations include the prior twelve once; no successful
+provider inference or release is implied. All 22 ordinary-browser checks and
+both gateway workers pass after exact source restoration. Join independent
+postcommit verification, then continue the whole-profile verified-apply workflow.
+
+The final plain-Apply gate repeats fresh build/public qualification with complete
+staged-plus-unstaged source inventory and explicit six-code hashes. The rebuild
+has different bytes, and all selected public journeys rerun on that new pinned
+image. Preserve earlier image/inventory receipts as history; independent review
+consumes the second current-source receipt before exact push.

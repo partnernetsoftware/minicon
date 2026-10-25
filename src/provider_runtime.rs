@@ -41,6 +41,7 @@ pub enum ConnectionChange {
     Remove,
     Revert,
     Discard,
+    Apply,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -176,6 +177,11 @@ impl Default for View {
 
 #[derive(Clone, Debug)]
 pub enum Action {
+    ApplyConnectionProfile {
+        request: u64,
+        profile: String,
+        expected_revision: u64,
+    },
     VerifyConnectionAllocation {
         request: u64,
         profile: String,
@@ -358,6 +364,9 @@ impl Runtime {
     pub fn act(&mut self, action: Action) -> Result<(), RuntimeError> {
         let profile_id = |id: &str| id == "default" || crate::provider_server::opaque_id(id);
         let invalid = match &action {
+            Action::ApplyConnectionProfile {
+                request, profile, ..
+            } => *request == 0 || !profile_id(profile),
             Action::VerifyConnectionAllocation {
                 request,
                 profile,
@@ -406,6 +415,9 @@ impl Runtime {
             return Err(RuntimeError::InvalidAction);
         }
         let connection = match &action {
+            Action::ApplyConnectionProfile {
+                request, profile, ..
+            } => Some((*request, profile.clone())),
             Action::CreateConnectionProfile { request } => Some((*request, String::new())),
             Action::EditConnectionProfile {
                 request, profile, ..
@@ -779,11 +791,19 @@ impl Owner {
         self.project_connection_drafts();
     }
 
-    /// Consumes only draft commands. Returning None leaves all other existing
-    /// actions unchanged. These branches never save Config or start network
-    /// I/O. Explicit Choose reads a bounded private account snapshot on Owner.
+    /// Consumes connection commands. Only explicit Apply saves Config.
+    /// None of these branches starts network I/O. Explicit Choose reads a
+    /// bounded private account snapshot on Owner.
     fn connection_action(&mut self, action: Action) -> Option<Action> {
         let (request, profile, change, result) = match action {
+            Action::ApplyConnectionProfile {
+                request,
+                profile,
+                expected_revision,
+            } => {
+                let result = self.apply_connection_profile(&profile, expected_revision);
+                (request, profile, ConnectionChange::Apply, result)
+            }
             Action::FocusConnectionProfile(profile) => {
                 if let Err(error) = self.drafts.select(&profile) {
                     self.view.status = Some(map_selection(error).to_string());
@@ -1031,6 +1051,52 @@ impl Owner {
         self.refresh_connection_view();
         Ok(())
     }
+
+    fn apply_connection_profile(
+        &mut self,
+        profile: &str,
+        revision: u64,
+    ) -> Result<(), RuntimeError> {
+        self.apply_connection_profile_with(profile, revision, |path, bytes| {
+            match minicon_platform::filesystem_publish::write_private_atomic(path, bytes) {
+                Ok(()) => Ok(ConfigPublication::Durable),
+                Err(error) if error.published() => Ok(ConfigPublication::DurabilityUnconfirmed),
+                Err(_) => Err(ServerError::Storage),
+            }
+        })
+    }
+
+    fn apply_connection_profile_with(
+        &mut self,
+        profile: &str,
+        revision: u64,
+        publish: impl FnOnce(&Path, &[u8]) -> Result<ConfigPublication, ServerError>,
+    ) -> Result<(), RuntimeError> {
+        if self.operation.is_some() || self.view.login_active {
+            return Err(RuntimeError::Busy);
+        }
+        // Reads/projection can fail; complete them before touching routing or
+        // publishing bytes. Readiness is not proof and is never set by Apply.
+        self.refresh_view()?;
+        let prepared = self
+            .drafts
+            .prepare_apply(profile, revision, &self.config, &self.connection_accounts)
+            .map_err(map_selection)?;
+        let bytes = prepared.config.encode_applied().map_err(map_server)?;
+        let publication = self
+            .gateway
+            .update_with_authorities(prepared.config.clone(), &prepared.authorities, || {
+                publish(&self.root.join("gateway.json"), &bytes)
+            })
+            .map_err(map_server)?;
+        self.config = prepared.config;
+        self.drafts = prepared.book;
+        self.view.config_durability_unconfirmed =
+            publication == ConfigPublication::DurabilityUnconfirmed;
+        self.refresh_connection_view();
+        Ok(())
+    }
+
     fn cancel_operation(&mut self) {
         if let Some(operation) = self.operation.take() {
             if let OperationKind::Probe { permit, .. } = &operation.kind {
@@ -1528,6 +1594,7 @@ impl Owner {
                 return Err(RuntimeError::VerificationRequired);
             }
             Action::FocusConnectionProfile(_)
+            | Action::ApplyConnectionProfile { .. }
             | Action::CreateConnectionProfile { .. }
             | Action::EditConnectionProfile { .. }
             | Action::ChooseConnectionModel { .. }
@@ -1684,8 +1751,21 @@ fn run_loaded_owner(
                     Action::Start
                         | Action::RefreshAccountModels(_)
                         | Action::VerifyConnectionAllocation { .. }
+                        | Action::ApplyConnectionProfile { .. }
                 );
                 if epoch != stop_requested.load(Ordering::Acquire) && stale_network_action {
+                    if let Action::ApplyConnectionProfile {
+                        request, profile, ..
+                    } = &action
+                    {
+                        owner.connection_receipt(
+                            *request,
+                            profile.clone(),
+                            ConnectionChange::Apply,
+                            Err(RuntimeError::Cancelled),
+                        );
+                        publish(&pending, &notify, owner.view.clone(), None);
+                    }
                     if let Action::VerifyConnectionAllocation {
                         request,
                         profile,
@@ -1704,6 +1784,7 @@ fn run_loaded_owner(
                 if !matches!(
                     &action,
                     Action::FocusConnectionProfile(_)
+                        | Action::ApplyConnectionProfile { .. }
                         | Action::CreateConnectionProfile { .. }
                         | Action::EditConnectionProfile { .. }
                         | Action::ChooseConnectionModel { .. }
@@ -1791,7 +1872,9 @@ fn map_selection(error: SelectionError) -> RuntimeError {
         SelectionError::MissingProfile
         | SelectionError::MissingAlias
         | SelectionError::InvalidDraft => RuntimeError::InvalidAction,
-        SelectionError::CatalogueUnavailable => RuntimeError::VerificationRequired,
+        SelectionError::CatalogueUnavailable | SelectionError::VerificationRequired => {
+            RuntimeError::VerificationRequired
+        }
         SelectionError::MissingRoute => RuntimeError::MissingModel,
         _ => RuntimeError::ProviderUnavailable,
     }
@@ -1813,6 +1896,583 @@ fn map_server(error: ServerError) -> RuntimeError {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn cs04_real_runtime_rejects_old_queued_apply_after_stop_but_accepts_new_explicit_apply() {
+        let (root, mut owner, _) = catalogue_owner();
+        let profile = "b".repeat(32);
+        let view = owner
+            .view
+            .connection_profiles
+            .iter()
+            .find(|p| p.id == profile)
+            .unwrap()
+            .clone();
+        let mut input = view.input;
+        input.label = "Explicit new publication".into();
+        let revision = owner
+            .drafts
+            .edit_input(&profile, view.revision, input)
+            .unwrap();
+        let disk = std::fs::read(root.0.join("gateway.json")).unwrap();
+        owner.refresh_connection_view();
+        let (ready, wait_ready) = mpsc::channel();
+        let (release, wait_release) = mpsc::channel();
+        let gate = Arc::new(Mutex::new(Some(wait_release)));
+        let notify: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            if let Some(wait) = gate.lock().unwrap().take() {
+                ready.send(()).unwrap();
+                wait.recv_timeout(Duration::from_secs(5)).unwrap();
+            }
+        });
+        let (commands, incoming) = mpsc::sync_channel(16);
+        let pending = Arc::new(Mutex::new(Pending::default()));
+        let exit = Arc::new(AtomicBool::new(false));
+        let stop_requested = Arc::new(AtomicU64::new(0));
+        let outgoing = pending.clone();
+        let stopping = exit.clone();
+        let stop = stop_requested.clone();
+        let worker = std::thread::spawn(move || {
+            run_loaded_owner(
+                owner,
+                LoginMetadata {
+                    version: "synthetic-court".into(),
+                    locale: "en".into(),
+                    timezone_offset_seconds: 0,
+                },
+                notify,
+                outgoing,
+                stopping,
+                stop,
+                incoming,
+            )
+        });
+        let mut runtime = Runtime {
+            commands,
+            connection_inflight: Default::default(),
+            last_connection_request: 0,
+            pending,
+            view: View::default(),
+            exit,
+            stop_requested,
+            worker: Some(worker),
+        };
+        wait_ready.recv_timeout(Duration::from_secs(5)).unwrap();
+        runtime
+            .act(Action::ApplyConnectionProfile {
+                request: 1,
+                profile: profile.clone(),
+                expected_revision: revision,
+            })
+            .unwrap();
+        runtime.act(Action::Stop).unwrap();
+        release.send(()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            runtime.poll();
+            if let Some(ack) = runtime
+                .view()
+                .connection_receipts
+                .iter()
+                .find(|ack| ack.request == 1)
+            {
+                assert_eq!(ack.change, ConnectionChange::Apply);
+                assert_eq!(ack.result, Err(RuntimeError::Cancelled));
+                break;
+            }
+            assert!(Instant::now() < deadline, "cancelled Apply receipt missing");
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), disk);
+        runtime
+            .act(Action::ApplyConnectionProfile {
+                request: 2,
+                profile: profile.clone(),
+                expected_revision: revision,
+            })
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            runtime.poll();
+            if let Some(ack) = runtime
+                .view()
+                .connection_receipts
+                .iter()
+                .find(|ack| ack.request == 2)
+            {
+                assert_eq!(ack.result, Ok(()));
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "new explicit Apply receipt missing"
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert_eq!(runtime.view().listener, ListenerState::Stopped);
+        drop(runtime);
+        let saved = Owner::load(root.0.clone()).unwrap();
+        assert_eq!(
+            saved
+                .config
+                .profiles
+                .iter()
+                .find(|p| p.id == profile)
+                .unwrap()
+                .label,
+            "Explicit new publication"
+        );
+    }
+
+    fn cs04_choose_synthetic_catalogue(
+        owner: &mut Owner,
+        profile: &str,
+        slot: u8,
+        account: &str,
+        id: &str,
+        model: &str,
+    ) {
+        let snapshot = owner.store.snapshot(account).unwrap();
+        let mut route = owner.config.models[0].clone();
+        route.id = id.into();
+        route.model_id = model.into();
+        route.url = format!("https://opencode.ai/inference/{model}/v1/chat/completions");
+        let request = owner.catalogues.begin(&snapshot).unwrap();
+        let bytes = serde_json::to_vec(&route).unwrap().len();
+        owner
+            .catalogues
+            .complete(
+                &request,
+                crate::provider_selection::ResolvedAuthority::from_snapshot(&snapshot).unwrap(),
+                Some(&snapshot),
+                vec![route],
+                bytes,
+            )
+            .unwrap();
+        let route = owner.catalogues.select(&snapshot, id).unwrap();
+        let revision = owner.drafts.revision(profile).unwrap();
+        owner
+            .drafts
+            .choose(profile, revision, slot, route, id)
+            .unwrap();
+        owner.refresh_view().unwrap();
+    }
+
+    fn cs04_real_check(owner: &mut Owner, profile: &str, slot: u8, request: u64) {
+        let peer = Cs03Peer::new(cs03_reply);
+        owner.gateway.fixture_catalogue_upstream(peer.url.clone());
+        let revision = owner.drafts.revision(profile).unwrap();
+        owner.begin_check(request, profile.into(), revision, slot);
+        finish_catalogue(owner);
+        assert_eq!(
+            owner
+                .view
+                .connection_check_last_terminal
+                .as_ref()
+                .unwrap()
+                .phase,
+            ConnectionCheckPhase::Verified
+        );
+        drop(peer); // Apply cannot hide a second inference at this endpoint.
+    }
+
+    #[test]
+    fn cs04_plain_apply_requires_current_raw_selected_proof_and_revision_without_paying() {
+        let (root, mut owner, accounts) = catalogue_owner();
+        let old_config = owner.config.clone();
+        let disk = std::fs::read(root.0.join("gateway.json")).unwrap();
+        cs04_choose_synthetic_catalogue(
+            &mut owner,
+            "default",
+            0,
+            &accounts[0],
+            "new-catalogue",
+            "new-wire",
+        );
+        let revision = owner.drafts.revision("default").unwrap();
+        assert_eq!(
+            owner.apply_connection_profile("default", revision),
+            Err(RuntimeError::VerificationRequired)
+        );
+        assert_eq!(owner.config, old_config);
+        assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), disk);
+        assert!(owner.operation.is_none());
+        cs04_real_check(&mut owner, "default", 0, 1);
+        assert_eq!(
+            owner.apply_connection_profile("default", revision - 1),
+            Err(RuntimeError::DraftChanged)
+        );
+        // An incomplete raw edit must not Apply the last valid semantic edit.
+        let view = owner
+            .view
+            .connection_profiles
+            .iter()
+            .find(|p| p.id == "default")
+            .unwrap()
+            .clone();
+        let mut incomplete = view.input.clone();
+        incomplete.allocations[0].model = "unselected raw text".into();
+        let revision = owner
+            .drafts
+            .edit_input("default", revision, incomplete)
+            .unwrap();
+        assert_eq!(
+            owner.apply_connection_profile("default", revision),
+            Err(RuntimeError::InvalidAction)
+        );
+        assert_eq!(owner.config, old_config);
+        assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), disk);
+    }
+
+    #[test]
+    fn cs04_unpublished_failure_preserves_real_proof_for_zero_paid_retry_and_exact_apply_ack() {
+        let (root, mut owner, accounts) = cs02_eight_profile_owner();
+        cs04_choose_synthetic_catalogue(
+            &mut owner,
+            "default",
+            0,
+            &accounts[0],
+            "new-catalogue",
+            "new-wire",
+        );
+        cs04_real_check(&mut owner, "default", 0, 1);
+        let revision = owner.drafts.revision("default").unwrap();
+        let proof_time = owner
+            .view
+            .connection_check_last_terminal
+            .as_ref()
+            .unwrap()
+            .checked_unix_ms;
+        let before = owner.config.clone();
+        let disk = std::fs::read(root.0.join("gateway.json")).unwrap();
+        assert_eq!(
+            owner.apply_connection_profile_with("default", revision, |_, _| Err(
+                ServerError::Storage
+            )),
+            Err(RuntimeError::Storage)
+        );
+        assert_eq!(owner.config, before);
+        assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), disk);
+        assert_eq!(owner.drafts.revision("default"), Some(revision));
+        let proof = owner
+            .drafts
+            .views(&owner.connection_accounts)
+            .into_iter()
+            .find(|p| p.id == "default")
+            .unwrap();
+        assert_eq!(proof.allocations[0].evidence, ConnectionEvidence::Verified);
+        assert_eq!(proof.allocations[0].checked_unix_ms, proof_time);
+        let mut server = owner.gateway.start(owner.config.port).unwrap();
+        let custom_before = catalogue_binding(server.address(), "synthetic-custom");
+        let transport = |session: &str| crate::harness_gateway::GatewayTransport {
+            base: format!("http://{}/v1", server.address()),
+            session: session.into(),
+            cancelled: Arc::new(AtomicBool::new(false)),
+        };
+        let target_before = transport("cs04-original")
+            .binding("synthetic-default", Duration::from_secs(3))
+            .unwrap();
+        assert!(
+            owner
+                .connection_action(Action::ApplyConnectionProfile {
+                    request: 2,
+                    profile: "default".into(),
+                    expected_revision: revision
+                })
+                .is_none()
+        );
+        let ack = owner
+            .view
+            .connection_receipts
+            .iter()
+            .find(|r| r.request == 2)
+            .unwrap();
+        assert_eq!((ack.change, ack.result), (ConnectionChange::Apply, Ok(())));
+        assert!(ack.revision.unwrap() > revision);
+        let applied = owner.config.resolve_allocation("default", None).unwrap();
+        assert_eq!(applied.route.model_id, "new-wire");
+        assert!(matches!(
+            &applied.evidence.unwrap().origin,
+            crate::provider_server::AppliedOrigin::Inference { .. }
+        ));
+        assert_eq!(Owner::load(root.0.clone()).unwrap().config, owner.config);
+        assert!(owner.operation.is_none() && owner.server.is_none());
+        assert_eq!(owner.view.listener, ListenerState::Stopped);
+        assert_eq!(
+            catalogue_binding(server.address(), "synthetic-custom"),
+            custom_before
+        );
+        assert!(
+            transport("cs04-original")
+                .binding("synthetic-default", Duration::from_secs(3))
+                .is_err()
+        );
+        let target_after = transport("cs04-new")
+            .binding("synthetic-default", Duration::from_secs(3))
+            .unwrap();
+        assert_eq!(target_after.model, "new-wire");
+        assert_ne!(target_after.generation, target_before.generation);
+        server.stop();
+    }
+
+    #[test]
+    fn cs04_ready_storage_warning_proof_applies_without_rotating_noop_sessions_or_keys() {
+        let (root, mut owner, _) = cs02_eight_profile_owner();
+        let peer = Cs03Peer::new(cs03_reply);
+        owner.gateway.fixture_catalogue_upstream(peer.url.clone());
+        let revision = owner.drafts.revision("default").unwrap();
+        owner.begin_check(1, "default".into(), revision, 0);
+        cs03_wait_finished_without_poll(&owner);
+        owner.store.fixture_fail_readiness_once();
+        owner.poll_operation();
+        assert_eq!(
+            owner
+                .view
+                .connection_check_last_terminal
+                .as_ref()
+                .unwrap()
+                .warning,
+            Some(ConnectionCheckWarning::ReadinessStorage)
+        );
+        drop(peer);
+        let custom = "b".repeat(32);
+        let key_path = root.0.join("client-key");
+        let custom_key = root.0.join(format!("client-key-{custom}"));
+        filesystem::write_private_atomic(&key_path, b"synthetic-default").unwrap();
+        filesystem::write_private_atomic(&custom_key, b"synthetic-custom").unwrap();
+        owner.key = Some(Secret::new("synthetic-default").unwrap());
+        let original_model = owner.config.model.clone();
+        let mut server = owner.gateway.start(owner.config.port).unwrap();
+        let before_default = catalogue_binding(server.address(), "synthetic-default");
+        let before_custom = catalogue_binding(server.address(), "synthetic-custom");
+        owner.apply_connection_profile("default", revision).unwrap();
+        assert_eq!(owner.config.model, original_model);
+        assert_eq!(
+            catalogue_binding(server.address(), "synthetic-default"),
+            before_default
+        );
+        assert_eq!(
+            catalogue_binding(server.address(), "synthetic-custom"),
+            before_custom
+        );
+        let revision = owner.drafts.revision("default").unwrap();
+        owner.apply_connection_profile("default", revision).unwrap();
+        assert_eq!(
+            catalogue_binding(server.address(), "synthetic-default"),
+            before_default
+        );
+        assert_eq!(std::fs::read(key_path).unwrap(), b"synthetic-default");
+        assert_eq!(std::fs::read(custom_key).unwrap(), b"synthetic-custom");
+        assert_eq!(
+            owner
+                .view
+                .connection_check_last_terminal
+                .as_ref()
+                .unwrap()
+                .warning,
+            Some(ConnectionCheckWarning::ReadinessStorage)
+        );
+        server.stop();
+    }
+
+    #[test]
+    fn cs04_two_account_final_gate_refuses_changed_second_authority_before_any_publication() {
+        let (root, mut owner, accounts) = catalogue_owner();
+        let profile = "b".repeat(32);
+        let first = owner
+            .view
+            .connection_profiles
+            .iter()
+            .find(|p| p.id == profile)
+            .unwrap()
+            .clone();
+        let mut input = first.input;
+        input.allocations.push(ConnectionAllocationInput {
+            slot: 7,
+            alias: "second".into(),
+            account: Some(accounts[0].clone()),
+            model: "next".into(),
+        });
+        owner
+            .drafts
+            .edit_input(&profile, first.revision, input)
+            .unwrap();
+        cs04_choose_synthetic_catalogue(
+            &mut owner,
+            &profile,
+            7,
+            &accounts[0],
+            "next",
+            "second-wire",
+        );
+        cs04_real_check(&mut owner, &profile, 0, 1);
+        cs04_real_check(&mut owner, &profile, 7, 2);
+        let revision = owner.drafts.revision(&profile).unwrap();
+        let prepared = owner
+            .drafts
+            .prepare_apply(
+                &profile,
+                revision,
+                &owner.config,
+                &owner.connection_accounts,
+            )
+            .unwrap();
+        assert_eq!(prepared.authorities.len(), 2);
+        let second = prepared.authorities.last().unwrap();
+        let mut preferences = second.preferences.clone();
+        preferences.service_generation = "f".repeat(32);
+        owner
+            .store
+            .update_preferences(&second.summary.id, "Still visible", preferences)
+            .unwrap();
+        let disk = std::fs::read(root.0.join("gateway.json")).unwrap();
+        let encoded = prepared.config.encode_applied().unwrap();
+        let wrote = std::sync::atomic::AtomicBool::new(false);
+        assert_eq!(
+            owner
+                .gateway
+                .update_with_authorities(prepared.config, &prepared.authorities, || {
+                    wrote.store(true, Ordering::Release);
+                    minicon_platform::filesystem_publish::write_private_atomic(
+                        &root.0.join("gateway.json"),
+                        &encoded,
+                    )
+                    .unwrap();
+                    Ok(ConfigPublication::Durable)
+                }),
+            Err(ServerError::BindingChanged)
+        );
+        assert!(!wrote.load(Ordering::Acquire));
+        assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), disk);
+        assert_eq!(owner.drafts.revision(&profile), Some(revision));
+        assert!(
+            owner
+                .drafts
+                .views(&owner.connection_accounts)
+                .iter()
+                .find(|p| p.id == profile)
+                .unwrap()
+                .allocations
+                .iter()
+                .all(|row| row.evidence == ConnectionEvidence::Verified)
+        );
+    }
+
+    #[test]
+    fn cs04_published_warning_installs_complete_profile_and_preserves_other_seven_drafts() {
+        let (root, mut owner, _) = cs02_eight_profile_owner();
+        let profile = "b".repeat(32);
+        for view in owner.view.connection_profiles.clone() {
+            if view.id == profile {
+                continue;
+            }
+            let mut input = view.input;
+            input.allocations[0].model = format!("unsaved-{}", view.id);
+            owner
+                .drafts
+                .edit_input(&view.id, view.revision, input)
+                .unwrap();
+        }
+        let view = owner
+            .drafts
+            .views(&owner.connection_accounts)
+            .into_iter()
+            .find(|p| p.id == profile)
+            .unwrap();
+        let mut input = view.input;
+        input.label = "Published target".into();
+        let revision = owner
+            .drafts
+            .edit_input(&profile, view.revision, input)
+            .unwrap();
+        let others: Vec<_> = owner
+            .drafts
+            .views(&owner.connection_accounts)
+            .into_iter()
+            .filter(|p| p.id != profile)
+            .collect();
+        let registry = root.0.join("accounts/accounts.json");
+        let registry_before = std::fs::read(&registry).unwrap();
+        assert_eq!(
+            owner.apply_connection_profile_with(&profile, revision, |path, bytes| {
+                minicon_platform::filesystem_publish::write_private_atomic(path, bytes).unwrap();
+                filesystem::write_private_atomic(&registry, b"synthetic-unavailable-metadata")
+                    .unwrap();
+                Ok(ConfigPublication::DurabilityUnconfirmed)
+            }),
+            Ok(())
+        );
+        assert!(owner.view.config_durability_unconfirmed);
+        assert_eq!(
+            owner
+                .config
+                .profiles
+                .iter()
+                .find(|p| p.id == profile)
+                .unwrap()
+                .label,
+            "Published target"
+        );
+        assert_eq!(
+            owner
+                .view
+                .connection_profiles
+                .iter()
+                .filter(|p| p.id != profile)
+                .cloned()
+                .collect::<Vec<_>>(),
+            others
+        );
+        assert!(
+            !owner
+                .view
+                .connection_profiles
+                .iter()
+                .find(|p| p.id == profile)
+                .unwrap()
+                .dirty
+        );
+        filesystem::write_private_atomic(&registry, &registry_before).unwrap();
+        assert_eq!(Owner::load(root.0.clone()).unwrap().config, owner.config);
+        assert_eq!(owner.view.listener, ListenerState::Stopped);
+        assert!(owner.server.is_none());
+    }
+
+    #[test]
+    fn cs04_unchanged_missing_account_legacy_reference_stays_legacy_and_does_not_create_proof() {
+        let (_root, mut owner, accounts) = catalogue_owner();
+        owner.store.remove(&accounts[0]).unwrap();
+        let before = owner
+            .config
+            .resolve_allocation("default", None)
+            .unwrap()
+            .route
+            .clone();
+        let revision = owner.drafts.revision("default").unwrap();
+        assert_eq!(owner.apply_connection_profile("default", revision), Ok(()));
+        let applied = owner.config.resolve_allocation("default", None).unwrap();
+        assert_eq!(applied.route, &before);
+        assert!(matches!(
+            &applied.evidence.unwrap().origin,
+            crate::provider_server::AppliedOrigin::LegacyApplied { .. }
+        ));
+        let view = owner
+            .view
+            .connection_profiles
+            .iter()
+            .find(|p| p.id == "default")
+            .unwrap();
+        assert_eq!(
+            view.allocations[0].evidence,
+            ConnectionEvidence::LegacyApplied
+        );
+        assert_eq!(
+            view.allocations[0].availability,
+            ConnectionAvailability::MissingAccount
+        );
+        assert_eq!(view.allocations[0].checked_unix_ms, None);
+        assert!(owner.operation.is_none());
+    }
     #[test]
     fn cs03_runtime_stop_rejects_a_real_queued_old_verify_and_allows_new_explicit_verify() {
         let (_root, owner, _) = catalogue_owner();

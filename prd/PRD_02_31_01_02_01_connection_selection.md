@@ -32,7 +32,7 @@ Outcome: safely prepare one client's model connection while other clients keep w
 │   safe failure: late checks cannot authorize a changed candidate; preserve existing allocations
 │   dependency: existing probe, cancellation and account lease mechanisms
 │   non-goal: assuming account-wide readiness proves every model or repeating paid checks on typing
-├── [_] APPLY — publish a complete profile transaction after validation
+├── [-] APPLY — publish a complete profile transaction after validation
 │   invariant: private disk and live routing change together under current authority
 │   evidence: CS-05/06 failed-save retry, changed-alias refusal and unrelated live stream continuity
 │   safe failure: no partial binding; retain draft and matching proof for a deliberate retry
@@ -632,3 +632,111 @@ unique checks. The fixture has no real account, does not measure upstream
 traffic and proves no successful paid/provider call or physical input.
 Independent postcommit, actual provider/native input, atomic Apply and full
 release acceptance remain open.
+
+
+Independent postcommit verification of `8f2b3a5eb8b9d76066b84c732d34920c11542f44`
+passes 168 Rust execution instances, twelve form/refusal observations and all
+22 ordinary-browser checks. The genuine verifier is distinct from this slice's
+producers and explicitly uses shared cache (`isolated=false`). Rust runs against
+the clean commit; GUI replay pins the root's precommit default image whose six
+product-source hashes match that commit, not a clean-commit rebuild or release
+artifact. Evidence: `target-six/v0.2.23-provider/cs03-independent-8f2b3a5/receipt.json`.
+The exact commit is pushed. Matching-source filtered six-native development
+feedback also passes all six jobs: 2066 successful Rust execution instances,
+four deliberate Mac assertion-failure controls, six named Pi opt-ins ignored
+and no unexpected failures. All fifteen CS-03 tests execute on each cell;
+Settings runs 27 per cell and ordinary-browser checks run 22 per cell.
+Evidence: `target-six/v0.2.23-provider/ci-8f2b3a5-native/verification-index.json`.
+This is developer feedback, not release-artifact qualification. Actual provider/
+native input, complete Apply and release remain open.
+
+### Plain atomic Apply join (in progress)
+
+The selected first Apply slice consumes only an already acknowledged current
+raw form. New or changed routes require matching accepted exact-model proof;
+only actual unchanged legacy allocations retain LegacyApplied provenance.
+Ordinary Apply sends no inference request. It prepares the complete bounded
+Config and post-Apply book before publication, preserves sparse stable slots,
+other profiles/keys/drafts and unchanged effective conversation bindings.
+
+The product Store adds a bounded multi-account authority-publication callback,
+separate from its metadata-only `with_snapshot`. Gateway state is acquired first;
+one Store lock revalidates all checked authorities and remains held through the
+preencoded private replacement. Existing typed publication outcomes determine
+whether all published states advance with a durability warning or remain old.
+The explicit UI producer uses the existing acknowledged receipt bound and
+field-activity merge; it never queues an automatic retry after pending edits.
+Stop cancels old queued Apply before admission without claiming cancellation
+of an already committed replacement.
+
+The six-file frozen preview is integrated for actual compiler/runtime review:
+`target-six/v0.2.23-provider/cs04-source-integration.json`.
+That receipt records the initial uncompiled join; preview formatting and
+apply-check do not themselves qualify execution. Initial strict Clippy exposes
+an omitted exhaustive Apply arm in Owner's later action match. The command is
+already consumed by the connection-action path; adding it to the existing
+explicit rejection group repairs compilation without a wildcard or suppression.
+The original failed compiler log and root repair remain retained separately.
+Two new consumers explicitly assert their measured successful Apply before
+checking state, so guard removal cannot masquerade as a setup unwrap failure.
+
+Initial original-source gates pass both strict all-target Clippy configurations,
+formatting, eighteen alignment checks, fourteen focused consumers and all 311
+related consumers, preserving all 297 prior passing names:
+`target-six/v0.2.23-provider/cs04-initial-gates-v2/receipt.json`.
+The earlier failed attempt remains at `cs04-initial-gates/receipt.json`; it is
+not an assertion RED. A subsequent test-only strengthening moves the same
+publication-lock assertion before spawning its competing mutation thread,
+preventing the thread's own short lock hold from masking a removed publication
+guard. The production prefix is byte-exact; both Clippy configurations, format
+and all 162 affected families pass on the strengthened source:
+`target-six/v0.2.23-provider/cs04-normalized-baseline/receipt.json`.
+
+All fourteen new consumer subjects now have actual original-assertion controls:
+nine tagged guards share one temporary source image with one exact test per
+fresh process; six further source changes run as separately rebuilt serial
+controls. Two controls cover distinct missing-proof/revision assertions in one
+subject. Each requires the exact original assertion location and panic values;
+setup, compiler, timeout or passing mutants do not qualify. Exact six-file
+restoration passes all 162 affected consumers with only the named external Pi
+opt-in ignored. No temporary selector remains in product source. Evidence:
+`target-six/v0.2.23-provider/cs04-source-controls/receipt.json`.
+
+The post-restoration default build is pinned before GUI replay with SHA-256
+`4e0ddeff362a46154d3a229f4e4ead2b8dff866cf10087a51fbbdd418c1699f5`.
+Both default/custom gateway worker journeys and all 22 ordinary-browser checks
+pass. The public Apply replay passes fifteen observations: the twelve prior
+form/refusal observations complete before any Apply, then explicit Legacy Apply
+upgrades private Config from version 1 to version 3, a second explicit no-op
+Apply keeps configuration bytes unchanged, and six polls create no new action.
+Both successful Apply acknowledgements have their own request and new revision.
+The original accepted model alias/wire, key bytes and seven other forms' drafts,
+carets/selections remain unchanged; the unavailable account stays LegacyApplied
+without an inference proof. Cleanup checks the last fully observed explicit
+publication, not the intentionally replaced initial Config. The owned GUI exits
+normally and its fresh profile is removed. Evidence:
+`target-six/v0.2.23-provider/cs04-final-gates-v2/receipt.json` and
+`target-six/v0.2.23-provider/cs04-final-gates-v2/public-apply/receipt.json`.
+The replay uses a synthetic missing account, does not measure upstream traffic
+and qualifies no successful paid call or physical input. The pinned image is a
+default build of the precommit dirty product source, not a clean-commit rebuild
+or release artifact. Strict Clippy/alignment/broader source evidence is reused
+only with the recorded exact product bytes and explicit test-order-only delta.
+Independent postcommit and actual provider/native/release acceptance remain open.
+Whole-profile Verify and apply and the remaining guided/profile/key/usage
+experience stay selected subsequent work.
+
+
+The first public gate's changed-path inventory used only unstaged differences
+and omitted already-staged source paths. Its actual observations are retained,
+without relabeling that narrower inventory as complete. The second gate records
+`git diff HEAD` plus all six explicit code paths, checks them before/after every
+command, rebuilds and repins the default image, and repeats both workers and
+all fifteen form/Apply and 22 browser observations. Its new image is 4e0 above;
+the first image was `c391ffd669e10138529950afac8ff0170f58fbcd9868fadce55ab2662f7f1458`.
+Identical product-source hashes do not imply identical executable bytes; each
+public receipt keeps its actual image identity. Repeated observations are not
+additional unique checks. The initial incorrect old-image closeout assumption
+is rejected before document writes and is not runtime counterevidence.
+Evidence: `target-six/v0.2.23-provider/cs04-source-inventory-correction.json`
+and `cs04-closeout-byte-assumption-failure.json` in the same evidence directory.

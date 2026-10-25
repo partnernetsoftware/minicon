@@ -707,6 +707,21 @@ impl Gateway {
         Ok(publication)
     }
 
+    /// All Config preparation and state locking precedes the one Store
+    /// authority lock. No callback can observe a partially prepared Gateway.
+    pub(crate) fn update_with_authorities(
+        &self,
+        config: Config,
+        expected: &[crate::provider_accounts::AccountSnapshot],
+        publish: impl FnOnce() -> Result<ConfigPublication, ServerError>,
+    ) -> Result<ConfigPublication, ServerError> {
+        self.update_and_publish(config, || {
+            self.store
+                .with_current_snapshots(expected, publish)
+                .map_err(credential_error)?
+        })
+    }
+
     #[cfg(test)]
     pub fn fail_next_update(&self) {
         self.fail_update

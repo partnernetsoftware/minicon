@@ -1024,7 +1024,11 @@ impl HarnessSettings {
                 }
             }
             Row::AccountConnection if column == 0 => {
-                self.scroll=self.rows().iter().position(|row|matches!(row,Row::Model)).unwrap_or(0);
+                self.scroll = self
+                    .rows()
+                    .iter()
+                    .position(|row| matches!(row, Row::Model))
+                    .unwrap_or(0);
             }
             Row::AccountConnection => {
                 self.account_draft.enabled = !self.account_draft.enabled;
@@ -1043,63 +1047,121 @@ impl HarnessSettings {
             }
             Row::CatalogueStatus | Row::CatalogueModel(_) => {}
             Row::Profile(index) => {
-                self.profile_navigation=Some(index);self.confirm_connection_profile();
+                self.profile_navigation = Some(index);
+                self.confirm_connection_profile();
             }
-            Row::ProfileCreate => {if let Some(action)=self.forms.create(){self.act(action);}}
-            Row::ProfileToggle => {if let Some(form)=self.forms.current_mut(){form.toggle_enabled();}self.flush_connection_edits();}
-            Row::Allocation(slot) => {
-                if let Some(form)=self.forms.current_mut(){form.blur();form.selected_slot=Some(slot);form.account_picker=false;}
+            Row::ProfileCreate => {
+                if let Some(action) = self.forms.create() {
+                    self.act(action);
+                }
             }
-            Row::AllocationActions if column==0 => {
-                if let Some(id)=self.forms.selected.clone()
-                    && let Some(form)=self.forms.current_mut(){form.add_slot(&id);}
+            Row::ProfileToggle => {
+                if let Some(form) = self.forms.current_mut() {
+                    form.toggle_enabled();
+                }
                 self.flush_connection_edits();
             }
-            Row::AllocationActions => self.connection_command(ConnectionChange::Remove,None),
-            Row::AllocationAccount => {if let Some(form)=self.forms.current_mut(){form.account_picker = !form.account_picker;}}
+            Row::Allocation(slot) => {
+                if let Some(form) = self.forms.current_mut() {
+                    form.blur();
+                    form.selected_slot = Some(slot);
+                    form.account_picker = false;
+                }
+            }
+            Row::AllocationActions if column == 0 => {
+                if let Some(id) = self.forms.selected.clone()
+                    && let Some(form) = self.forms.current_mut()
+                {
+                    form.add_slot(&id);
+                }
+                self.flush_connection_edits();
+            }
+            Row::AllocationActions => self.connection_command(ConnectionChange::Remove, None),
+            Row::AllocationAccount => {
+                if let Some(form) = self.forms.current_mut() {
+                    form.account_picker = !form.account_picker;
+                }
+            }
             Row::AllocationAccountChoice(index) => {
-                let account=self.view.accounts[index].id.clone();
-                if let Some(form)=self.forms.current_mut(){form.assign_account(&account);}self.flush_connection_edits();
+                let account = self.view.accounts[index].id.clone();
+                if let Some(form) = self.forms.current_mut() {
+                    form.assign_account(&account);
+                }
+                self.flush_connection_edits();
             }
-            Row::ModelInput if column==1 => self.submit(Field::Model),
-            Row::ModelActions if column==0 => {
-                if let Some(account)=self.forms.current().and_then(|form|form.selected_account()).map(str::to_owned) {
+            Row::ModelInput if column == 1 => self.submit(Field::Model),
+            Row::ModelActions if column == 0 => {
+                if let Some(account) = self
+                    .forms
+                    .current()
+                    .and_then(|form| form.selected_account())
+                    .map(str::to_owned)
+                {
                     self.act(Action::RefreshAccountModels(account));
-                } else {self.error=Some("Choose an account for this model slot before refreshing its catalogue.".into());}
+                } else {
+                    self.error = Some(
+                        "Choose an account for this model slot before refreshing its catalogue."
+                            .into(),
+                    );
+                }
             }
-            Row::ModelActions => {self.forms.retry();self.flush_connection_edits();}
+            Row::ModelActions => {
+                self.forms.retry();
+                self.flush_connection_edits();
+            }
             Row::VerificationActions => {
-                if let Some(action) = self.forms.verify() { self.act(action); }
+                if let Some(action) = self.forms.verify() {
+                    self.act(action);
+                }
             }
             Row::VerificationCancel => {
                 if let Some(active) = &self.view.connection_check_active {
                     let request = active.request;
-                    self.act(Action::CancelConnectionVerification {request});
+                    self.act(Action::CancelConnectionVerification { request });
                 }
             }
             Row::VerificationRetry => {
                 if let Some(terminal) = &self.view.connection_check_last_terminal
-                    && terminal.warning == Some(provider_runtime::ConnectionCheckWarning::ReadinessStorage) {
+                    && terminal.warning
+                        == Some(provider_runtime::ConnectionCheckWarning::ReadinessStorage)
+                {
                     let request = terminal.request;
-                    self.act(Action::RetryConnectionReadiness {request});
+                    self.act(Action::RetryConnectionReadiness { request });
                 }
             }
             Row::ModelChoice(index) => {
-                if let Some(catalogue)=self.current_catalogue()
-                    && catalogue.status==provider_runtime::CatalogueStatus::Fresh
-                    && let Some(model)=catalogue.models.get(index) {
-                    let choice=(catalogue.account.clone(),model.id.clone());
-                    self.connection_command(ConnectionChange::Choose,Some(choice));
+                if let Some(catalogue) = self.current_catalogue()
+                    && catalogue.status == provider_runtime::CatalogueStatus::Fresh
+                    && let Some(model) = catalogue.models.get(index)
+                {
+                    let choice = (catalogue.account.clone(), model.id.clone());
+                    self.connection_command(ConnectionChange::Choose, Some(choice));
                 }
             }
-            Row::ProfileCommands if column==0 => {
-                if self.forms.current().is_some_and(|form|form.view.applied.is_some()) {
-                    self.connection_command(ConnectionChange::Revert,None);
-                } else if self.forms.selected.as_deref()!=Some("default") {
-                    self.connection_command(ConnectionChange::Discard,None);
-                } else {self.error=Some("There is no applied default connection to revert. Remove its model entry to clear this draft.".into());}
+            Row::ProfileCommands if column == 0 => {
+                if self
+                    .forms
+                    .current()
+                    .is_some_and(|form| form.view.applied.is_some())
+                {
+                    self.connection_command(ConnectionChange::Revert, None);
+                } else if self.forms.selected.as_deref() != Some("default") {
+                    self.connection_command(ConnectionChange::Discard, None);
+                } else {
+                    self.error=Some("There is no applied default connection to revert. Remove its model entry to clear this draft.".into());
+                }
             }
-            Row::ProfileCommands => self.error=Some("Atomic Apply is not available yet. Verify selected model does not change the applied connection.".into()),
+            Row::ProfileCommands => {
+                self.flush_connection_edits();
+                if self.view.busy || self.view.login_active {
+                    self.error = Some(
+                        "Wait for the active operation before Apply. No paid request was sent."
+                            .into(),
+                    );
+                } else {
+                    self.connection_command(ConnectionChange::Apply, None);
+                }
+            }
             Row::KeyActions => self.act(match column {
                 0 => Action::CreateClientKey,
                 1 => Action::CopyClientKey,
@@ -1990,8 +2052,17 @@ impl ConApp {
                     button(
                         surface,
                         cell(1, 2),
-                        tr("Apply unavailable", "应用暂不可用", "套用暫不可用"),
-                        false,
+                        if settings.view.busy
+                            || settings.view.login_active
+                            || !settings.forms.can_apply()
+                        {
+                            tr("Apply (not ready)", "应用（未就绪）", "套用（未就緒）")
+                        } else {
+                            tr("Apply", "应用", "套用")
+                        },
+                        settings.forms.can_apply()
+                            && !settings.view.busy
+                            && !settings.view.login_active,
                     );
                 }
                 Row::KeyState => {
@@ -2950,6 +3021,70 @@ fn paint_verification_button(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn cs04_actual_apply_column_is_reachable_and_dispatches_only_an_acknowledged_request() {
+        let mut settings = HarnessSettings::default();
+        settings.view.load_state = provider_runtime::LoadState::Loaded;
+        settings.view.busy = false;
+        settings.view.connection_profile = "default".into();
+        let mut profile = connection_profile("default", "account-a");
+        profile.allocations = profile
+            .input
+            .allocations
+            .iter()
+            .map(|row| crate::provider_selection::ConnectionAllocationView {
+                slot: row.slot,
+                upstream_model: Some("wire".into()),
+                protocol: Some(crate::provider_server::WireProtocol::Chat),
+                availability: provider_runtime::ConnectionAvailability::Available,
+                evidence: provider_runtime::ConnectionEvidence::Verified,
+                checked_unix_ms: Some(1234),
+            })
+            .collect();
+        settings.view.connection_profiles = vec![profile];
+        settings.forms.sync(&settings.view);
+        let rows = settings.rows();
+        let index = rows
+            .iter()
+            .position(|row| matches!(row, Row::ProfileCommands))
+            .unwrap();
+        for (width, height) in [(420, 300), (760, 420)] {
+            let layout = ui::Layout::new(width, height, 1.0);
+            let first = layout.harness_settings(1.0, rows.len(), 0);
+            let geometry = layout.harness_settings(1.0, rows.len(), first.rows.reveal(index));
+            let cell = geometry.cell(index, 1, row_columns(Row::ProfileCommands), 1.0);
+            assert!(cell.width > 0 && cell.height > 0);
+            assert_eq!(
+                geometry
+                    .rows
+                    .hit(cell.x + cell.width / 2, cell.y + cell.height / 2),
+                Some(index)
+            );
+        }
+        settings.activate(Row::ProfileCommands, 1);
+        // No Runtime exists in this pure UI fixture. The actual Apply producer
+        // must reach act/send_failed and consume exactly its owned request.
+        assert_eq!(
+            settings.forms.current().unwrap().local_error,
+            Some(provider_runtime::RuntimeError::WorkerUnavailable.to_string())
+        );
+        assert!(!settings.forms.current().unwrap().waiting());
+        assert!(settings.forms.next_edit().is_none());
+        settings.forms.current_mut().unwrap().model_mut().text = "unacknowledged".into();
+        settings.forms.current_mut().unwrap().edit_model();
+        settings.activate(Row::ProfileCommands, 1);
+        assert!(
+            settings
+                .forms
+                .current()
+                .unwrap()
+                .local_error
+                .as_ref()
+                .unwrap()
+                .contains("Acknowledge")
+        );
+    }
     #[test]
     fn cs03_actual_verify_button_paints_visible_localized_cost_and_output_limit_with_a_local_error()
     {

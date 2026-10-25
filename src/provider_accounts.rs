@@ -323,6 +323,41 @@ impl AccountStore {
         Ok(accept(self.snapshot_locked(id)?))
     }
 
+    /// One publication admission for all affected account authorities. Caller
+    /// already owns Gateway state; callback may only replace preencoded Config
+    /// bytes. It must not reacquire Store/Gateway or persist account readiness.
+    pub(crate) fn with_current_snapshots<T>(
+        &self,
+        expected: &[AccountSnapshot],
+        publish: impl FnOnce() -> T,
+    ) -> Result<T, StoreError> {
+        if expected.len() > MAX_ACCOUNTS {
+            return Err(StoreError::InvalidAccount);
+        }
+        let mut ids = std::collections::BTreeSet::new();
+        if expected
+            .iter()
+            .any(|entry| !ids.insert(entry.summary.id.as_str()))
+        {
+            return Err(StoreError::InvalidAccount);
+        }
+        let _guard = self.mutation.lock().map_err(|_| StoreError::Storage)?;
+        for expected in expected {
+            let current = self.snapshot_locked(&expected.summary.id)?;
+            if current.summary.provider != expected.summary.provider
+                || current.generation != expected.generation
+                || !current.preferences.enabled
+                || !expected.preferences.enabled
+                || current.preferences.service_generation != expected.preferences.service_generation
+                || current.preferences.service != expected.preferences.service
+                || current.organization != expected.organization
+            {
+                return Err(StoreError::Changed);
+            }
+        }
+        Ok(publish())
+    }
+
     fn snapshot_locked(&self, id: &str) -> Result<AccountSnapshot, StoreError> {
         let accounts = self.read_registry()?;
         let account = accounts
@@ -1092,6 +1127,98 @@ impl AccountStore {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn cs04_multi_account_publication_refuses_one_changed_authority_and_bounded_invalid_sets() {
+        let fixture = Fixture::new();
+        let store = AccountStore::new(fixture.0.clone()).unwrap();
+        let mut expected = Vec::new();
+        for label in ["First", "Second"] {
+            let account = store
+                .insert(label, catalogue_org_grant("synthetic-access"))
+                .unwrap();
+            expected.push(store.snapshot(&account.id).unwrap());
+        }
+        let first = &expected[0];
+        store
+            .update_preferences(
+                &first.summary.id,
+                "Label is not authority",
+                first.preferences.clone(),
+            )
+            .unwrap();
+        assert_eq!(store.with_current_snapshots(&expected, || 17), Ok(17));
+        let second = &expected[1];
+        let mut preferences = second.preferences.clone();
+        preferences.service_generation = "e".repeat(32);
+        store
+            .update_preferences(&second.summary.id, "Second", preferences)
+            .unwrap();
+        let called = std::cell::Cell::new(false);
+        assert_eq!(
+            store.with_current_snapshots(&expected, || called.set(true)),
+            Err(StoreError::Changed)
+        );
+        assert!(!called.get());
+        assert_eq!(
+            store.with_current_snapshots(&vec![first.clone(); 17], || called.set(true)),
+            Err(StoreError::InvalidAccount)
+        );
+        assert_eq!(
+            store.with_current_snapshots(&[first.clone(), first.clone()], || called.set(true)),
+            Err(StoreError::InvalidAccount)
+        );
+        assert!(!called.get());
+    }
+
+    #[test]
+    fn cs04_publication_holds_one_account_lock_until_the_callback_returns() {
+        let fixture = Fixture::new();
+        let store = std::sync::Arc::new(AccountStore::new(fixture.0.clone()).unwrap());
+        let account = store
+            .insert("Current", catalogue_org_grant("synthetic-access"))
+            .unwrap();
+        let expected = store.snapshot(&account.id).unwrap();
+        let (attempt, attempted) = std::sync::mpsc::channel();
+        let (done, completed) = std::sync::mpsc::channel();
+        let next = store.clone();
+        let changed = expected.clone();
+        let mut worker = None;
+        store
+            .with_current_snapshots(&[expected], || {
+                assert!(
+                    matches!(
+                        store.mutation.try_lock(),
+                        Err(std::sync::TryLockError::WouldBlock)
+                    ),
+                    "publication must retain Store authority lock"
+                );
+                worker = Some(std::thread::spawn(move || {
+                    attempt.send(()).unwrap();
+                    let mut preferences = changed.preferences;
+                    preferences.service_generation = "f".repeat(32);
+                    next.update_preferences(&changed.summary.id, "After publication", preferences)
+                        .unwrap();
+                    done.send(()).unwrap();
+                }));
+                attempted.recv_timeout(Duration::from_secs(3)).unwrap();
+                assert!(matches!(
+                    completed.try_recv(),
+                    Err(std::sync::mpsc::TryRecvError::Empty)
+                ));
+            })
+            .unwrap();
+        completed.recv_timeout(Duration::from_secs(3)).unwrap();
+        worker.unwrap().join().unwrap();
+        assert_eq!(
+            store
+                .snapshot(&account.id)
+                .unwrap()
+                .preferences
+                .service_generation,
+            "f".repeat(32)
+        );
+    }
     #[test]
     fn cs03_readiness_requires_full_current_service_and_organization_authority() {
         let fixture = Fixture::new();

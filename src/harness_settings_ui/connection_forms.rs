@@ -621,6 +621,30 @@ impl ConnectionForms {
                 .or_else(|| self.forms.keys().next().cloned());
         }
     }
+    pub fn can_apply(&self) -> bool {
+        self.current().is_some_and(|form| {
+            !form.waiting()
+                && !form.unsent()
+                && form.input() == form.view.input
+                && form.view.error.is_none()
+                && form
+                    .allocations
+                    .values()
+                    .all(|row| row.model.text.len() <= OWNER_MODEL_BYTES)
+                && form.view.allocations.len() == form.view.input.allocations.len()
+                && form.view.input.allocations.iter().all(|input| {
+                    form.view
+                        .allocations
+                        .iter()
+                        .any(|row| row.slot == input.slot)
+                })
+                && form.view.allocations.iter().all(|row| {
+                    row.evidence == runtime::ConnectionEvidence::LegacyApplied
+                        || (row.evidence == runtime::ConnectionEvidence::Verified
+                            && row.availability == runtime::ConnectionAvailability::Available)
+                })
+        })
+    }
     pub fn verify(&mut self) -> Option<Action> {
         let id = self.selected.clone()?;
         let form = self.current_mut()?;
@@ -683,6 +707,10 @@ impl ConnectionForms {
         choice: Option<(String, String)>,
     ) -> Option<Action> {
         let id = self.selected.clone()?;
+        if change == ConnectionChange::Apply && !self.can_apply() {
+            self.current_mut()?.local_error = Some("Acknowledge valid edits and verify every changed model before Apply. Apply sends no paid requests.".into());
+            return None;
+        }
         if self.current().is_some_and(|f| {
             f.waiting()
                 || (f.unsent()
@@ -696,6 +724,11 @@ impl ConnectionForms {
         let form = self.forms.get_mut(&id)?;
         let slot = form.selected_slot.unwrap_or(0);
         let action = match change {
+            ConnectionChange::Apply => Action::ApplyConnectionProfile {
+                request,
+                profile: id.clone(),
+                expected_revision: form.revision,
+            },
             ConnectionChange::Revert => Action::RevertConnectionProfile {
                 request,
                 profile: id.clone(),
@@ -744,6 +777,7 @@ impl ConnectionForms {
     pub fn send_failed(&mut self, action: &Action, error: RuntimeError) {
         let request = match action {
             Action::CreateConnectionProfile { request }
+            | Action::ApplyConnectionProfile { request, .. }
             | Action::EditConnectionProfile { request, .. }
             | Action::ChooseConnectionModel { request, .. }
             | Action::RemoveConnectionAllocation { request, .. }
@@ -767,6 +801,135 @@ impl ConnectionForms {
 
 #[cfg(test)]
 mod tests {
+
+    fn cs04_apply_view() -> View {
+        let mut view = loaded(vec![profile("default"), profile("other")]);
+        view.busy = false;
+        for profile in &mut view.connection_profiles {
+            profile.allocations = profile
+                .input
+                .allocations
+                .iter()
+                .map(|row| crate::provider_selection::ConnectionAllocationView {
+                    slot: row.slot,
+                    upstream_model: Some("wire".into()),
+                    protocol: Some(crate::provider_server::WireProtocol::Chat),
+                    availability: runtime::ConnectionAvailability::Available,
+                    evidence: runtime::ConnectionEvidence::Verified,
+                    checked_unix_ms: Some(1234),
+                })
+                .collect();
+        }
+        view
+    }
+
+    #[test]
+    fn cs04_apply_requires_exact_acknowledged_fields_and_never_auto_retries_a_failure() {
+        let mut view = cs04_apply_view();
+        let mut forms = ConnectionForms::default();
+        forms.sync(&view);
+        forms.current_mut().unwrap().model_mut().text = "x".repeat(201);
+        forms.current_mut().unwrap().model_mut().caret = 17;
+        forms.current_mut().unwrap().model_mut().anchor = Some(4);
+        forms.current_mut().unwrap().edit_model();
+        assert!(!forms.can_apply());
+        assert!(forms.command(ConnectionChange::Apply, None).is_none());
+        assert_eq!(
+            (
+                forms.current().unwrap().model().caret,
+                forms.current().unwrap().model().anchor
+            ),
+            (17, Some(4))
+        );
+        assert!(forms.next_edit().is_none());
+        forms.current_mut().unwrap().model_mut().text = "staged".into();
+        forms.current_mut().unwrap().edit_model();
+        let edit = forms.next_edit().unwrap();
+        assert!(forms.command(ConnectionChange::Apply, None).is_none());
+        view.connection_profiles[0].input.allocations[0].model = "staged".into();
+        acknowledge(
+            &mut view,
+            "default",
+            request(&edit),
+            ConnectionChange::Edit,
+            Ok(()),
+        );
+        forms.sync(&view);
+        let apply = forms.command(ConnectionChange::Apply, None).unwrap();
+        assert!(matches!(
+            apply,
+            Action::ApplyConnectionProfile {
+                request: 2,
+                expected_revision: 2,
+                ..
+            }
+        ));
+        assert!(!forms.can_apply());
+        acknowledge(
+            &mut view,
+            "default",
+            request(&apply),
+            ConnectionChange::Apply,
+            Err(RuntimeError::Storage),
+        );
+        forms.sync(&view);
+        for _ in 0..3 {
+            forms.sync(&view);
+            assert!(forms.next_edit().is_none());
+        }
+        assert!(!forms.current().unwrap().waiting());
+        assert!(
+            forms
+                .current()
+                .unwrap()
+                .local_error
+                .as_ref()
+                .unwrap()
+                .contains("Storage")
+        );
+        assert!(forms.command(ConnectionChange::Apply, None).is_some()); // explicit retry only
+    }
+
+    #[test]
+    fn cs04_apply_ack_rebases_only_unedited_fields_and_keeps_other_form_focus_and_caret() {
+        let mut view = cs04_apply_view();
+        let mut forms = ConnectionForms::default();
+        forms.sync(&view);
+        let apply = forms.command(ConnectionChange::Apply, None).unwrap();
+        forms.current_mut().unwrap().model_mut().text = "typed-after-apply".into();
+        forms.current_mut().unwrap().model_mut().caret = 3;
+        forms.current_mut().unwrap().model_mut().anchor = Some(1);
+        forms.current_mut().unwrap().edit_model();
+        forms.focus("other", 9);
+        forms.current_mut().unwrap().model_mut().caret = 4;
+        forms.current_mut().unwrap().model_mut().anchor = Some(2);
+        forms
+            .current_mut()
+            .unwrap()
+            .remember_focus(FormFocus::Model(Some(0)));
+        view.connection_profiles[0].input.allocations[0].model = "applied-wire".into();
+        view.connection_profiles[0].applied = Some(view.connection_profiles[0].input.clone());
+        acknowledge(
+            &mut view,
+            "default",
+            request(&apply),
+            ConnectionChange::Apply,
+            Ok(()),
+        );
+        forms.sync(&view);
+        let target = forms.forms.get("default").unwrap();
+        assert_eq!(
+            target.view.applied.as_ref().unwrap().allocations[0].model,
+            "applied-wire"
+        );
+        assert_eq!(target.model().text, "typed-after-apply");
+        assert_eq!((target.model().caret, target.model().anchor), (3, Some(1)));
+        assert!(target.unsent());
+        let other = forms.current_mut().unwrap();
+        assert_eq!((other.model().caret, other.model().anchor), (4, Some(2)));
+        assert_eq!(other.restore_focus(), Some(FormFocus::Model(Some(0))));
+        assert_eq!(forms.selected.as_deref(), Some("other"));
+    }
     #[test]
     fn cs03_verify_requires_acknowledged_exact_input_and_uses_global_request_sequence() {
         let mut view = loaded(vec![profile("default"), profile("custom")]);
@@ -850,6 +1013,7 @@ mod tests {
     fn request(action: &Action) -> u64 {
         match action {
             Action::EditConnectionProfile { request, .. }
+            | Action::ApplyConnectionProfile { request, .. }
             | Action::RevertConnectionProfile { request, .. }
             | Action::DiscardUnappliedProfile { request, .. }
             | Action::CreateConnectionProfile { request } => *request,
