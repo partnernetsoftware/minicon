@@ -532,3 +532,31 @@ owns K2 applied targeting, immediate Copy-intent invalidation, actual clipboard
 feedback and worker/Pi handoff semantics. Its integrated controlled-consumer
 checkpoint is recorded there; source controls and public/native handoff remain
 open. It does not complete HU-05/06/08/09 or native/client qualification.
+
+### Independent service editing during asynchronous publication
+
+Service port editing has its own input owner. Initial or changed client-profile
+metadata must not steal that focus, move its caret/selection, cancel its preedit
+or jump its viewport. An unrelated View publication with the same applied port
+must not reset a selected port value merely because its bytes still equal the
+applied value. A changed applied port may update an untouched, unfocused field;
+an active or dirty draft remains the user's draft. Failed Save preserves both
+the previous applied port and the editable correction; retry remains explicit.
+The existing typed View, field editor and connection forms are prerequisites;
+the sole product hot file is `src/harness_settings_ui.rs`. Deterministic actual
+consumer regressions precede the fix, followed by the original public failed-
+save/retry journey. This does not change storage publication, provider authority,
+model verification or accepted profile state.
+
+The two actual consumer subjects are
+`independent_port_focus_survives_profile_hydration` and
+`independent_port_selection_survives_unrelated_view_publication`.
+`target-six/v0.2.23-provider/port-publication-controls/receipt.json` records
+their two baseline passes, each intended original assertion failure after its
+production guard is removed, byte-exact source restoration and two restored
+passes. These add two subjects to the Windows binary suite (869 total).
+The original public failed-save/draft/retry journey also passes both Windows
+architectures in [run40243448527](https://github.com/partnernetsoftware/minicon/actions/runs/40243448527)
+at `45a5165be999e3aed40cf806fe48f2a55f1e731c`, with Loaded-state setup and
+the actual corrected port checked before Submit. That earlier-source result
+does not qualify the subsequent focus/selection fix or physical input.

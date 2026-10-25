@@ -606,6 +606,19 @@ impl HarnessSettings {
             )
     }
 
+    fn sync_port_from_view(&mut self, next: &View) {
+        if next.port != self.view.port
+            && self.focused != Some(Field::Port)
+            && self.port.preedit.is_empty()
+            && self.port.text == self.view.port.to_string()
+        {
+            self.port.text = next.port.to_string();
+            self.port.caret = self.port.text.len();
+            self.port.anchor = None;
+            self.port.select_all = false;
+        }
+    }
+
     fn editor(&self, field: Field) -> &composer::ComposerState {
         match field {
             Field::Port => &self.port,
@@ -803,7 +816,13 @@ impl HarnessSettings {
         let previous = self.forms.selected.clone();
         self.forms.sync(&self.view);
         self.sync_key_ui();
-        if previous != self.forms.selected {
+        let independent_editor = self.focused.is_some_and(|field| {
+            !matches!(
+                field,
+                Field::Model | Field::Profile(_) | Field::ProfileChooser
+            )
+        });
+        if previous != self.forms.selected && !independent_editor {
             self.focused = None;
             self.drag = None;
             self.clicks = Default::default();
@@ -2792,12 +2811,7 @@ impl ConApp {
                 settings.view.usage = previous_usage;
                 unchanged
             };
-            if settings.port.text == settings.view.port.to_string() {
-                settings.port.text = next.port.to_string();
-                settings.port.caret = settings.port.text.len();
-                settings.port.anchor = None;
-                settings.port.select_all = false;
-            }
+            settings.sync_port_from_view(&next);
             if !next.login_active {
                 settings.challenge = None;
                 settings.challenge_expired = false;
@@ -4081,6 +4095,52 @@ mod tests {
             error: None,
             allocations: vec![],
         }
+    }
+
+    #[test]
+    fn independent_port_focus_survives_profile_hydration() {
+        let mut settings = HarnessSettings::default();
+        settings.view.busy = false;
+        settings.view.load_state = provider_runtime::LoadState::Loaded;
+        settings.view.connection_profile = "default".into();
+        settings.port.text = settings.view.port.to_string();
+        settings.port.caret = settings.port.text.len();
+        settings.port.anchor = Some(0);
+        settings.focused = Some(Field::Port);
+        settings.view.connection_profiles = vec![connection_profile("default", "synthetic")];
+        settings.sync_connection_forms();
+        assert!(
+            settings.focused == Some(Field::Port),
+            "profile hydration must not steal independent port focus"
+        );
+        field_editor::apply(&mut settings.port, Command::Commit("30127"), PORT_LIMITS);
+        assert_eq!(
+            settings.port.text, "30127",
+            "the correction must replace the selected port"
+        );
+    }
+
+    #[test]
+    fn independent_port_selection_survives_unrelated_view_publication() {
+        let mut settings = HarnessSettings::default();
+        settings.view.busy = false;
+        settings.port.text = settings.view.port.to_string();
+        settings.port.caret = 3;
+        settings.port.anchor = Some(1);
+        settings.port.preedit = "ni".into();
+        settings.focused = Some(Field::Port);
+        let mut next = settings.view.clone();
+        next.status = Some("synthetic publication".into());
+        settings.sync_port_from_view(&next);
+        assert_eq!(
+            (
+                settings.port.caret,
+                settings.port.anchor,
+                settings.port.preedit.as_str()
+            ),
+            (3, Some(1), "ni"),
+            "unrelated publication must preserve port selection and preedit"
+        );
     }
 
     #[test]
