@@ -1118,3 +1118,13 @@ handle captured at helper spawn inside the existing transport and uses that
 same parent/PID/ready contract for hide-before-release. It does not infer a
 parent from an untrusted incoming frame. Local compiler logs are retained in
 `target-six/v0.2.23-provider/linux-release-f6b0478-ci-failed.log`.
+
+The failed-port-save investigation first strengthens its preparation: the
+public fixture must observe actual Loaded metadata plus operation-idle before
+changing `gateway.json` into a directory, and must observe the entered30127
+correction before Submit. Busy=false alone is not successful initialization
+(the existing PRD36 contract). All original failed-save/old-port/draft/retry
+assertions remain. This establishes the actual failed step before changing
+product editing logic; it does not claim the old ARM64 failure was fixture-only.
+The shared prerequisite is the existing public metadata projection; the only
+implementation hot file for this preparation is the public browser court.

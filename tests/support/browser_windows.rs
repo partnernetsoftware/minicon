@@ -1630,7 +1630,26 @@ fn open_harness(host: &BrowserGui) -> Value {
         host.cli(&["ui-snapshot"])["geometry"]["settings_section"],
         "harness"
     );
-    wait_harness(host, |state| state["busy"] == false)
+    // Busy is an operation state, not proof that account/configuration loading
+    // succeeded. Never corrupt a destination for a save test before this gate.
+    let deadline = Instant::now() + Duration::from_secs(12);
+    loop {
+        let snapshot = host.cli(&["ui-snapshot"]);
+        let metadata = &snapshot["geometry"]["harness_workspace"]["metadata"];
+        let state = &snapshot["geometry"]["harness_settings"];
+        assert_ne!(
+            metadata, "unavailable",
+            "Harness fixture initialization failed: {state}"
+        );
+        if metadata == "loaded" && state["busy"] == false {
+            return state.clone();
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Harness fixture did not finish loading: {snapshot}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
 }
 
 fn click_harness(host: &BrowserGui, id: &str, column: usize) {
@@ -1790,6 +1809,11 @@ fn host_harness_failed_port_save_retains_the_prior_port_and_editable_draft() {
     click_harness(&host, "port", 0);
     host.cli(&["send-ui-keys", "Ctrl+a"]);
     host.cli(&["send-ui-ime", "commit", "30127"]);
+    assert_eq!(
+        harness_snapshot(&host)["port_editor"]["text"],
+        "30127",
+        "the save-failure fixture must first enter the real port correction"
+    );
     click_harness(&host, "port", 1);
     let failed = wait_harness(&host, |state| {
         state["status"]
