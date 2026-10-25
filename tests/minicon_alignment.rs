@@ -421,6 +421,19 @@ fn minicon_binary() -> std::path::PathBuf {
     path
 }
 
+#[cfg(not(feature = "native-auth-court"))]
+#[test]
+fn default_product_refuses_the_native_authorization_court_entry_point() {
+    let output = Command::new(minicon_binary())
+        .args(["--native-auth-court", "unused-native-court-manifest.json"])
+        .output()
+        .expect("ask default product to reject the native court argument");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("unknown argument '--native-auth-court'")
+    );
+}
+
 #[test]
 fn every_selftest_script_is_listed_in_the_selftest_entrypoint() {
     let root = repo_root();

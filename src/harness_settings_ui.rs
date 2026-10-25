@@ -201,6 +201,24 @@ pub(super) struct HarnessSettings {
 }
 
 impl HarnessSettings {
+    #[cfg(feature = "native-auth-court")]
+    pub(super) fn for_native_auth_court(attempt: provider_runtime::AttemptId) -> Self {
+        let view = View {
+            busy: false,
+            login_active: true,
+            auth_attempt: Some(attempt),
+            ..View::default()
+        };
+        let mut port = composer::ComposerState::default();
+        port.text = view.port.to_string();
+        port.caret = port.text.len();
+        Self {
+            view,
+            port,
+            ..Self::default()
+        }
+    }
+
     fn receive_device_challenge(
         &mut self,
         challenge: DeviceChallenge,

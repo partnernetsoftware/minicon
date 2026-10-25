@@ -79,6 +79,8 @@ path = "tests/signing_workflow_policy.rs"
 # keeps its historical spelling so existing build scripts stay valid.
 default = ["experimental-rust-console"]
 experimental-rust-console = ["minicon-platform/rust-console"]
+# Dedicated native browser court; never selected by default or release builds.
+native-auth-court = []
 
 [dependencies]
 minicon-console = { path = "crates/minicon-console" }

@@ -55,6 +55,8 @@ mod control_dispatch;
 mod control_pending;
 mod font;
 mod harness;
+#[cfg(feature = "native-auth-court")]
+mod harness_auth_court;
 mod harness_auth_ui;
 mod harness_gateway;
 mod harness_opencode;
@@ -673,6 +675,37 @@ fn main() {
     // it only shares the file, and must not open a window or a control
     // endpoint.
     if let Some(code) = minicon_platform::pty::run_if_console_agent(&args) {
+        std::process::exit(code);
+    }
+
+    #[cfg(feature = "native-auth-court")]
+    if args
+        .first()
+        .is_some_and(|argument| argument == "--native-auth-court")
+    {
+        let code = if args.len() != 2 {
+            let _ = minicon_platform::parent_console::write_stderr(
+                "native auth court requires exactly one manifest path\n",
+            );
+            2
+        } else {
+            #[cfg(target_os = "linux")]
+            if let Err(message) = linux_startup::preflight() {
+                let _ = minicon_platform::parent_console::write_stderr(&format!(
+                    "native auth court unavailable: {message}\n"
+                ));
+                std::process::exit(1);
+            }
+            match harness_auth_court::run_application(std::path::Path::new(&args[1])) {
+                Ok(()) => 0,
+                Err(code) => {
+                    let _ = minicon_platform::parent_console::write_stderr(&format!(
+                        "native auth court failed: {code}\n"
+                    ));
+                    1
+                }
+            }
+        };
         std::process::exit(code);
     }
 

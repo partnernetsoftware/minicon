@@ -536,6 +536,82 @@ not prove same-origin cookies/localStorage isolation between ordinary/A/B/A view
 persistence after reopen, native proxy routing or loopback callback delivery.
 Those native journeys and the product integration remain open.
 
+#### Native context and live-page court
+
+The next development join exercises the existing product auth presentation and
+shared native hosts through a non-default `native-auth-court` test build. The
+default product neither compiles its driver nor accepts its test-only argument.
+The driver carries no provider grant, account or auth transport. A loopback
+fixture owns its page JavaScript and finite observations; there is no production
+eval API or provider endpoint override. Build outputs and receipts remain
+separate from canonical/default product artifacts.
+
+```text
+Outcome: prove native account-store separation and live ordinary-page preservation
+├── [-] CONTEXT — ordinary -> A -> B -> reopened A at one fixture origin
+│   invariant: separate cookies/localStorage; A persists only in A's context
+│   evidence: actual native page reports and HTTP Cookie headers; collapsed-context RED
+│   safe failure: typed capability refusal or failed bounded court, never shared-store fallback
+│   dependency: explicit native contexts and real helper; non-goal: provider authorization
+├── [-] LIVE — ordinary returns with the same DOM/input/history after auth closes
+│   invariant: one original document load; unchanged unsaved-input/document nonce
+│   evidence: real detach/restore consumer and engine history; teardown/reload RED
+│   safe failure: retain failure observations; do not call URL reload preservation
+│   dependency: CONTEXT and serial presentation; non-goal: native focus/map-state certification
+└── [-] SCOPE — exact dedicated test bytes and bounded process lifetime
+    invariant: source/features/OS/ISA/helper identity and terminal exits name each result
+    evidence: existing native dev courts collect raw fixture/driver/process receipts
+    safe failure: missing court is BLOCKED; incomplete observations are not a pass
+    dependency: isolated native host; non-goal: default/release-artifact qualification
+```
+
+```mermaid
+flowchart LR
+    T[Separate native-auth-court test build] --> P[Real ConApp auth open / detach]
+    F[Loopback fixture-owned JS and bounded HTTP] --> O[Ordinary live DOM / history / storage]
+    P --> A[Explicit context A]
+    A --> B[Explicit context B]
+    B --> R[Reopen context A]
+    R --> D[Real auth close and ordinary restoration]
+    O --> D
+    D --> E[Finite observations + successful process exits + byte identities]
+    X[Collapsed stores or teardown/reload] --> RED[Required actual runtime counterexample]
+    RED --> E
+    E --> LIMIT[Scoped native development evidence only]
+```
+
+The page can report while hidden, so successful DOM/storage observations cannot
+certify native visibility, checked hide/readiness, map state, focus, toolbar
+gestures or physical input. Proxy/no-direct and delayed-helper publication keep
+their separate native obligations. A disposable court user/profile is required;
+macOS identified-store cleanup remains an explicit OS-managed operation.
+Invocation and result retention belong to
+[the native dev court](PRD_02_32_dev_loop_crosscheck.md#opt-in-native-authorization-context-court).
+Compilation/protocol checks prepare this join; actual native execution is still
+pending and no native delivery claim is made by the planned court itself.
+
+The local scaffold checkpoint is recorded in
+`target-six/v0.2.23-provider/native-auth-court-final-gate-receipt.json`:
+2 auth-presentation and 4 account-settings Rust tests in the dedicated feature,
+18 default-product alignment tests, 9 Python protocol checks, formatting and
+strict all-target Clippy with and without the feature pass. The new public
+black-box `default_product_refuses_the_native_authorization_court_entry_point`
+passes and fails at runtime when default CLI acceptance is deliberately added;
+`native-auth-default-refusal-guard-receipt.json` records exact restoration.
+`native-auth-context-protocol-race-fixed/protocol-guard-receipt.json` records
+nine actual protocol assertion failures, exact restoration and nine passing
+checks. Replacement detection covers reports before and after restore ACK.
+An initial alignment run found newly documented files absent from Git's index;
+its retained `native-auth-court-prestage-*` receipt/log is not counterevidence.
+The later successful gate ran with those exact new paths indexed.
+
+`native-court-owned-process-final/receipt.json` exercises one real Windows x64
+headless child under the runner's private Job and observes normal exit/cleanup.
+This is process-runner feedback, not browser isolation or independent descendant
+qualification. No local GUI, actual provider, alternate OS/ISA or release bytes
+were exercised by this checkpoint. Native browser observations and their two
+specific runtime counterexamples must still execute in the selected CI courts.
+
 ### Process-owned Linux embedding development join
 
 `resize_embedded_page_for_process` and

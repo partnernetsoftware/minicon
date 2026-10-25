@@ -30,6 +30,11 @@ on:
         description: "Optional Rust test-name substring filter, applied to every suite"
         required: false
         default: ""
+      native_auth_context:
+        description: "Run dedicated native auth storage/live-DOM bytes and actual counterexamples"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -158,6 +163,22 @@ jobs:
             --test minicon_control browser_windows::native_browser_address_redirect_history_and_failure -- --exact --ignored \
             2>&1 | tee probe-logs/browser-workspace-test.log
           python3 scripts/browser-workspace-smoke.py "$binary" --output probe-logs/browser-workspace
+
+      - name: Qualify native authorization contexts and parked ordinary page
+        if: inputs.native_auth_context
+        shell: bash
+        run: |
+          set -euo pipefail
+          triple='${{ matrix.triple }}'
+          extension=''
+          if [[ '${{ matrix.cell }}' == win-* ]]; then extension='.exe'; fi
+          helper_args=()
+          if [[ '${{ matrix.cell }}' == lnx-* ]]; then
+            helper_args=(--helper "$PWD/target/browser-helpers/minicon-web-host")
+          fi
+          python3 scripts/native-auth-context/qualify.py --target "$triple" \
+            --canonical-product "$PWD/target/browser-canonical/minicon$extension" \
+            --output probe-logs/native-auth-context "${helper_args[@]}"
 
       - name: Qualify bounded control shutdown responses
         # Required on every cell, independently of the optional suite filter.
@@ -456,7 +477,12 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: crosscheck-logs-${{ matrix.cell }}
-          path: probe-logs
+          path: |
+            probe-logs
+            !probe-logs/native-auth-context/**/manifest.private.json
+            !probe-logs/native-auth-context/**/profiles/**
+            !probe-logs/native-auth-context/**/ordinary-profile/**
+            !probe-logs/native-auth-context/**/config/**
           if-no-files-found: ignore
           retention-days: 7
 
@@ -482,5 +508,15 @@ jobs:
             probe-logs/retained-group/
             probe-logs/console-lifecycle/
             probe-logs/browser-workspace/
+            probe-logs/native-auth-context/qualification-receipt.json
+            probe-logs/native-auth-context/protocol.log
+            probe-logs/native-auth-context/protocol/
+            probe-logs/native-auth-context/*-build.log
+            probe-logs/native-auth-context/*-build-receipt.json
+            probe-logs/native-auth-context/*-run.log
+            probe-logs/native-auth-context/*/receipt.json
+            probe-logs/native-auth-context/*/fixture-receipt.json
+            probe-logs/native-auth-context/*/native-driver-receipt.json
+            probe-logs/native-auth-context/*/driver.*.log
           if-no-files-found: ignore
           retention-days: 14

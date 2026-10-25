@@ -1,0 +1,364 @@
+#!/usr/bin/env python3
+"""Run an already-built, test-only native auth context court. Owner: PRD 28.
+
+This launches a native window: use only an explicitly allocated court desktop.
+It never builds, logs into a provider, reads accounts, or uses the clipboard.
+"""
+from __future__ import annotations
+
+import argparse
+import ctypes
+import hashlib
+import json
+import os
+from pathlib import Path
+import platform
+import re
+import signal
+import subprocess
+import sys
+import time
+
+import fixture
+
+CHECKS = (
+    "ordinary-initial-storage", "a-initial-storage", "b-initial-storage",
+    "a-reopen-initial-storage", "ordinary-live-dom-cookie-storage-return",
+    "ordinary-one-document-load", "ordinary-native-history-back",
+    "ordinary-native-history-forward",
+)
+ROOT = Path(__file__).resolve().parent
+LIMIT = 1024 * 1024
+
+
+class CourtError(Exception):
+    def __init__(self, code, blocked=False):
+        self.code, self.blocked = code, blocked
+
+
+def sha(path):
+    value = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            value.update(block)
+    return value.hexdigest()
+
+
+def read_json(path):
+    with path.open("rb") as stream:
+        raw = stream.read(LIMIT + 1)
+    if len(raw) > LIMIT:
+        raise CourtError("receipt-size-bound")
+    try:
+        return fixture.object_json(raw)
+    except (ValueError, UnicodeError, RecursionError):
+        raise CourtError("receipt-json-invalid") from None
+
+
+def executable(value):
+    try:
+        path = value.expanduser().resolve(strict=True)
+    except OSError:
+        raise CourtError("executable-missing", True) from None
+    if not path.is_file() or (os.name != "nt" and not os.access(path, os.X_OK)):
+        raise CourtError("executable-not-runnable", True)
+    return path
+
+
+def host_os():
+    return {"win32": "windows", "darwin": "macos", "linux": "linux"}.get(sys.platform, "unsupported")
+
+
+def metadata(path, binary_hash, helper_hash):
+    if path is None:
+        raise CourtError("build-provenance-missing", True)
+    data = read_json(path)
+    if (data.get("schema") != 1 or data.get("test_only") is not True
+            or not isinstance(data.get("source_commit"), str)
+            or not re.fullmatch(r"[0-9a-f]{40}", data["source_commit"])
+            or not isinstance(data.get("features"), list)
+            or "native-auth-court" not in data["features"]
+            or not all(isinstance(item, str) and re.fullmatch(r"[a-z0-9_-]{1,64}", item) for item in data["features"])
+            or data.get("os") != host_os()
+            or data.get("isa") not in ("x86_64", "aarch64")):
+        raise CourtError("build-metadata-invalid")
+    if data.get("binary_sha256") != binary_hash or data.get("helper_sha256") != helper_hash:
+        raise CourtError("build-metadata-byte-identity-mismatch")
+    return {name: data[name] for name in ("source_commit", "features", "os", "isa", "binary_sha256")} | {
+        "helper_sha256": helper_hash,
+        "build_metadata_verified_byte_identity": True,
+        "source_authority": "external-build-declaration-bound-to-measured-bytes",
+    }
+
+
+class OwnedProcess:
+    """Own one child and its new session/Windows Job, never arbitrary PIDs."""
+    def __init__(self, command, env, output):
+        self.process = None
+        self.job = None
+        self.logs = []
+        self.cleanup = "not-started"
+        self.exit_observed = False
+        try:
+            for name in ("driver.stdout.log", "driver.stderr.log"):
+                self.logs.append((output / name).open("wb"))
+            options = dict(env=env, stdin=subprocess.DEVNULL, stdout=self.logs[0], stderr=self.logs[1], cwd=output)
+            if os.name == "nt":
+                self._windows_start(command, options)
+            else:
+                if not all(hasattr(os, name) for name in ("waitid", "WNOWAIT", "WEXITED")):
+                    raise CourtError("retained-child-observation-unavailable", True)
+                self.process = subprocess.Popen(command, start_new_session=True, **options)
+            self.cleanup = "owned-process-started"
+        except BaseException:
+            self.close()
+            raise
+
+    def _windows_start(self, command, options):
+        # Start suspended; no helper can escape before assignment to this Job.
+        from ctypes import wintypes as w
+
+        class Basic(ctypes.Structure):
+            _fields_ = [("PerProcessUserTimeLimit", ctypes.c_longlong), ("PerJobUserTimeLimit", ctypes.c_longlong),
+                        ("LimitFlags", w.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
+                        ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", w.DWORD),
+                        ("Affinity", ctypes.c_size_t), ("PriorityClass", w.DWORD), ("SchedulingClass", w.DWORD)]
+
+        class Io(ctypes.Structure):
+            _fields_ = [(name, ctypes.c_ulonglong) for name in ("ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+                                                               "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+
+        class Extended(ctypes.Structure):
+            _fields_ = [("BasicLimitInformation", Basic), ("IoInfo", Io), ("ProcessMemoryLimit", ctypes.c_size_t),
+                        ("JobMemoryLimit", ctypes.c_size_t), ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+        class ThreadEntry(ctypes.Structure):
+            _fields_ = [("dwSize", w.DWORD), ("cntUsage", w.DWORD), ("th32ThreadID", w.DWORD),
+                        ("th32OwnerProcessID", w.DWORD), ("tpBasePri", w.LONG), ("tpDeltaPri", w.LONG), ("dwFlags", w.DWORD)]
+
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        signatures = {
+            "CreateJobObjectW": ([ctypes.c_void_p, w.LPCWSTR], w.HANDLE),
+            "SetInformationJobObject": ([w.HANDLE, ctypes.c_int, ctypes.c_void_p, w.DWORD], w.BOOL),
+            "AssignProcessToJobObject": ([w.HANDLE, w.HANDLE], w.BOOL),
+            "CreateToolhelp32Snapshot": ([w.DWORD, w.DWORD], w.HANDLE),
+            "Thread32First": ([w.HANDLE, ctypes.POINTER(ThreadEntry)], w.BOOL),
+            "Thread32Next": ([w.HANDLE, ctypes.POINTER(ThreadEntry)], w.BOOL),
+            "OpenThread": ([w.DWORD, w.BOOL, w.DWORD], w.HANDLE),
+            "ResumeThread": ([w.HANDLE], w.DWORD),
+            "TerminateJobObject": ([w.HANDLE, w.UINT], w.BOOL),
+            "CloseHandle": ([w.HANDLE], w.BOOL),
+        }
+        for name, (arguments, result) in signatures.items():
+            function = getattr(kernel, name)
+            function.argtypes, function.restype = arguments, result
+        self.kernel = kernel
+        self.job = kernel.CreateJobObjectW(None, None)
+        limits = Extended()
+        limits.BasicLimitInformation.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if not self.job or not kernel.SetInformationJobObject(self.job, 9, ctypes.byref(limits), ctypes.sizeof(limits)):
+            raise CourtError("owned-job-unavailable", True)
+        self.process = subprocess.Popen(command, creationflags=0x08000004, **options)  # NO_WINDOW | SUSPENDED
+        if not kernel.AssignProcessToJobObject(self.job, w.HANDLE(int(self.process._handle))):
+            self.process.kill()
+            raise CourtError("owned-job-assignment-failed", True)
+        snapshot = kernel.CreateToolhelp32Snapshot(0x4, 0)  # TH32CS_SNAPTHREAD
+        if snapshot == w.HANDLE(-1).value:
+            raise CourtError("owned-thread-enumeration-failed")
+        thread = None
+        try:
+            entry = ThreadEntry()
+            entry.dwSize = ctypes.sizeof(entry)
+            present = kernel.Thread32First(snapshot, ctypes.byref(entry))
+            inspected = 0
+            while present:
+                inspected += 1
+                if inspected > 8192:
+                    raise CourtError("owned-thread-enumeration-bound")
+                if entry.th32OwnerProcessID == self.process.pid:
+                    thread = kernel.OpenThread(0x2, False, entry.th32ThreadID)  # THREAD_SUSPEND_RESUME
+                    break
+                present = kernel.Thread32Next(snapshot, ctypes.byref(entry))
+            if not thread or kernel.ResumeThread(thread) == 0xFFFFFFFF:
+                raise CourtError("owned-main-thread-resume-failed")
+        finally:
+            if thread:
+                kernel.CloseHandle(thread)
+            kernel.CloseHandle(snapshot)
+
+    def exited(self):
+        if os.name == "nt":
+            self.exit_observed = self.process.poll() is not None
+        else:
+            # Preserve the owned PID/PGID identity until timeout cleanup is done.
+            self.exit_observed = os.waitid(os.P_PID, self.process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is not None
+        return self.exit_observed
+
+    def close(self):
+        failure = None
+        if self.process is not None:
+            try:
+                if os.name == "nt":
+                    if self.job and not self.kernel.TerminateJobObject(self.job, 125):
+                        failure = CourtError("owned-job-cleanup-failed")
+                    self.cleanup = "owned-job-terminated"
+                elif not self.exit_observed:
+                    # Root is not reaped. Its group identity cannot be reused.
+                    try:
+                        os.killpg(self.process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    self.cleanup = "owned-session-killed-before-root-reap"
+                else:
+                    # The native driver executes its real detach path before exit.
+                    # No global process scan or PID-based cleanup after root reap.
+                    self.cleanup = "driver-exited-normal-detach;descendant-absence-not-independently-observed"
+            except OSError:
+                failure = CourtError("owned-process-cleanup-failed")
+            finally:
+                if self.job:
+                    self.kernel.CloseHandle(self.job)
+                    self.job = None
+                # Reap even if signalling failed; retain the typed cleanup error.
+                try:
+                    self.process.wait(timeout=5)
+                except (OSError, subprocess.TimeoutExpired):
+                    failure = CourtError("owned-process-cleanup-failed")
+        elif self.job:
+            self.kernel.CloseHandle(self.job)
+            self.job = None
+        for stream in self.logs:
+            stream.close()
+        if failure:
+            raise failure
+
+
+def validate(driver, observed, build, driver_snapshot):
+    if (driver.get("kind") != "native-auth-court-test-build"
+            or driver.get("test_only") is not True or driver.get("production_test_build") is not True
+            or driver.get("features") != build["features"]
+            or driver.get("os") != build["os"] or driver.get("isa") != build["isa"]):
+        raise CourtError("driver-test-build-identity-mismatch")
+    if driver.get("status") == "BLOCKED" and driver.get("failure_code") == "native-court-native-host-unsupported":
+        raise CourtError("native-court-native-host-unsupported", True)
+    if driver.get("status") != "native-observations-complete":
+        raise CourtError("driver-observations-failed")
+    if driver_snapshot is None or driver.get("fixture") != driver_snapshot:
+        raise CourtError("driver-fixture-receipt-mismatch")
+    for name in ("checks", "run_sha256", "page_get_counts", "report_count", "report_hashes"):
+        if driver_snapshot.get(name) != observed.get(name):
+            raise CourtError("fixture-observations-changed-after-driver-receipt")
+    if (observed.get("observation_status") != "complete" or observed.get("failure") is not None
+            or set(observed.get("checks", {})) != set(CHECKS)
+            or any(observed["checks"][name] is not True for name in CHECKS)):
+        raise CourtError("eight-live-observation-checks-incomplete")
+    if observed.get("page_get_counts") != {name: 1 for name in fixture.PHASES}:
+        raise CourtError("page-navigation-count-mismatch")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--binary", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True, help="fresh output directory")
+    parser.add_argument("--helper", type=Path, help="explicit Linux native page helper")
+    parser.add_argument("--timeout", type=float, default=120)
+    parser.add_argument("--build-receipt", type=Path)
+    args = parser.parse_args()
+    if not 0 < args.timeout <= 180:
+        parser.error("--timeout must be in (0, 180]")
+    output = args.output.expanduser().resolve()
+    try:
+        output.mkdir(mode=0o700, parents=True, exist_ok=False)
+    except OSError:
+        parser.error("--output must be a fresh writable directory")
+    result = dict(kind="native-auth-context-court", schema=1, test_only=True,
+                  production_test_build=True, status="FAIL", failure_code=None,
+                  native_execution_started=False, actual_exit_code=None, checks={},
+                  runner_host={"os":host_os(), "machine":platform.machine(), "python_bits":ctypes.sizeof(ctypes.c_void_p) * 8},
+                  source_authority="unverified", production_artifact_qualification=False,
+                  provider_authorization_claimed=False,
+                  unclaimed=["native map/visibility/focus", "proxy/no-direct", "delayed embedded_ready",
+                             "physical keyboard/native IME/clipboard", "toolbar-driven history", "macOS native store deletion"],
+                  script_sha256={name:sha(ROOT / name) for name in ("run.py", "fixture.py", "page.js")})
+    owned = None
+    court = None
+    try:
+        binary = executable(args.binary)
+        helper = executable(args.helper) if args.helper else None
+        if helper and host_os() != "linux":
+            raise CourtError("helper-requires-linux")
+        if host_os() == "linux" and helper is None:
+            raise CourtError("explicit-linux-helper-required", True)
+        if host_os() == "unsupported":
+            raise CourtError("unsupported-native-host", True)
+        result["binary_sha256"] = sha(binary)
+        result["helper_sha256"] = sha(helper) if helper else None
+        build = metadata(args.build_receipt, result["binary_sha256"], result["helper_sha256"])
+        result["build"] = build
+        result["source_authority"] = build["source_authority"]
+        result["build_receipt_sha256"] = sha(args.build_receipt)
+        if host_os() == "linux" and not os.environ.get("DISPLAY"):
+            raise CourtError("x11-display-unavailable", True)
+        with fixture.Fixture(args.timeout) as court:
+            manifest = court.manifest(output)
+            if helper:
+                manifest["helper"] = str(helper)
+            fixture.private_json(output / "manifest.private.json", manifest)
+            env = dict(os.environ)
+            for name in manifest["clear_environment"]:
+                env.pop(name, None)
+            env.update(manifest["launch_environment"])
+            if helper:
+                env["MINICON_BROWSER_BIN"] = str(helper)
+            owned = OwnedProcess([str(binary), "--native-auth-court", str(output / "manifest.private.json")], env, output)
+            result["native_execution_started"] = True
+            while not owned.exited():
+                if time.monotonic() >= court.state.deadline:
+                    raise CourtError("native-driver-deadline-expired")
+                if any(path.stat().st_size > LIMIT for path in (output / "driver.stdout.log", output / "driver.stderr.log")):
+                    raise CourtError("native-driver-output-bound")
+                time.sleep(0.05)
+            # Preserve the measured normal exit code before Windows job cleanup.
+            result["actual_exit_code"] = owned.process.wait(timeout=1)
+            observed = court.state.receipt()
+            fixture.private_json(output / "fixture-receipt.json", observed)
+            result["checks"] = observed["checks"]
+            driver = read_json(output / "native-driver-receipt.json")
+            validate(driver, observed, build, court.state.driver_receipt_snapshot)
+            if result["actual_exit_code"] != 0:
+                raise CourtError("native-driver-nonzero-exit")
+            if sha(binary) != result["binary_sha256"] or (helper and sha(helper) != result["helper_sha256"]):
+                raise CourtError("executable-changed-during-court")
+            result["status"] = "PASS"
+    except CourtError as error:
+        result["status"] = "BLOCKED" if error.blocked else "FAIL"
+        result["failure_code"] = error.code
+    except (OSError, ValueError, subprocess.SubprocessError):
+        # Do not serialize exception text: it can contain private paths or URLs.
+        result["failure_code"] = "court-runtime-or-receipt-unavailable"
+    except KeyboardInterrupt:
+        result["failure_code"] = "court-interrupted"
+    finally:
+        if owned is not None:
+            try:
+                owned.close()
+            except CourtError as error:
+                result["status"], result["failure_code"] = "FAIL", error.code
+            result["cleanup"] = owned.cleanup
+            if owned.process.returncode is not None:
+                result["actual_exit_code"] = owned.process.returncode
+        if court is not None:
+            observed = court.state.receipt()
+            result["checks"] = observed["checks"]
+            result["fixture_failure_code"] = observed["failure"]
+            fixture.private_json(output / "fixture-receipt.json", observed)
+        artifacts = [output / name for name in ("driver.stdout.log", "driver.stderr.log", "native-driver-receipt.json", "fixture-receipt.json")]
+        result["artifacts"] = {path.name:{"bytes":path.stat().st_size, "sha256":sha(path)}
+                               for path in artifacts if path.is_file()}
+        fixture.private_json(output / "receipt.json", result)
+    print(json.dumps({name:result[name] for name in ("kind", "status", "failure_code")}))
+    return 0 if result["status"] == "PASS" else 2 if result["status"] == "BLOCKED" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

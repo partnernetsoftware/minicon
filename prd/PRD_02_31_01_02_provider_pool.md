@@ -511,6 +511,18 @@ results do not certify native context storage/history preservation, real
 provider reconnect, other OS/ISA execution, full workspace or release bytes.
 Those obligations remain open with the preceding account acceptance journeys.
 
+The reconnect checkpoint `f442ed5988528f6c69af4c49614a23f40cfae3ea` completed
+all six scoped native development cells in run `40165164496`. Its independently
+audited index is
+`target-six/v0.2.23-provider/ci-f442ed5-native/verification-index.json`:
+696 passing Rust execution instances, zero failed and six unselected Pi opt-in
+tests. Every selected auth/settings/context/selector suite executed, including
+the explicit Linux owned-child X11 court. Artifact API digests match all six
+downloaded archives. These are filtered development results, with no actual
+provider/native auth DOM-history-storage/full-suite/release substitution.
+The subsequent dedicated native-context scaffold and its remaining execution
+obligations are owned by [PRD 28](PRD_02_28_shared_core.md#native-context-and-live-page-court).
+
 ### Native feedback retained from the profile checkpoint
 
 Development run `40159013816`, source

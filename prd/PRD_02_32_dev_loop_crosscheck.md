@@ -15,16 +15,21 @@ dev-loop-crosscheck — agent cross-arch dev/test loop
 ├── Problem: a cloud session can reach only its own host's architecture
 ├── Non-goal: never a release-evidence path, never publishes, never needs write
 ├── Mechanism: GitHub-hosted native per-cell build + test on request
-│   ├── inputs: ref, cells, test_filter
+│   ├── inputs: ref, cells, test_filter, native_auth_context
 │   ├── core and UI library tests, including each native ISA kernel
 │   ├── isolated minimal consumer; no workspace feature leakage
 │   ├── [-] provider / worker / HTTP mechanism and real CLI gateway courts (0.2.23)
 │   │   scope: provider/gateway/harness selection includes both default and custom-alias CLI gateway journeys
 │   │   invariant: each named native scope actually executes its selected tests
-│   │   evidence: per-cell suite logs; first hosted dispatch of added scopes pending
+│   │   evidence: per-cell suite logs; account-source receipts linked from PRD 31.01.02
 │   │   safe failure: fail that cell and retain logs; absent authorization stays unqualified
 │   │   dependency: first-gateway source and native build; non-goal: OAuth entitlement or release receipts
 │   ├── [v] mandatory browser artifact and shutdown-response courts, independent of test_filter
+│   ├── [-] explicit native_auth_context test-build court → PRD 28
+│   │   invariant: exact test bytes/source and real observation failures, separately from default product
+│   │   evidence: qualification receipt, eight engine observations and two actual counterexamples
+│   │   safe failure: preserve BLOCKED/failed result; do not count compilation or timeout as RED
+│   │   dependency: canonical browser/helper and isolated desktop; non-goal: release/provider/visibility proof
 │   └── permissions: contents: read only
 ├── Permission walls, disambiguated from the release / GHCR / local-artifact paths
 └── Validation record (real hosted runners, run 36313213803)
@@ -40,6 +45,8 @@ flowchart LR
     M --> L["real per-cell logs"]
     C1 & C2 & C3 --> G["scoped provider / worker / HTTP + CLI gateway courts"]
     G --> L
+    W -->|explicit native_auth_context| T[Separate test bytes / native context and live-DOM court]
+    T -->|actual observations + RED controls + exact restore| L
     W -. never .-> R["release / GHCR / tag / version"]
 ```
 
@@ -77,6 +84,8 @@ empty runs the four non-macOS cells — macOS runners bill roughly 10x Linux
 and queue longest, so opt in explicitly with `all` or the `osx-*` names when
 a macOS-specific question needs it), `test_filter` (a Rust test-name
 substring, applied to ordinary suites; the mandatory courts below stay active).
+`native_auth_context` explicitly selects the dedicated native test-build court
+below and defaults to false, so its extra build/mutation cost is deliberate.
 
 Per cell: `cargo build --locked --workspace --all-targets --target <triple>`,
 then each suite is run with `cargo test --locked --target <triple> --test
@@ -112,8 +121,37 @@ The producer remains [the platform owner](PRD_02_28_shared_core.md).
 These scopes exercise controlled model peers, worker-owned tools, routing,
 streaming and cancellation mechanisms. They cannot establish a real account
 grant or hosted inference entitlement. Those delivery claims remain with
-[the gateway owner](PRD_02_31_01_provider_gateway.md). The first hosted run of
-these added scopes is pending; earlier six-cell receipts predate them.
+[the gateway owner](PRD_02_31_01_provider_gateway.md). Current account-source
+native receipts and their filtered scope are linked from
+[the pool owner](PRD_02_31_01_02_provider_pool.md); earlier six-cell receipts
+cannot qualify subsequent source.
+
+### Opt-in native authorization-context court
+
+Set `native_auth_context=true` with the exact requested `ref` and cells. After
+the canonical browser court, `scripts/native-auth-context/qualify.py` serially
+builds its non-default feature under ignored `target/native-auth-court-build/`,
+runs the initial native journey, exercises a production prior-account-context
+reuse mutation and a declared test-driver ordinary-reload fault, restores exact
+source bytes, and reruns the native journey. The original default product hash
+must remain unchanged. The [mechanism owner](PRD_02_28_shared_core.md#native-context-and-live-page-court)
+defines the observations, authority and limits; these test bytes cannot certify
+the default product or release artifact.
+
+The runner receives a serialized build declaration bound to the measured test
+binary/helper hashes, actual compiled features and OS/ISA. It never guesses a
+binary's source from current HEAD. Linux uses an explicit canonical helper path
+in both its private manifest and `MINICON_BROWSER_BIN`; the driver refuses a
+different selection. A negative run requires an actual fixture observation
+failure and a native-driver failure result. Compilation, missing capability,
+incomplete observation, process timeout or arbitrary nonzero exit is not RED.
+
+The qualification receipt, raw build/driver logs and redacted engine/fixture
+receipts are retained on every outcome. Private manifests and browser/config
+stores are excluded from artifact upload. Required unavailable evidence remains
+BLOCKED. Direct native-host Unsupported is typed by the driver; some browser
+creation refusals remain undiagnosed failures until their actual cause is
+established, and cannot be labeled an isolation defect by inference.
 
 **Local Windows x86_64 development gate (2026-10-25).**
 `build.sh test -- --test-threads=1` completed the workspace and both owned lexer
