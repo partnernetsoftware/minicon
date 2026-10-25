@@ -596,3 +596,23 @@ first). Array rectangles represent visible configured options, not arbitrary
 page DOM controls. Proxy endpoint values are not included in these snapshots.
 `send-ui-ime` names a focused settings candidate editor `web_proxy_candidate`.
 Product behavior and persistence are owned by PRD 25.
+
+## UI-only Command/Meta injection amendment
+
+`send-ui-keys` accepts the case-insensitive modifier names `Cmd`, `Command`
+and `Meta` in addition to the existing Control/Alt/Shift syntax. They all set
+the existing normalized Meta bit; a Meta character carries no text payload.
+The ordinary key-name table remains shared. `send-keys` retains its existing
+PTY grammar and rejects these additional modifiers. No wire opcode changes.
+
+The complete UI batch is validated before any event. Each accepted chord then
+travels through the actual host event consumer as Pressed followed by Released,
+with the same modifiers and no release text. `sent_keys` counts chords. This
+is logical public CLI injection, not hardware input or native WK responder
+focus evidence. The macOS window-shortcut owner owns its geometry/state court.
+Windows x86_64 strict-wrapper execution now passes both new pure consumers,
+with actual original-assertion RED for a removed Meta bit and accepted invalid
+suffix, followed by exact restoration and both tests passing. Receipt:
+`target-six/v0.2.23-window-half/public-meta-pure-controls-attempt-1/receipt.json`.
+This pure parser evidence does not establish the macOS public GUI route, WK
+focus, hardware input or release bytes.

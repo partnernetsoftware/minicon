@@ -36,6 +36,8 @@ CONTENT_GUARD = b'''    if !content.size.width.is_finite()
         || content.size.width > content_maximum.width
         || content.size.height > content_maximum.height
     {'''
+FRAME_SIZE_GUARD = b'    if target.size.width < minimum.width\n        || target.size.height < minimum.height\n        || target.size.width > maximum.width\n        || target.size.height > maximum.height\n    {'
+FRAME_SIZE_REMOVED = FRAME_SIZE_GUARD.replace(b"    if ", b"    if false && (", 1).replace(b"\n    {", b"\n    ) {", 1)
 CONTENT_REMOVED = CONTENT_GUARD.replace(b"    if ", b"    if false && (", 1).replace(b"\n    {", b"\n    ) {", 1)
 ASSERTION = '''assert!(
                     close(actual, expected),
@@ -55,6 +57,8 @@ INPUTS = (
     "scripts/native-auth-context/fixture.py", "scripts/test-plan.py",
     "crates/minicon-web/Cargo.toml", "crates/minicon-web/src/lib.rs",
     "crates/minicon-web/src/native_page.rs", MAPPING,
+    "src/main.rs", "src/control_dispatch.rs", "src/control.rs",
+    "scripts/browser-workspace-smoke.py",
 )
 
 
@@ -126,7 +130,8 @@ def main():
         raise CourtError("actual-checkout-identity-unavailable")
     oracle = (root / ORACLE).read_text(encoding="utf-8")
     if (original.count(GUARD) != 1 or oracle.count(ASSERTION) != 1
-            or original.count(CONTENT_GUARD) != 1 or oracle.count(CONTENT_ASSERTION) != 1
+            or original.count(CONTENT_GUARD) != 1 or original.count(FRAME_SIZE_GUARD) != 1
+            or oracle.count(CONTENT_ASSERTION) != 1
             or mapping_original.count(MAPPING_GUARD) != 1
             or mapping_original.decode().count(MAPPING_ASSERTION) != 1):
         raise CourtError("review-required-source-guard-or-original-assertion-changed")
@@ -143,7 +148,7 @@ def main():
                      "column": offset - mapping_text.rfind("\n", 0, offset),
                      "statement_sha256": digest(MAPPING_ASSERTION.encode())}
     mutant = original.replace(GUARD, REMOVED)
-    content_mutant = original.replace(CONTENT_GUARD, CONTENT_REMOVED)
+    content_mutant = original.replace(FRAME_SIZE_GUARD, FRAME_SIZE_REMOVED).replace(CONTENT_GUARD, CONTENT_REMOVED)
     spec = importlib.util.spec_from_file_location("snap_existing_native_process", root / "scripts/private-publication-native-court.py")
     helpers = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(helpers)
@@ -159,14 +164,24 @@ def main():
               "content_original_assertion": content_point,
               "mapping_original_assertion": mapping_point,
               "mutant_adapter_sha256": digest(mutant),
-              "content_mutant_adapter_sha256": digest(content_mutant), "phases": [], "failures": [],
-              "restore_errors": [], "scope": "owned native adapter only; no hardware/WK focus/release qualification"}
+              "content_mutant_adapter_sha256": digest(content_mutant),
+              "size_negative_scope": "related frame/content size-preflight boundary, not isolated content check",
+              "phases": [], "failures": [],
+              "restore_errors": [], "scope": "owned adapter, pure mapping and public CLI host route; no hardware/WK focus/release qualification"}
     active_adapter_mutant = None
     mapping_installed = False
+    host_original = (root / "src/main.rs").read_bytes()
+    host_guard = b"                self.snap_window_half(window, half);"
+    if host_original.count(host_guard) != 1:
+        raise CourtError("public-host-guard-must-be-unique")
+    host_mutant = host_original.replace(host_guard,
+        b"                if false { self.snap_window_half(window, half); }")
+    host_installed = False
 
-    def stable(adapter, mapping=None):
+    def stable(adapter, mapping=None, host=None):
         expected = dict(source)
         expected[ADAPTER] = digest(adapter)
+        expected["src/main.rs"] = digest(host if host is not None else host_original)
         expected[MAPPING] = digest(mapping if mapping is not None else mapping_original)
         if snapshot(root) != expected:
             raise CourtError("source-drift-refusing-operation")
@@ -191,6 +206,13 @@ def main():
                 time.sleep(0.05)
         finally:
             if owned is not None:
+                if owned.process.poll() is None and "--mac-window-shortcuts-only" in command:
+                    # Cleanup grace only; timeout still rejects this phase.
+                    owned.process.terminate()
+                    try:
+                        owned.process.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        pass
                 try:
                     owned.close()
                     record["cleanup_ok"] = True
@@ -250,6 +272,25 @@ def main():
             raise CourtError("native-image-or-owned-cleanup-invalid")
         value = json.loads(stdout)
         result = {"phase": label, "image": identity, "process": record, "native": value, "runtime_RED": False}
+        observations = [json.loads(line) for line in stderr.splitlines()
+                        if line.startswith('{"kind":"owned-size-preflight-observation",')]
+        # The setFrame control intentionally fails earlier than this observation.
+        if negative != "frame":
+            if len(observations) != 1:
+                raise CourtError("owned-size-observation-missing-or-ambiguous")
+            observation = observations[0]
+            if set(observation) != {"kind", "frame_minimum", "content_minimum", "refusal_category", "refusal_reason"}:
+                raise CourtError("owned-size-observation-fields-invalid")
+            for field in ("frame_minimum", "content_minimum"):
+                minimum = observation[field]
+                if minimum is not None and not (isinstance(minimum, list) and len(minimum) == 2
+                        and all(type(x) in (int, float) and math.isfinite(x) for x in minimum)):
+                    raise CourtError("owned-size-observation-not-finite-or-unavailable")
+            if (observation["refusal_category"] not in {"unsupported", "failed", "other-error", "not-refused"}
+                    or observation["refusal_reason"] not in {"frame-size-preflight", "content-size-preflight", "other", "none"}):
+                raise CourtError("owned-size-observation-category-invalid")
+            save(output / (label + "-size-observation.json"), observation)
+            result["size_preflight_observation"] = observation
         if negative:
             panics = list(re.finditer(r"^thread '([^']+)'[^\r\n]*panicked at ([^\r\n]+):(\d+):(\d+):\r?\n", stderr, re.M))
             valid = len(panics) == 1
@@ -257,7 +298,7 @@ def main():
                 hit = panics[0]
                 body = stderr[hit.end():].replace("\r\n", "\n").split("\n\n", 1)[0]
                 first = body.splitlines()[0] if body else ""
-                if negative == "content":
+                if negative == "size-preflights":
                     geometry = re.fullmatch(r"content-size refusal moved the owned window: before=(\[[^\n]+\]), after=(\[[^\n]+\])", first)
                     expected_point = content_point
                 else:
@@ -306,6 +347,110 @@ def main():
         report["phases"].append({"phase": label, "process": record, "runtime_RED": negative,
                                  "scope": "pure AppKit physical-code/command mapping; not WK focus or hardware events"})
 
+    def ui_meta_phase():
+        names = {"tests::ui_meta_chords_preserve_modifiers_without_text_and_pty_stays_unchanged",
+                 "tests::ui_meta_batch_rejects_an_invalid_suffix_before_delivery"}
+        command = [bash, str(root / "scripts/build.sh"), "test-suite", "--target", args.target,
+                   "--bin", "minicon", "ui_meta_", "--", "--test-threads=1"]
+        record, stdout, stderr = run("ui-meta-consumers", command, 180)
+        summaries = re.findall(r"^test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored;", stdout, re.M)
+        observed = re.findall(r"^test (\S+) \.\.\. ok$", stdout, re.M)
+        if (record["exit_code"] != 0 or record["timed_out"] or not record["cleanup_ok"]
+                or summaries != [("ok", "2", "0", "0")] or len(observed) != 2 or set(observed) != names):
+            raise CourtError("UI-meta-consumers-require-exact-two-passes")
+        record["test_image"] = helpers.test_image(root, stdout + "\n" + stderr,
+            "aarch64" if args.target.startswith("aarch64") else "x86_64")
+        report["phases"].append({"phase": "ui-meta-consumers", "process": record,
+                                 "scope": "pure UI Meta parsing and unchanged PTY grammar"})
+
+    def public_phase(label, work, negative=False):
+        canonical = root / "target" / args.target / "debug/minicon"
+        command = [bash, str(root / "scripts/build.sh"), "dev", "--target", args.target,
+                   "--bin", "minicon", "--message-format=json-render-diagnostics",
+                   "--config", 'build.rustflags=["-D","dead_code","-D","unused_variables","-D","unused_must_use"]']
+        built, stdout, _stderr = run(label + "-build", command, 180)
+        if built["exit_code"] != 0 or built["timed_out"] or not built["cleanup_ok"]:
+            raise CourtError("public-product-build-failed-not-runtime-RED")
+        artifacts = set()
+        feature_sets = set()
+        for line in stdout.splitlines():
+            try:
+                item = json.loads(line)
+            except ValueError:
+                continue
+            if item.get("reason") == "compiler-artifact" and item.get("target", {}).get("name") == "minicon":
+                if "bin" in item["target"].get("kind", []) and item.get("executable"):
+                    artifacts.add(Path(item["executable"]).resolve())
+                    feature_sets.add(tuple(sorted(item.get("features", []))))
+        if artifacts != {canonical.resolve(strict=True)} or len(feature_sets) != 1:
+            raise CourtError("public-product-canonical-build-identity-missing")
+        raw = canonical.read_bytes()
+        cpu = 0x0100000C if args.target.startswith("aarch64") else 0x01000007
+        if len(raw) < 8 or raw[:4] != b"\xcf\xfa\xed\xfe" or struct.unpack_from("<I", raw, 4)[0] != cpu:
+            raise CourtError("public-product-thin-MachO-ISA-mismatch")
+        image = work / (label + "-minicon")
+        with image.open("xb") as stream:
+            stream.write(raw)
+        image.chmod(0o700)
+        identity = {"sha256": digest(raw), "canonical_relative_path": str(canonical.relative_to(root)),
+                    "isa": args.target.split("-")[0], "format": "Mach-O64",
+                    "actual_features": list(next(iter(feature_sets))),
+                    "scope": "explicit default source build, pinned copy; not release artifact"}
+        save(output / (label + "-image.json"), identity)
+        smoke = root / "scripts/browser-workspace-smoke.py"
+        result_dir = output / (label + "-smoke")
+        observed, _stdout, stderr = run(label + "-public", [sys.executable, "-B", str(smoke), str(image),
+            "--mac-window-shortcuts-only", "--output", str(result_dir)], 180)
+        if observed["timed_out"] or not observed["cleanup_ok"] or digest(image.read_bytes()) != identity["sha256"]:
+            raise CourtError("public-owned-run-or-image-invalid")
+        cleanup = json.loads((result_dir / "mac-owned-cleanup.json").read_bytes())
+        if cleanup.get("child_reaped") is not True:
+            raise CourtError("public-owned-GUI-child-not-reaped")
+        if (result_dir / "mac-window-half-blocked.json").exists():
+            blocked = json.loads((result_dir / "mac-window-half-blocked.json").read_bytes())
+            report.setdefault("blocked", []).append({"phase": label, "diagnostic": blocked})
+            raise CourtError("BLOCKED:" + str(blocked.get("reason")))
+        facts = json.loads((result_dir / "mac-window-half-observations.json").read_bytes())
+        if facts.get("invalid_suffix_atomic") is not True or facts.get("pty_meta_refused") is not True:
+            raise CourtError("public-preflight-or-PTY-refusal-not-observed")
+        assertion = '            assert close_frame(actual, expected), f"mac-window-half geometry mismatch at {stage}: actual={actual}, expected={expected}"'
+        text = smoke.read_text(encoding="utf-8")
+        if text.count(assertion) != 1:
+            raise CourtError("public-original-assertion-anchor-changed")
+        line_number = text[:text.index(assertion)].count("\n") + 1
+        if negative:
+            # Require the last Python traceback frame to be this exact original
+            # geometry consumer, not a setup failure or another assertion.
+            frames = re.findall(r'^  File "([^"\n]+)", line (\d+), in ([^\r\n]+)', stderr, re.M)
+            endings = re.findall(r'^AssertionError: (.+)$', stderr, re.M)
+            valid = bool(frames and Path(frames[-1][0]).resolve() == smoke.resolve()
+                         and int(frames[-1][1]) == line_number
+                         and frames[-1][2] == "mac_window_shortcuts_journey"
+                         and len(endings) == 1
+                         and endings[0].startswith("mac-window-half geometry mismatch at left: actual="))
+            samples = facts.get("samples", [])
+            valid = (valid and len(samples) == 1 and samples[0].get("stage") == "left"
+                     and close(samples[0].get("actual"), samples[0].get("actual"))
+                     and close(samples[0].get("expected"), samples[0].get("expected"))
+                     and not close(samples[0].get("actual"), samples[0].get("expected")))
+            if not (valid and observed["exit_code"] == 1 and facts.get("status") == "in_progress"
+                    and not (result_dir / "receipt.json").exists()):
+                raise CourtError("public-host-negative-not-original-geometry-assertion-RED")
+        else:
+            receipt = json.loads((result_dir / "receipt.json").read_bytes())
+            if (observed["exit_code"] != 0 or receipt.get("status") != "passed"
+                    or receipt.get("binary_sha256") != identity["sha256"]
+                    or receipt.get("script_sha256") != digest(smoke.read_bytes())
+                    or facts.get("status") != "passed"
+                    or facts.get("drafts_and_live_document_preserved") is not True
+                    or [s.get("stage") for s in facts.get("samples", [])] != ["left", "right", "repeat-right"]
+                    or not all(close(s.get("actual"), s.get("expected")) for s in facts["samples"])):
+                raise CourtError("public-host-positive-incomplete")
+        report["phases"].append({"phase": label, "image": identity, "process": observed,
+            "runtime_RED": negative, "assertion": {"path": "scripts/browser-workspace-smoke.py", "line": line_number,
+            "statement_sha256": digest(assertion.encode())}, "observations": facts,
+            "scope": "single-display public CLI ConApp route; not hardware or focused WK responder"})
+
     try:
         stable(original)
         # Pins are outside public probe-logs and are not uploaded.
@@ -338,16 +483,19 @@ def main():
                     stable(original)
             if report["restore_errors"]:
                 raise CourtError("frame-source-restoration-failed")
-            # Separate mutant: the real setFrame call and frame-size preflight
-            # remain intact. Only the complete content preflight is bypassed.
+            # One scoped boundary control: bypass both related frame/content
+            # size-preflight conditions. Preserve state/fullscreen, upstream
+            # target geometry validation, actual setFrame and original asserts.
+            # The old isolated-content mutant passed on both bea macOS cells;
+            # its exact rejection route was not observed and remains UNKNOWN.
             active_adapter_mutant = content_mutant
             (root / ADAPTER).write_bytes(content_mutant)
             try:
                 stable(content_mutant)
-                phase("removed-content-preflight", work, negative="content")
+                phase("removed-size-constraint-preflights", work, negative="size-preflights")
                 stable(content_mutant)
             except BaseException as error:
-                report["failures"].append("content-control:" + str(error))
+                report["failures"].append("size-preflights-control:" + str(error))
             finally:
                 try:
                     current = (root / ADAPTER).read_bytes()
@@ -360,7 +508,7 @@ def main():
                 except BaseException as error:
                     report["restore_errors"].append(str(error))
                 if not report["restore_errors"]:
-                    phase("content-restored", work)
+                    phase("size-constraints-restored", work)
                     stable(original)
             if report["restore_errors"]:
                 raise CourtError("content-source-restoration-failed")
@@ -388,9 +536,46 @@ def main():
                 if not report["restore_errors"]:
                     mapping_phase("mapping-restored")
                     stable(original)
+            if report["restore_errors"]:
+                raise CourtError("mapping-source-restoration-failed")
+            ui_meta_phase()
+            stable(original)
+            public_phase("public-initial", work)
+            stable(original)
+            host_installed = True
+            (root / "src/main.rs").write_bytes(host_mutant)
+            try:
+                stable(original, host=host_mutant)
+                public_phase("public-host-link-removed", work, negative=True)
+                stable(original, host=host_mutant)
+            except BaseException as error:
+                report["failures"].append("public-host-control:" + str(error))
+            finally:
+                try:
+                    current = (root / "src/main.rs").read_bytes()
+                    if current == host_mutant:
+                        (root / "src/main.rs").write_bytes(host_original)
+                    elif current != host_original:
+                        raise CourtError("unexpected-host-source-refusing-overwrite")
+                    stable(original)
+                    host_installed = False
+                except BaseException as error:
+                    report["restore_errors"].append(str(error))
+                if not report["restore_errors"]:
+                    public_phase("public-host-restored", work)
+                    stable(original)
     except BaseException as error:
         report["failures"].append(str(error))
     finally:
+        if host_installed:
+            try:
+                current = (root / "src/main.rs").read_bytes()
+                if current == host_mutant:
+                    (root / "src/main.rs").write_bytes(host_original)
+                elif current != host_original:
+                    raise CourtError("unexpected-host-source-refusing-final-overwrite")
+            except BaseException as error:
+                report["restore_errors"].append(str(error))
         if mapping_installed:
             try:
                 current = (root / MAPPING).read_bytes()
@@ -416,9 +601,13 @@ def main():
             report["restore_errors"].append("source-verification:" + str(error))
         if (not report["failures"] and not report["restore_errors"] and report["source_restored"]
                 and [p["phase"] for p in report["phases"]] == ["initial", "removed-set-frame", "restored",
-                    "removed-content-preflight", "content-restored",
-                    "mapping-initial", "mapping-changed-left", "mapping-restored"]):
+                    "removed-size-constraint-preflights", "size-constraints-restored",
+                    "mapping-initial", "mapping-changed-left", "mapping-restored",
+                    "ui-meta-consumers", "public-initial", "public-host-link-removed", "public-host-restored"]):
             report["status"] = "PASS"
+        if (report.get("blocked") and len(report["failures"]) == 1
+                and report["failures"][0].startswith("BLOCKED:") and not report["restore_errors"]):
+            report["status"] = "BLOCKED"
         report["public_log_sha256"] = {str(path.relative_to(output)): digest(path.read_bytes())
                                         for path in output.rglob("*") if path.is_file()
                                         and (path.name.endswith(".log") or path.name == "process.json")}

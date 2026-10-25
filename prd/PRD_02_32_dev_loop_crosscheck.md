@@ -164,19 +164,26 @@ observes its own AppKit screen/frame for left, right and repeated-right
 placement, plus refusal without movement for an incompatible content minimum.
 The bounded driver binds the actual checkout/source, explicit Cargo example
 and features, thin native ISA and pinned executable hash. It removes the real
-frame application and content-constraint preflight guards separately, requires
-the unchanged original geometry/refusal assertions to fail, restores exact
-source bytes and replays the original consumer. Pure native-page physical-key
-mapping has a separate exact libtest PASS/guard-RED/restored-PASS sequence.
+frame application and the related frame/content size-preflight boundary
+separately, requires the unchanged original geometry/refusal assertions to fail,
+restores exact source bytes and replays the original consumer. The latter
+control does not establish each size guard individually. Pure native-page
+physical-key mapping has a separate exact libtest PASS/guard-RED/restored-PASS
+sequence. The owned example also retains finite size-getter/refusal labels;
+old content-only passing mutants remain rejected in their original receipts.
 
 The source driver reuses the existing owned-process boundary, with a 20-second
 native-child bound and finite build/log limits. Public logs and receipts are
 always retained; private temporary executable pins stay outside the upload
 paths. Unsupported capability, compilation failure, an unrelated panic or a
 timeout never counts as a counterexample. Missing native evidence remains open.
-This court proves the owned-window mechanism and pure mapping only; physical
-Command delivery, actual WK responder focus, preserved GUI drafts and signed/
-public artifacts require their own named evidence. Product behavior and the
+The same driver additionally runs the two pure UI Meta consumers and a fresh
+single-display public CLI host-route initial/removed-ConApp-call/restored
+journey. That journey observes actual owned-window bounds and retained GUI
+input/live-page state through public black boxes. Its build and replay bounds
+are 180 seconds each. Physical Command delivery, actual focused WK responder
+ownership, multi-display public observation and signed/public artifacts retain
+separate named evidence; a CLI pass does not qualify them. Product behavior and the
 remaining acceptance frontier belong to
 [PRD 25.04](PRD_02_25_04_window_shortcuts.md).
 

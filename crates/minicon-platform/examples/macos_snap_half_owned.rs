@@ -141,10 +141,36 @@ mod macos {
             unsafe {
                 window.setContentMinSize(NSSize::new(initial_visible[2] + 1.0, 0.0));
             }
+            let frame_minimum = unsafe { window.minSize() };
+            let content_minimum = unsafe { window.contentMinSize() };
             let before_refusal = rect(window.frame());
             let refused = host.snap_to_half(WindowHalf::Left);
             let after_refusal = rect(window.frame());
             unsafe { window.setContentMinSize(prior_minimum) };
+            let (category, reason) = match &refused {
+                Err(PixelWindowError::Unsupported { reason }) => {
+                    let fixed_reason = match reason.as_ref() {
+                        "window size constraints do not permit this screen half" => {
+                            "frame-size-preflight"
+                        }
+                        "window content constraints do not permit this screen half" => {
+                            "content-size-preflight"
+                        }
+                        _ => "other",
+                    };
+                    ("unsupported", fixed_reason)
+                }
+                Err(PixelWindowError::Failed { .. }) => ("failed", "other"),
+                Err(_) => ("other-error", "other"),
+                Ok(()) => ("not-refused", "none"),
+            };
+            eprintln!(
+                "{{\"kind\":\"owned-size-preflight-observation\",\"frame_minimum\":{},\"content_minimum\":{},\"refusal_category\":\"{}\",\"refusal_reason\":\"{}\"}}",
+                json_size(frame_minimum),
+                json_size(content_minimum),
+                category,
+                reason
+            );
             assert!(
                 close(after_refusal, before_refusal),
                 "content-size refusal moved the owned window: before={before_refusal:?}, after={after_refusal:?}"
@@ -179,6 +205,14 @@ mod macos {
             _now: Instant,
         ) -> Result<PixelWindowDirective, PixelWindowError> {
             Ok(PixelWindowDirective::Exit)
+        }
+    }
+
+    fn json_size(value: NSSize) -> String {
+        if value.width.is_finite() && value.height.is_finite() {
+            format!("[{},{}]", value.width, value.height)
+        } else {
+            "null".to_owned()
         }
     }
 

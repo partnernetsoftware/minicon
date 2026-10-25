@@ -249,7 +249,7 @@ jobs:
           print(f'control shutdown court: exactly {expected} passed, 0 failed/ignored')
           PY
 
-      - name: Qualify owned macOS half-screen placement and command mapping
+      - name: Qualify owned macOS placement, mapping and public CLI host route
         # Native owned-window court is required on both macOS cells regardless
         # of test_filter; this is not hardware/WK-focus or release qualification.
         if: startsWith(matrix.cell, 'osx-')

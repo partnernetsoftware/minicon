@@ -8,6 +8,7 @@ from ctypes import wintypes
 import hashlib
 import http.server
 import json
+import math
 import os
 import secrets
 import zlib
@@ -93,7 +94,11 @@ def main() -> int:
     parser.add_argument("--output", type=Path)
     parser.add_argument("--timeout", type=float, default=45, help="navigation observation deadline in seconds (0 < timeout <= 120)")
     parser.add_argument("--physical", action="store_true", help="Windows interactive focus/shortcut and page capture court")
+    parser.add_argument("--mac-window-shortcuts-only", action="store_true",
+                        help="run only the owned single-display macOS CLI shortcut phase")
     args = parser.parse_args()
+    if args.mac_window_shortcuts_only and (sys.platform != "darwin" or args.physical):
+        parser.error("--mac-window-shortcuts-only requires nonphysical macOS")
     if not 0 < args.timeout <= 120:
         parser.error("--timeout must be greater than zero and at most 120")
     binary = args.binary.resolve(strict=True)
@@ -347,6 +352,141 @@ def main() -> int:
 
     def editor(name: str) -> dict:
         return cli("ui-snapshot")["geometry"][name]
+
+    def mac_window_shortcuts_journey():
+        """Exact owned PID, single display, logical public CLI input only."""
+        assert sys.platform == "darwin" and not args.physical
+
+        def blocked(reason):
+            (output / "mac-window-half-blocked.json").write_bytes((json.dumps({
+                "status": "BLOCKED", "reason": reason}) + "\n").encode())
+            raise RuntimeError("BLOCKED: " + reason)
+
+        def observe():
+            probe = subprocess.run(["/usr/bin/swift", "-", str(child.pid)], input='''
+import AppKit
+import CoreGraphics
+import Foundation
+let pid = Int32(CommandLine.arguments[1]) ?? -1
+func rectangle(_ r: CGRect) -> [Double] {
+    return [Double(r.minX), Double(r.minY), Double(r.width), Double(r.height)]
+}
+var result: [String: Any] = ["status": "BLOCKED", "reason": "single-display-owned-window-unavailable"]
+let screens = NSScreen.screens
+if screens.count == 1, let screen = screens.first,
+   let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber,
+   number.uint32Value == CGMainDisplayID(),
+   let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] {
+    let owned = rows.filter {
+        ($0[kCGWindowOwnerPID as String] as? Int32) == pid &&
+        ($0[kCGWindowLayer as String] as? Int) == 0
+    }
+    if owned.count == 1, let row = owned.first,
+       let number = row[kCGWindowNumber as String] as? Int,
+       let bounds = row[kCGWindowBounds as String] as? [String: Any],
+       let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary) {
+        result = ["status": "observed", "pid": pid, "window_id": number,
+                  "display_count": 1, "main_display_matches": true,
+                  "screen_frame_appkit": rectangle(screen.frame),
+                  "visible_frame_appkit": rectangle(screen.visibleFrame),
+                  "window_frame_cg": rectangle(frame)]
+    }
+}
+let raw = try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys])
+print(String(decoding: raw, as: UTF8.self))
+''', text=True, capture_output=True, timeout=30)
+            if probe.returncode != 0:
+                blocked("owned-window-metadata-helper-unavailable")
+            value = json.loads(probe.stdout)
+            if value.get("status") != "observed":
+                blocked("single-display-unique-owned-window-required")
+            assert value["pid"] == child.pid and value["display_count"] == 1 and value["main_display_matches"] is True
+            for field in ("screen_frame_appkit", "visible_frame_appkit", "window_frame_cg"):
+                r = value[field]
+                assert len(r) == 4 and all(type(x) in (int, float) and math.isfinite(x) for x in r)
+                assert r[2] > 0 and r[3] > 0
+            if value["screen_frame_appkit"][:2] != [0, 0]:
+                blocked("single-main-display-origin-unavailable")
+            return value
+
+        def close_frame(a, b):
+            return len(a) == len(b) == 4 and all(abs(x-y) <= 1 for x, y in zip(a, b))
+
+        def report_document():
+            with h0_lock:
+                h0_live["challenge"] = challenge = secrets.token_hex(16)
+            def received():
+                with h0_lock:
+                    report = h0_live["report"]
+                    return dict(report) if report is not None and report["challenge"] == challenge else None
+            return wait(received, "owned shortcut live document")
+
+        def retained_state():
+            snap = cli("ui-snapshot")
+            address = snap["geometry"]["browser_address_editor"]
+            return {"tabs": [{key: row[key] for key in ("id", "kind", "active")} for row in cli("list-tabs")["tabs"]],
+                    "active": snap["active"], "composer_text": snap["composer_text"],
+                    "address": {key: address[key] for key in ("text", "caret", "selection", "focused", "preedit")},
+                    "browser": {key: browser()["browser"][key] for key in ("url", "title", "load")}}
+
+        keys("Ctrl+Shift+I")
+        cli("send-ui-ime", "commit", "owned Mac composer draft")
+        open_browser_from_menu()
+        with h0_lock:
+            h0_live.update(report=None, reports=0)
+        navigate(origin + h0_path)
+        loaded(h0_path, "Harness live fixture")
+        document = report_document()
+        assert document["draft"] == "unsaved:" + document["nonce"] and document["history_step"] == 2
+        gets = counts[h0_path]
+        keys("Ctrl+l", "Ctrl+a")
+        cli("send-ui-ime", "commit", "unsubmitted:a中z")
+        keys("Home", "Right", "Shift+Right")
+        before = retained_state()
+        assert before["address"]["focused"] and before["address"]["selection"] is not None
+        initial = observe()
+        screen = initial["screen_frame_appkit"]
+        visible = initial["visible_frame_appkit"]
+        # AppKit bottom-left -> CG main-display top-left, in points once.
+        left = [visible[0] - screen[0], screen[1] + screen[3] - visible[1] - visible[3], visible[2] / 2, visible[3]]
+        right = [left[0] + left[2], left[1], left[2], left[3]]
+        if close_frame(initial["window_frame_cg"], left):
+            blocked("initial-owned-window-already-left-half")
+        observations = {"status": "in_progress", "initial": initial, "samples": [],
+                        "input": "public CLI logical Pressed/Released", "physical_keyboard": False,
+                        "wk_focus_chain": False, "clipboard": False, "tolerance_points": 1}
+        def save_observations():
+            (output / "mac-window-half-observations.json").write_bytes((json.dumps(observations, indent=2) + "\n").encode())
+        save_observations()
+        for label, arguments in (("ui-invalid-suffix", ["send-ui-keys", "Cmd+Left", "UnknownModifier+x"]),
+                                 ("pty-meta-refused", ["send-keys", "Cmd+Left"])):
+            refused = subprocess.run([str(binary), "cli", "--control", endpoint, *arguments],
+                                     text=True, capture_output=True, timeout=20)
+            assert refused.returncode != 0 and "unknown key modifier" in (refused.stdout + refused.stderr), label
+            observed = observe()
+            assert close_frame(observed["window_frame_cg"], initial["window_frame_cg"]), label + " moved window"
+            assert retained_state() == before, label + " changed retained state"
+        observations["invalid_suffix_atomic"] = True
+        observations["pty_meta_refused"] = True
+        for stage, chord, expected in (("left", "Cmd+Left", left), ("right", "Command+Right", right),
+                                       ("repeat-right", "Meta+Right", right)):
+            keys(chord)
+            actual_observation = observe()
+            assert actual_observation["window_id"] == initial["window_id"]
+            assert actual_observation["screen_frame_appkit"] == screen and actual_observation["visible_frame_appkit"] == visible
+            actual = actual_observation["window_frame_cg"]
+            observations["samples"].append({"stage": stage, "chord": chord, "actual": actual, "expected": expected})
+            save_observations()
+            assert close_frame(actual, expected), f"mac-window-half geometry mismatch at {stage}: actual={actual}, expected={expected}"
+            assert retained_state() == before, f"{stage}: window shortcut changed drafts or tab state"
+            current_document = report_document()
+            for field in ("nonce", "draft", "history_length", "history_nonce", "history_step"):
+                assert current_document[field] == document[field], f"{stage}: live document changed {field}"
+            assert counts[h0_path] == gets, "window shortcut reloaded the native page"
+        observations["status"] = "passed"
+        observations["drafts_and_live_document_preserved"] = True
+        save_observations()
+        checks["mac_window_half_public_host_route"] = observations
 
     def host_controls_journey():
         """Public host checks mirrored from tests/support/browser_windows.rs.
@@ -946,7 +1086,26 @@ if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopEl
                 screenshots[name] = {"status": "BLOCKED", "reason": reason}
             (output / "screenshots.json").write_text(json.dumps(screenshots, indent=2) + "\n", encoding="utf-8")
 
+    previous_sigterm = None
+    if args.mac_window_shortcuts_only:
+        def owned_stop(_signal, _frame):
+            raise InterruptedError("owned public court cancelled")
+        previous_sigterm = signal.signal(signal.SIGTERM, owned_stop)
     try:
+        if args.mac_window_shortcuts_only:
+            with (output / "host.log").open("wb") as trace:
+                launch(trace)
+                mac_window_shortcuts_journey()
+                cli("close-window")
+                assert child.wait(timeout=10) == 0
+            assert hashlib.sha256(binary.read_bytes()).hexdigest() == binary_sha256
+            receipt = {"status": "passed", "platform": sys.platform,
+                       "binary_sha256": binary_sha256, "script_sha256": script_sha256,
+                       "scope": "single-display public CLI ConApp window route; not WK focus/hardware",
+                       "host_controls_checks": checks}
+            (output / "receipt.json").write_bytes((json.dumps(receipt, indent=2) + "\n").encode())
+            print(json.dumps(receipt))
+            return 0
         with (output / "host.log").open("wb") as trace:
             launch(trace)
             terminal_id = next(row["id"] for row in cli("list-tabs")["tabs"] if row["kind"] == "terminal")
@@ -1158,6 +1317,13 @@ if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopEl
             h0_journey()
             cli("close-window")
             child.wait(timeout=10)
+            if sys.platform == "darwin":
+                env["MINICON_CONFIG_DIR"] = str(scratch_root / "mac-shortcuts-config")
+                env["MINICON_BROWSER_PROFILE_ROOT"] = str(scratch_root / "mac-shortcuts-profile")
+                launch(trace)
+                mac_window_shortcuts_journey()
+                cli("close-window")
+                assert child.wait(timeout=10) == 0
         assert hashlib.sha256(binary.read_bytes()).hexdigest() == binary_sha256, "binary changed during exact-artifact court"
         receipt = {"binary_sha256": binary_sha256, "platform": sys.platform,
                    "script_sha256": script_sha256,
@@ -1193,6 +1359,13 @@ if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopEl
             else:
                 child.kill()
             child.wait(timeout=10)
+        if args.mac_window_shortcuts_only:
+            (output / "mac-owned-cleanup.json").write_bytes((json.dumps({
+                "child_reaped": child is not None and child.poll() is not None,
+                "exit_code": child.returncode if child is not None else None,
+                "descendant_absence_independently_observed": False}) + "\n").encode())
+        if previous_sigterm is not None:
+            signal.signal(signal.SIGTERM, previous_sigterm)
         if native is not None:
             native.SetForegroundWindow(foreground)
             native.SetCursorPos(pointer.x, pointer.y)

@@ -307,7 +307,7 @@ impl ConApp {
                 // can move focus or open a menu, so a prefix applied before a
                 // later key is rejected leaves the interface in a state the
                 // caller never asked for and cannot predict from the error.
-                let parsed = parse_control_keys(&keys)?;
+                let parsed = parse_ui_control_keys(&keys)?;
                 // Injected keys take the exact routing a physical keystroke
                 // takes — workspace shortcut, live rename, composer, then the
                 // terminal — by going through `event` itself. A private copy
@@ -320,8 +320,7 @@ impl ConApp {
                 // two paths diverging anywhere else.
                 self.injected_ui_keys_live = true;
                 let delivered: Result<(), String> = (|| {
-                    for (key, ctrl, alt, shift) in parsed {
-                        let mut event = injected_key_event(key, ctrl, alt, shift);
+                    for mut event in parsed {
                         self.event(window, PixelWindowEvent::Keyboard(event.clone()))
                             .map_err(|error| error.to_string())?;
                         // A logical chord owns press through release, just as

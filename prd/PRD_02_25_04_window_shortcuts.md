@@ -22,7 +22,7 @@ Outcome: move the focused MiniCon window to a predictable half of its current sc
 │   evidence: WS-03 distinct physical arrow mappings and shared host action
 │   safe failure: invalid focus/queue limits do not operate on another window
 │   dependency: INPUT and existing native local monitor; non-goal: browser history or global hotkeys
-└── [_] QUALIFY — separate mechanism, real adapter and physical-input evidence
+└── [-] QUALIFY — separate mechanism, real adapter and physical-input evidence
     invariant: source/target/input provenance accompanies each claim
     evidence: WS-04 actual macOS native owned-window court and selected GUI/native journeys
     safe failure: unavailable native evidence is BLOCKED, not a passing Windows test
@@ -80,9 +80,44 @@ records three actual original-assertion RED controls (right origin, invalid
 geometry admission and Shift exclusion), each followed by exact restoration
 and a passing original consumer. These are narrow WS-01/02 pure facts.
 
-The macOS-only adapter and page monitor remain uncompiled/unrun locally;
-WS-01 native readback, WS-02 public input/state, WS-03 native page focus and
-WS-04 native qualification remain open. Windows compilation/pure tests cannot
-qualify macOS native execution. The native owned-window example can establish actual
-AppKit placement without AX/global input injection; it cannot establish physical
-keyboard or WK responder ownership. Those scopes must be named separately.
+Run `40208688490` at exact `bea033d1e0b1e32516efee728b23157f9aeb12b6`
+subsequently compiled and executed both macOS ISAs. Actual owned-window
+left/right/repeat and incompatible-content-minimum refusal passed. Removing
+setFrame and changing the page physical-arrow mapping each reached their
+original assertion; exact restored consumers passed. The isolated-content
+preflight mutant instead passed the entire example, so both complete courts
+correctly failed. The exact rejecting getter/path was not observed; it remains
+UNKNOWN. Mac ordinary suites after that step were skipped. Raw audit:
+`target-six/v0.2.23-window-half/ci-bea033d/macos-half-verification-index.json`.
+The enclosing scoped six-cell audit is `verification-index.json` beside it;
+its Linux/Windows passes do not qualify the skipped Mac suites.
+
+The next source court removes both related frame/content size-preflights as
+one boundary and records finite getter/refusal observations. It does not
+retroactively relabel the old NOTRED or prove each size guard independently.
+WS-02 public input/state, WS-03 actual native page focus and the full WS-04 join
+remain open. The example establishes adapter placement without AX/global
+input; physical keyboard and focused WK responder ownership remain distinct.
+
+## WS-02 public CLI host-route court amendment
+
+Add a fresh owned `--no-activate` macOS phase to the existing browser workspace
+smoke. Public `send-ui-keys Cmd+Left`, `Command+Right`, and `Meta+Right` must
+produce left, right and repeated-right actual window bounds while preserving
+tab identities, the active Browser, composer and address drafts/selection,
+loaded URL/title and the fixture's live DOM/history report. A malformed final
+chord rejects the whole batch with geometry and retained input unchanged.
+
+The observer reads only the exact child's unique layer-zero CG window and the
+single primary NSScreen's public frame/visibleFrame metadata. AppKit visible
+frame is converted once to CG's main-display top-left coordinates; Retina scale
+is not multiplied. Multiple displays, ambiguous windows or unavailable metadata
+are BLOCKED, never silently qualified. The source control bypasses only the
+ConApp snap call, requiring the original public geometry assertion to fail;
+exact restoration must pass the same journey again. This establishes CLI host
+routing on the selected single-display court. Hardware keys, a focused WK
+responder and multi-display public observation remain open. Source integration
+and two Windows pure-parser controls are now implemented; their evidence is
+owned by [PRD26](PRD_02_26_con_control_cli.md#ui-only-commandmeta-injection-amendment).
+The new macOS public journey and joint size-preflight control remain UNRUN
+until the next exact-source native court executes.

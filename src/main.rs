@@ -4984,6 +4984,31 @@ fn parse_control_keys(specs: &[String]) -> Result<Vec<(InjectedKey, bool, bool, 
 }
 
 fn parse_control_key(spec: &str) -> Result<(InjectedKey, bool, bool, bool), String> {
+    let (key, ctrl, alt, shift, _) = parse_control_key_modifiers(spec, false)?;
+    Ok((key, ctrl, alt, shift))
+}
+
+/// UI injection shares the ordinary key table but may carry the host Meta bit.
+/// Collect the entire batch before the dispatch arm delivers its first event.
+fn parse_ui_control_keys(specs: &[String]) -> Result<Vec<NormalizedKeyEvent>, String> {
+    specs
+        .iter()
+        .map(|spec| {
+            let (key, ctrl, alt, shift, meta) = parse_control_key_modifiers(spec, true)?;
+            let mut event = injected_key_event(key, ctrl, alt, shift);
+            event.modifiers.meta = meta;
+            if meta {
+                event.text = None;
+            }
+            Ok(event)
+        })
+        .collect()
+}
+
+fn parse_control_key_modifiers(
+    spec: &str,
+    allow_meta: bool,
+) -> Result<(InjectedKey, bool, bool, bool, bool), String> {
     let mut parts: Vec<_> = spec.split('+').collect();
     let key_name = parts
         .pop()
@@ -4992,11 +5017,13 @@ fn parse_control_key(spec: &str) -> Result<(InjectedKey, bool, bool, bool), Stri
     let mut ctrl = false;
     let mut alt = false;
     let mut shift = false;
+    let mut meta = false;
     for modifier in parts {
         match modifier.to_ascii_lowercase().as_str() {
             "ctrl" | "control" => ctrl = true,
             "alt" => alt = true,
             "shift" => shift = true,
+            "cmd" | "command" | "meta" if allow_meta => meta = true,
             _ => return Err(format!("unknown key modifier {modifier:?}")),
         }
     }
@@ -5011,7 +5038,7 @@ fn parse_control_key(spec: &str) -> Result<(InjectedKey, bool, bool, bool), Stri
         }
         InjectedKey::Char(character)
     };
-    Ok((key, ctrl, alt, shift))
+    Ok((key, ctrl, alt, shift, meta))
 }
 
 fn control_mouse_button(button: control::MouseButton) -> Result<InjectedMouseButton, String> {
@@ -5522,6 +5549,52 @@ mod tests {
         // passing by refusing all input.
         let good = ["ctrl+a".to_owned(), "b".to_owned()];
         assert_eq!(parse_control_keys(&good).map(|keys| keys.len()), Ok(2));
+    }
+
+    #[test]
+    fn ui_meta_chords_preserve_modifiers_without_text_and_pty_stays_unchanged() {
+        for alias in ["Cmd", "command", "META"] {
+            let specs = [format!("{alias}+Left"), format!("{alias}+x")];
+            assert!(
+                parse_control_keys(&specs).is_err(),
+                "PTY grammar accepted Meta"
+            );
+            let events = parse_ui_control_keys(&specs).unwrap();
+            assert_eq!(events.len(), 2);
+            assert_eq!(events[0].logical, LogicalKey::Named(NamedKey::ArrowLeft));
+            for event in events {
+                assert!(
+                    event.modifiers.meta
+                        && !event.modifiers.control
+                        && !event.modifiers.alt
+                        && !event.modifiers.shift
+                );
+                assert_eq!(event.text, None, "Meta chord emitted a text payload");
+                assert_eq!(event.state, KeyPressState::Pressed);
+            }
+        }
+        let specs = ["Ctrl+Alt+Shift+Cmd+Right".to_owned()];
+        let event = parse_ui_control_keys(&specs).unwrap().remove(0);
+        assert!(
+            event.modifiers.meta
+                && event.modifiers.control
+                && event.modifiers.alt
+                && event.modifiers.shift
+        );
+        assert_eq!(
+            parse_ui_control_keys(&["x".to_owned()]).unwrap()[0]
+                .text
+                .as_deref(),
+            Some("x")
+        );
+    }
+
+    #[test]
+    fn ui_meta_batch_rejects_an_invalid_suffix_before_delivery() {
+        let specs = ["Cmd+Left".to_owned(), "UnknownModifier+x".to_owned()];
+        assert!(parse_ui_control_keys(&specs).is_err());
+        assert!(parse_ui_control_keys(&["Meta+".to_owned()]).is_err());
+        assert!(parse_ui_control_keys(&["Super+Left".to_owned()]).is_err());
     }
 
     #[test]
