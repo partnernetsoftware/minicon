@@ -1087,3 +1087,25 @@ job has failed the intended native authorization-context qualifier.
 [PRD28.01](PRD_02_28_01_browser_context_lifecycle.md) owns its reopened-storage
 observation and lifecycle investigation. An earlier positive arm does not
 override the terminal failed cell or substitute for its missing restored arm.
+
+Linux native-context qualification now first runs six helper-transport/lifetime
+subjects through the strict product wrapper. Three actual source mutations
+exercise five new subjects: wrong-PID acknowledgement admission, reversed exit
+classification and a wrong deadline failure cause. Each must reach the intended
+original assertion(s), restore exact source, then pass all six subjects again.
+Build failure, zero tests or controller timeout are never RED. The receipts/logs
+are finite synthetic child/pipe observations, with no desktop, provider or real
+profile access. Only after those controls does the unchanged eight-observation
+native context court run. `src/browser_process.rs` joins the qualifier's tracked
+source identities; final source and canonical product preservation remain
+mandatory. Actual hosted outcomes for this new join are still pending.
+
+The older exact `360222f` six-cell run40239951153 is now terminal FAIL:
+Linux ARM64, Windows x86_64 and both macOS cells succeed; Linux x86_64 fails
+the storage qualifier described in PRD28.01, and Windows ARM64 fails one
+public control subject. Its original failed-port-save assertion expects the
+editable `30127` draft but observes the previous `28789`. That cell's native
+context positive/negative/restored qualifier itself passes. Keep its control
+failure as a separate product obligation; a healthy auth qualifier does not
+override the failed Settings recovery journey. Local retained artifacts are
+under `target-six/v0.2.23-provider/ci-360222f-native/`.

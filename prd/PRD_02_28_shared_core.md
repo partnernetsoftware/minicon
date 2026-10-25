@@ -784,6 +784,15 @@ foreign-window AX placement is a separate capability. Other backends refuse
 unless explicitly implemented. Native evidence must name OS/ISA; pure geometry
 or another product's passes do not qualify macOS placement.
 
+## Linux authorization helper release join
+
+The Linux authorization release join reuses the existing helper command channel,
+checked process-owned visibility and auth attempt/context admission. Shared
+`NativePageReleaseStatus` describes a lifetime observation only. Windows retains
+its WebView2 exit event; Linux helper close/exit mechanics and product profile
+reuse are qualified separately in [PRD28.01](PRD_02_28_01_browser_context_lifecycle.md).
+An enum available to macOS does not establish a macOS release observer.
+
 ## Future computer-use consumer boundary
 
 [PRD 38](PRD_02_38_computer_use.md) reserves a same-repository product crate;

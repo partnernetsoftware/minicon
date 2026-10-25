@@ -5,6 +5,7 @@ use std::{
     rc::Rc,
 };
 
+use crate::NativePageReleaseStatus;
 use webview2_com::{
     BrowserProcessExitedEventHandler,
     Microsoft::Web::WebView2::Win32::{
@@ -14,14 +15,6 @@ use webview2_com::{
 };
 use windows_core::Interface;
 use wry::{WebView, WebViewExtWindows};
-
-/// A native lifetime observation, independent of account or storage deletion.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum NativePageReleaseStatus {
-    Pending,
-    Released,
-    Failed(&'static str),
-}
 
 /// Retains the actual WebView2 environment and its event subscription after
 /// the view closes. Create, poll and drop only on the owning GUI/COM thread.

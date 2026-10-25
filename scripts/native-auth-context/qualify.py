@@ -22,7 +22,7 @@ SCRIPTS = Path(__file__).resolve().parent
 INPUTS = (
     "Cargo.toml", "Cargo.lock", ".github/workflows/dev-loop-crosscheck.yml", "src/main.rs", "src/harness_auth_court.rs", "crates/minicon-web/tests/support/native_auth_fixture.rs",
     "src/harness_auth_ui.rs", "src/harness_settings_ui.rs",
-    "src/harness_workspace_ui.rs",
+    "src/harness_workspace_ui.rs", "src/browser_process.rs",
     "crates/minicon-web/Cargo.toml",
     "crates/minicon-web/src/lib.rs", "crates/minicon-web/src/native_page.rs",
     "crates/minicon-web/src/native_page/windows_release.rs",
@@ -64,6 +64,61 @@ def choose_bash():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.choose_bash()
+
+
+def linux_helper_release_controls(output, env, target, bash):
+    """Actual owned child/pipe subjects; no desktop, provider or profile reads."""
+    source = ROOT / "src/browser_process.rs"
+    original = source.read_bytes()
+    production, tests = original.decode("utf-8").split("#[cfg(test)]", 1)
+    report = dict(status="FAIL", baseline_subjects=6, controls=[], source_restored_exact=False)
+    receipt = output / "helper-release-controls.json"
+
+    def subjects(label, pattern, passed, failed, required=()):
+        log = output / f"helper-release-{label}.log"
+        code = command([bash, "scripts/build.sh", "test-suite", "--target", target,
+                        "--bin", "minicon", pattern, "--", "--test-threads=1"], log, env, 900)
+        text = log.read_text(encoding="utf-8", errors="replace")
+        results = re.findall(r"test result: (ok|FAILED)\. (\d+) passed; (\d+) failed;", text)
+        expected = ("FAILED" if failed else "ok", str(passed), str(failed))
+        if not results or results[-1] != expected or bool(code) != bool(failed):
+            raise RuntimeError(f"{label}: helper subjects did not reach required assertions")
+        if any(message not in text for message in required):
+            raise RuntimeError(f"{label}: intended helper assertion was not observed")
+        return dict(label=label, passed=passed, failed=failed, log=log.name, sha256=sha(log))
+
+    try:
+        report["baseline"] = subjects("baseline", "browser_process::tests::", 6, 0)
+        variants = (
+            ("closed-pid", 'if closed["pid"].as_u64() == Some(u64::from(pid))',
+             "if closed.is_object()", "closed_frame_requires_the_exact_child", 0, 1,
+             ("a different helper must not acknowledge native close",)),
+            ("exit-kind", "if !exit.success() {", "if exit.success() {",
+             "native_release_", 1, 3,
+             ("native_release_requires_the_close_ack_and_actual_normal_child_exit",
+              "normal exit alone is not a native close acknowledgement",
+              "a matching acknowledgement cannot turn an abnormal exit into release")),
+            ("deadline-cause", '"browser-context-release-timeout"',
+             '"browser-native-release-abnormal-exit"',
+             "native_release_deadline_", 0, 1, ("browser-context-release-timeout",)),
+        )
+        for label, before, after, pattern, passed, failed, messages in variants:
+            if production.count(before) != 1:
+                raise RuntimeError(f"{label}: helper mutation anchor changed")
+            source.write_text(production.replace(before, after, 1) + "#[cfg(test)]" + tests,
+                              encoding="utf-8", newline="\n")
+            try:
+                red = subjects(label + "-red", pattern, passed, failed, messages)
+            finally:
+                source.write_bytes(original)
+            green = subjects(label + "-restored", "browser_process::tests::", 6, 0)
+            report["controls"].append(dict(red=red, restored=green))
+        report["status"] = "PASS"
+    finally:
+        source.write_bytes(original)
+        report["source_restored_exact"] = source.read_bytes() == original
+        write(receipt, report)
+    return report
 
 
 
@@ -284,6 +339,11 @@ def main():
                      and observed.get("failure") == expected_failure)
         else:
             valid = code == 0 and result["status"] == "PASS" and result["actual_exit_code"] == 0
+            if system == "linux":
+                valid = valid and any(record.get("phase") == "a-reopen"
+                    and record.get("native_host_present") is True
+                    and record.get("owned_profile_release") == "matching-normal-exit"
+                    for record in driver.get("linux_context_observations", []))
         receipt["runs"].append(dict(label=label, runtime_red=negative, valid=valid,
                                     process_exit=code, binary_sha256=metadata["binary_sha256"],
                                     receipt=f"{label}/receipt.json",
@@ -314,6 +374,15 @@ def main():
         receipt["protocol_restored_checks"] = checks
         receipt["protocol_assertion_red_controls"] = controls
         receipt["protocol_gate"] = f"{checks} checks and {controls} actual assertion RED controls; exact source restored"
+        if system == "linux":
+            helper_controls = linux_helper_release_controls(output, env, args.target, bash)
+            receipt["helper_release_controls"] = {
+                "receipt": "helper-release-controls.json",
+                "sha256": sha(output / "helper-release-controls.json"),
+                "status": helper_controls["status"],
+            }
+            if hashes() != original_hashes:
+                raise RuntimeError("helper controls did not restore exact source")
         run("initial")
         # Reuse the previous account's explicit context in actual product
         # dispatch. Ordinary remains separate; B must observe A's storage.

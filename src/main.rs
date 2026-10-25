@@ -912,7 +912,7 @@ struct ConApp {
     browser_auth: Option<harness_auth_ui::AuthPresentation>,
     #[cfg(all(windows, feature = "native-auth-court"))]
     native_auth_cookie_probe: Option<harness_auth_court::PreNavigationCookieProbe>,
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     auth_context_lifecycle: harness_auth_ui::AuthContextLifecycle,
     dismissed_auth_attempt: Option<provider_runtime::AttemptId>,
     browser_proxy_input: composer::ComposerState,
@@ -1459,7 +1459,7 @@ impl ConApp {
             browser_auth: None,
             #[cfg(all(windows, feature = "native-auth-court"))]
             native_auth_cookie_probe: None,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             auth_context_lifecycle: Default::default(),
             dismissed_auth_attempt: None,
             browser_proxy_input: Default::default(),
@@ -2611,6 +2611,10 @@ impl ConApp {
     /// Ask the wry page host to load `url` into the active browser content panel.
     #[cfg(all(unix, not(target_os = "macos")))]
     fn launch_page_host(&mut self, window: &PixelWindow, url: &str) {
+        #[cfg(target_os = "linux")]
+        if self.defer_harness_auth_navigation(url) {
+            return;
+        }
         if self.browser_auth.is_none()
             && let Err(reason) = self.effective_browser_proxy()
         {
@@ -4845,7 +4849,7 @@ impl PixelWindowApplication for ConApp {
             return Ok(PixelWindowDirective::Exit);
         }
         self.poll_harness_settings(window);
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         self.poll_harness_auth_release(window, now);
         #[cfg(any(target_os = "macos", windows))]
         self.drain_browser_state(window);
@@ -4899,7 +4903,7 @@ impl PixelWindowApplication for ConApp {
             .chain(presentation_deadline)
             .chain(self.browser_load_deadline)
             .min();
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let control_deadline = control_deadline
             .into_iter()
             .chain(self.harness_auth_release_deadline())

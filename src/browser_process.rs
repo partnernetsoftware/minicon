@@ -1,11 +1,15 @@
 //! Bounded Linux page-host transport; adapter contract owner: PRD 28.
+use minicon_web::NativePageReleaseStatus as ReleaseStatus;
 use std::{
+    cell::{Cell, RefCell},
     io::{BufRead, Read, Write},
-    process::Child,
+    process::{Child, ExitStatus},
     sync::{Arc, Mutex, mpsc},
+    time::{Duration, Instant},
 };
 
 pub(super) struct BrowserProcess {
+    pid: u32,
     commands: mpsc::SyncSender<String>,
     state: Arc<Mutex<ProcessState>>,
 }
@@ -15,13 +19,19 @@ struct ProcessState {
     latest: Option<serde_json::Value>,
     shortcuts: Vec<char>,
     embedding: Option<(u32, u64)>,
+    closed: bool,
+    reader_finished: bool,
 }
 
 impl ProcessState {
     fn receive(&mut self, value: serde_json::Value, pid: u32) -> bool {
         // Ready frames are not page snapshots; retain the last URL/title batch.
         let empty = self.latest.is_none() && self.shortcuts.is_empty();
-        if let Some(ready) = value.get("embedded_ready") {
+        if let Some(closed) = value.get("closed") {
+            if closed["pid"].as_u64() == Some(u64::from(pid)) {
+                self.closed = true;
+            }
+        } else if let Some(ready) = value.get("embedded_ready") {
             if ready["pid"].as_u64() == Some(u64::from(pid))
                 && let Some(parent) = ready["parent"].as_u64().filter(|p| *p != 0)
             {
@@ -79,8 +89,16 @@ impl BrowserProcess {
                     }
                 }
             }
+            if let Ok(mut state) = observed.lock() {
+                state.reader_finished = true;
+            }
+            wake();
         });
-        Some(Self { commands, state })
+        Some(Self {
+            pid,
+            commands,
+            state,
+        })
     }
 
     pub(super) fn send(&self, action: &str, url: Option<&str>) -> Result<(), String> {
@@ -112,9 +130,206 @@ impl BrowserProcess {
     }
 }
 
+/// GUI-thread polling owns the exact child, its pipe and extracted executable
+/// until normal close is observed. It never waits/sleeps on the active GUI.
+pub(super) struct BrowserRelease {
+    child: RefCell<Option<Child>>,
+    transport: RefCell<Option<BrowserProcess>>,
+    program: RefCell<Option<crate::browser::EmbeddedPageProgram>>,
+    exit: Cell<Option<ExitStatus>>,
+    state: Cell<ReleaseStatus>,
+    deadline: Instant,
+    kill_requested: Cell<bool>,
+}
+
+impl BrowserRelease {
+    pub(super) fn begin(
+        child: Child,
+        transport: Option<BrowserProcess>,
+        program: Option<crate::browser::EmbeddedPageProgram>,
+        initial_error: Option<&'static str>,
+    ) -> Self {
+        let state = match initial_error {
+            Some(error) => ReleaseStatus::Failed(error),
+            None => match &transport {
+                Some(process) if process.pid == child.id() => {
+                    if process.send("close", None).is_ok() {
+                        ReleaseStatus::Pending
+                    } else {
+                        ReleaseStatus::Failed("browser-native-release-command-failed")
+                    }
+                }
+                _ => ReleaseStatus::Failed("browser-native-release-transport-unavailable"),
+            },
+        };
+        Self {
+            child: RefCell::new(Some(child)),
+            transport: RefCell::new(transport),
+            program: RefCell::new(program),
+            exit: Cell::new(None),
+            state: Cell::new(state),
+            deadline: Instant::now() + Duration::from_secs(10),
+            kill_requested: Cell::new(false),
+        }
+    }
+
+    pub(super) fn status(&self) -> ReleaseStatus {
+        if Instant::now() >= self.deadline && self.state.get() == ReleaseStatus::Pending {
+            self.state
+                .set(ReleaseStatus::Failed("browser-context-release-timeout"));
+        }
+        let mut child = self.child.borrow_mut();
+        if let Some(process) = child.as_mut() {
+            if matches!(self.state.get(), ReleaseStatus::Failed(_))
+                && !self.kill_requested.replace(true)
+            {
+                let _ = process.kill();
+            }
+            match process.try_wait() {
+                Ok(Some(exit)) => {
+                    self.exit.set(Some(exit));
+                    *child = None;
+                }
+                Ok(None) => {}
+                Err(_) => self.state.set(ReleaseStatus::Failed(
+                    "browser-native-release-process-unreadable",
+                )),
+            }
+        }
+        if let Some(exit) = self.exit.get() {
+            if self.state.get() == ReleaseStatus::Pending {
+                if !exit.success() {
+                    self.state.set(ReleaseStatus::Failed(
+                        "browser-native-release-abnormal-exit",
+                    ));
+                } else if let Some(transport) = self.transport.borrow().as_ref() {
+                    match transport.state.lock() {
+                        Ok(state) if state.closed => self.state.set(ReleaseStatus::Released),
+                        Ok(state) if state.reader_finished => self
+                            .state
+                            .set(ReleaseStatus::Failed("browser-native-release-missing-ack")),
+                        Ok(_) => {}
+                        Err(_) => self.state.set(ReleaseStatus::Failed(
+                            "browser-native-release-transport-unavailable",
+                        )),
+                    }
+                }
+            }
+            if self.state.get() != ReleaseStatus::Pending {
+                self.transport.borrow_mut().take();
+                self.program.borrow_mut().take();
+            }
+        }
+        self.state.get()
+    }
+
+    pub(super) fn poll_deadline(&self) -> Option<Instant> {
+        (self.child.borrow().is_some() || self.state.get() == ReleaseStatus::Pending)
+            .then(|| Instant::now() + Duration::from_millis(20))
+    }
+}
+
+impl Drop for BrowserRelease {
+    fn drop(&mut self) {
+        // Normally already reaped by nonblocking status(). This fallback is
+        // final host teardown, never a successful release observation.
+        if let Some(mut child) = self.child.get_mut().take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn closed_frame_requires_the_exact_child_and_preserves_the_page_snapshot() {
+        let mut state = ProcessState::default();
+        let page = serde_json::json!({"url":"https://synthetic.invalid/page","title":"Owned"});
+        state.receive(page.clone(), 17);
+        for pid in [0, 29] {
+            state.receive(serde_json::json!({"closed":{"pid":pid}}), 17);
+            assert!(
+                !state.closed,
+                "a different helper must not acknowledge native close"
+            );
+        }
+        state.receive(serde_json::json!({"closed":{"pid":17}}), 17);
+        assert!(state.closed);
+        assert_eq!(state.latest, Some(page));
+    }
+
+    fn release_fixture(script: &str) -> BrowserRelease {
+        let script = format!(
+            "read -r line; [ \"$line\" = '{{\"action\":\"close\",\"url\":null}}' ] || exit 23; {script}"
+        );
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", &script])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let transport = BrowserProcess::attach(&mut child, || {}).unwrap();
+        BrowserRelease::begin(child, Some(transport), None, None)
+    }
+
+    fn terminal(release: &BrowserRelease) -> ReleaseStatus {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            let status = release.status();
+            if status != ReleaseStatus::Pending && release.child.borrow().is_none() {
+                return status;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "owned release did not finish and reap within the test deadline"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn native_release_requires_the_close_ack_and_actual_normal_child_exit() {
+        let release = release_fixture("printf '{\"closed\":{\"pid\":%s}}\\n' \"$$\"; exit 0");
+        assert_eq!(terminal(&release), ReleaseStatus::Released);
+        assert!(release.exit.get().unwrap().success());
+        assert!(release.transport.borrow().is_none());
+    }
+
+    #[test]
+    fn native_release_refuses_normal_exit_without_a_native_close_ack() {
+        let release = release_fixture("exit 0");
+        assert_eq!(
+            terminal(&release),
+            ReleaseStatus::Failed("browser-native-release-missing-ack"),
+            "normal exit alone is not a native close acknowledgement"
+        );
+    }
+
+    #[test]
+    fn native_release_refuses_an_abnormal_child_even_with_a_matching_ack() {
+        let release = release_fixture("printf '{\"closed\":{\"pid\":%s}}\\n' \"$$\"; exit 7");
+        assert_eq!(
+            terminal(&release),
+            ReleaseStatus::Failed("browser-native-release-abnormal-exit"),
+            "a matching acknowledgement cannot turn an abnormal exit into release"
+        );
+    }
+
+    #[test]
+    fn native_release_deadline_terminates_and_reaps_only_its_owned_child() {
+        let mut release = release_fixture("while :; do :; done");
+        release.deadline = Instant::now() + Duration::from_millis(20);
+        assert_eq!(
+            terminal(&release),
+            ReleaseStatus::Failed("browser-context-release-timeout")
+        );
+        assert!(release.kill_requested.get());
+        assert!(!release.exit.get().unwrap().success());
+    }
 
     #[test]
     fn ready_frame_requires_the_spawned_pid_and_never_replaces_the_page_snapshot() {
@@ -139,6 +354,7 @@ mod tests {
         assert_eq!(state.latest, Some(page));
         let (commands, _receiver) = mpsc::sync_channel(1);
         let process = BrowserProcess {
+            pid: 17,
             commands,
             state: Arc::new(Mutex::new(state)),
         };

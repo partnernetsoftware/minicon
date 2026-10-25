@@ -775,7 +775,7 @@ struct CourtApplication {
     deadline: Instant,
     outcome: Arc<Mutex<Option<Result<(), &'static str>>>>,
     fixture_receipt: Arc<Mutex<Option<serde_json::Value>>>,
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     diagnostics: Arc<Mutex<Vec<serde_json::Value>>>,
     #[cfg(windows)]
     private_locators: Arc<Mutex<std::collections::BTreeMap<String, serde_json::Value>>>,
@@ -784,6 +784,31 @@ struct CourtApplication {
 }
 
 impl CourtApplication {
+    #[cfg(target_os = "linux")]
+    fn record_context_observation(&self) {
+        let Some(auth) = &self.app.browser_auth else {
+            return;
+        };
+        let phase = match auth.attempt.0 {
+            101 => "a",
+            102 => "b",
+            103 => "a-reopen",
+            _ => return,
+        };
+        let observation = serde_json::json!({
+            "phase":phase,
+            "native_host_present":self.app.browser_page.is_some(),
+            "owned_profile_release":self.app.auth_context_lifecycle.release_observation(&auth.context.profile),
+        });
+        if let Ok(mut records) = self.diagnostics.lock()
+            && records.last() != Some(&observation)
+        {
+            if records.len() == 16 {
+                records.remove(0);
+            }
+            records.push(observation);
+        }
+    }
     #[cfg(windows)]
     fn record_context_observation(&self) {
         let Some(auth) = &self.app.browser_auth else {
@@ -1079,7 +1104,7 @@ impl PixelWindowApplication for CourtApplication {
         now: Instant,
     ) -> Result<PixelWindowDirective, PixelWindowError> {
         let directive = self.app.about_to_wait(window, now)?;
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         self.record_context_observation();
         self.turn(window)?;
         if self.app.exit {
@@ -1131,7 +1156,7 @@ pub(super) fn run_application(manifest: &Path) -> Result<(), &'static str> {
     let deadline = Instant::now() + recipe.timeout;
     let outcome = Arc::new(Mutex::new(None));
     let receipt = Arc::new(Mutex::new(None));
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     let diagnostics = Arc::new(Mutex::new(Vec::new()));
     let mut app = ConApp::new(None, None);
     app.no_activate = true;
@@ -1148,7 +1173,7 @@ pub(super) fn run_application(manifest: &Path) -> Result<(), &'static str> {
         deadline,
         outcome: outcome.clone(),
         fixture_receipt: receipt.clone(),
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         diagnostics: diagnostics.clone(),
         #[cfg(windows)]
         private_locators: private_locators.clone(),
@@ -1246,6 +1271,13 @@ pub(super) fn run_application(manifest: &Path) -> Result<(), &'static str> {
                 .ok()
                 .map(|observations| observations.clone())
         );
+        data
+    };
+    #[cfg(target_os = "linux")]
+    let data = {
+        let mut data = data;
+        data["linux_context_observations"] =
+            serde_json::json!(diagnostics.lock().ok().map(|records| records.clone()));
         data
     };
     std::fs::write(

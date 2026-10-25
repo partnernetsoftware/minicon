@@ -81,7 +81,7 @@ mod macos_shortcuts;
 #[cfg(windows)]
 mod windows_release;
 #[cfg(windows)]
-pub use windows_release::{NativePageRelease, NativePageReleaseStatus};
+pub use windows_release::NativePageRelease;
 
 #[derive(Clone, Debug, Default)]
 pub struct NativePageState {

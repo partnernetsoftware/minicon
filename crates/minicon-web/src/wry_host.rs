@@ -15,6 +15,8 @@ enum HostEvent {
     Title(String),
     Command,
     #[cfg(target_os = "linux")]
+    Closed,
+    #[cfg(target_os = "linux")]
     Failed,
 }
 
@@ -78,6 +80,8 @@ fn load_inner(
             || crate::resolve_proxy_from_process(&crate::BrowserProxyConfig::default()),
         );
     let event_loop = EventLoopBuilder::<HostEvent>::with_user_event().build();
+    #[cfg(target_os = "linux")]
+    let mut event_loop = event_loop;
     let page_loaded = event_loop.create_proxy();
     let redirect_delivered = event_loop.create_proxy();
     let ipc = if context.is_some() {
@@ -306,6 +310,10 @@ fn load_inner(
                 // Started/Finished and overwriting the typed failure.
                 true
             });
+        let closed = event_loop.create_proxy();
+        webview.webview().connect_close(move |_| {
+            let _ = closed.send_event(HostEvent::Closed);
+        });
         window
             .gtk_window()
             .connect_key_press_event(move |_, event| {
@@ -334,14 +342,22 @@ fn load_inner(
                 }
             });
     }
-    // `EventLoop::run` does not return. Close ends the process.
+    // Linux returns so the closure's native view/context are actually dropped
+    // before the final acknowledgement and normal helper exit.
     let mut title = String::new();
     let mut loading = true;
     let mut error: Option<&str> = None;
-    event_loop.run(move |event, _, control_flow| {
+    let handler = move |event: Event<'_, HostEvent>,
+                        _: &tao::event_loop::EventLoopWindowTarget<HostEvent>,
+                        control_flow: &mut ControlFlow| {
         *control_flow = ControlFlow::Wait;
         let _keep = &webview;
         let _keep_context = &native_context;
+        #[cfg(target_os = "linux")]
+        if matches!(event, Event::UserEvent(HostEvent::Closed)) {
+            *control_flow = ControlFlow::Exit;
+            return;
+        }
         if smoke {
             if let Event::UserEvent(HostEvent::Loaded) = event {
                 *control_flow = ControlFlow::Exit;
@@ -351,12 +367,16 @@ fn load_inner(
             let changed = match &event {
                 Event::UserEvent(HostEvent::Changed(active, _url)) => {
                     loading = *active;
-                    if *active { error = None; }
+                    if *active {
+                        error = None;
+                    }
                     true
                 }
                 #[cfg(target_os = "linux")]
                 Event::UserEvent(HostEvent::Failed) => {
-                    error = Some("browser-navigation-failed"); loading = false; true
+                    error = Some("browser-navigation-failed");
+                    loading = false;
+                    true
                 }
                 Event::UserEvent(HostEvent::Title(next)) => {
                     title.clone_from(next);
@@ -370,7 +390,10 @@ fn load_inner(
                         Some("load") => command["url"]
                             .as_str()
                             .filter(|url| crate::http_url_at(url, 0).as_deref() == Some(*url))
-                            .map(|url| { *local_origin.borrow_mut() = self::local_origin(url); webview.load_url(url) }),
+                            .map(|url| {
+                                *local_origin.borrow_mut() = self::local_origin(url);
+                                webview.load_url(url)
+                            }),
                         Some("back") => Some(webview.go_back()),
                         Some("forward") => Some(webview.go_forward()),
                         Some("reload") => Some(webview.reload()),
@@ -380,6 +403,13 @@ fn load_inner(
                             #[cfg(not(target_os = "linux"))]
                             let result = webview.focus();
                             Some(result)
+                        }
+                        #[cfg(target_os = "linux")]
+                        Some("close") => {
+                            use webkit2gtk::WebViewExt;
+                            use wry::WebViewExtUnix;
+                            webview.webview().try_close();
+                            None
                         }
                         _ => None,
                     };
@@ -405,7 +435,21 @@ fn load_inner(
         {
             *control_flow = ControlFlow::Exit;
         }
-    });
+    };
+    #[cfg(target_os = "linux")]
+    {
+        use tao::platform::run_return::EventLoopExtRunReturn;
+        let status = event_loop.run_return(handler);
+        if status != 0 {
+            return Err("browser-native-release-loop-failed");
+        }
+        if ipc {
+            emit(serde_json::json!({"closed":{"pid":std::process::id()}}));
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "linux"))]
+    event_loop.run(handler)
 }
 
 #[cfg(target_os = "linux")]

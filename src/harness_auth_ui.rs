@@ -34,12 +34,17 @@ pub(super) struct AuthPresentation {
 }
 
 #[cfg(windows)]
+type AuthReleaseObservation = minicon_web::NativePageRelease;
+#[cfg(target_os = "linux")]
+type AuthReleaseObservation = browser_process::BrowserRelease;
+
+#[cfg(any(windows, target_os = "linux"))]
 struct AuthReleaseRecord {
     profile: minicon_web::PageProfile,
-    observation: minicon_web::NativePageRelease,
+    observation: AuthReleaseObservation,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 struct PendingAuthNavigation {
     attempt: provider_runtime::AttemptId,
     context: browser::PageContext,
@@ -47,7 +52,7 @@ struct PendingAuthNavigation {
     deadline: Instant,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingAuthDecision {
     Wait,
@@ -56,7 +61,7 @@ enum PendingAuthDecision {
     Failed(&'static str),
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 impl PendingAuthNavigation {
     fn decision(
         &self,
@@ -85,7 +90,7 @@ impl PendingAuthNavigation {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[derive(Default)]
 pub(super) struct AuthContextLifecycle {
     releases: Vec<AuthReleaseRecord>,
@@ -95,7 +100,7 @@ pub(super) struct AuthContextLifecycle {
     completed: std::collections::VecDeque<minicon_web::PageProfile>,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 impl AuthContextLifecycle {
     fn defer(
         &mut self,
@@ -192,9 +197,12 @@ impl ConApp {
             let previous = self.browser_auth.as_ref().unwrap().attempt;
             self.finish_harness_auth(window, previous);
         }
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
             self.auth_context_lifecycle.retire_released();
+            if self.auth_context_lifecycle.releases.len() >= 18 {
+                self.auth_context_lifecycle.overflowed = true;
+            }
             if let minicon_web::NativePageReleaseStatus::Failed(_) =
                 self.auth_context_lifecycle.status(&context.profile)
             {
@@ -276,7 +284,7 @@ impl ConApp {
 
     /// All navigation entry points use this before creating an auth host,
     /// including address submission and reload while an old view is closing.
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     pub(super) fn defer_harness_auth_navigation(&mut self, url: &str) -> bool {
         let Some(auth) = &self.browser_auth else {
             return false;
@@ -340,15 +348,31 @@ impl ConApp {
         self.mark_host_ui_full_and_repaint(window);
     }
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     pub(super) fn harness_auth_release_deadline(&self) -> Option<Instant> {
-        self.auth_context_lifecycle
+        let deadlines = self
+            .auth_context_lifecycle
             .pending
-            .as_ref()
-            .map(|pending| pending.deadline)
+            .iter()
+            .map(|pending| pending.deadline);
+        #[cfg(windows)]
+        {
+            deadlines.min()
+        }
+        #[cfg(target_os = "linux")]
+        {
+            deadlines
+                .chain(
+                    self.auth_context_lifecycle
+                        .releases
+                        .iter()
+                        .filter_map(|record| record.observation.poll_deadline()),
+                )
+                .min()
+        }
     }
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     pub(super) fn poll_harness_auth_release(&mut self, window: &PixelWindow, now: Instant) {
         self.auth_context_lifecycle.retire_released();
         let Some(pending) = self.auth_context_lifecycle.pending.take() else {
@@ -412,7 +436,7 @@ impl ConApp {
             return false;
         }
         let mut auth = self.browser_auth.take().unwrap();
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
             if self
                 .auth_context_lifecycle
@@ -422,6 +446,9 @@ impl ConApp {
             {
                 self.auth_context_lifecycle.pending = None;
             }
+        }
+        #[cfg(windows)]
+        {
             if let Some(page) = self.native_browser_page.take() {
                 page.focus_parent();
                 let waker = self.waker_slot.lock().ok().and_then(|slot| slot.clone());
@@ -443,6 +470,37 @@ impl ConApp {
                     // profile. Bound memory and refuse subsequent auth opens.
                     self.auth_context_lifecycle.overflowed = true;
                 }
+            }
+        }
+        #[cfg(target_os = "linux")]
+        if let Some(child) = self.browser_page.take() {
+            let process = self.browser_process.take();
+            let hidden = self.content_panel_slot(window).is_some_and(|slot| {
+                process
+                    .as_ref()
+                    .is_some_and(|process| process.embedded_ready(slot.parent, child.id()))
+                    && browser::set_embedded_page_visible_for_process(
+                        slot.parent,
+                        child.id(),
+                        false,
+                    )
+            });
+            let observation = browser_process::BrowserRelease::begin(
+                child,
+                process,
+                self.browser_embedded_program.take(),
+                (!hidden).then_some("browser-native-release-hide-failed"),
+            );
+            self.auth_context_lifecycle.retire_released();
+            if self.auth_context_lifecycle.releases.len() < 18 {
+                self.auth_context_lifecycle
+                    .releases
+                    .push(AuthReleaseRecord {
+                        profile: auth.context.profile.clone(),
+                        observation,
+                    });
+            } else {
+                self.auth_context_lifecycle.overflowed = true;
             }
         }
         let return_to_settings = self.active_is_browser();

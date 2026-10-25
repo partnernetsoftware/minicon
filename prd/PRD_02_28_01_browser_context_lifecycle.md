@@ -1031,3 +1031,26 @@ storage predicates plus intended negative/restored runtime controls.
 Shared prerequisites/hot files are `minicon-web`'s native helper close path,
 MiniCon's existing browser transport and auth/page teardown consumers, and this
 qualifier; one integrator owns the join. No Linux repair is implemented here.
+
+The selected repair uses the existing bounded helper command channel for native
+`try_close`, handles its close signal, returns from the event loop so Rust-owned
+view/context objects drop, then emits an exact-PID closed acknowledgement.
+MiniCon retains the direct child/transport/extracted helper while observing both
+that acknowledgement and actual successful process exit. Polling is nonblocking
+on the GUI and uses a bounded readiness deadline; queue failure, missing/wrong
+acknowledgement, abnormal exit or timeout cannot become Released. A timed-out
+owned child is terminated for cleanup, with the profile remaining failed.
+The existing bounded auth release/navigation owner is reused for Linux; it
+keeps current attempt/context/cancellation checks and parks the ordinary page.
+This is a native lifetime boundary, not a declared storage flush. The original
+native storage and counterexample gates must still establish actual persistence.
+The shared status enum keeps its existing Windows meaning and gains this actual
+Linux consumer; macOS receives no new native-release implementation claim.
+The current development join implements this path but has no Linux runtime
+qualification yet. Its feature-only driver also retains finite per-phase
+`linux_context_observations`; a positive qualifier requires an actually present
+reopened host and the matching normal close observation for A. Storage checks
+remain mandatory independently. Fake-child/pipe controls exercise normal/abnormal
+exit, exact-PID acknowledgement, missing acknowledgement and deadline cleanup
+before the actual native court. Windows local compile/regression gates do not
+qualify this Linux path or its new subjects.

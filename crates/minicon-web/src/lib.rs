@@ -29,6 +29,14 @@ pub use session::{
     NodeReference, PageCommand, PageError, PageSession, PageState, PageView, SemanticNode,
 };
 
+/// A native lifetime observation, independent of storage persistence or deletion.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NativePageReleaseStatus {
+    Pending,
+    Released,
+    Failed(&'static str),
+}
+
 #[cfg(target_os = "linux")]
 mod embedded_program;
 #[cfg(target_os = "linux")]
@@ -38,6 +46,8 @@ pub use embedded_program::EmbeddedPageProgram;
 mod native_page;
 #[cfg(all(feature = "native-page-host", any(target_os = "macos", windows)))]
 pub use native_page::NativePageHost;
+#[cfg(all(feature = "native-page-host", windows))]
+pub use native_page::NativePageRelease;
 #[cfg(all(
     windows,
     feature = "native-page-host",
@@ -47,8 +57,6 @@ pub use native_page::{
     NativeCookieMetadataCounts, NativeCookieMetadataProbe, NativeCookieMetadataStatus,
     NativeCookieMetadataSummary,
 };
-#[cfg(all(feature = "native-page-host", windows))]
-pub use native_page::{NativePageRelease, NativePageReleaseStatus};
 
 /// The single content panel a browser tab hosts today.
 ///
