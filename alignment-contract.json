@@ -10,6 +10,16 @@
   ],
   "capabilities": [
     {
+      "id": "con.harness.workspace-injected",
+      "kind": "visual",
+      "status": "shipped",
+      "evidence_mode": "black-box",
+      "prd": "prd/PRD_02_36_harness_workspace.md",
+      "prd_anchor": "- [v] The injected Windows host journey renders the Harness overview and preserves hidden workspace drafts.",
+      "evidence": ["minicon_control::h0_harness_destination_preserves_console_and_web_drafts_and_observes_only"],
+      "commands": []
+    },
+    {
       "id": "con.terminal.sessions",
       "kind": "behavior",
       "status": "shipped",

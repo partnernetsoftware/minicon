@@ -62,6 +62,7 @@ mod harness_gateway;
 mod harness_opencode;
 mod harness_settings_ui;
 mod harness_wire;
+mod harness_workspace_ui;
 mod ime_mode;
 #[cfg(target_os = "linux")]
 mod linux_startup;
@@ -991,6 +992,7 @@ struct ConApp {
     settings_open: bool,
     settings_section: ui::SettingsSection,
     harness_settings: Option<harness_settings_ui::HarnessSettings>,
+    harness_workspace: harness_workspace_ui::HarnessWorkspace,
     settings_proxy_input: composer::ComposerState,
     settings_proxy_focused: bool,
     settings_proxy_error: Option<String>,
@@ -1475,6 +1477,7 @@ impl ConApp {
             settings_open: false,
             settings_section: ui::SettingsSection::default(),
             harness_settings: None,
+            harness_workspace: harness_workspace_ui::HarnessWorkspace::default(),
             settings_proxy_input: Default::default(),
             settings_proxy_focused: false,
             settings_proxy_error: None,
@@ -1739,6 +1742,7 @@ impl ConApp {
 
     fn browser_page_visible(&self) -> bool {
         self.active_is_browser()
+            && !self.harness_workspace.active()
             && !self.settings_open
             && !self.browser_proxy_menu_open
             && !(self.new_tab_menu_open && self.sidebar_collapsed)
@@ -1749,6 +1753,80 @@ impl ConApp {
                 .is_some_and(|tab| {
                     matches!(tab.panel().load, browser::PageLoad::Unavailable { .. })
                 })
+    }
+
+    fn submit_content_frame_screenshot(
+        &mut self,
+        window: &PixelWindow,
+        frame: &mut XrgbPixelFrame<'_>,
+        width: u32,
+        height: u32,
+    ) -> Result<bool, PixelWindowError> {
+        let mut discard_capture_frame = false;
+        if let Some(screenshot) = self.pending_control.take_screenshot() {
+            let control_pending::ScreenshotWork {
+                target,
+                path,
+                reply,
+                restore_active,
+                deadline,
+            } = screenshot;
+            // An explicit terminal capture is scratch raster while Harness
+            // remains the visible destination, even if its tab is already active.
+            discard_capture_frame = self.harness_workspace.active() && target.is_some();
+            let response_path = path.to_string_lossy().into_owned();
+            let shared_reply = Arc::new(std::sync::Mutex::new(Some(reply)));
+            let done = Arc::new(AtomicBool::new(false));
+            self.pending_control.start_screenshot(
+                target,
+                Arc::clone(&shared_reply),
+                Arc::clone(&done),
+                deadline,
+            );
+            let waker = window.waker();
+            agent_interface::submit_png_atomic(
+                path,
+                frame.pixels_mut(),
+                width,
+                height,
+                Box::new(move |write_result| {
+                    let result = write_result
+                        .map(|encode_ns| {
+                            json::object(vec![
+                                ("path", response_path.into()),
+                                ("width", width.into()),
+                                ("height", height.into()),
+                                ("encode_ns", encode_ns.into()),
+                            ])
+                        })
+                        .map_err(|error| format!("write screenshot: {error}"));
+                    if let Some(reply) = shared_reply
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .take()
+                    {
+                        let _ = reply.send(result);
+                    }
+                    done.store(true, Ordering::Release);
+                    let _ = waker.wake();
+                }),
+            );
+            if let Some(restore_active) = restore_active
+                && self.workspace.node(restore_active).is_some()
+            {
+                self.workspace.set_active(restore_active);
+                if let Some(session) = self.sessions.get_mut(&restore_active) {
+                    session.dirty.mark_full();
+                }
+                self.refresh_title(window)?;
+                discard_capture_frame = true;
+            }
+            if discard_capture_frame {
+                self.mark_host_ui_full();
+                window.request_redraw();
+            }
+        }
+        Ok(discard_capture_frame)
     }
 
     fn host_font_logical(&self) -> f64 {
@@ -2132,6 +2210,7 @@ impl ConApp {
     }
 
     fn mark_host_ui_full_and_repaint(&mut self, window: &PixelWindow) {
+        self.restore_harness_settings_focus(window);
         self.mark_host_ui_full();
         window.request_redraw();
     }
@@ -3962,13 +4041,18 @@ impl PixelWindowApplication for ConApp {
         {
             self.request_dirty_redraw(window);
         }
-        if self.consume_menu_gesture(&event)
-            || self.route_proxy_choices(window, &event)?
+        if self.consume_menu_gesture(&event) || self.route_harness_workspace(window, &event)? {
+            return Ok(PixelWindowDirective::Continue);
+        }
+        if self.route_proxy_choices(window, &event)?
             || self.handle_new_tab_menu(window, &event)?
             || self.route_web_settings(window, &event)?
             || self.route_harness_settings(window, &event)?
             || self.handle_browser_recovery_pointer(window, &event)?
         {
+            return Ok(PixelWindowDirective::Continue);
+        }
+        if self.consume_harness_settings_input(window, &event) {
             return Ok(PixelWindowDirective::Continue);
         }
         if self.handle_sidebar_resize(window, &event)? {
@@ -4506,11 +4590,19 @@ impl PixelWindowApplication for ConApp {
         }
         self.perf_stats.sync_present_stats(window.present_stats());
         self.poll_harness_settings(window);
+        let paint_harness =
+            self.harness_workspace.active() && !self.pending_control.has_pending_pane_screenshot();
         if let Some(target) = self
             .pending_control
             .prepare_screenshot(self.workspace.active())
         {
             self.workspace.set_active(target);
+            // Retained pixels can belong to another tab or the host destination.
+            // A pane PNG needs a complete raster even when no PTY damage exists.
+            self.mark_host_ui_full();
+            if let Some(session) = self.sessions.get_mut(&target) {
+                session.dirty.mark_full();
+            }
         }
         let width = frame.width();
         let height = frame.height();
@@ -4519,18 +4611,30 @@ impl PixelWindowApplication for ConApp {
             frame_info.retention,
             PixelBackingRetention::RetainedAcrossFrames
         );
-        if self.workspace.active().is_none() || self.active_is_browser() {
+        if paint_harness || self.workspace.active().is_none() || self.active_is_browser() {
             let scale = window.metrics()?.scale_factor.max(1.0);
             self.note_frame_dimensions(width, height, scale);
-            if self.active_is_browser() {
+            if paint_harness {
+                self.paint_harness_workspace(frame.pixels_mut(), width, height, scale);
+            } else if self.active_is_browser() {
                 self.paint_browser_shell(frame.pixels_mut(), width, height, scale);
             } else {
                 self.paint_empty_workspace(frame.pixels_mut(), width, height, scale);
             }
+            let discard = self.submit_content_frame_screenshot(window, frame, width, height)?;
             frame
-                .commit(PixelFrameWrite::Full)
+                .commit(if discard {
+                    PixelFrameWrite::Discard
+                } else {
+                    PixelFrameWrite::Full
+                })
                 .map_err(|error| PixelWindowError::failed("con_frame_commit", error.to_string()))?;
-            self.host_ui_dirty = DirtyRegion::default();
+            if !discard {
+                self.host_ui_dirty = DirtyRegion::default();
+            } else {
+                self.perf_stats.discarded_capture_frames =
+                    self.perf_stats.discarded_capture_frames.saturating_add(1);
+            }
             self.perf_stats.record_host_direct_frame();
             return Ok(PixelWindowDirective::Continue);
         }
@@ -4628,63 +4732,8 @@ impl PixelWindowApplication for ConApp {
             }
             directive
         };
-        let mut discard_capture_frame = false;
-        if let Some(screenshot) = self.pending_control.take_screenshot() {
-            let control_pending::ScreenshotWork {
-                target,
-                path,
-                reply,
-                restore_active,
-                deadline,
-            } = screenshot;
-            let response_path = path.to_string_lossy().into_owned();
-            let shared_reply = Arc::new(std::sync::Mutex::new(Some(reply)));
-            let done = Arc::new(AtomicBool::new(false));
-            self.pending_control.start_screenshot(
-                target,
-                Arc::clone(&shared_reply),
-                Arc::clone(&done),
-                deadline,
-            );
-            let waker = window.waker();
-            agent_interface::submit_png_atomic(
-                path,
-                frame.pixels_mut(),
-                width,
-                height,
-                Box::new(move |write_result| {
-                    let result = write_result
-                        .map(|encode_ns| {
-                            json::object(vec![
-                                ("path", response_path.into()),
-                                ("width", width.into()),
-                                ("height", height.into()),
-                                ("encode_ns", encode_ns.into()),
-                            ])
-                        })
-                        .map_err(|error| format!("write screenshot: {error}"));
-                    if let Some(reply) = shared_reply
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .take()
-                    {
-                        let _ = reply.send(result);
-                    }
-                    done.store(true, Ordering::Release);
-                    let _ = waker.wake();
-                }),
-            );
-            if let Some(restore_active) = restore_active
-                && self.sessions.contains_key(&restore_active)
-            {
-                self.workspace.set_active(restore_active);
-                self.mark_host_ui_full();
-                self.active_session_mut()?.dirty.mark_full();
-                self.refresh_title(window)?;
-                window.request_redraw();
-                discard_capture_frame = true;
-            }
-        }
+        let discard_capture_frame =
+            self.submit_content_frame_screenshot(window, frame, width, height)?;
         if discard_capture_frame {
             if let Err(error) = frame.commit(PixelFrameWrite::Discard) {
                 return Err(PixelWindowError::failed(

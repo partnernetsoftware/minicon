@@ -195,6 +195,107 @@ class ProtocolChecks(unittest.TestCase):
         self.assertEqual(state.failure, "fixture-deadline-expired")
 
 
+    def test_common_diagnostic_root_guard_blocks_all_reads_but_missing_carrier_does_not(self):
+        import run as native_runner
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as scratch:
+            output = Path(scratch).resolve(strict=True)
+            roots = {label: output / "profiles" / label for label in ("a", "b")}
+            for root in roots.values():
+                root.mkdir(parents=True)
+            manifest = {"schema": 1, "test_only": True, "run": "1" * 32,
+                        "profiles": {label: {"directory": str(root), "store_identifier": "2" * 32}
+                                     for label, root in roots.items()}}
+            clock = (time.time(), time.monotonic())
+            # A missing or wrong-run carrier does not revoke valid fresh-root
+            # authority for the independent fixed-slot comparison.
+            for wrong_run in (False, True):
+                if wrong_run:
+                    fixture.private_json(output / "native-profile-locator.private.json",
+                                         {"schema": 1, "test_only": True, "run": "3" * 32,
+                                          "phases": {"a": {"store_identifier": [0x22] * 16,
+                                                           "relative_directory": "Default"}}})
+                with patch.object(native_runner, "_cookie_database_observation", return_value={"status": "synthetic"}) as db, \
+                     patch.object(native_runner, "_local_state_observation", return_value={"status": "synthetic"}) as local:
+                    observed = native_runner.windows_cookie_snapshot(manifest, output, "synthetic", clock)
+                    self.assertEqual(observed["status"], "diagnostics-only")
+                    self.assertEqual(observed["verified_profile_databases"]["status"], "private-locator-unavailable")
+                    self.assertEqual(db.call_count, 8)
+                    self.assertEqual(local.call_count, 4)
+            original_lstat = Path.lstat
+            def lstat(path, *args, **kwargs):
+                if path == output.parent:
+                    return SimpleNamespace(st_mode=native_runner.stat.S_IFDIR, st_file_attributes=0x400)
+                return original_lstat(path, *args, **kwargs)
+            with patch.object(Path, "lstat", new=lstat), \
+                 patch.object(native_runner, "_verified_locator_snapshot") as locator, \
+                 patch.object(native_runner, "_cookie_database_observation") as db, \
+                 patch.object(native_runner, "_local_state_observation") as local:
+                observed = native_runner.windows_cookie_snapshot(manifest, output, "synthetic", clock)
+                self.assertEqual(observed["status"], "fresh-profile-authority-unavailable")
+                locator.assert_not_called()
+                db.assert_not_called()
+                local.assert_not_called()
+
+    def test_private_locator_is_bound_and_reports_no_path(self):
+        import run as native_runner
+        import tempfile
+        with tempfile.TemporaryDirectory() as scratch:
+            output = Path(scratch).resolve(strict=True)
+            roots = {label: output / "profiles" / label for label in ("a", "b")}
+            for root in roots.values():
+                (root / "unreported-profile-name").mkdir(parents=True)
+            manifest = {"run": "1" * 32, "profiles": {
+                label: {"store_identifier": ("2" if label == "a" else "3") * 32}
+                for label in roots}}
+            phases = {phase: {"store_identifier": list(bytes.fromhex(manifest["profiles"]["b" if phase == "b" else "a"]["store_identifier"])),
+                              "relative_directory": "unreported-profile-name"}
+                      for phase in ("a", "b", "a-reopen")}
+            carrier = {"schema": 1, "test_only": True, "run": manifest["run"], "phases": phases}
+            fixture.private_json(output / "native-profile-locator.private.json", carrier)
+            if native_runner.sqlite3 is not None:
+                location = roots["a"] / "unreported-profile-name" / "Network"
+                location.mkdir()
+                with native_runner.sqlite3.connect(location / "Cookies") as database:
+                    database.execute("CREATE TABLE cookies (is_persistent INTEGER, has_expires INTEGER, expires_utc INTEGER)")
+                    database.execute("INSERT INTO cookies VALUES (1, 1, ?)",
+                                     (int((time.time() + 600 + 11644473600) * 1000000),))
+                database.close()
+            observed = native_runner._verified_locator_snapshot(manifest, output, roots, time.time())
+            self.assertEqual(observed["status"], "verified-private-locator")
+            self.assertEqual(observed["a_reopen_directory_relation"], "same")
+            if native_runner.sqlite3 is not None:
+                self.assertEqual(observed["phases"]["a"]["network"]["status"], "read-only-main-db-observed")
+                self.assertEqual(observed["phases"]["a"]["network"]["counts"]["persistent"], 1)
+            encoded = json.dumps(observed)
+            self.assertNotIn("unreported-profile-name", encoded)
+            self.assertNotIn(str(output), encoded)
+            carrier["run"] = "4" * 32
+            fixture.private_json(output / "native-profile-locator.private.json", carrier)
+            self.assertEqual(native_runner._verified_locator_snapshot(manifest, output, roots, time.time())["status"],
+                             "private-locator-unavailable")
+
+    def test_private_locator_reopen_change_and_outside_are_distinct(self):
+        import run as native_runner
+        import tempfile
+        with tempfile.TemporaryDirectory() as scratch:
+            output = Path(scratch).resolve(strict=True)
+            root = output / "profiles" / "a"
+            for name in ("first", "second"):
+                (root / name).mkdir(parents=True)
+            manifest = {"run": "1" * 32, "profiles": {"a": {"store_identifier": "2" * 32}}}
+            phases = {phase: {"store_identifier": [0x22] * 16, "relative_directory": name}
+                      for phase, name in (("a", "first"), ("a-reopen", "second"))}
+            carrier = {"schema": 1, "test_only": True, "run": manifest["run"], "phases": phases}
+            fixture.private_json(output / "native-profile-locator.private.json", carrier)
+            observed = native_runner._verified_locator_snapshot(manifest, output, {"a": root}, time.time())
+            self.assertEqual(observed["a_reopen_directory_relation"], "different")
+            phases["a-reopen"]["relative_directory"] = "../a/first"
+            fixture.private_json(output / "native-profile-locator.private.json", carrier)
+            self.assertEqual(native_runner._verified_locator_snapshot(manifest, output, {"a": root}, time.time())["status"],
+                             "private-locator-unavailable")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)

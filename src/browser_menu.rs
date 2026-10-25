@@ -41,7 +41,7 @@ impl ConApp {
         self.browser_address_drag = None;
     }
 
-    fn current_menu_focus(&self) -> MenuFocus {
+    pub(super) fn current_menu_focus(&self) -> MenuFocus {
         if self.settings_open && self.settings_proxy_focused {
             MenuFocus::Candidate
         } else if self.settings_open {
@@ -153,7 +153,7 @@ impl ConApp {
         self.mark_host_ui_full_and_repaint(window);
     }
 
-    fn focus_browser_page(&self, window: &PixelWindow) {
+    pub(super) fn focus_browser_page(&self, window: &PixelWindow) {
         if !self.browser_page_visible() {
             return;
         }

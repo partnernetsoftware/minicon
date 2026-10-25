@@ -30,6 +30,12 @@ Outcome: reuse an account's browser context only after its previous native host 
 │   evidence: NR-03 unchanged cookie/localStorage oracle, source identity and actual failure control
 │   safe failure: preserve the failed observation and investigate its actual cause
 │   dependency: existing dedicated native court; non-goal: accepting storage loss to obtain a pass
+├── [-] LOCATE — diagnose only the fresh court's verified native profile directory
+│   invariant: bind run/store/phase and reject linked ancestry before any diagnostic read
+│   evidence: finite layout regression and bounded synthetic metadata controls; new SDK court pending
+│   safe failure: unavailable locator leaves the storage verdict unchanged
+│   dependency: mandatory profile verification and non-default diagnostics feature
+│   non-goal: recursive discovery, cookie values, decryption or production profile export
 └── [_] LATER DELETE — compose release with an explicitly authorized store deletion
     invariant: observation, deletion and durable completion are separate results
     evidence: future OS-specific deletion/retry courts; currently unavailable
@@ -53,6 +59,12 @@ flowchart TD
     READY --> R[Product revalidates current login attempt and context]
     R --> OPEN[Reopen same isolated context]
     OPEN --> STORE[Independent cookie/localStorage persistence observations]
+    OPEN --> SDK[Recheck actual UDF / persistent ProfilePath]
+    SDK --> FINITE[Public finite layout class]
+    SDK --> PRIVATE[Feature-only private run/store/phase locator]
+    PRIVATE --> ROOTS{Fresh roots and every ancestor valid?}
+    ROOTS -->|yes| DB[Bounded immutable value-free DB counts]
+    ROOTS -->|no| UNAVAILABLE[No diagnostic file reads / unchanged court verdict]
     CANCEL[Cancel / expired attempt / bounded deadline] --> DISCARD[Discard pending navigation; preserve ordinary page]
     READY -. separate future authority .-> DELETE[Explicit native store deletion]
 ```
@@ -144,7 +156,8 @@ distinct from a matching normal exit. Creation verification remains product
 behavior; test tracing does not add production navigation or credential APIs.
 
 The runner may inspect only the fresh A/B directories in its own manifest, at
-fixed relative database/configuration paths. It reports file/read/error classes,
+the fixed relative database/configuration paths and the verified-profile slots
+defined below. It reports file/read/error classes,
 bounded persistent/expiry counts and configured-key booleans, without cookie
 values, encrypted blobs, decryption or recursive profile discovery. Read-only
 immutable SQLite inspection ignores WAL; missing rows/schema with WAL are
@@ -192,3 +205,46 @@ verification is retained in
 The DB diagnostic is in the failure-log artifact for this source; the
 [development workflow owner](PRD_02_32_dev_loop_crosscheck.md#opt-in-native-authorization-context-court)
 owns its subsequent always-upload retention change.
+
+### Verified directory diagnostic join
+
+The next development join reuses mandatory exact-UDF/persistent-profile
+verification to expose only `EBWebView/Default`, `Default`, `other-descendant`
+or `unavailable` in the public native trace. The non-default
+`native-auth-court` feature also enables minicon-web's
+`native-profile-diagnostics` seam. Only that test artifact can retain a private
+relative directory, bounded to 16 components and 2048 UTF-8 bytes.
+
+The private `native-profile-locator.private.json` carrier is bounded to 16 KiB
+and bound to the fresh manifest's run, phase and store identity. Both A and
+reopened A retain their observations independently. Before reading any carrier,
+fixed DB, verified-directory DB or Local State file, validate the common roots
+and every ancestor without symlinks/reparse points. A rejected common root
+permits no diagnostic read. Under valid roots a missing or wrong-run carrier
+still permits the independent fixed-slot comparison. Only `Network/Cookies`
+and `Cookies` under the verified directory join the existing immutable,
+bounded, value-free metadata oracle; the public result names a finite
+same/different/unavailable A-reopen directory relation. Never export the
+carrier or private directory names. Artifact exclusions belong to PRD 32.
+
+The root's actual Python protocol control run retains eleven assertion REDs
+and fourteen restored passing checks in
+`target-six/v0.2.23-provider/profile-locator-protocol-root/`.
+Four additional actual run.py guard controls cover the common authority gate,
+run binding, verified directory choice and reopened-directory relation, then
+restore exact source bytes and all fourteen passing checks:
+`target-six/v0.2.23-provider/profile-locator-controls-root-v2/receipt.json`.
+The earlier root-v1 used a nonexistent test name and is setup failure, never
+counterevidence. These checks are synthetic, with no native browser or cookie
+persistence claim. Actual SDK locator production and DB observations require a
+new matching-source Windows court; run `40172206150` cannot supply them.
+
+The integrated Windows native-page family passes fourteen mechanism tests,
+including its three existing release-observer tests, and the dedicated-feature
+auth suite passes five. Raw executions are `h0-final-native-page.log` and
+`h0-final-auth-feature.log` under the same output root. The new finite-layout
+test produces a real assertion RED when the unknown-descendant classification
+is replaced; its guard log is `h0-runtime-controls/finite-profile-layout.log`,
+with exact-restored positive execution in
+`h0-runtime-controls-remaining/restored-profile-layout.log`. These are scoped
+mechanism checks, not new SDK/browser persistence observations.

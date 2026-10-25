@@ -9,6 +9,8 @@ import hashlib
 import http.server
 import json
 import os
+import secrets
+import zlib
 from pathlib import Path
 import signal
 import socket
@@ -17,6 +19,72 @@ import sys
 import tempfile
 import threading
 import time
+
+
+def host_png_samples(path: Path, points: list[tuple[int, int]]) -> dict:
+    """Bounded RGB8/RGBA8 host-frame PNG observation, not compositor pixels."""
+    with path.open("rb") as stream:
+        raw = stream.read(16 * 1024 * 1024 + 1)
+    assert len(raw) <= 16 * 1024 * 1024 and raw[:8] == b"\x89PNG\r\n\x1a\n", "host PNG unavailable or oversized"
+    offset, header, compressed, ended = 8, None, bytearray(), False
+    while offset < len(raw):
+        assert offset + 12 <= len(raw), "truncated host PNG chunk"
+        size = int.from_bytes(raw[offset:offset + 4], "big")
+        kind = raw[offset + 4:offset + 8]
+        assert offset + 12 + size <= len(raw), "truncated host PNG body"
+        body = raw[offset + 8:offset + 8 + size]
+        assert zlib.crc32(kind + body) & 0xffffffff == int.from_bytes(raw[offset + 8 + size:offset + 12 + size], "big"), "host PNG CRC mismatch"
+        if kind == b"IHDR":
+            assert header is None and size == 13, "invalid host PNG header"
+            width, height = int.from_bytes(body[:4], "big"), int.from_bytes(body[4:8], "big")
+            assert body[8] == 8 and body[9] in (2, 6) and body[10:] == b"\0\0\0", "unsupported host PNG format"
+            header = (width, height, 3 if body[9] == 2 else 4)
+        elif kind == b"IDAT":
+            assert header is not None, "host PNG data before header"
+            compressed.extend(body)
+        elif kind == b"IEND":
+            assert size == 0, "invalid host PNG end"
+            ended = True
+            offset += 12
+            break
+        offset += 12 + size
+    assert ended and offset == len(raw) and header is not None, "incomplete host PNG"
+    width, height, channels = header
+    assert 0 < width <= 16384 and 0 < height <= 16384
+    assert points and all(0 <= x < width and 0 <= y < height for x, y in points), "host PNG sample outside frame"
+    stride = width * channels
+    expected = (stride + 1) * height
+    assert expected <= 64 * 1024 * 1024, "host PNG decoded bound"
+    decoder = zlib.decompressobj()
+    filtered = decoder.decompress(compressed, expected + 1)
+    assert len(filtered) == expected and decoder.eof and not decoder.unused_data and not decoder.unconsumed_tail, "invalid bounded host PNG stream"
+    previous, samples = bytearray(stride), {}
+    for y in range(max(y for _, y in points) + 1):
+        start = y * (stride + 1)
+        mode = filtered[start]
+        assert mode <= 4, "invalid host PNG row filter"
+        row = bytearray(filtered[start + 1:start + 1 + stride])
+        for i in range(stride):
+            a, b = (row[i - channels] if i >= channels else 0), previous[i]
+            c = previous[i - channels] if i >= channels else 0
+            if mode == 1:
+                predictor = a
+            elif mode == 2:
+                predictor = b
+            elif mode == 3:
+                predictor = (a + b) // 2
+            elif mode == 4:
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                predictor = a if pa <= pb and pa <= pc else b if pb <= pc else c
+            else:
+                predictor = 0
+            row[i] = (row[i] + predictor) & 255
+        for x, sample_y in points:
+            if sample_y == y:
+                samples[f"{x},{y}"] = list(row[x * channels:x * channels + 3])
+        previous = row
+    return {"width": width, "height": height, "samples_rgb": samples}
 
 
 def main() -> int:
@@ -31,17 +99,100 @@ def main() -> int:
     binary = args.binary.resolve(strict=True)
     output = (args.output or binary.parent / "browser-workspace-court").resolve()
     output.mkdir(parents=True, exist_ok=True)
+    binary_sha256 = hashlib.sha256(binary.read_bytes()).hexdigest()
+    script_sha256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     counts: dict[str, int] = {}
     proxy_requests: list[str] = []
     proxy_target = "http://preview.minicon.invalid/page"
+
+    h0_run = secrets.token_hex(16)
+    h0_path = f"/h0-live/{h0_run}"
+    h0_command_path = f"/h0-command/{h0_run}"
+    h0_report_path = f"/h0-report/{h0_run}"
+    h0_lock = threading.Lock()
+    h0_live = {"challenge": secrets.token_hex(16), "report": None, "reports": 0}
+    # Only this fixture-owned page uses the bounded same-origin HTTP report.
+    # No cookie/storage reads, eval, title transport, or product page IPC.
+    h0_html = """<!doctype html><title>Harness live fixture</title>
+<input id="unsaved"><script>
+(() => {
+  const run = __RUN__;
+  const nonce = Array.from(crypto.getRandomValues(new Uint8Array(16)), x => x.toString(16).padStart(2, '0')).join('');
+  const input = document.getElementById('unsaved');
+  input.value = 'unsaved:' + nonce;
+  history.replaceState({nonce, step: 1}, '', location.href);
+  history.pushState({nonce, step: 2}, '', location.href);
+  const started = Date.now();
+  let count = 0;
+  async function poll() {
+    if (++count > 512 || Date.now() - started > 180000) return;
+    try {
+      const command = await fetch('/h0-command/' + run, {cache: 'no-store', credentials: 'omit'});
+      if (!command.ok) return;
+      const {challenge} = await command.json();
+      const reply = await fetch('/h0-report/' + run, {
+        method: 'POST', credentials: 'omit', cache: 'no-store',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({nonce, challenge, draft: input.value, history_length: history.length,
+                              history_nonce: history.state && history.state.nonce,
+                              history_step: history.state && history.state.step})
+      });
+      if (!reply.ok) return;
+    } catch (_) { return; }
+    setTimeout(poll, 200);
+  }
+  void poll();
+})();
+</script>""".replace("__RUN__", json.dumps(h0_run))
 
     class Page(http.server.BaseHTTPRequestHandler):
         def log_message(self, *_args: object) -> None:
             pass
 
+        def h0_response(self, body: dict, status: int = 200):
+            raw = json.dumps(body).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def do_POST(self) -> None:  # noqa: N802
+            if self.path != h0_report_path or self.headers.get("Transfer-Encoding") is not None:
+                self.h0_response({}, 400)
+                return
+            try:
+                size = int(self.headers.get("Content-Length", "0"))
+                assert 0 < size <= 2048
+                self.connection.settimeout(2)
+                data = json.loads(self.rfile.read(size))
+                assert set(data) == {"nonce", "challenge", "draft", "history_length", "history_nonce", "history_step"}
+                for key in ("nonce", "challenge", "history_nonce"):
+                    assert isinstance(data[key], str) and len(data[key]) == 32 and all(c in "0123456789abcdef" for c in data[key])
+                assert isinstance(data["draft"], str) and len(data["draft"]) <= 64
+                assert type(data["history_length"]) is int and 1 <= data["history_length"] <= 1024
+                assert type(data["history_step"]) is int and data["history_step"] in (1, 2)
+                with h0_lock:
+                    assert h0_live["reports"] < 1024
+                    h0_live["reports"] += 1
+                    h0_live["report"] = data
+            except (AssertionError, OSError, ValueError, TypeError):
+                self.h0_response({}, 400)
+                return
+            self.h0_response({})
+
         def do_GET(self) -> None:  # noqa: N802
             counts[self.path] = counts.get(self.path, 0) + 1
-            if self.path == "/redirect":
+            if self.path == h0_command_path:
+                with h0_lock:
+                    challenge = h0_live["challenge"]
+                self.h0_response({"challenge": challenge})
+                return
+            if self.path == h0_path:
+                self.send_response(200)
+                body = h0_html.encode()
+            elif self.path == "/redirect":
                 self.send_response(302)
                 self.send_header("Location", "/second")
                 body = b""
@@ -475,6 +626,229 @@ def main() -> int:
                     "resized_scroll": resized["proxy_menu_scroll"], "geometry_file": snapshot_file}
         (output / "host-controls-final.json").write_text(json.dumps({"tabs": cli("list-tabs"), "ui": cli("ui-snapshot")}, indent=2), encoding="utf-8")
 
+    def h0_journey():
+        """Fresh same-window destination, public injected UI, same-frame raster.
+
+        This does not observe native physical input, IME, child pixels, cookies,
+        provider authorization or an external client. Runtime is not auto-started.
+        """
+        terminal_id = next(row["id"] for row in cli("list-tabs")["tabs"] if row["kind"] == "terminal")
+        cli("resize-window", "--width", "1000", "--height", "700")
+        keys("Ctrl+Shift+I")
+        terminal_draft = "h0 exact artifact console draft"
+        cli("send-ui-ime", "commit", terminal_draft)
+        original = cli("ui-snapshot")
+        assert original["active"] == terminal_id and original["composer_focused"]
+        console_baseline = output / "h0-console-before.png"
+        console_baseline.unlink(missing_ok=True)
+        cli("screenshot-pane", "--output", str(console_baseline))
+        harness_root = Path(env["MINICON_CONFIG_DIR"]) / "harness"
+        assert not harness_root.exists(), "fresh H0 fixture already instantiated Harness"
+
+        def state():
+            snap = cli("ui-snapshot")
+            return snap, snap["geometry"], snap["geometry"]["harness_workspace"]
+
+        def pair(geometry):
+            robot, settings = geometry["harness_entry"], geometry["settings"]
+            scale = geometry["host_scale_permille"] / 1000
+            assert robot["y"] == settings["y"] and robot["x"] + robot["width"] <= settings["x"], "robot must be left of adjacent Settings"
+            for rect in (robot, settings):
+                assert abs(rect["width"] / scale - 32) <= 1 and abs(rect["height"] / scale - 32) <= 1
+
+        def raster(label, active):
+            before, geometry, workspace = state()
+            assert before["active"] == active and workspace["active"]
+            card = next(card["rect"] for card in workspace["cards"] if card["rect"]["height"] > 0)
+            points = [(card["x"] + 2, card["y"] + 2),
+                      (card["x"] + 2, card["y"] + card["height"] + 2)]
+            path = output / f"h0-{label}-host-frame.png"
+            path.unlink(missing_ok=True)
+            reply = cli("screenshot-pane", "--output", str(path))
+            observed = host_png_samples(path, points)
+            assert [observed["width"], observed["height"]] == [reply["width"], reply["height"]]
+            assert len({tuple(value) for value in observed["samples_rgb"].values()}) == 2, "H0 card/gap raster must differ from the unchanged Console sidebar"
+            after = cli("ui-snapshot")
+            assert after["active"] == active and after["geometry"]["harness_workspace"]["active"], "screenshot changed the invoking workspace"
+            (output / f"h0-{label}-raster.json").write_text(json.dumps({"before": before, "after": after, "png": observed}, indent=2), encoding="utf-8")
+            return {"status": "passed", "scope": "same-frame host raster only", "file": path.name,
+                    "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "width": observed["width"],
+                    "height": observed["height"], "card_gap_distinct": True,
+                    "sample_points": points, "samples_rgb": observed["samples_rgb"],
+                    "active_unchanged": True, "native_child_pixels": False}
+
+        pair(original["geometry"])
+        click_geometry("harness_entry")
+        entered, geometry, workspace = state()
+        assert workspace["active"] and workspace["metadata"] == "not_loaded" and entered["active"] == terminal_id
+        assert geometry["harness_settings"] is None and not entered["settings_open"] and not harness_root.exists()
+        keys("Ctrl+Shift+I")
+        assert cli("send-ui-ime", "commit", "H0_HIDDEN_CONSOLE")["route"] == "harness_workspace"
+        keys("Escape")
+        assert cli("ui-snapshot")["composer_text"] == terminal_draft
+        checks["h0_console_host_raster"] = raster("console", terminal_id)
+        click_geometry("harness_entry")
+        returned, _, workspace = state()
+        assert not workspace["active"] and returned["active"] == terminal_id and returned["composer_focused"]
+        assert returned["composer_text"] == terminal_draft and not harness_root.exists()
+        checks["h0_console_entry_observe_only"] = {"status": "passed", "robot_left_of_settings": True,
+            "metadata": "not_loaded", "selected_robot_returns": True, "composer_draft_and_focus_restored": True,
+            "no_runtime_created": True, "input_path": "public CLI injection"}
+
+        browser_id = open_browser_from_menu()["id"]
+        navigate(origin + h0_path)
+        loaded(h0_path, "Harness live fixture")
+
+        def fresh_document(label):
+            with h0_lock:
+                h0_live["challenge"] = challenge = secrets.token_hex(16)
+            def observed():
+                with h0_lock:
+                    report = h0_live["report"]
+                    return dict(report) if report is not None and report["challenge"] == challenge else None
+            report = wait(observed, label)
+            assert report["draft"] == "unsaved:" + report["nonce"]
+            assert report["history_nonce"] == report["nonce"] and report["history_step"] == 2
+            assert report["history_length"] >= 2
+            return report
+
+        before_document = fresh_document("fixture-owned live document before H0")
+        request_count = counts.get(h0_path, 0)
+        assert request_count == 1, "fresh H0 document loaded more than once"
+        keys("Ctrl+l", "Ctrl+a")
+        address_draft = "https://h0-draft.fixture.invalid/unsubmitted"
+        cli("send-ui-ime", "commit", address_draft)
+        web_before = cli("ui-snapshot")
+        assert web_before["geometry"]["address_focused"]
+        click_geometry("harness_entry")
+        active, geometry, workspace = state()
+        assert workspace["active"] and active["active"] == browser_id and workspace["metadata"] == "not_loaded"
+        assert not harness_root.exists() and geometry["harness_settings"] is None
+        keys("Ctrl+l")
+        assert cli("send-ui-ime", "commit", "H0_HIDDEN_WEB")["route"] == "harness_workspace"
+        assert editor("browser_address_editor")["text"] == address_draft
+        assert cli("ui-snapshot")["composer_text"] == terminal_draft
+        checks["h0_loaded_web_host_raster"] = raster("loaded-web", browser_id)
+        # Explicit target retains existing pane semantics while the implicit
+        # request above captures the actually visible Dashboard. It must restore
+        # the Browser as well as the dashboard/focus state after offscreen work.
+        points = checks["h0_loaded_web_host_raster"]["sample_points"]
+        pane_path = output / "h0-explicit-console-pane.png"
+        pane_path.unlink(missing_ok=True)
+        cli("screenshot-pane", "--target", terminal_id, "--output", str(pane_path))
+        pane = host_png_samples(pane_path, points)
+        baseline = host_png_samples(console_baseline, points)
+        assert pane["samples_rgb"] == baseline["samples_rgb"], "explicit target did not capture the Console pane"
+        assert pane["samples_rgb"] != checks["h0_loaded_web_host_raster"]["samples_rgb"], "explicit target incorrectly captured Dashboard"
+        restored, _, workspace = state()
+        assert restored["active"] == browser_id and workspace["active"], "explicit pane capture failed to restore active Browser"
+        assert restored["composer_text"] == terminal_draft and editor("browser_address_editor")["text"] == address_draft
+        checks["h0_explicit_console_pane_restores_browser"] = {"status": "passed",
+            "file": pane_path.name, "sha256": hashlib.sha256(pane_path.read_bytes()).hexdigest(),
+            "console_baseline_samples_matched": True, "dashboard_samples_differed": True,
+            "active_browser_and_hidden_drafts_preserved": True, "scope": "explicit pane vs visible host frame"}
+
+        # Use published card IDs and row IDs, never duplicate private row order.
+        links = []
+        for index, section, card_id, row_id in ((0, "Overview", "service", "local_api"),
+                                                (1, "Accounts", "accounts", "accounts"),
+                                                (2, "Clients", "connection", "model"),
+                                                (3, "Usage", "monitoring", "status")):
+            _, geometry, workspace = state()
+            click_rectangle(workspace["navigation"][index], geometry, section)
+            current, geometry, workspace = state()
+            assert workspace["section"] == section
+            card = next(card for card in workspace["cards"] if card["id"] == card_id)
+            assert card["rect"]["height"] > 0, "deep-link card is not visible"
+            click_rectangle(card["rect"], geometry, card_id)
+            selected, geometry, workspace = state()
+            assert workspace["selected"] == card_id
+            click_rectangle(workspace["settings"], geometry, "H0 Configure")
+            opened = wait(lambda: snap if (snap := cli("ui-snapshot"))["geometry"]["harness_settings"] is not None
+                          and not snap["geometry"]["harness_settings"]["busy"] else None,
+                          "H0 Settings metadata", 12)
+            settings = opened["geometry"]["harness_settings"]
+            assert opened["settings_open"] and opened["geometry"]["settings_section"] == "harness"
+            assert any(row["id"] == row_id for row in settings["rows"]), f"H0 deep link missed {row_id}"
+            if card_id == "connection":
+                # The model marker may legitimately clamp at the last full page,
+                # but it must never be the default Service position.
+                assert settings["scroll"] > 0, "H0 connection deep link stayed at Service"
+            else:
+                assert settings["rows"][0]["id"] == row_id, f"H0 deep link did not position {row_id}"
+            assert settings["listener"] == "stopped" and settings["actual_port"] is None and not settings["login_active"]
+            assert settings["accounts"] == [] and not settings["local_key_exists"] and settings["selected_account"] is None
+            if index == 0:
+                click_geometry("settings_console_route")
+                keys("Ctrl+Shift+I")
+                assert cli("send-ui-ime", "commit", "H0_HIDDEN_SETTINGS")["route"] == "harness_settings_shell"
+            keys("Escape")
+            resumed, _, workspace = state()
+            assert not resumed["settings_open"] and workspace["active"] and workspace["section"] == section
+            assert resumed["active"] == browser_id and resumed["composer_text"] == terminal_draft
+            assert editor("browser_address_editor")["text"] == address_draft
+            links.append({"section": section, "card": card_id, "visible_settings_row": row_id,
+                          "first_visible_settings_row": settings["rows"][0]["id"], "scroll": settings["scroll"],
+                          "listener": settings["listener"], "login_active": settings["login_active"]})
+        checks["h0_settings_exact_deeplinks_and_return"] = {"status": "passed", "links": links,
+            "automatic_start_or_login": False, "hidden_drafts_preserved": True}
+
+        snap, geometry, workspace = state()
+        click_rectangle(workspace["back"], geometry, "H0 Back")
+        returned = cli("ui-snapshot")
+        assert not returned["geometry"]["harness_workspace"]["active"] and returned["active"] == browser_id
+        assert returned["geometry"]["address_focused"] and editor("browser_address_editor")["text"] == address_draft
+        loaded(h0_path, "Harness live fixture")
+        after_document = fresh_document("fixture-owned live document after H0")
+        for key in ("nonce", "draft", "history_length", "history_nonce", "history_step"):
+            assert before_document[key] == after_document[key], f"H0 replaced live document {key}"
+        assert counts.get(h0_path, 0) == request_count, "return from H0 reloaded the ordinary page"
+        proof_file = "h0-live-document.json"
+        (output / proof_file).write_text(json.dumps({"before": before_document, "after": after_document,
+                                                   "page_gets_before": request_count, "page_gets_after": counts.get(h0_path, 0)}, indent=2), encoding="utf-8")
+        checks["h0_loaded_web_document_return"] = {"status": "passed", "active_browser_preserved": True,
+            "address_draft_and_focus_restored": True, "document_nonce_preserved": True,
+            "unsaved_dom_preserved": True, "history_state_preserved": True, "page_gets": request_count,
+            "proof_file": proof_file, "cookie_observation": False, "native_child_pixels": False}
+
+        for row in cli("list-tabs")["tabs"]:
+            cli("close-tab", "--target", row["id"])
+        assert cli("ui-snapshot")["workspace_empty"]
+        cli("resize-window", "--width", "420", "--height", "300")
+        empty = cli("ui-snapshot")
+        pair(empty["geometry"])
+        click_geometry("harness_entry")
+        empty, geometry, workspace = state()
+        assert empty["workspace_empty"] and empty["active"] is None and workspace["active"]
+        scale = geometry["host_scale_permille"] / 1000
+        def reachable(rect):
+            assert rect["width"] > 0 and rect["height"] > 0 and rect["x"] >= 0 and rect["y"] >= 0
+            assert rect["x"] + rect["width"] <= round(420 * scale) and rect["y"] + rect["height"] <= round(300 * scale)
+        for rect in (workspace["back"], workspace["settings"], *workspace["navigation"]):
+            reachable(rect)
+        back, configure = workspace["back"], workspace["settings"]
+        assert back["x"] + back["width"] <= configure["x"], "H0 Back/Configure overlap"
+        visited = []
+        for index, section in enumerate(("Overview", "Accounts", "Clients", "Usage", "Activity")):
+            _, geometry, workspace = state()
+            click_rectangle(workspace["navigation"][index], geometry, section)
+            assert state()[2]["section"] == section
+            visited.append(section)
+        assert cli("send-ui-ime", "commit", "H0_ZERO_MUST_NOT_TYPE")["route"] == "harness_workspace"
+        _, geometry, workspace = state()
+        click_rectangle(workspace["settings"], geometry, "H0 narrow Configure")
+        assert cli("ui-snapshot")["settings_open"]
+        keys("Escape")
+        empty, geometry, workspace = state()
+        assert not empty["settings_open"] and workspace["active"] and workspace["section"] == "Activity"
+        click_rectangle(workspace["back"], geometry, "H0 narrow Back")
+        final = cli("ui-snapshot")
+        assert final["workspace_empty"] and final["active"] is None and not final["geometry"]["harness_workspace"]["active"]
+        (output / "h0-zero-narrow.json").write_text(json.dumps({"active": empty, "returned": final}, indent=2), encoding="utf-8")
+        checks["h0_zero_narrow_routes_reachable"] = {"status": "passed", "requested_logical_size": [420, 300],
+            "scale_permille": geometry["host_scale_permille"], "sections": visited,
+            "settings_and_back_reachable": True, "zero_tabs_preserved": True}
+
     def open_browser_from_menu():
         click_geometry("new_root")
         wait(lambda: cli("ui-snapshot")["geometry"]["new_tab_menu_open"], "New menu opens")
@@ -776,7 +1150,18 @@ if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopEl
             host_controls_journey()
             cli("close-window")
             child.wait(timeout=10)
-        receipt = {"binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(), "platform": sys.platform,
+            # H0 gets its own fresh profile; prior host/runtime/proxy mutations
+            # cannot supply its lazy-entry or live-document evidence.
+            env["MINICON_CONFIG_DIR"] = str(scratch_root / "h0-config")
+            env["MINICON_BROWSER_PROFILE_ROOT"] = str(scratch_root / "h0-profile")
+            launch(trace)
+            h0_journey()
+            cli("close-window")
+            child.wait(timeout=10)
+        assert hashlib.sha256(binary.read_bytes()).hexdigest() == binary_sha256, "binary changed during exact-artifact court"
+        receipt = {"binary_sha256": binary_sha256, "platform": sys.platform,
+                   "script_sha256": script_sha256,
+                   "product_source_authority": "bound by enclosing exact-artifact build receipt; not inferred from local HEAD",
                    "physical_page_ctrl_l": args.physical, "physical_page_tab_switch": args.physical,
                    "visible_browser_entry": True, "single_browser_root_reused": True,
                    "service_restart_retry": True, "terminal_draft_preserved": True,
@@ -796,7 +1181,8 @@ if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopEl
             try:
                 (output / "failure-final.json").write_text(json.dumps({
                     "tabs": cli("list-tabs"), "ui": cli("ui-snapshot"),
-                    "host_controls_checks": checks,
+                    "host_controls_checks": checks, "binary_sha256": binary_sha256,
+                    "script_sha256": script_sha256,
                     "proxy_requests": proxy_requests, "requests": counts,
                 }, indent=2) + "\n", encoding="utf-8")
             except (OSError, subprocess.SubprocessError):

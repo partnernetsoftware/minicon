@@ -201,6 +201,38 @@ pub(super) struct HarnessSettings {
 }
 
 impl HarnessSettings {
+    pub(super) fn cached_workspace_view(&self) -> &View {
+        &self.view
+    }
+    pub(super) fn show_workspace_target(
+        &mut self,
+        target: super::harness_workspace_ui::SettingsTarget,
+    ) {
+        use super::harness_workspace_ui::SettingsTarget;
+        self.blur();
+        let marker = match target {
+            SettingsTarget::Service => Row::Local,
+            SettingsTarget::Accounts(account) => {
+                if let Some(id) = account {
+                    self.focus_account(&id);
+                    Row::AccountInput(Field::AccountLabel)
+                } else {
+                    Row::Accounts
+                }
+            }
+            SettingsTarget::Connection => Row::Model,
+            SettingsTarget::Monitoring => {
+                self.error = Some("Monitoring observations are not available in this view.".into());
+                Row::Status
+            }
+        };
+        self.scroll = self
+            .rows()
+            .iter()
+            .position(|row| std::mem::discriminant(row) == std::mem::discriminant(&marker))
+            .unwrap_or(0);
+    }
+
     #[cfg(feature = "native-auth-court")]
     pub(super) fn for_native_auth_court(attempt: provider_runtime::AttemptId) -> Self {
         let view = View {
@@ -302,6 +334,7 @@ impl HarnessSettings {
                     }),
                 )
             });
+        let load_failure = result.as_ref().err().copied();
         let (runtime, error) = match result {
             Ok(runtime) => (Some(runtime), None),
             Err(error) => (None, Some(error.to_string())),
@@ -310,6 +343,9 @@ impl HarnessSettings {
             .as_ref()
             .map(|runtime| runtime.view().clone())
             .unwrap_or_else(|| View {
+                load_state: provider_runtime::LoadState::Unavailable(
+                    load_failure.unwrap_or(provider_runtime::RuntimeError::WorkerUnavailable),
+                ),
                 busy: false,
                 ..View::default()
             });

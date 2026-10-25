@@ -5,7 +5,7 @@
 //! without importing `minicon` lifecycle policy.
 
 pub const SIDEBAR_WIDTH_DIP: f64 = 224.0;
-pub const TREE_HEADER_HEIGHT_DIP: f64 = 32.0;
+pub const TREE_HEADER_HEIGHT_DIP: f64 = 40.0;
 pub const TREE_ROW_HEIGHT_DIP: f64 = 40.0;
 pub const COMPOSER_HEIGHT_DIP: f64 = 96.0;
 pub const STATUS_HEIGHT_DIP: f64 = 24.0;
@@ -17,7 +17,7 @@ pub const SIDEBAR_RESIZE_GRIP_DIP: f64 = 6.0;
 /// its padding, and for an `@12` label at the smallest supported scale — the
 /// rail's whole job is to keep every tab reachable and identifiable while
 /// giving the terminal back the rest of the column.
-pub const SIDEBAR_RAIL_WIDTH_DIP: f64 = 44.0;
+pub const SIDEBAR_RAIL_WIDTH_DIP: f64 = 80.0;
 /// Horizontal gap between the rail and a hover tooltip, and the tooltip's own
 /// padding. The tooltip is drawn over the terminal, so it must not touch the
 /// rail edge or it reads as part of the sidebar.
@@ -164,6 +164,8 @@ pub struct Layout {
     /// Opens the settings panel. Help, language, font size and theme all live
     /// inside that panel.
     pub settings: Rect,
+    /// Reversible Harness destination, immediately left of Settings.
+    pub harness: Rect,
     /// Collapses the sidebar to a rail and expands it again. Sits at the far
     /// right of the header, to the right of [`Self::settings`], because the
     /// rightmost edge is where a panel's own collapse affordance belongs — the
@@ -564,68 +566,133 @@ impl Layout {
         };
         let pad = dip(4.0, scale);
         let tool_y = pad;
-        // Four tools: New (left), then Settings and the two chrome toggles on
-        // the right. Expanded they share one row; the size is capped so four
-        // controls plus their gaps still fit a narrow sidebar without New and
-        // Settings meeting (`tool <= (sidebar - 4*pad) / 4`).
-        let expanded_tool_size = dip(24.0, scale)
-            .min(sidebar_width.saturating_sub(pad.saturating_mul(4)) / 4)
-            .max(1);
-        let rail_tool_size =
-            dip(24.0, scale).min(sidebar_width.saturating_sub(pad.saturating_mul(2)));
-        let tool_size = if collapsed {
-            rail_tool_size
-        } else {
-            expanded_tool_size
-        };
-        let (new_root, settings, sidebar_toggle, panel_toggle) = if collapsed {
-            // The rail seats one control per row. Stacking keeps every tool
-            // reachable instead of trading them away for the rail.
-            let column = sidebar_width.saturating_sub(tool_size) / 2;
-            let step = tool_size.saturating_add(pad);
-            let stacked = |slot: u32| Rect {
-                x: column,
-                y: tool_y.saturating_add(step.saturating_mul(slot)),
-                width: tool_size,
-                height: tool_size,
-            };
-            (stacked(1), stacked(2), stacked(0), stacked(3))
-        } else {
-            // Right-to-left: the panel toggle takes the outermost edge, then
-            // the sidebar toggle, then Settings, with New anchored left.
-            let panel_toggle = Rect {
-                x: sidebar_width.saturating_sub(pad).saturating_sub(tool_size),
-                y: tool_y,
-                width: tool_size,
-                height: tool_size,
-            };
-            let sidebar_toggle = Rect {
-                x: panel_toggle.x.saturating_sub(pad).saturating_sub(tool_size),
-                y: tool_y,
-                width: tool_size,
-                height: tool_size,
-            };
-            let settings = Rect {
-                x: sidebar_toggle
-                    .x
-                    .saturating_sub(pad)
-                    .saturating_sub(tool_size),
-                y: tool_y,
-                width: tool_size,
-                height: tool_size,
-            };
-            (
+        let tool_size = dip(32.0, scale);
+        // Keep secondary tools at their existing 24-DIP size. The expanded
+        // creation label and the 32-DIP robot/settings pair retain their space.
+        let secondary_size = dip(24.0, scale);
+        let label_width = dip(80.0, scale);
+        let expanded_width = tool_size
+            .checked_mul(2)
+            .and_then(|width| width.checked_add(secondary_size.checked_mul(2)?))
+            .and_then(|width| width.checked_add(pad.checked_mul(6)?))
+            .and_then(|width| width.checked_add(label_width));
+        let wrapped_tools = collapsed || expanded_width.is_none_or(|width| sidebar_width < width);
+        // An impossible viewport has no partial hit target. Normal layouts keep
+        // complete control sizes; degenerate coordinates never wrap or overflow.
+        let button = |x: u32, y: u32, button_width: u32, button_height: u32| {
+            if button_width == 0
+                || button_height == 0
+                || x > sidebar_width
+                || y > height
+                || button_width > sidebar_width.saturating_sub(x)
+                || button_height > height.saturating_sub(y)
+            {
                 Rect {
-                    x: pad,
-                    y: tool_y,
-                    width: dip(100.0, scale).min(settings.x.saturating_sub(pad.saturating_mul(2))),
-                    height: tool_size,
-                },
-                settings,
-                sidebar_toggle,
-                panel_toggle,
+                    x: x.min(sidebar_width),
+                    y: y.min(height),
+                    ..Rect::default()
+                }
+            } else {
+                Rect {
+                    x,
+                    y,
+                    width: button_width,
+                    height: button_height,
+                }
+            }
+        };
+        let (new_root, harness, settings, sidebar_toggle, panel_toggle) = if wrapped_tools {
+            let new_width = if collapsed {
+                secondary_size
+            } else {
+                label_width
+            };
+            let new_height = if collapsed { secondary_size } else { tool_size };
+            let gap = if collapsed { dip(2.0, scale) } else { pad };
+            let first_width = secondary_size
+                .checked_mul(2)
+                .and_then(|width| width.checked_add(gap.checked_mul(2)?))
+                .and_then(|width| width.checked_add(new_width));
+            let (new_root, sidebar_toggle, panel_toggle, pair_y) =
+                if let Some(first_width) = first_width.filter(|width| *width <= sidebar_width) {
+                    let x = sidebar_width.saturating_sub(first_width) / 2;
+                    let sidebar_x = x.saturating_add(new_width).saturating_add(gap);
+                    let panel_x = sidebar_x.saturating_add(secondary_size).saturating_add(gap);
+                    (
+                        button(x, tool_y, new_width, new_height),
+                        button(sidebar_x, tool_y, secondary_size, secondary_size),
+                        button(panel_x, tool_y, secondary_size, secondary_size),
+                        tool_y
+                            .saturating_add(new_height.max(secondary_size))
+                            .saturating_add(pad),
+                    )
+                } else {
+                    // Narrow expanded frames wrap whole groups, never the pair.
+                    let x = sidebar_width
+                        .saturating_sub(secondary_size.saturating_mul(2).saturating_add(pad))
+                        / 2;
+                    let new_y = tool_y.saturating_add(secondary_size).saturating_add(pad);
+                    (
+                        button(
+                            sidebar_width.saturating_sub(new_width) / 2,
+                            new_y,
+                            new_width,
+                            new_height,
+                        ),
+                        button(x, tool_y, secondary_size, secondary_size),
+                        button(
+                            x.saturating_add(secondary_size).saturating_add(pad),
+                            tool_y,
+                            secondary_size,
+                            secondary_size,
+                        ),
+                        new_y.saturating_add(new_height).saturating_add(pad),
+                    )
+                };
+            let pair_width = tool_size
+                .checked_mul(2)
+                .and_then(|width| width.checked_add(pad));
+            let (harness, settings) =
+                if let Some(pair_width) = pair_width.filter(|width| *width <= sidebar_width) {
+                    let x = sidebar_width.saturating_sub(pair_width) / 2;
+                    (
+                        button(x, pair_y, tool_size, tool_size),
+                        button(
+                            x.saturating_add(tool_size).saturating_add(pad),
+                            pair_y,
+                            tool_size,
+                            tool_size,
+                        ),
+                    )
+                } else {
+                    (Rect::default(), Rect::default())
+                };
+            (new_root, harness, settings, sidebar_toggle, panel_toggle)
+        } else {
+            let panel_x = sidebar_width
+                .saturating_sub(pad)
+                .saturating_sub(secondary_size);
+            let sidebar_x = panel_x.saturating_sub(pad).saturating_sub(secondary_size);
+            let settings_x = sidebar_x.saturating_sub(pad).saturating_sub(tool_size);
+            let harness_x = settings_x.saturating_sub(pad).saturating_sub(tool_size);
+            (
+                button(
+                    pad,
+                    tool_y,
+                    dip(100.0, scale).min(harness_x.saturating_sub(pad.saturating_mul(2))),
+                    tool_size,
+                ),
+                button(harness_x, tool_y, tool_size, tool_size),
+                button(settings_x, tool_y, tool_size, tool_size),
+                button(sidebar_x, tool_y, secondary_size, secondary_size),
+                button(panel_x, tool_y, secondary_size, secondary_size),
             )
         };
+        let header_bottom = [new_root, harness, settings, sidebar_toggle, panel_toggle]
+            .into_iter()
+            .map(|rect| rect.y.saturating_add(rect.height))
+            .max()
+            .unwrap_or(0);
         Self {
             sidebar: Rect {
                 x: 0,
@@ -633,15 +700,12 @@ impl Layout {
                 width: sidebar_width,
                 height,
             },
-            // The rail stacks its controls, so rows begin under the last one
-            // rather than under a single header row.
-            tree_header_height: if collapsed {
-                panel_toggle
-                    .y
-                    .saturating_add(panel_toggle.height)
-                    .saturating_add(pad)
+            // Compact controls occupy two full rows, leaving short Settings
+            // pages room for complete proxy options and their pagination.
+            tree_header_height: if wrapped_tools {
+                header_bottom.saturating_add(pad).min(height)
             } else {
-                dip(TREE_HEADER_HEIGHT_DIP, scale)
+                dip(TREE_HEADER_HEIGHT_DIP, scale).min(height)
             },
             tree_row_height: dip(TREE_ROW_HEIGHT_DIP, scale).max(1),
             composer,
@@ -654,6 +718,7 @@ impl Layout {
             composer_cut: cut,
             new_root,
             settings,
+            harness,
             sidebar_toggle,
             panel_toggle,
             sidebar_collapsed: collapsed,
@@ -779,6 +844,7 @@ pub enum TreeHit {
     Outside,
     Background,
     NewRoot,
+    Harness,
     Settings,
     SidebarToggle,
     PanelToggle,
@@ -1270,6 +1336,9 @@ pub fn tree_hit(
     }
     if layout.new_root.contains(x, y) {
         return TreeHit::NewRoot;
+    }
+    if layout.harness.contains(x, y) {
+        return TreeHit::Harness;
     }
     if layout.settings.contains(x, y) {
         return TreeHit::Settings;
@@ -2862,8 +2931,9 @@ mod tests {
         for (width, height) in [(200u32, 80u32), (176, 80), (150, 60), (100, 40)] {
             let layout = Layout::new(width, height, 1.0);
             assert!(
-                layout.new_root.x + layout.new_root.width <= layout.settings.x,
-                "the two tools overlap at {width}x{height}"
+                layout.new_root.x + layout.new_root.width <= layout.harness.x
+                    || layout.new_root.y + layout.new_root.height <= layout.harness.y,
+                "New overlaps the wrapped robot/settings pair at {width}x{height}"
             );
             assert!(
                 layout.settings.x + layout.settings.width <= layout.sidebar.width,
@@ -3208,6 +3278,32 @@ mod tests {
         }
     }
 
+    #[test]
+    fn h0_robot_settings_pair_is_horizontal_readable_and_hittable() {
+        for scale in [1.0, 1.5, 2.0] {
+            for collapsed in [false, true] {
+                let layout = if collapsed {
+                    Layout::collapsed((540.0 * scale) as u32, (700.0 * scale) as u32, scale)
+                } else {
+                    Layout::new((540.0 * scale) as u32, (700.0 * scale) as u32, scale)
+                };
+                assert_eq!(layout.harness.y, layout.settings.y);
+                assert!(layout.harness.width >= (32.0 * scale) as u32);
+                assert!(layout.settings.width >= (32.0 * scale) as u32);
+                assert!(
+                    layout.harness.x + layout.harness.width + (4.0 * scale) as u32
+                        <= layout.settings.x
+                );
+                assert!(layout.settings.x + layout.settings.width <= layout.sidebar.width);
+                assert_eq!(
+                    tree_hit(layout, layout.harness.x, layout.harness.y, 0, 4, scale),
+                    TreeHit::Harness
+                );
+                assert!(layout.tree_header_height >= layout.harness.y + layout.harness.height);
+            }
+        }
+    }
+
     /// The header tools each own their hit before the tree rows are considered,
     /// including the ones the first test did not probe. A click on any of them
     /// must never fall through to a row underneath.
@@ -3215,6 +3311,7 @@ mod tests {
     fn every_header_tool_wins_over_the_rows_beneath_it() {
         let layout = Layout::new(1000, 500, 1.0);
         for (rect, expected) in [
+            (layout.harness, TreeHit::Harness),
             (layout.new_root, TreeHit::NewRoot),
             (layout.settings, TreeHit::Settings),
             (layout.sidebar_toggle, TreeHit::SidebarToggle),

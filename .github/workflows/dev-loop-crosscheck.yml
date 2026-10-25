@@ -300,11 +300,19 @@ jobs:
             run_suite minicon-auth-settings bash scripts/build.sh test-suite --target "$triple" --bin minicon harness_settings_ui::tests -- --test-threads 1
             run_suite minicon-web-context bash scripts/build.sh test-suite --target "$triple" -p minicon-web --lib profile::tests -- --test-threads 1
             run_suite minicon-web-process-selector bash scripts/build.sh test-suite --target "$triple" -p minicon-web --lib embedded_process_ -- --test-threads 1
+            if [[ "$CELL" == win-* || "$CELL" == osx-* ]]; then
+              run_suite minicon-web-native-profile bash scripts/build.sh test-suite --target "$triple" -p minicon-web --features native-page-host --lib native_page:: -- --test-threads 1
+            fi
+            run_suite minicon-harness-workspace bash scripts/build.sh test-suite --target "$triple" --bin minicon h0_ -- --test-threads 1
+            run_suite minicon-workspace-geometry bash scripts/build.sh test-suite --target "$triple" --bin minicon ui::tests:: -- --test-threads 1
+            run_suite minicon-control-pending bash scripts/build.sh test-suite --target "$triple" --bin minicon control_pending::tests -- --test-threads 1
+            run_suite minicon-harness-workspace-public bash scripts/build.sh test-suite --target "$triple" --test minicon_control h0_harness_destination_preserves_console_and_web_drafts_and_observes_only -- --exact --test-threads 1
             if [[ "$CELL" == lnx-* ]]; then
               run_suite minicon-browser-process bash scripts/build.sh test-suite --target "$triple" --bin minicon browser_process::tests -- --test-threads 1
               run_suite minicon-web-process-native bash scripts/build.sh test-suite --target "$triple" -p minicon-web --lib tests::embedded_page_process_selector_maps_and_resizes_only_its_direct_owned_child -- --exact --ignored --test-threads 1
             fi
-            auth_suites="minicon-auth-presentation minicon-auth-settings minicon-web-context minicon-web-process-selector"
+            auth_suites="minicon-auth-presentation minicon-auth-settings minicon-web-context minicon-web-process-selector minicon-harness-workspace minicon-workspace-geometry minicon-control-pending minicon-harness-workspace-public"
+            if [[ "$CELL" == win-* || "$CELL" == osx-* ]]; then auth_suites="$auth_suites minicon-web-native-profile"; fi
             if [[ "$CELL" == lnx-* ]]; then auth_suites="$auth_suites minicon-browser-process minicon-web-process-native"; fi
             for suite in $auth_suites; do
               if ! grep -Eq '^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored;' "$LOG_DIR/$suite.log"; then
@@ -492,6 +500,7 @@ jobs:
           path: |
             probe-logs
             !probe-logs/native-auth-context/**/manifest.private.json
+            !probe-logs/native-auth-context/**/native-profile-locator.private.json
             !probe-logs/native-auth-context/**/profiles/**
             !probe-logs/native-auth-context/**/ordinary-profile/**
             !probe-logs/native-auth-context/**/config/**
@@ -515,6 +524,11 @@ jobs:
             probe-logs/minicon-auth-settings.log
             probe-logs/minicon-web-context.log
             probe-logs/minicon-web-process-selector.log
+            probe-logs/minicon-web-native-profile.log
+            probe-logs/minicon-harness-workspace.log
+            probe-logs/minicon-workspace-geometry.log
+            probe-logs/minicon-control-pending.log
+            probe-logs/minicon-harness-workspace-public.log
             probe-logs/minicon-browser-process.log
             probe-logs/minicon-web-process-native.log
             probe-logs/retained-group/
@@ -532,5 +546,6 @@ jobs:
             probe-logs/native-auth-context/*/native-driver-receipt.json
             probe-logs/native-auth-context/*/windows-cookie-diagnostics.json
             probe-logs/native-auth-context/*/driver.*.log
+            !probe-logs/native-auth-context/**/native-profile-locator.private.json
           if-no-files-found: ignore
           retention-days: 14

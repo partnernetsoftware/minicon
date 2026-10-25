@@ -233,6 +233,71 @@ def _local_state_observation(root, relative):
     return result
 
 
+def _diagnostic_directory_ancestry(root):
+    for path in (root, *root.parents):
+        info = path.lstat()
+        if (not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode)
+                or getattr(info, "st_file_attributes", 0) & 0x400):
+            raise ValueError("diagnostic-root-link-like")
+
+
+def _verified_locator_directories(manifest, output, roots):
+    # Private transport only, never returned by a public receipt. Bind every
+    # locator before opening any DB. No recursive discovery or arbitrary files.
+    for root in (output, *roots.values()):
+        _diagnostic_directory_ancestry(root)
+    carrier, metadata = _diagnostic_entry(output, "native-profile-locator.private.json")
+    if metadata.st_size > 16_384:
+        raise ValueError("locator-size-bound")
+    with carrier.open("rb") as stream:
+        raw = stream.read(16_385)
+    if len(raw) > 16_384:
+        raise ValueError("locator-size-bound")
+    data = fixture.object_json(raw)
+    if (set(data) != {"schema", "test_only", "run", "phases"}
+            or data["schema"] != 1 or data["test_only"] is not True
+            or data["run"] != manifest["run"] or not isinstance(data["phases"], dict)
+            or not 1 <= len(data["phases"]) <= 3
+            or not set(data["phases"]) <= {"a", "b", "a-reopen"}):
+        raise ValueError("locator-authority-invalid")
+    locations = {}
+    for phase, entry in data["phases"].items():
+        label = "b" if phase == "b" else "a"
+        if (not isinstance(entry, dict) or set(entry) != {"store_identifier", "relative_directory"}
+                or entry["store_identifier"] != list(bytes.fromhex(manifest["profiles"][label]["store_identifier"]))
+                or not isinstance(entry["relative_directory"], str)
+                or not 1 <= len(entry["relative_directory"].encode("utf-8")) <= 2048):
+            raise ValueError("locator-profile-invalid")
+        relative = Path(entry["relative_directory"])
+        if (relative.is_absolute() or relative.drive or relative.root
+                or not 1 <= len(relative.parts) <= 16
+                or any(part in ("", ".", "..") for part in relative.parts)):
+            raise ValueError("locator-path-invalid")
+        root = roots[label]
+        location = root / relative
+        # Include root ancestry, not merely the suffix underneath the fresh root.
+        _diagnostic_directory_ancestry(location)
+        if location.resolve(strict=True) != location or not location.is_relative_to(root) or location == root:
+            raise ValueError("locator-outside-profile")
+        locations[phase] = location
+    return locations
+
+
+def _verified_locator_snapshot(manifest, output, roots, now):
+    try:
+        locations = _verified_locator_directories(manifest, output, roots)
+        relation = "unavailable"
+        if "a" in locations and "a-reopen" in locations:
+            relation = "same" if locations["a"] == locations["a-reopen"] else "different"
+        return {"status": "verified-private-locator", "a_reopen_directory_relation": relation,
+                "phases": {phase: {name: _cookie_database_observation(root, slot, now)
+                                    for name, slot in (("network", "Network/Cookies"), ("legacy", "Cookies"))}
+                           for phase, root in locations.items()}}
+    except Exception:
+        # No exception text, carrier bytes, path, or directory names escape.
+        return {"status": "private-locator-unavailable", "a_reopen_directory_relation": "unavailable"}
+
+
 def windows_cookie_snapshot(manifest, output, stage, clock):
     result = {"stage": stage, "profiles": {}, "status": "diagnostics-only"}
     try:
@@ -252,7 +317,12 @@ def windows_cookie_snapshot(manifest, output, stage, clock):
             if Path(manifest["profiles"][label]["directory"]) != root or root.resolve(strict=True) != root:
                 raise ValueError("profile-authority-refused")
             roots[label] = root
+        # Shared authority gate precedes ALL carrier, fixed DB and Local State
+        # reads. A rejected ancestry must not become a locator-only warning.
+        for root in (output, *roots.values()):
+            _diagnostic_directory_ancestry(root)
         wall = time.time()
+        result["verified_profile_databases"] = _verified_locator_snapshot(manifest, output, roots, wall)
         drift = (wall - clock[0]) - (time.monotonic() - clock[1])
         result["clock"] = {"wall_vs_monotonic": "stable-within-two-seconds" if abs(drift) <= 2 else "wall-clock-step-observed",
                            "fixture_cookie_max_age_seconds": 600}
@@ -540,7 +610,7 @@ def main():
             diagnostic = dict(kind="owned-fresh-windows-cookie-diagnostics", schema=1,
                               status="diagnostics-only", changes_court_verdict=False,
                               snapshots=cookie_diagnostics,
-                              limitations=["Only this fresh run's exact manifest A/B directories and fixed relative candidates; no profile search.",
+                              limitations=["Only this fresh run's exact manifest A/B directories, verified private locators and fixed Cookies slots; no profile search.",
                                            "SQLite immutable main DB only; WAL contents are NOT read or checkpointed. Missing rows/schema with WAL are inconclusive.",
                                            "A-reopen page writes its cookie again before reporting failure; post-exit observations cannot reconstruct the first A close.",
                                            "Normal driver exit precedes owned Job descendant cleanup; cleanup may interrupt browser persistence. Compare both stages.",

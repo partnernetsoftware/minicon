@@ -4,8 +4,10 @@ Parent: [MiniCon product index](../PRD.md). Product boundary:
 [charter](PRD_02_23_minicon.md). Settings:
 [Harness connection experience](PRD_02_31_01_01_harness_experience.md).
 Sequence: [Harness workspace plan](../plan/plan-harness-workspace.md).
-Status: `[_]` product design selected by the owner on 2026-10-25; no robot
-button, workspace or task-operation delivery is claimed by this document.
+Status: `[-]` H0 robot/overview implementation in development with a local
+Windows injected-host checkpoint. Native input, live-page, selected artifact
+and remaining operational projection acceptance stay open; task operation is
+a later stage.
 
 The owner's direction makes visual Harness operation/monitoring a future core
 MiniCon experience. Console and Web remain maintained foundations. This is a
@@ -23,13 +25,13 @@ remain with PRD 25 and public observations with PRD 26.
 
 ```text
 Outcome: use MiniCon as the place to operate and understand local harness work
-├── [_] ENTRY — robot icon immediately left of Settings in the host toolbar
+├── [-] ENTRY — robot icon immediately left of Settings in the host toolbar
 │   invariant: one reversible entry is available in Console, Web and zero-tab states
 │   evidence: HW-01 click/key/pressed-state/compact geometry and no startup side effects
 │   safe failure: preserve the original tab, page and input drafts; show local unavailable state
 │   dependency: PRD 25 header geometry, hit testing, painting and focus contract
 │   non-goal: launching a task or listener merely by entering the workspace
-├── [_] HOME — actionable overview, accounts, clients, usage and activity
+├── [-] HOME — actionable overview, accounts, clients, usage and activity
 │   invariant: every value/action comes from the owning runtime and names stale/unknown data
 │   evidence: HW-02/03 empty/partial/working/error journeys and typed deep links to Settings
 │   safe failure: usable empty/recovery state without fictional charts or active clients
@@ -41,7 +43,7 @@ Outcome: use MiniCon as the place to operate and understand local harness work
 │   safe failure: retain the observed final state; pending cancel is not completed cancellation
 │   dependency: versioned worker event/lifecycle seam and existing limits
 │   non-goal: a new agent loop, automatic teams, remote execution or arbitrary client process control
-└── [_] FOUNDATION — responsive, accessible, bounded host workspace
+└── [-] FOUNDATION — responsive, accessible, bounded host workspace
     invariant: focus, paint, pointer hits and observations describe the same active view
     evidence: HW-06/07 native keyboard/IME/scale and bounded hidden/visible resource behavior
     safe failure: readable stacked layout, bounded history and retained return context
@@ -301,10 +303,102 @@ operation as part of 0.2.23's entry reservation.
 
 | Status / journey | Observable evidence |
 | --- | --- |
-| `[_]` HW-01 | Robot left of gear, pointer/key single activation, selected/attention states, compact/zero-tab behavior; no start/login/paid/clipboard side effects |
-| `[_]` HW-02 | Empty/partial/running/failed/unknown scenarios show the actual next action and data coverage using PP/UM identities |
-| `[_]` HW-03 | Settings deep links return to the same account/profile/view/filter; hidden Console/Web drafts, page state and native focus survive |
+| `[-]` HW-01 | Robot left of gear, pointer/key single activation, selected/attention states, compact/zero-tab behavior; no start/login/paid/clipboard side effects |
+| `[-]` HW-02 | Empty/partial/running/failed/unknown scenarios show the actual next action and data coverage using PP/UM identities |
+| `[-]` HW-03 | Settings deep links return to the same account/profile/view/filter; hidden Console/Web drafts, page state and native focus survive |
 | `[_]` HW-04 | Later built-in task launch produces real model/tool/events/final output through the existing worker; unavailable capabilities cannot appear executable |
 | `[_]` HW-05 | Later Stop/failed-start/resume/exit observe real owned-process cleanup and binding rules; external request controls make no external-process claim |
-| `[_]` HW-06 | Same-frame hit/state/pixel/native keyboard/IME at selected OS/ISA/scales and viewport sizes, with readable translated labels |
+| `[-]` HW-06 | Same-frame hit/state/pixel/native keyboard/IME at selected OS/ISA/scales and viewport sizes, with readable translated labels |
 | `[_]` HW-07 | Idle unopened/visible/hidden and active-task resource/retention bounds measured; metrics rendering cannot block terminal input or streaming |
+
+### H0 local implementation checkpoint
+
+- [v] The injected Windows host journey renders the Harness overview and preserves hidden workspace drafts.
+
+Evidence identity:
+`minicon_control::h0_harness_destination_preserves_console_and_web_drafts_and_observes_only`.
+Its first successful run is retained in
+`target-six/v0.2.23-provider/h0-public-initial.log`. This actual isolated
+`--no-activate` GUI uses a missing-browser-runtime fixture and public CLI input;
+it uses its own configuration/profile and does not navigate the owner's login
+profile or write the clipboard. Later integration removes redundant H0 window
+activation calls; the initial run alone did not measure foreground retention.
+The journey checks actual rendered-frame PNG card/gap pixels over a live
+Console, resize/clamped card identity, independent Console/Web host drafts,
+header input ownership, Settings return focus and zero/exited-tab IME routing.
+It also observes that merely opening the robot does not create the Harness
+runtime directory. The six local `h0_` mechanism tests pass, including actual
+private-load failure publication and explicit Loading/Loaded/Unavailable
+projection. Busy alone never establishes that account/listener data is loaded.
+
+`src/harness_workspace_ui.rs` owns the destination, cached cards, inspector,
+bounded navigation and return context. It consumes the existing provider view
+without starting a runtime or sending a provider action on entry. A successfully
+installed, matching authorization presentation temporarily suspends the view;
+failed/pending auth creation cannot falsely suspend or resume it. Existing
+native visibility checks must succeed before hiding an ordinary page. Header
+Settings and nested Settings retain their invoking focus and restore it once
+after a real close; no simultaneous header/composer owner is permitted.
+
+The initial compile failure (root-module visibility, shared font-helper
+visibility and non-exhaustive wheel matching) is retained in `h0-initial-bin.log`;
+it is not runtime counterevidence. The corrected bin run is
+`h0-bin-fixed-visibility.log`. Static two-pass review and apply checks preceded
+these executions but are not substituted for them.
+
+Broader native WebView DOM/history/focus retention, actual keyboard/IME,
+cross-platform input/scales, resource bounds and exact signed/public artifacts
+remain open. Profile/client/usage/balance/activity data absent from the owning
+runtime stays explicitly unavailable. The injected journey does not certify
+those data sources or the later built-in task-operation stage.
+
+The first extended Windows development smoke passed the existing fifteen host
+checks plus seven H0 checks using binary SHA-256
+`f803694bfd998df7387b29cb72b0f280eca8b427b152df087f2087c8d73733a1`:
+`target-six/v0.2.23-provider/h0-artifact-local-v2/receipt.json`.
+The fixture's fresh post-return challenge observes the same native document
+nonce, unsaved DOM input and history state, with one page GET throughout;
+`h0-live-document.json` retains both reports. Actual host-frame PNGs distinguish
+the visible Harness from an explicitly selected Console pane and observe
+Browser restoration. Four Settings card links use published row positions,
+not merely a row that happens to be visible. Zero-tab/narrow navigation is also
+exercised. This is local development, not signed/public artifact or physical
+keyboard/IME/scale qualification. It does not establish native child pixels.
+
+That smoke first exposed reverse menu traversal being intercepted by the new
+header; the retained initial failure is
+`h0-artifact-local-initial/failure-final.json` under the same output root.
+The corrected public menu/H0 journeys pass in `h0-checkpoint-public.log`.
+The broader UI checkpoint then failed four existing assertions
+(`h0-checkpoint-h0-ui.log`): creation-label width, two extreme geometry cases
+and a saved proxy row in a short collapsed window. The repair preserves every
+assertion: secondary tools retain 24-DIP targets, New retains its expanded
+label width, the 80-DIP rail uses two rows, and Robot/Settings retain 32 DIP
+with a 4-DIP gap. A rejected tiny target keeps its clamped proposed anchor with
+zero area. Checked/saturating geometry prevents overflow. The focused CI now
+explicitly selects that product UI suite as well as H0 tests.
+
+The restored integration passes 267 selected Rust executions, with one
+unselected opt-in Pi test ignored, required fmt/default+dedicated-feature
+all-target Clippy, and all 22 browser-smoke checks:
+`target-six/v0.2.23-provider/h0-final-gate-receipt.json`.
+The final native Windows ordinary-page smoke binds binary SHA-256
+`cd904718fb66c8e4f16c6eff8e92968ee0529fd20f756517944912b6805f1dda`;
+its receipt, PNGs and fresh before/after document reports are under
+`h0-artifact-local-final/`. The menu/H0 public regressions also pass after
+exact restoration (`h0-runtime-controls-remaining/restored-public.log`).
+
+Sixteen actual runtime assertion failures cover projection, attempt identity,
+geometry, loading, host/pane capture, Browser restoration, scratch-frame discard,
+input/return focus and both menu traversal boundaries. Nine accepted controls
+are retained in `h0-runtime-controls/receipt.json`; its overall FAIL remains
+because an inner-branch mutation was unreachable and passed. That variant is
+rejected. `h0-runtime-controls-remaining/receipt.json` binds the unchanged
+guarded source hashes, reuses only those nine valid failures, completes seven
+valid failures and records initial/restored passing checks. Compilation/setup
+errors, timeouts and the passing variant count as no RED.
+
+H0 no longer requests top-level window activation on entry, return or Settings
+close. Existing native child/parent focus and logical input owners retain their
+own duties. Actual physical focus/IME, other OS/ISA/scales, resource bounds and
+exact signed/public delivery remain separate open acceptance work.

@@ -1,6 +1,6 @@
 # Harness workspace delivery sequence
 
-Status: `[_]` planned after owner direction, 2026-10-25.
+Status: `[-]` H0 development integration after owner direction, 2026-10-25.
 Behavior: [PRD 36](../prd/PRD_02_36_harness_workspace.md). Settings:
 [PRD 31.01.01](../prd/PRD_02_31_01_01_harness_experience.md). The current
 [0.2.23 plan](plan-v0.2.23.md) selects the entry reservation; the full visual
@@ -10,7 +10,7 @@ operation/monitoring workspace is a continuing core product track.
 
 ```text
 Outcome: establish a usable Harness destination and grow it without fictional controls
-├── [_] H0 — robot entry + real overview/empty state + Settings deep links
+├── [-] H0 — robot entry + real overview/empty state + Settings deep links
 │   invariant: reversible navigation; no login/listener/task side effects on entry
 │   evidence: HW-01/02/03 and native header geometry/focus regression
 │   safe failure: truthful unavailable state and existing workspace preserved
@@ -79,6 +79,11 @@ One integrator owns the host view/header/focus join. Independent settings forms,
 metric projection or prototype work may proceed only after IDs/contracts and
 exclusive file ownership are established. Do not run shared Cargo, desktop,
 clipboard or guard mutations concurrently. Integrate and qualify serially.
+
+The [H0 development checkpoint](../prd/PRD_02_36_harness_workspace.md#h0-local-implementation-checkpoint)
+owns implemented behavior and scoped evidence. Continue from that checkpoint
+through native input/scales, resources and exact-source delivery; local host
+injection and development smoke do not complete H0's release acceptance.
 
 ## Future coordination
 

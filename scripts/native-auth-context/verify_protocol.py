@@ -76,11 +76,15 @@ restored = subprocess.run([sys.executable, "-B", "fixture_selfcheck.py", "--outp
 (OUTPUT / "protocol-restored.log").write_bytes(restored.stdout + restored.stderr)
 assert restored.returncode == 0
 assert SOURCE.read_bytes() == original
+restored_result = json.loads((OUTPUT / "restored/protocol-selfcheck-receipt.json").read_text(encoding="utf-8"))
+restored_checks = restored_result["checks_run"]
+assert type(restored_checks) is int and restored_checks > 0
+assert restored_result["failures"] == 0 and restored_result["errors"] == 0
 receipt = dict(kind="fixture-protocol-guard-controls", native_qualification="NOT_CLAIMED",
                native_browser_executed=False, javascript_executed=False, rust_compiled=False,
                expected_assertion_reds=observations, byte_exact_source_restored=True,
                fixture_sha256=hashlib.sha256(original).hexdigest(), restored_returncode=restored.returncode,
-               restored_log="protocol-restored.log")
+               restored_log="protocol-restored.log", restored_checks=restored_checks)
 (OUTPUT / "protocol-guard-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
 print(json.dumps(dict(protocol_assertion_reds=len(observations), byte_exact_restored=True,
-                      final_protocol_checks=11, native_browser_executed=False, rust_compiled=False)))
+                      final_protocol_checks=restored_checks, native_browser_executed=False, rust_compiled=False)))

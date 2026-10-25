@@ -80,7 +80,7 @@ path = "tests/signing_workflow_policy.rs"
 default = ["experimental-rust-console"]
 experimental-rust-console = ["minicon-platform/rust-console"]
 # Dedicated native browser court; never selected by default or release builds.
-native-auth-court = []
+native-auth-court = ["minicon-web/native-profile-diagnostics"]
 
 [dependencies]
 minicon-console = { path = "crates/minicon-console" }

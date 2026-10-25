@@ -77,6 +77,10 @@ impl ConApp {
                 self.mark_host_ui_full_and_repaint(window);
                 return Ok(true);
             }
+            ui::TreeHit::Harness => {
+                self.toggle_harness_workspace(window)?;
+                return Ok(true);
+            }
             ui::TreeHit::Settings => {
                 self.settings_open = !self.settings_open;
                 self.mark_host_ui_full_and_repaint(window);
@@ -168,6 +172,9 @@ impl ConApp {
         );
         let x = (position.x * scale).max(0.0) as u32;
         let y = (position.y * scale).max(0.0) as u32;
+        if layout.harness.contains(x, y) {
+            return Ok(());
+        }
         self.input_surface = if layout.sidebar.contains(x, y) {
             InputSurface::Sidebar
         } else {
@@ -239,6 +246,7 @@ impl ConApp {
                 };
                 let hovered_header = match hit {
                     ui::TreeHit::NewRoot => Some(HeaderIcon::NewRoot),
+                    ui::TreeHit::Harness => Some(HeaderIcon::Harness),
                     ui::TreeHit::Settings => Some(HeaderIcon::Settings),
                     ui::TreeHit::SidebarToggle => Some(HeaderIcon::SidebarToggle {
                         collapsed: layout.sidebar_collapsed,

@@ -35,7 +35,8 @@ struct PendingWait {
 }
 
 pub(super) struct ScreenshotWork {
-    pub(super) target: TabId,
+    // None captures the visible host destination, including a zero-tab host.
+    pub(super) target: Option<TabId>,
     pub(super) path: PathBuf,
     pub(super) reply: ReplySender,
     pub(super) restore_active: Option<TabId>,
@@ -43,7 +44,7 @@ pub(super) struct ScreenshotWork {
 }
 
 struct InflightScreenshot {
-    target: TabId,
+    target: Option<TabId>,
     reply: Arc<Mutex<Option<ReplySender>>>,
     done: Arc<AtomicBool>,
     deadline: Instant,
@@ -67,6 +68,12 @@ impl PendingControl {
 
     pub(super) fn has_pending_screenshot(&self) -> bool {
         self.screenshot.is_some()
+    }
+
+    pub(super) fn has_pending_pane_screenshot(&self) -> bool {
+        self.screenshot
+            .as_ref()
+            .is_some_and(|shot| shot.target.is_some())
     }
 
     pub(super) fn enqueue_wait(
@@ -173,7 +180,7 @@ impl PendingControl {
 
     pub(super) fn enqueue_screenshot(
         &mut self,
-        target: TabId,
+        target: impl Into<Option<TabId>>,
         path: PathBuf,
         reply: &mut Option<ReplySender>,
     ) -> Result<(), String> {
@@ -185,7 +192,7 @@ impl PendingControl {
             return Err("control request already answered".to_owned());
         };
         self.screenshot = Some(ScreenshotWork {
-            target,
+            target: target.into(),
             path,
             reply,
             restore_active: None,
@@ -196,10 +203,9 @@ impl PendingControl {
 
     pub(super) fn prepare_screenshot(&mut self, active: Option<TabId>) -> Option<TabId> {
         let screenshot = self.screenshot.as_mut()?;
-        screenshot.restore_active = (active != Some(screenshot.target))
-            .then_some(active)
-            .flatten();
-        Some(screenshot.target)
+        let target = screenshot.target?;
+        screenshot.restore_active = (active != Some(target)).then_some(active).flatten();
+        Some(target)
     }
 
     pub(super) fn take_screenshot(&mut self) -> Option<ScreenshotWork> {
@@ -208,13 +214,13 @@ impl PendingControl {
 
     pub(super) fn start_screenshot(
         &mut self,
-        target: TabId,
+        target: impl Into<Option<TabId>>,
         reply: Arc<Mutex<Option<ReplySender>>>,
         done: Arc<AtomicBool>,
         deadline: Instant,
     ) {
         self.inflight_screenshot = Some(InflightScreenshot {
-            target,
+            target: target.into(),
             reply,
             done,
             deadline,
@@ -244,7 +250,7 @@ impl PendingControl {
         if self
             .screenshot
             .as_ref()
-            .is_some_and(|shot| shot.target == id)
+            .is_some_and(|shot| shot.target == Some(id))
             && let Some(screenshot) = self.screenshot.take()
         {
             let _ = screenshot.reply.send(Err(reason.to_owned()));
@@ -252,7 +258,7 @@ impl PendingControl {
         if self
             .inflight_screenshot
             .as_ref()
-            .is_some_and(|shot| shot.target == id)
+            .is_some_and(|shot| shot.target == Some(id))
             && let Some(screenshot) = self.inflight_screenshot.take()
             && let Some(reply) = screenshot
                 .reply
@@ -747,6 +753,37 @@ mod tests {
             pending.take_screenshot().expect("work").restore_active,
             None
         );
+    }
+
+    #[test]
+    fn host_screenshot_has_no_tab_dependency_or_selection_side_effect() {
+        let mut pending = PendingControl::default();
+        let (sender, receiver) = reply();
+        pending
+            .enqueue_screenshot(None, PathBuf::from("host.png"), &mut Some(sender))
+            .expect("host screenshot");
+        assert!(!pending.has_pending_pane_screenshot());
+        assert_eq!(pending.prepare_screenshot(Some(TabId::new(2))), None);
+        assert_eq!(pending.prepare_screenshot(None), None);
+        pending.cancel_for_tab(TabId::new(2), "closed");
+        assert_eq!(pending.screenshot_count(), 1);
+        let work = pending.take_screenshot().expect("host survives tab close");
+        assert!(work.target.is_none() && work.restore_active.is_none());
+        let reply = Arc::new(Mutex::new(Some(work.reply)));
+        pending.start_screenshot(
+            work.target,
+            reply,
+            Arc::new(AtomicBool::new(false)),
+            work.deadline,
+        );
+        pending.cancel_for_tab(TabId::new(2), "closed");
+        assert_eq!(pending.screenshot_count(), 1);
+        pending.cancel_all("window closed");
+        assert_eq!(
+            receiver.recv_timeout(Duration::from_secs(1)).unwrap(),
+            Err("window closed".to_owned())
+        );
+        assert_eq!(pending.screenshot_count(), 0);
     }
 
     /// The two screenshot projections the render loop and the UI snapshot read

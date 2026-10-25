@@ -411,6 +411,8 @@ struct CourtApplication {
     fixture_receipt: Arc<Mutex<Option<serde_json::Value>>>,
     #[cfg(windows)]
     diagnostics: Arc<Mutex<Vec<serde_json::Value>>>,
+    #[cfg(windows)]
+    private_locators: Arc<Mutex<std::collections::BTreeMap<String, serde_json::Value>>>,
 }
 
 impl CourtApplication {
@@ -425,11 +427,29 @@ impl CourtApplication {
             103 => "a-reopen",
             _ => "unrecognized-attempt",
         };
+        if matches!(phase, "a" | "b" | "a-reopen")
+            && let Some(page) = self.app.native_browser_page.as_ref()
+            && let Ok(relative) =
+                page.context_profile_relative_directory_for_diagnostics(&auth.context.profile)
+            && let Some(relative) = relative.to_str()
+            && let Ok(mut locators) = self.private_locators.lock()
+        {
+            locators.insert(
+                phase.to_owned(),
+                serde_json::json!({
+                    "store_identifier": auth.context.profile.store_identifier,
+                    "relative_directory": relative,
+                }),
+            );
+        }
         let observation = serde_json::json!({
             "phase": phase,
             "native_host_present": self.app.native_browser_page.is_some(),
             "persistent_profile_verified": self.app.native_browser_page.as_ref()
                 .map(|page| page.context_profile_matches(&auth.context.profile)),
+            "persistent_profile_layout": self.app.native_browser_page.as_ref()
+                .map(|page| page.context_profile_layout(&auth.context.profile))
+                .unwrap_or("unavailable"),
             "owned_profile_release": self.app.auth_context_lifecycle.release_observation(&auth.context.profile),
         });
         if let Ok(mut observations) = self.diagnostics.lock()
@@ -673,6 +693,10 @@ impl Drop for CourtApplication {
 pub(super) fn run_application(manifest: &Path) -> Result<(), &'static str> {
     let recipe = Recipe::read(manifest)?;
     let output = recipe.output.clone();
+    #[cfg(windows)]
+    let locator_run = recipe.run.clone();
+    #[cfg(windows)]
+    let private_locators = Arc::new(Mutex::new(std::collections::BTreeMap::new()));
     let deadline = Instant::now() + recipe.timeout;
     let outcome = Arc::new(Mutex::new(None));
     let receipt = Arc::new(Mutex::new(None));
@@ -691,6 +715,8 @@ pub(super) fn run_application(manifest: &Path) -> Result<(), &'static str> {
         fixture_receipt: receipt.clone(),
         #[cfg(windows)]
         diagnostics: diagnostics.clone(),
+        #[cfg(windows)]
+        private_locators: private_locators.clone(),
     };
     let result = run_pixel_window(
         PixelWindowOptions::new("MiniCon native auth court", LogicalSize::new(960.0, 600.0))
@@ -698,6 +724,29 @@ pub(super) fn run_application(manifest: &Path) -> Result<(), &'static str> {
             .with_ime_allowed(true),
         Box::new(native),
     );
+    // The window has returned. No filesystem publication is added to GUI
+    // callbacks, and a failed optional diagnostic never changes the oracle.
+    #[cfg(windows)]
+    let private_locator_status = (|| {
+        let locators = private_locators.lock().ok()?;
+        if locators.len() > 3 {
+            return None;
+        }
+        let bytes = serde_json::to_vec(&serde_json::json!({
+            "schema": 1, "test_only": true, "run": locator_run, "phases": &*locators,
+        }))
+        .ok()?;
+        if bytes.len() > 16_384 {
+            return None;
+        }
+        minicon_platform::filesystem::write_private_atomic(
+            &output.join("native-profile-locator.private.json"),
+            &bytes,
+        )
+        .ok()?;
+        Some(())
+    })()
+    .map_or("unavailable", |_| "written");
     let observed = outcome
         .lock()
         .map_err(|_| "native-court-outcome-lock")?
@@ -740,6 +789,7 @@ pub(super) fn run_application(manifest: &Path) -> Result<(), &'static str> {
     #[cfg(windows)]
     let data = {
         let mut data = data;
+        data["private_profile_locator"] = serde_json::json!(private_locator_status);
         data["windows_context_observations"] = serde_json::json!(
             diagnostics
                 .lock()

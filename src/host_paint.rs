@@ -51,7 +51,7 @@ impl ConApp {
     /// greeting page — showed this, each with its own copy of the same
     /// expression and the same `100` fallback. Two copies of a number that must
     /// never disagree is one copy too many.
-    fn font_zoom_percent(&self) -> u16 {
+    pub(super) fn font_zoom_percent(&self) -> u16 {
         self.active_session_opt().map_or(100, |session| {
             ((session.font_size_logical / session.font_size_baseline.max(1.0)) * 100.0).round()
                 as u16
@@ -875,6 +875,7 @@ impl ConApp {
         let text = t.text;
         let muted = t.muted;
         let header_icon_size = host_ui_size(HOST_UI_HEADER_SIZE_PX);
+        self.paint_harness_entry(surface, layout, scale, header_icon_size);
         host_ui::paint_new_tab_button(
             surface,
             layout.new_root,
@@ -1632,6 +1633,7 @@ impl ConApp {
             )
         };
         let icon_size = host_ui_size(HOST_UI_HEADER_SIZE_PX);
+        self.paint_harness_entry(&mut surface, layout, scale, icon_size);
         for (button, icon, selected) in [
             (
                 layout.new_root,

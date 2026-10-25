@@ -46,7 +46,7 @@ MiniCon — one-file local terminal
 │   │       └── [_] Tab-tree drag / reliable inline editing (0.2.24) → prd/PRD_02_25_03_tab_tree_interactions.md
 │   ├── local CLI, waits, structured snapshots and screenshots
 │   │   └── prd/PRD_02_26_con_control_cli.md
-│   ├── [_] Robot entry / visual Harness operation and monitoring → prd/PRD_02_36_harness_workspace.md
+│   ├── [-] Robot entry / visual Harness operation and monitoring → prd/PRD_02_36_harness_workspace.md
 │   ├── [_] Future cluster / cross-machine coordination → prd/PRD_02_37_cluster_horizon.md
 │   └── bounded mux/harness composition → prd/PRD_02_31_v0_2_horizon.md
 │       └── [-] Harness settings / provider-pool / model API → prd/PRD_02_31_01_provider_gateway.md
@@ -164,7 +164,7 @@ flowchart LR
 | Automate what the GUI presents | [Control](prd/PRD_02_26_con_control_cli.md) | catalog, wait, snapshot and PNG black boxes; bounded typed errors |
 | Bounded mux/harness subcommands | [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md) | explicit provider/session contracts; no workbench authority inherited |
 | Connect model accounts to local harnesses | [Provider gateway](prd/PRD_02_31_01_provider_gateway.md), [connection experience](prd/PRD_02_31_01_01_harness_experience.md) | Development manual pool and model API; guided experience redesign specified after owner feedback, implementation and final qualification open; gateway cannot execute tools |
-| Operate and monitor local Harness work | [Harness workspace](prd/PRD_02_36_harness_workspace.md) | Planned robot entry left of Settings, truthful operational overview and later bounded built-in task operation; stages and native evidence open |
+| Operate and monitor local Harness work | [Harness workspace](prd/PRD_02_36_harness_workspace.md) | Development robot entry/cached overview and later bounded built-in task operation; stages and native evidence open |
 | Coordinate personal machines in future versions | [Cluster horizon](prd/PRD_02_37_cluster_horizon.md) | Planned explicit pairing/observation, later deliberate task handoff; origin, trust, stale state and two-machine evidence remain open |
 | Embed a reusable terminal library | [Terminal library](prd/PRD_02_35_terminal_library.md) | common state/stream facade; OS/ISA runtime and session composition remain explicit |
 | Abstract and reuse existing mechanisms | [Module/reuse map](prd/PRD_02_28_shared_core.md) | feature graphs, type identity, source boundaries and kernel oracles; keep product policy local |
@@ -176,7 +176,7 @@ flowchart LR
 
 ## Current frontier
 
-- [_] **Visual Harness becomes a core product track.** The owner's 2026-10-25
+- [-] **Visual Harness becomes a core product track.** The owner's 2026-10-25
   direction selects a robot entry/overview reservation with the current work,
   then staged visual operation/monitoring. [PRD 36](prd/PRD_02_36_harness_workspace.md)
   owns the design and [its plan](plan/plan-harness-workspace.md) owns sequencing.

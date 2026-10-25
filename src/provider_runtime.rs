@@ -46,8 +46,17 @@ pub enum AuthOutcome {
     Failed,
 }
 
+/// Initial private metadata load, independent of operation busy/listener state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LoadState {
+    Loading,
+    Loaded,
+    Unavailable(RuntimeError),
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct View {
+    pub load_state: LoadState,
     pub port: u16,
     pub actual_port: Option<u16>,
     pub accounts: Vec<AccountSummary>,
@@ -69,6 +78,7 @@ pub struct View {
 impl Default for View {
     fn default() -> Self {
         Self {
+            load_state: LoadState::Loading,
             port: 28789,
             actual_port: None,
             accounts: Vec::new(),
@@ -438,6 +448,7 @@ impl Owner {
             view: View::default(),
         };
         owner.refresh_view()?;
+        owner.view.load_state = LoadState::Loaded;
         Ok(owner)
     }
     fn refresh_view(&mut self) -> Result<(), RuntimeError> {
@@ -926,6 +937,7 @@ fn run_owner(
                 &pending,
                 &notify,
                 View {
+                    load_state: LoadState::Unavailable(error),
                     busy: false,
                     status: Some(error.to_string()),
                     ..View::default()
@@ -1092,6 +1104,28 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
     }
+    #[test]
+    fn h0_runtime_load_state_is_published_only_after_successful_private_metadata_read() {
+        let good = Root::new();
+        let mut runtime = good.runtime();
+        assert_eq!(runtime.view().load_state, LoadState::Loading);
+        until(&mut runtime, |view| view.load_state == LoadState::Loaded);
+        assert!(runtime.view().accounts.is_empty());
+        let bad = Root::new();
+        std::fs::create_dir(bad.0.join("gateway.json")).unwrap();
+        let mut failed = bad.runtime();
+        assert_eq!(failed.view().load_state, LoadState::Loading);
+        until(&mut failed, |view| {
+            matches!(view.load_state, LoadState::Unavailable(_))
+        });
+        assert_eq!(
+            failed.view().load_state,
+            LoadState::Unavailable(RuntimeError::Storage)
+        );
+        assert!(!failed.view().busy);
+        assert!(failed.view().accounts.is_empty());
+    }
+
     #[test]
     fn login_completion_immediately_publishes_account_preferences_and_preserves_completion_effect()
     {

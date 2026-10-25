@@ -184,9 +184,11 @@ of per-account isolation. Any missing native context capability belongs in
 minicon-web/platform; do not implement product account state in those crates or
 add an independent browser/agent runtime for this design.
 
-The planned [Harness workspace](PRD_02_36_harness_workspace.md) adds product-owned
+The developing [Harness workspace](PRD_02_36_harness_workspace.md) adds product-owned
 host destination/return state, settings deep links and operational projections
-over those same runtimes. Initial native chrome/layout/hits reuse the current
+over those same runtimes. Its `src/harness_workspace_ui.rs` consumer reads the
+cached provider view; runtime actions remain with the existing provider owner.
+Initial native chrome/layout/hits reuse the current
 host UI mechanisms; a design HTML preview is not a new shipped renderer. Later
 built-in task operation consumes a bounded worker event/lifecycle seam instead
 of adding another agent loop or depending on AgenTerm product state. Native

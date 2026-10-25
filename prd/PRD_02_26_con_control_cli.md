@@ -22,6 +22,7 @@ minicon control protocol and public CLI
 ├── JSON contract
 │   └── [_] Harness settings observations → behavior in PRD 31.01
 └── Evidence publication (snapshots, screenshots)
+    └── [-] Visible Harness capture versus explicit tab capture; restore any live tab kind
 ```
 
 ```mermaid
@@ -29,6 +30,8 @@ flowchart LR
     S["script / harness"] -->|"minicon cli --control …"| C["ATC1 client<br/>short-lived"]
     C -->|local pipe / socket| H["minicon GUI process<br/>bound before the window, dies with it"]
     H --> V["visible GUI<br/>capture · screenshot · ui-snapshot · send-*"]
+    V --> SH["Screenshot: implicit visible host or explicit tab pane"]
+    SH --> RESTORE["Discard scratch frame; retain latest tab and Harness destination"]
     V -. planned redacted settings observation .-> G["PRD 31.01 Harness route<br/>separate inference listener"]
     H --> D["shutdown: reject new work<br/>bounded active-response drain"]
     D -->|"complete transport response"| C
@@ -501,6 +504,17 @@ inside-click reproduction is an input baseline, not evidence of a repair.
   a select/capture race, and zero retained requests afterward. The matching
   present-side rule for the discarded scratch frame is owned by
   [24](PRD_02_24_con_terminal.md).
+- [-] With the Harness destination active, `screenshot-pane` without a target
+  captures that visible host destination. An explicit `--target` retains the
+  existing supported terminal-pane meaning, including the underlying active
+  Console tab. It does not add a native Browser-child screenshot API. The
+  implicit Harness capture also works with no tabs, without a synthetic TabId.
+  A scratch
+  capture must restore any still-existing active tab, including Browser tabs
+  without a PTY, and preserve the Harness destination and hidden drafts. The
+  source regression is the extended H0 public journey owned by
+  [PRD 36](PRD_02_36_harness_workspace.md#h0-local-implementation-checkpoint).
+  A targeted Console image cannot be reported as a Harness image, or vice versa.
 - [v] an accepted screenshot has a 30-second server deadline across render and
   PNG publication. If either stage stalls, it sends a typed error, releases the
   single global request slot and permits a retry; the worker's shared reply slot

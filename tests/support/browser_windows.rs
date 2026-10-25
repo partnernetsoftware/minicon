@@ -1190,6 +1190,19 @@ fn host_browser_menus_keyboard_entry_traversal_and_single_activation() {
         true,
         "dismissal must restore the trigger as the keyboard traversal owner"
     );
+    host.cli(&["send-ui-keys", "Tab", "Space", "Tab"]);
+    let dismissed = host.cli(&["ui-snapshot"]);
+    assert_eq!(
+        dismissed["geometry"]["browser_proxy_menu_open"], false,
+        "Tab in an open proxy menu must dismiss it before any header traversal"
+    );
+    assert_eq!(dismissed["geometry"]["harness_workspace"]["active"], false);
+    host.cli(&["send-ui-keys", "Shift+Tab"]);
+    assert_eq!(
+        host_editor_state(&host, "browser_proxy_editor")["focused"],
+        true,
+        "menu Tab dismissal retains the proxy trigger as traversal owner"
+    );
     host.cli(&["send-ui-keys", "Shift+Tab"]);
     assert_eq!(
         host_editor_state(&host, "browser_address_editor")["focused"],
@@ -1895,5 +1908,303 @@ fn host_browser_authorization_queries_are_private_in_public_observations() {
         normal,
         "ordinary web query/fragment observations must retain their existing behavior"
     );
+    host.close_and_wait();
+}
+
+pub(super) fn h0_harness_destination_preserves_console_and_web_drafts_and_observes_only() {
+    let card_pixels = |path: &Path, card: &Value| {
+        let decoder = png::Decoder::new(fs::File::open(path).unwrap());
+        let mut reader = decoder.read_info().unwrap();
+        let mut pixels = vec![0; reader.output_buffer_size()];
+        let image = reader.next_frame(&mut pixels).unwrap();
+        let channels = match image.color_type {
+            png::ColorType::Rgb => 3,
+            png::ColorType::Rgba => 4,
+            other => panic!("unexpected dashboard PNG {other:?}"),
+        };
+        let x = (card["x"].as_u64().unwrap() + card["width"].as_u64().unwrap() - 4) as usize;
+        let y = card["y"].as_u64().unwrap() as usize + 2;
+        let gap =
+            card["y"].as_u64().unwrap() as usize + card["height"].as_u64().unwrap() as usize + 2;
+        assert!(gap < image.height as usize && x < image.width as usize);
+        let sample = |row: usize| {
+            let start = (row * image.width as usize + x) * channels;
+            <[u8; 3]>::try_from(&pixels[start..start + 3]).unwrap()
+        };
+        (sample(y), sample(gap))
+    };
+    let mut host = BrowserGui::spawn(true, None, None);
+    host.cli(&["send-ui-keys", "Ctrl+Shift+I"]);
+    host.cli(&["send-ui-ime", "commit", "h0-console-draft"]);
+    let original = host.cli(&["ui-snapshot"]);
+    host.click_geometry("harness_entry");
+    let overview = host.cli(&["ui-snapshot"]);
+    assert_eq!(overview["geometry"]["harness_workspace"]["active"], true);
+    assert_eq!(overview["active"], original["active"]);
+    // A real Console tab is still alive: require dashboard raster, not only state.
+    let shot = host.gui.screenshot.to_string_lossy().into_owned();
+    host.cli(&["screenshot-pane", "--output", &shot]);
+    let decoder = png::Decoder::new(fs::File::open(&host.gui.screenshot).unwrap());
+    let mut reader = decoder.read_info().unwrap();
+    let mut pixels = vec![0; reader.output_buffer_size()];
+    let image = reader.next_frame(&mut pixels).unwrap();
+    let channels = match image.color_type {
+        png::ColorType::Rgb => 3,
+        png::ColorType::Rgba => 4,
+        other => panic!("unexpected dashboard PNG {other:?}"),
+    };
+    let card = &overview["geometry"]["harness_workspace"]["cards"][0]["rect"];
+    let x = card["x"].as_u64().unwrap() as usize + 2;
+    let y = card["y"].as_u64().unwrap() as usize + 2;
+    let gap = card["y"].as_u64().unwrap() as usize + card["height"].as_u64().unwrap() as usize + 2;
+    assert!(gap < image.height as usize);
+    let sample = |row: usize| {
+        let start = (row * image.width as usize + x) * channels;
+        pixels[start..start + 3].to_vec()
+    };
+    assert_ne!(
+        sample(y),
+        sample(gap),
+        "live Console must display the dashboard card/gap pixels, not its unchanged sidebar"
+    );
+    let same_tab_card = card_pixels(&host.gui.screenshot, card);
+    let discarded = host.cli(&["perf-stats"])["discarded_capture_frames"]
+        .as_u64()
+        .unwrap();
+    host.cli(&[
+        "screenshot-pane",
+        "--target",
+        original["active"].as_str().unwrap(),
+        "--output",
+        &shot,
+    ]);
+    assert_ne!(
+        card_pixels(&host.gui.screenshot, card).0,
+        same_tab_card.0,
+        "an explicit underlying active Console still captures its pane"
+    );
+    assert_eq!(
+        host.cli(&["perf-stats"])["discarded_capture_frames"],
+        discarded + 1,
+        "scratch capture must never present over the visible Dashboard"
+    );
+    assert_eq!(host.cli(&["ui-snapshot"])["active"], original["active"]);
+    host.cli(&["resize-window", "--width", "540", "--height", "300"]);
+    host.cli(&["send-ui-keys", "PageDown", "PageDown", "PageDown"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["harness_workspace"]["scroll"],
+        3
+    );
+    host.cli(&["resize-window", "--width", "1400", "--height", "900"]);
+    let resized = host.cli(&["ui-snapshot"]);
+    assert_eq!(resized["geometry"]["harness_workspace"]["scroll"], 0);
+    host.click_rect(
+        &resized["geometry"]["harness_workspace"]["cards"][0]["rect"],
+        "first_visible_card",
+        &resized["geometry"],
+    );
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["harness_workspace"]["selected"],
+        "service",
+        "painted first card and hit owner must agree after resize"
+    );
+    host.cli(&["resize-window", "--width", "1000", "--height", "700"]);
+    assert!(
+        !host.config_root.join("harness").exists(),
+        "entry must not instantiate an account/listener runtime"
+    );
+    host.cli(&["send-ui-keys", "Ctrl+Shift+I"]);
+    host.cli(&["send-ui-ime", "commit", "must-not-reach-hidden-console"]);
+    host.cli(&["send-ui-keys", "Escape"]);
+    let held = host.cli(&["ui-snapshot"]);
+    assert_eq!(held["composer_text"], "h0-console-draft");
+    assert_eq!(
+        held["geometry"]["harness_workspace"]["active"], true,
+        "bare Escape does not leave the destination"
+    );
+    host.click_rect(
+        &held["geometry"]["harness_workspace"]["back"],
+        "harness_back",
+        &held["geometry"],
+    );
+    let returned = host.cli(&["ui-snapshot"]);
+    assert_eq!(returned["active"], original["active"]);
+    assert_eq!(returned["composer_text"], "h0-console-draft");
+    assert_eq!(returned["composer_focused"], true);
+    host.cli(&["send-ui-keys", "Tab"]);
+    assert_eq!(host.cli(&["send-ui-keys", "Ctrl+Shift+I"])["sent_keys"], 1);
+    let header_ime = host.cli(&["send-ui-ime", "commit", "H0_HEADER_MUST_NOT_TYPE"]);
+    assert_eq!(header_ime["route"], "harness_header");
+    host.cli(&["send-ui-keys", "a"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["composer_text"],
+        "h0-console-draft"
+    );
+    host.cli(&["send-ui-keys", "Enter"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["harness_workspace"]["active"],
+        true
+    );
+    host.cli(&["send-ui-keys", "Enter"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["composer_focused"],
+        true,
+        "keyboard entry/back restores the composer owner"
+    );
+    host.open_browser_from_menu();
+    host.cli(&["send-ui-keys", "Ctrl+l"]);
+    host.cli(&["send-ui-keys", "Ctrl+a"]);
+    host.cli(&[
+        "send-ui-ime",
+        "commit",
+        "https://h0-draft.fixture.invalid/unsubmitted",
+    ]);
+    let web = host.cli(&["ui-snapshot"]);
+    host.click_geometry("harness_entry");
+    let active = host.cli(&["ui-snapshot"]);
+    let card = &active["geometry"]["harness_workspace"]["cards"][0]["rect"];
+    host.cli(&["screenshot-pane", "--output", &shot]);
+    let visible_card = card_pixels(&host.gui.screenshot, card);
+    assert_ne!(visible_card.0, visible_card.1);
+    host.cli(&[
+        "screenshot-pane",
+        "--target",
+        original["active"].as_str().unwrap(),
+        "--output",
+        &shot,
+    ]);
+    let captured = host.cli(&["ui-snapshot"]);
+    assert_eq!(
+        captured["active"], web["active"],
+        "capturing another pane must restore the active Browser"
+    );
+    assert_eq!(captured["geometry"]["harness_workspace"]["active"], true);
+    let explicit_pane = card_pixels(&host.gui.screenshot, card);
+    assert_ne!(
+        explicit_pane.0, visible_card.0,
+        "an explicit Console target must capture its pane, not the Dashboard"
+    );
+    host.click_rect(
+        &active["geometry"]["harness_workspace"]["navigation"][2],
+        "harness_clients",
+        &active["geometry"],
+    );
+    let clients = host.cli(&["ui-snapshot"]);
+    assert_eq!(
+        clients["geometry"]["harness_workspace"]["section"],
+        "Clients"
+    );
+    fs::create_dir_all(host.config_root.join("harness/gateway.json")).unwrap();
+    host.click_rect(
+        &clients["geometry"]["harness_workspace"]["settings"],
+        "harness_settings",
+        &clients["geometry"],
+    );
+    let metadata_deadline = Instant::now() + Duration::from_secs(10);
+    while host.cli(&["ui-snapshot"])["geometry"]["harness_workspace"]["metadata"] != "unavailable" {
+        assert!(
+            Instant::now() < metadata_deadline,
+            "failed private metadata read was not published unavailable"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    let settings = host.cli(&["ui-snapshot"]);
+    assert_eq!(settings["geometry"]["settings_section"], "harness");
+    host.click_geometry("settings_console_route");
+    host.cli(&["send-ui-keys", "Ctrl+Shift+I"]);
+    assert_eq!(
+        host.cli(&["send-ui-ime", "commit", "H0_SETTINGS_MUST_NOT_TYPE"])["route"],
+        "harness_settings_shell"
+    );
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["composer_text"],
+        "h0-console-draft"
+    );
+    host.cli(&["send-ui-keys", "Escape"]);
+    let resumed = host.cli(&["ui-snapshot"]);
+    assert_eq!(resumed["settings_open"], false);
+    assert_eq!(
+        resumed["geometry"]["harness_workspace"]["section"],
+        "Clients"
+    );
+    host.click_rect(
+        &resumed["geometry"]["harness_workspace"]["back"],
+        "harness_back",
+        &resumed["geometry"],
+    );
+    let returned = host.cli(&["ui-snapshot"]);
+    assert_eq!(returned["active"], web["active"]);
+    assert_eq!(
+        returned["geometry"]["browser_address_editor"]["text"],
+        web["geometry"]["browser_address_editor"]["text"]
+    );
+    assert_eq!(returned["geometry"]["address_focused"], true);
+    host.cli(&[
+        "select-tab",
+        "--target",
+        original["active"].as_str().unwrap(),
+    ]);
+    host.cli(&["send-ui-keys", "Ctrl+Shift+I", "Tab", "Tab", "Enter"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["settings_open"],
+        true,
+        "header Settings must open its real drawer"
+    );
+    host.cli(&["send-ui-keys", "Escape"]);
+    let drawer_return = host.cli(&["ui-snapshot"]);
+    assert_eq!(drawer_return["settings_open"], false);
+    assert_eq!(
+        drawer_return["composer_focused"], true,
+        "closing the drawer must restore its invoking composer owner"
+    );
+    assert_eq!(drawer_return["composer_text"], "h0-console-draft");
+    host.cli(&["send-ui-ime", "commit", "H0_DRAWER_INPUT"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["composer_text"],
+        "h0-console-draftH0_DRAWER_INPUT",
+        "post-drawer input must reach the restored composer, not the PTY"
+    );
+    host.cli(&["send-text", "exit\r"]);
+    host.cli(&[
+        "wait-tab-exit",
+        "--target",
+        original["active"].as_str().unwrap(),
+        "--timeout-ms",
+        "10000",
+    ]);
+    host.click_geometry("harness_entry");
+    assert_eq!(
+        host.cli(&["send-ui-ime", "commit", "H0_EXITED_MUST_NOT_TYPE"])["route"],
+        "harness_workspace"
+    );
+    let retained = host.cli(&["ui-snapshot"]);
+    host.click_rect(
+        &retained["geometry"]["harness_workspace"]["back"],
+        "harness_back",
+        &retained["geometry"],
+    );
+    let tabs = host.cli(&["list-tabs"]);
+    for tab in tabs["tabs"].as_array().unwrap() {
+        host.cli(&["close-tab", "--target", tab["id"].as_str().unwrap()]);
+    }
+    assert_eq!(host.cli(&["ui-snapshot"])["workspace_empty"], true);
+    host.click_geometry("harness_entry");
+    let empty = host.cli(&["ui-snapshot"]);
+    assert_eq!(empty["geometry"]["harness_workspace"]["active"], true);
+    host.cli(&["screenshot-pane", "--output", &shot]);
+    let decoder = png::Decoder::new(fs::File::open(&host.gui.screenshot).unwrap());
+    let reader = decoder.read_info().unwrap();
+    assert!(reader.info().width > 0 && reader.info().height > 0);
+    assert_eq!(host.cli(&["ui-snapshot"])["active"], Value::Null);
+    assert_eq!(
+        host.cli(&["send-ui-ime", "commit", "H0_EMPTY_MUST_NOT_TYPE"])["route"],
+        "harness_workspace"
+    );
+    host.click_rect(
+        &empty["geometry"]["harness_workspace"]["back"],
+        "harness_back",
+        &empty["geometry"],
+    );
+    assert_eq!(host.cli(&["ui-snapshot"])["workspace_empty"], true);
     host.close_and_wait();
 }

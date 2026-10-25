@@ -245,6 +245,44 @@ impl NativePageHost {
         verify_windows_profile(&self.webview, profile).is_ok()
     }
 
+    /// Return only a finite layout classification after the same exact,
+    /// persistent-store verification used during creation. No native path,
+    /// cookie or file contents are returned. Ownership: PRD 28.
+    #[cfg(windows)]
+    pub fn context_profile_layout(&self, profile: &PageProfile) -> &'static str {
+        verified_windows_profile_paths(&self.webview, profile)
+            .map(|(root, path, _)| windows_profile_layout(&root, &path))
+            .unwrap_or("unavailable")
+    }
+
+    /// Private locator for a dedicated test artifact only. The caller must bind
+    /// it to its fresh manifest and keep it out of public logs/artifacts.
+    #[cfg(all(windows, feature = "native-profile-diagnostics"))]
+    pub fn context_profile_relative_directory_for_diagnostics(
+        &self,
+        profile: &PageProfile,
+    ) -> Result<std::path::PathBuf, PageContextError> {
+        let (root, path, raw_path) = verified_windows_profile_paths(&self.webview, profile)?;
+        let relative = path
+            .strip_prefix(&root)
+            .map_err(|_| PageContextError::ProfileUnavailable)?;
+        if relative.components().count() > 16
+            || relative.to_str().is_none_or(|text| text.len() > 2048)
+        {
+            return Err(PageContextError::ProfileUnavailable);
+        }
+        // Reuse the context's no-link/reparse checks through the root ancestry.
+        crate::PageContext {
+            profile: PageProfile {
+                data_directory: raw_path,
+                store_identifier: profile.store_identifier,
+            },
+            proxy: BrowserProxy::default(),
+        }
+        .validate()?;
+        Ok(relative.to_path_buf())
+    }
+
     /// Create the visible, bounded first-party home surface.
     pub fn new(
         slot: PanelSlot,
@@ -674,6 +712,14 @@ fn verify_windows_profile(
     webview: &WebView,
     profile: &PageProfile,
 ) -> Result<(), PageContextError> {
+    verified_windows_profile_paths(webview, profile).map(|_| ())
+}
+
+#[cfg(windows)]
+fn verified_windows_profile_paths(
+    webview: &WebView,
+    profile: &PageProfile,
+) -> Result<(std::path::PathBuf, std::path::PathBuf, std::path::PathBuf), PageContextError> {
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         ICoreWebView2_13, ICoreWebView2Environment7,
     };
@@ -711,10 +757,36 @@ fn verify_windows_profile(
         .map_err(|_| PageContextError::ProfileUnavailable)?;
     unsafe { native_profile.ProfilePath(&mut path) }
         .map_err(|_| PageContextError::ProfileUnavailable)?;
-    let path = std::path::PathBuf::from(webview2_com::take_pwstr(path))
+    let raw_path = std::path::PathBuf::from(webview2_com::take_pwstr(path));
+    let path = raw_path
         .canonicalize()
         .map_err(|_| PageContextError::ProfileUnavailable)?;
-    windows_profile_facts(&expected, &actual, &path, in_private.as_bool())
+    windows_profile_facts(&expected, &actual, &path, in_private.as_bool())?;
+    Ok((actual, path, raw_path))
+}
+
+#[cfg(windows)]
+fn windows_profile_layout(root: &std::path::Path, profile: &std::path::Path) -> &'static str {
+    let Ok(relative) = profile.strip_prefix(root) else {
+        return "unavailable";
+    };
+    let mut components = relative.components();
+    let first = components.next();
+    let second = components.next();
+    let third = components.next();
+    let matches = |component: Option<std::path::Component<'_>>, expected: &str| {
+        matches!(component, Some(std::path::Component::Normal(part))
+            if part.to_str().is_some_and(|part| part.eq_ignore_ascii_case(expected)))
+    };
+    if first.is_none() {
+        "unavailable"
+    } else if matches(first, "EBWebView") && matches(second, "Default") && third.is_none() {
+        "EBWebView/Default"
+    } else if matches(first, "Default") && second.is_none() {
+        "Default"
+    } else {
+        "other-descendant"
+    }
 }
 
 #[cfg(windows)]
@@ -929,6 +1001,29 @@ mod tests {
                 Err(PageContextError::ProfileUnavailable)
             );
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn verified_profile_layout_reports_only_finite_classes() {
+        use std::path::Path;
+        let root = Path::new(r"C:\court\a");
+        for (relative, expected) in [
+            ("Default", "Default"),
+            (r"EBWebView\Default", "EBWebView/Default"),
+            (r"ebwebview\default", "EBWebView/Default"),
+            (r"Default\Network", "other-descendant"),
+            (r"unreported-profile-name", "other-descendant"),
+        ] {
+            let path = root.join(relative);
+            assert!(windows_profile_facts(root, root, &path, false).is_ok());
+            assert_eq!(windows_profile_layout(root, &path), expected);
+        }
+        assert_eq!(windows_profile_layout(root, root), "unavailable");
+        assert_eq!(
+            windows_profile_layout(root, Path::new(r"C:\court\b\Default")),
+            "unavailable"
+        );
     }
 
     #[cfg(windows)]

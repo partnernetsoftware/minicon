@@ -755,6 +755,7 @@ pub(crate) fn paint_settings_panel(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum HeaderIcon {
     NewRoot,
+    Harness,
     Settings,
     /// Collapses the sidebar to a rail, or expands it again. Drawn as a panel
     /// with a chevron pointing the way the sidebar will move, so the glyph
@@ -938,6 +939,33 @@ pub(crate) fn paint_header_icon_button(
                 plus_y.saturating_sub(stroke.saturating_mul(2)),
                 stroke,
                 stroke.saturating_mul(5),
+                color.to_xrgb(),
+            );
+        }
+        HeaderIcon::Harness => {
+            let head = ui::Rect {
+                x: button.x + inset,
+                y: button.y + inset + stroke * 2,
+                width: button.width.saturating_sub(inset * 2),
+                height: button.height.saturating_sub(inset * 2 + stroke * 2),
+            };
+            stroke_rect(surface, head, stroke, color);
+            let eyes_y = head.y + head.height / 3;
+            for x in [head.x + head.width / 4, head.x + head.width * 3 / 4] {
+                surface.fill_rect(x, eyes_y, stroke * 2, stroke * 2, color.to_xrgb());
+            }
+            surface.fill_rect(
+                head.x + head.width / 3,
+                head.y + head.height * 3 / 4,
+                head.width / 3,
+                stroke,
+                color.to_xrgb(),
+            );
+            surface.fill_rect(
+                button.x + button.width / 2,
+                button.y + inset,
+                stroke,
+                stroke * 3,
                 color.to_xrgb(),
             );
         }

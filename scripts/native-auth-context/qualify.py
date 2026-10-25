@@ -22,6 +22,8 @@ SCRIPTS = Path(__file__).resolve().parent
 INPUTS = (
     "Cargo.toml", "Cargo.lock", "src/main.rs", "src/harness_auth_court.rs",
     "src/harness_auth_ui.rs", "src/harness_settings_ui.rs",
+    "src/harness_workspace_ui.rs",
+    "crates/minicon-web/Cargo.toml",
     "crates/minicon-web/src/lib.rs", "crates/minicon-web/src/native_page.rs",
     "crates/minicon-web/src/native_page/windows_release.rs",
     "crates/minicon-web/src/profile.rs", "crates/minicon-web/src/wry_host.rs",
@@ -158,7 +160,15 @@ def main():
                            output / "protocol.log", env, 120)
         if protocol != 0 or hashes() != original_hashes:
             raise RuntimeError("fixture protocol controls failed or changed source")
-        receipt["protocol_gate"] = "11 checks and 11 actual assertion RED controls; exact source restored"
+        protocol_result = json.loads((output / "protocol/protocol-guard-receipt.json").read_text(encoding="utf-8"))
+        checks = protocol_result["restored_checks"]
+        controls = len(protocol_result["expected_assertion_reds"])
+        if (type(checks) is not int or checks <= 0 or controls <= 0
+                or protocol_result["byte_exact_source_restored"] is not True):
+            raise RuntimeError("protocol evidence counts unavailable")
+        receipt["protocol_restored_checks"] = checks
+        receipt["protocol_assertion_red_controls"] = controls
+        receipt["protocol_gate"] = f"{checks} checks and {controls} actual assertion RED controls; exact source restored"
         run("initial")
         # Reuse the previous account's explicit context in actual product
         # dispatch. Ordinary remains separate; B must observe A's storage.

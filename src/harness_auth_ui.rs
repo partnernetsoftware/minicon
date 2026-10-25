@@ -264,6 +264,7 @@ impl ConApp {
             self.browser_can_forward = false;
             self.browser_visible = None;
         }
+        self.harness_workspace.begin_auth(attempt);
         self.blur_harness_fields();
         self.settings_open = false;
         self.close_browser_menu(window, false, false);
@@ -473,6 +474,7 @@ impl ConApp {
                 self.settings_section = ui::SettingsSection::Harness;
             }
         }
+        self.harness_workspace.finish_auth(attempt);
         self.browser_visible = None;
         true
     }

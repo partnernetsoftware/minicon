@@ -352,6 +352,7 @@ impl ConApp {
                 // send-keys (PRD 02.26) — checked before anything moves, so
                 // a refused commit also leaves the preedit untouched.
                 if matches!(event, minicon_platform::ime::ImeEvent::Commit(_))
+                    && !self.harness_has_input_owner()
                     && self.rename.is_none()
                     && !self.composer.focused
                     && !self.browser_address_focused
@@ -380,6 +381,8 @@ impl ConApp {
                     && self.settings_section == ui::SettingsSection::Harness
                 {
                     self.harness_input_owner()
+                } else if let Some(owner) = self.harness_workspace_input_owner() {
+                    owner
                 } else if self.rename.is_some() {
                     "rename"
                 } else if self.settings_proxy_focused {
@@ -551,7 +554,12 @@ impl ConApp {
                     .map_err(|error| format!("terminal input failed: {error}"))
             }),
             CliCommand::ScreenshotPane { target, output } => {
-                self.control_target(target).and_then(|id| {
+                let capture_target = if target.is_none() && self.harness_workspace.active() {
+                    Ok(None)
+                } else {
+                    self.control_target(target).map(Some)
+                };
+                capture_target.and_then(|id| {
                     agent_interface::initialize_png_worker()
                         .map_err(|error| format!("initialize PNG worker: {error}"))?;
                     self.pending_control.enqueue_screenshot(

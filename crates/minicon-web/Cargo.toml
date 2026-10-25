@@ -16,6 +16,8 @@ path = "src/bin/minicon-web-host.rs"
 
 [features]
 default = []
+# Private locator seam for a dedicated non-production native court. Owner: PRD 28.
+native-profile-diagnostics = []
 # Same-process child WebView for a GUI-owned content panel. The MiniCon macOS/Windows
 # binary enables this; core/headless consumers do not.
 native-page-host = ["dep:wry", "wry/mac-proxy", "dep:webview2-com", "dep:windows-core", "dep:block2", "dep:objc2", "dep:objc2-app-kit"]

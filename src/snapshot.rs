@@ -177,11 +177,32 @@ impl ConApp {
                             ),
                         ]))
                     })
+                    .or_else(|| Some(json::object(vec![])))
                     .map(|mut geometry| {
                         if let json::JsonValue::Object(fields) = &mut geometry {
+                            if !fields.iter().any(|(name, _)| *name == "scale_permille") {
+                                fields.push((
+                                    "scale_permille",
+                                    ((metrics.scale_factor * 1000.0) as u64).into(),
+                                ));
+                            }
                             let new_choices =
                                 layout.new_tab_choices(metrics.scale_factor, self.new_menu_scroll);
                             fields.extend([
+                                ("harness_entry", rect_obj(layout.harness)),
+                                (
+                                    "host_scale_permille",
+                                    ((metrics.scale_factor * 1000.0) as u64).into(),
+                                ),
+                                (
+                                    "harness_workspace",
+                                    self.harness_workspace_snapshot(
+                                        layout,
+                                        metrics.physical_width,
+                                        metrics.physical_height,
+                                        metrics.scale_factor,
+                                    ),
+                                ),
                                 ("new_menu_highlight", self.new_menu_highlight.into()),
                                 ("new_menu_scroll", new_choices.start.into()),
                                 (

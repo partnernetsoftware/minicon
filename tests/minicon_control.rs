@@ -15,6 +15,11 @@ mod owned_console_gui;
 #[path = "support/browser_windows.rs"]
 mod browser_windows;
 
+#[test]
+fn h0_harness_destination_preserves_console_and_web_drafts_and_observes_only() {
+    browser_windows::h0_harness_destination_preserves_console_and_web_drafts_and_observes_only();
+}
+
 #[cfg(windows)]
 static CLIPBOARD_LEASE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 

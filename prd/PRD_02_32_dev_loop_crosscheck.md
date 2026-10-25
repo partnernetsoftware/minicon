@@ -198,6 +198,21 @@ value-free observation contract and limits remain with
 [the lifecycle owner](PRD_02_28_01_browser_context_lifecycle.md); a missing file
 never supplies a persistence result by inference.
 
+Both success and failure artifact selections explicitly exclude the
+feature-only `native-profile-locator.private.json` carrier. Its directory
+authority, bounds and finite public diagnostics belong to the
+[verified-directory join](PRD_02_28_01_browser_context_lifecycle.md#verified-directory-diagnostic-join).
+Protocol selfcheck counts come from the actual restored receipt; the protocol
+control count is separate and must not grow merely because checks were added.
+
+Provider/Harness/auth focused runs also select the H0 host tests, pending-control
+ownership tests and exact public H0 journey with nonzero passing execution
+required. Windows/macOS additionally select minicon-web's native-page tests
+with `native-page-host` enabled; Linux qualifies its existing separate process
+host instead. Their raw logs join the always-upload artifact. The canonical
+browser smoke retains existing host checks and adds H0 checks through the same
+script; actual check IDs/results are authoritative, not a historical count.
+
 The first opt-in run (`40166792139`, source `b47799d`) exposed macOS Bash 3.2's
 empty-array expansion under `set -u`: neither macOS auth court started. The
 invocation now appends the optional Linux helper through positional parameters;
