@@ -587,8 +587,31 @@ their separate native obligations. A disposable court user/profile is required;
 macOS identified-store cleanup remains an explicit OS-managed operation.
 Invocation and result retention belong to
 [the native dev court](PRD_02_32_dev_loop_crosscheck.md#opt-in-native-authorization-context-court).
-Compilation/protocol checks prepare this join; actual native execution is still
-pending and no native delivery claim is made by the planned court itself.
+Compilation/protocol checks prepare this join; native execution is scoped by
+the exact-source observations below, not by the existence of the court itself.
+
+**First native run, source `b47799d92f14f22dcc3d5243c33d9a9cf1f2a033`.**
+Run `40166792139` completed with two Linux jobs successful and four failed jobs.
+Both Windows ISAs actually executed the initial journey: ordinary/A/B initial
+storage checks passed, but reopened A failed `context-a-reopen-inherited-storage`.
+That assertion compares both prior cookie and localStorage; its original receipt
+cannot distinguish missing persistence from unexpected inherited data. Browser
+folder verification passed, but shutdown/flush timing is an unproven hypothesis.
+Neither Windows negative variant nor restored journey ran. Both macOS jobs
+stopped before Python/native execution on a Bash 3.2 empty-array/nounset error;
+the workflow correction belongs to PRD 32. Independent raw job logs, artifact
+identity/digest checks and the terminal index are retained in
+`target-six/v0.2.23-provider/ci-b47799d-native/verification-index.json`.
+This run does not close the all-platform context/persistence obligation.
+
+Follow-up fixture receipts record only fixed `matches` / `missing` / `unexpected`
+categories for each initial cookie and localStorage comparison. They expose no
+values or profile contents. Both must still equal A's prior value on reopen;
+missing persistence is a failure. The protocol now has ten checks and ten actual
+assertion-RED controls with exact restoration, including independent cookie and
+localStorage loss cases. Local receipt:
+`target-six/v0.2.23-provider/native-auth-storage-diagnostics-protocol/protocol-guard-receipt.json`.
+These are protocol checks; corrected native execution remains required.
 
 The local scaffold checkpoint is recorded in
 `target-six/v0.2.23-provider/native-auth-court-final-gate-receipt.json`:

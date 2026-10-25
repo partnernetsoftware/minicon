@@ -125,6 +125,22 @@ class ProtocolChecks(unittest.TestCase):
             contaminated["initial_storage"] = court.state.values["ordinary"]
             self.assertEqual(report(court, "a", contaminated)[0], 422)
             self.assertEqual(court.state.failure, "context-a-inherited-storage")
+            self.assertEqual(court.state.receipt()["initial_storage_observations"]["a"],
+                             {"initial_cookie": "matches", "initial_storage": "unexpected"})
+
+    def test_reopen_requires_both_cookie_and_local_storage_persistence(self):
+        for missing in ("initial_cookie", "initial_storage"):
+            with fixture.Fixture() as court:
+                for index, phase in enumerate(fixture.PHASES[:3]):
+                    self.assertEqual(report(court, phase, report_data(court.state, phase))[0], 200)
+                    self.assertEqual(request(court, "POST", "/driver/ack", {"seq": index})[0], 200)
+                data = report_data(court.state, "a-reopen")
+                data[missing] = None
+                self.assertEqual(report(court, "a-reopen", data)[0], 422)
+                self.assertEqual(court.state.failure, "context-a-reopen-inherited-storage")
+                observed = court.state.receipt()["initial_storage_observations"]["a-reopen"]
+                self.assertEqual(observed[missing], "missing")
+                self.assertEqual(observed["initial_storage" if missing == "initial_cookie" else "initial_cookie"], "matches")
 
     def test_ordinary_document_replacement_is_rejected(self):
         for acknowledged in (False, True):

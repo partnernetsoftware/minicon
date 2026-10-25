@@ -21,6 +21,7 @@ cases = [
     ("host-identity", "test_host_origin_and_nonce_are_checked_over_http", 'if self.headers.get_all("Host", []) != [urlsplit(self.server.state.origin).netloc]:', 'if False:'),
     ("duplicate-json", "test_body_framing_and_json_are_bounded", 'if key in result:', 'if False:'),
     ("context-inheritance", "test_context_contamination_is_an_observation_failure", 'if data["initial_cookie"] != previous or data["initial_storage"] != previous:', 'if False:'),
+    ("reopen-persistence", "test_reopen_requires_both_cookie_and_local_storage_persistence", 'if data["initial_cookie"] != previous or data["initial_storage"] != previous:', 'if False:'),
     ("ordinary-instance", "test_ordinary_document_replacement_is_rejected", 'if instance != original["instance"] or self.page_gets["ordinary"] != 1:', 'if False:'),
     ("report-replay", "test_ack_and_report_replay_do_not_advance", 'if seq <= self.latest_seq.get(key, 0):', 'if False:'),
     ("report-bound", "test_report_queue_never_silently_overwrites", 'if len(self.reports) >= MAX_REPORTS:', 'if False:'),
@@ -57,4 +58,4 @@ receipt = dict(kind="fixture-protocol-guard-controls", native_qualification="NOT
                restored_log="protocol-restored.log")
 (OUTPUT / "protocol-guard-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
 print(json.dumps(dict(protocol_assertion_reds=len(observations), byte_exact_restored=True,
-                      final_protocol_checks=9, native_browser_executed=False, rust_compiled=False)))
+                      final_protocol_checks=10, native_browser_executed=False, rust_compiled=False)))

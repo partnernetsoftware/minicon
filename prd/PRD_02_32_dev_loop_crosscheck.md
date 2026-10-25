@@ -153,6 +153,14 @@ BLOCKED. Direct native-host Unsupported is typed by the driver; some browser
 creation refusals remain undiagnosed failures until their actual cause is
 established, and cannot be labeled an isolation defect by inference.
 
+The first opt-in run (`40166792139`, source `b47799d`) exposed macOS Bash 3.2's
+empty-array expansion under `set -u`: neither macOS auth court started. The
+invocation now appends the optional Linux helper through positional parameters;
+empty `"$@"` is valid on that shell. Both macOS cells still require actual
+execution on the corrected source. The mechanism owner records the Windows
+reopen observation failure and the follow-up value-free diagnostics; do not
+relabel this terminal failure as a verified wait or a successful native join.
+
 **Local Windows x86_64 development gate (2026-10-25).**
 `build.sh test -- --test-threads=1` completed the workspace and both owned lexer
 forks with exit 0; the runner summaries reported 1691 passed and 82 ignored.

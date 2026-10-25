@@ -90,6 +90,7 @@ class State:
         self.index = 0
         self.acked = set()
         self.failure = None
+        self.initial_storage_observations = {}
         self.complete = False
         self.commands = {phase: deque() for phase in PHASES}
         self.reports = deque()
@@ -211,6 +212,12 @@ class State:
                 if self.index > 3 or phase != STEPS[self.index]:
                     raise Rejected(409, "initial-report-out-of-order")
                 previous = self.values["a"] if phase == "a-reopen" else None
+                # Fixed categories distinguish isolation from missing persistence
+                # without exposing fixture values, cookies or profile contents.
+                self.initial_storage_observations[phase] = {
+                    name: "matches" if data[name] == previous else "missing" if data[name] is None else "unexpected"
+                    for name in ("initial_cookie", "initial_storage")
+                }
                 if data["initial_cookie"] != previous or data["initial_storage"] != previous:
                     self.fail("context-" + phase + "-inherited-storage")
                 if data["event"] != "loaded":
@@ -260,6 +267,7 @@ class State:
                         observation_status="failed" if self.failure else "complete" if self.complete else "incomplete",
                         native_qualification="NOT_CLAIMED", native_execution_attested=False,
                         failure=self.failure, run_sha256=digest(self.run), checks=self.checks.copy(),
+                        initial_storage_observations={phase: values.copy() for phase, values in self.initial_storage_observations.items()},
                         raw_request_path_sha256_counts=dict(self.path_counts), request_counts=dict(self.request_counts),
                         page_get_counts=dict(self.page_gets), rejected_requests=dict(self.rejected),
                         report_count=len(self.reports), report_hashes=list(self.reports),
