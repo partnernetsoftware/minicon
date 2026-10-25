@@ -19,6 +19,7 @@ pub enum FilePublishErrorKind {
     Write,
     SyncFile,
     Install,
+    Remove,
     Durability,
 }
 
@@ -39,9 +40,10 @@ impl FilePublishError {
         &self.detail
     }
 
-    /// True only when replacement succeeded but the parent durability barrier
-    /// failed. The destination then contains the complete new file even though
-    /// crash durability could not be confirmed.
+    /// True only when complete replacement bytes were installed or intended
+    /// absence was published, but the operation's durability barrier failed or
+    /// is unsupported. Crash durability is then unconfirmed; do not report the
+    /// old bytes/name as still applied.
     pub const fn published(&self) -> bool {
         self.published
     }
@@ -383,6 +385,96 @@ where
     publish_reserved_sibling_with(&temporary, destination, replace, sync_parent)?;
     cleanup.disarm();
     Ok(())
+}
+
+/// The existing name was absent; no new durability barrier is claimed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PrivateRemoveOutcome {
+    Removed,
+    NotFound,
+}
+
+/// Publishes intended absence of a private regular file. This is a real remove,
+/// not an empty-byte replacement or secure erase. The caller owns/protects the
+/// parent; independent concurrent writers are outside this operation's claim.
+///
+/// A published error means absence was made effective but crash durability was
+/// not confirmed. Unix checks parent sync. Windows has no established removal
+/// barrier and reports that uncertainty instead of reusing the replacement
+/// adapter's no-op parent sync. NotFound makes no new durability assertion.
+#[cfg(feature = "filesystem")]
+pub fn remove_private_file(destination: &Path) -> Result<PrivateRemoveOutcome, FilePublishError> {
+    remove_private_file_with(
+        destination,
+        |path| fs::remove_file(path),
+        crate::selected::filesystem_publish::sync_removed_parent,
+    )
+}
+
+#[cfg(feature = "filesystem")]
+fn remove_private_file_with(
+    destination: &Path,
+    remove: impl FnOnce(&Path) -> io::Result<()>,
+    sync_parent: impl FnOnce(&Path) -> io::Result<()>,
+) -> Result<PrivateRemoveOutcome, FilePublishError> {
+    let parent = destination
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .ok_or_else(|| {
+            FilePublishError::new(
+                FilePublishErrorKind::InvalidInput,
+                "private remove requires a parent directory",
+            )
+        })?;
+    if destination.file_name().is_none() {
+        return Err(FilePublishError::new(
+            FilePublishErrorKind::InvalidInput,
+            "private remove requires a file name",
+        ));
+    }
+    match fs::symlink_metadata(destination) {
+        Ok(metadata)
+            if !crate::filesystem_entry::metadata_entry_facts(&metadata).is_real_file() =>
+        {
+            return Err(FilePublishError::new(
+                FilePublishErrorKind::InvalidInput,
+                "private remove target must be a real regular file entry",
+            ));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok(PrivateRemoveOutcome::NotFound);
+        }
+        Err(error) => {
+            return Err(FilePublishError::from_io(
+                FilePublishErrorKind::Inspect,
+                "inspect private remove target failed",
+                error,
+            ));
+        }
+    }
+    match remove(destination) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok(PrivateRemoveOutcome::NotFound);
+        }
+        Err(error) => {
+            return Err(FilePublishError::from_io(
+                FilePublishErrorKind::Remove,
+                "remove private target failed",
+                error,
+            ));
+        }
+    }
+    sync_parent(parent).map_err(|error| {
+        FilePublishError::from_io(
+            FilePublishErrorKind::Durability,
+            "sync removed private target parent failed",
+            error,
+        )
+        .after_publish()
+    })?;
+    Ok(PrivateRemoveOutcome::Removed)
 }
 
 /// Lets a path-oriented encoder fill a reserved sibling temporary, then
@@ -979,6 +1071,73 @@ fn unique_backup(destination: &Path) -> Result<PathBuf, DirectoryPublishError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "filesystem")]
+    #[test]
+    fn private_removal_uses_actual_namespace_and_explicit_native_durability() {
+        let root = private_fixture("remove-native");
+        let path = root.join("key");
+        fs::write(&path, b"synthetic-key").unwrap();
+        let result = remove_private_file(&path);
+        #[cfg(unix)]
+        assert_eq!(result.unwrap(), PrivateRemoveOutcome::Removed);
+        #[cfg(windows)]
+        {
+            let error = result.unwrap_err();
+            assert!(error.published());
+            assert_eq!(error.kind(), FilePublishErrorKind::Durability);
+            assert_eq!(error.io_kind(), io::ErrorKind::Unsupported);
+        }
+        assert!(
+            !path.exists(),
+            "successful namespace removal must publish actual absence"
+        );
+        assert_eq!(
+            remove_private_file(&path).unwrap(),
+            PrivateRemoveOutcome::NotFound
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[cfg(feature = "filesystem")]
+    #[test]
+    fn private_removal_separates_precommit_failure_and_failed_post_unlink_barrier() {
+        let root = private_fixture("remove-boundary");
+        let path = root.join("key");
+        fs::write(&path, b"synthetic-old").unwrap();
+        let before = remove_private_file_with(
+            &path,
+            |_| Err(io::Error::new(io::ErrorKind::PermissionDenied, "synthetic")),
+            |_| Ok(()),
+        )
+        .unwrap_err();
+        assert!(!before.published());
+        assert_eq!(before.kind(), FilePublishErrorKind::Remove);
+        assert_eq!(fs::read(&path).unwrap(), b"synthetic-old");
+        let after = remove_private_file_with(
+            &path,
+            |path| fs::remove_file(path),
+            |_| Err(io::Error::other("synthetic barrier")),
+        )
+        .unwrap_err();
+        assert!(
+            after.published(),
+            "actual unlink cannot be reported as unpublished after a failed barrier"
+        );
+        assert_eq!(after.kind(), FilePublishErrorKind::Durability);
+        assert!(!path.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[cfg(feature = "filesystem")]
+    #[test]
+    fn private_removal_refuses_a_real_directory_before_publication() {
+        let root = private_fixture("remove-entry");
+        let path = root.join("directory");
+        fs::create_dir(&path).unwrap();
+        let error = remove_private_file(&path).unwrap_err();
+        assert!(!error.published());
+        assert_eq!(error.kind(), FilePublishErrorKind::InvalidInput);
+        assert!(path.is_dir());
+        fs::remove_dir_all(root).unwrap();
+    }
 
     static FIXTURE_SERIAL: AtomicU64 = AtomicU64::new(0);
 

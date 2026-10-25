@@ -16,7 +16,7 @@ Outcome: keep complete private disk state and its live consumer aligned at the r
 │   dependency: existing private creation and shared native replacement adapters
 │   non-goal: implicit directory creation, new OS permission code or multi-file transactions
 ├── [-] RESULT — distinguish publication from the later durability barrier
-│   invariant: published=true only after replacement completed; retain operation/error category
+│   invariant: published=true only after complete bytes or intended absence are published; retain operation/error category
 │   evidence: PPUB-02 real old/new bytes around injected replace and parent-sync failures
 │   safe failure: uncertainty is explicit; never claim rollback after publication
 │   dependency: PRIVATE and existing FilePublishError; non-goal: proving crash persistence
@@ -25,6 +25,11 @@ Outcome: keep complete private disk state and its live consumer aligned at the r
 │   evidence: PPUB-03 save failure and published-warning journeys with reopened private configuration
 │   safe failure: pre-publication error changes neither state; post-publication warning retains new state
 │   dependency: RESULT and product-owned gateway state lock; non-goal: catalogue/draft/verification completion
+├── [-] REMOVE — publish actual intended absence of a private regular file
+│   invariant: no tombstone; absent NoChange is not a confirmed deletion barrier
+│   evidence: PPUB-05 controlled Windows remove/absence and original guard failures; other native targets open
+│   safe failure: effective Windows absence has an explicit durability warning
+│   dependency: real-entry checks and existing Unix parent sync; non-goal: new Windows FFI or secure erase
 └── [_] QUALIFY — keep native and compatibility obligations explicit
     invariant: the legacy I/O API retains its category and original inspect/create errno
     evidence: PPUB-04 runtime guard failures and actual OS/ISA permission/publication courts
@@ -50,6 +55,11 @@ flowchart TD
     OLD --> CLEAN[Remove uninstalled temporary]
     LEGACY[Existing io::Result callers] --> WRAP[Compatibility wrapper / original errno policy]
     WRAP --> T
+    KEY[Applied-profile key mutation] --> REMOVE[Checked real-file removal]
+    REMOVE -->|name already absent| NOCHANGE[NoChange; no new barrier claim]
+    REMOVE -->|actual unlink| RB{Removal durability barrier?}
+    RB -->|Unix confirmed| OK
+    RB -->|Windows unavailable / sync failed| WARN
 ```
 
 ## Mechanism contract
@@ -73,6 +83,26 @@ their `io::Result<()>` API: inspect/create failures return the original I/O erro
 including direct OS errno, while later-step conversions retain the category.
 That compatibility API alone does not promise that every error precedes
 publication; consumers that must align live state use the typed result.
+
+## Intended-absence publication
+
+The [profile-key consumer](PRD_02_31_01_02_02_profile_keys.md) requires actual
+private-file removal, not an empty-file tombstone. The shared typed remove
+checks a real regular entry and publishes intended absence. An unpublished
+error preserves the previous entry; a published error means intended absence
+was made effective but crash durability is unconfirmed. NotFound is a distinct
+NoChange result and does not clear a consumer's prior warning.
+
+Unix removal checks real parent sync. Windows deletion has no established
+barrier in this adapter: successful removal returns a published durability
+warning. Its replacement-specific `sync_parent` no-op is not reused as proof
+of durable deletion. Existing write API and compatibility errno behavior stay
+unchanged. Three new shared Windows x86_64 consumers now pass actual unlink,
+NotFound/no-change, directory refusal and published-warning observations, with
+three original single-assertion RED controls and exact restored GREEN. Their
+source/count receipts and the product consumer checkpoint are indexed by the
+[profile-key evidence owner](PRD_02_31_01_02_02_profile_keys.md#k1-development-evidence).
+Unix parent-sync/native-target and final-artifact claims remain open.
 
 ## Gateway consumer
 

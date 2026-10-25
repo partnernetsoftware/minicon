@@ -11,6 +11,7 @@ use crate::provider_selection::{
 };
 pub use crate::provider_selection::{CatalogueModel, CatalogueStatus};
 mod profile_batch;
+mod profile_keys;
 use crate::provider_server::CatalogueResult;
 use crate::{
     provider_accounts::AccountStore,
@@ -18,6 +19,9 @@ use crate::{
     provider_login::{LoginChallenge, LoginCoordinator, LoginEvent, LoginMetadata},
 };
 use profile_batch::{Batch, BatchGate, PendingReadiness, ProgressSink, Quote};
+pub use profile_keys::{
+    ClientKeyCopy, ProfileKeyMetadata, ProfileKeyOperation, ProfileKeyReceipt, ProfileKeyState,
+};
 use std::{
     collections::VecDeque,
     path::PathBuf,
@@ -163,6 +167,8 @@ pub struct View {
     pub auth_attempt: Option<AttemptId>,
     pub auth_result: Option<(AttemptId, AuthOutcome)>,
     pub local_key_exists: bool,
+    pub profile_keys: Vec<ProfileKeyMetadata>,
+    pub profile_key_receipts: Vec<ProfileKeyReceipt>,
     pub config_durability_unconfirmed: bool,
     pub status: Option<String>,
 }
@@ -193,6 +199,8 @@ impl Default for View {
             auth_attempt: None,
             auth_result: None,
             local_key_exists: false,
+            profile_keys: Vec::new(),
+            profile_key_receipts: Vec::new(),
             config_durability_unconfirmed: false,
             status: None,
         }
@@ -282,6 +290,11 @@ pub enum Action {
     Start,
     Stop,
     RemoveAccount(String),
+    ProfileKey {
+        request: u64,
+        profile: String,
+        operation: ProfileKeyOperation,
+    },
     CreateClientKey,
     CopyClientKey,
     RevokeClientKey,
@@ -295,7 +308,7 @@ pub enum Effect {
         url: Secret,
     },
     AuthFinished(AttemptId),
-    CopyClientKey(Secret),
+    CopyClientKey(ClientKeyCopy),
     DeviceChallenge {
         attempt: AttemptId,
         context: minicon_web::PageContext,
@@ -335,6 +348,7 @@ impl std::error::Error for RuntimeError {}
 #[derive(Default)]
 struct Pending {
     batch_gate: BatchGate,
+    keys: profile_keys::KeyPending,
     view: Option<View>,
     effects: VecDeque<Effect>,
     last_view: Option<View>,
@@ -396,6 +410,15 @@ impl Runtime {
     }
 
     pub fn act(&mut self, action: Action) -> Result<(), RuntimeError> {
+        if matches!(
+            &action,
+            Action::ProfileKey { .. }
+                | Action::CreateClientKey
+                | Action::CopyClientKey
+                | Action::RevokeClientKey
+        ) {
+            return self.key_action(action);
+        }
         let profile_id = |id: &str| id == "default" || crate::provider_server::opaque_id(id);
         let invalid = match &action {
             Action::VerifyAndApplyConnectionProfile {
@@ -567,6 +590,9 @@ impl Runtime {
                 plan: *plan_id,
                 epoch: self.stop_requested.load(Ordering::Acquire),
             };
+            if self.keys_reserved() {
+                return Err(RuntimeError::Busy);
+            }
             gate.register(id.clone())?;
             Some(id)
         } else {
@@ -600,9 +626,9 @@ impl Runtime {
 
     /// Applies already-produced metadata/effects. No store or transport calls.
     pub fn poll(&mut self) -> Vec<Effect> {
+        let pending_arc = self.pending.clone();
         let (effects, gate) = {
-            let mut pending = self
-                .pending
+            let mut pending = pending_arc
                 .lock()
                 .unwrap_or_else(|error| error.into_inner());
             if let Some(view) = pending.view.take() {
@@ -611,10 +637,9 @@ impl Runtime {
                 }
                 self.view = view;
             }
-            (
-                pending.effects.drain(..).collect(),
-                pending.batch_gate.clone(),
-            )
+            let effects = pending.effects.drain(..).collect();
+            let effects = self.consume_key_effects(&mut pending, effects);
+            (effects, pending.batch_gate.clone())
         };
         if let Some(view) = &self.view.connection_check_last_terminal
             && view.scope == ConnectionCheckScope::Profile
@@ -794,6 +819,10 @@ struct Owner {
     store: Arc<AccountStore>,
     config: Config,
     key: Option<Secret>,
+    client_keys: std::collections::BTreeMap<String, Secret>,
+    key_states: std::collections::BTreeMap<String, profile_keys::KeyState>,
+    key_receipts: std::collections::BTreeMap<String, ProfileKeyReceipt>,
+    last_key_request: u64,
     gateway: Arc<Gateway>,
     server: Option<Server>,
     operation: Option<Operation>,
@@ -831,11 +860,14 @@ impl Owner {
         );
         let gateway = Gateway::new(store.clone(), config.clone(), clone_secret(key.as_ref())?)
             .map_err(map_server)?;
+        let mut client_keys = std::collections::BTreeMap::new();
         for profile in &config.profiles {
             if let Some(key) = read_key_path(&root.join(format!("client-key-{}", profile.id)))? {
+                let live = clone_secret(Some(&key))?;
                 gateway
-                    .set_client_key(&profile.id, Some(key))
+                    .set_client_key(&profile.id, live)
                     .map_err(map_server)?;
+                client_keys.insert(profile.id.clone(), key);
             }
         }
         let drafts = DraftBook::from_applied(&config).map_err(map_selection)?;
@@ -844,6 +876,10 @@ impl Owner {
             store,
             config,
             key,
+            client_keys,
+            key_states: Default::default(),
+            key_receipts: Default::default(),
+            last_key_request: 0,
             gateway,
             server: None,
             operation: None,
@@ -1160,7 +1196,14 @@ impl Owner {
             .collect();
         self.view.catalogue_bytes = self.catalogues.retained_bytes();
         self.project_connection_drafts();
-        self.view.local_key_exists = self.key.is_some();
+        self.project_profile_keys();
+        // The legacy default observation and targeted metadata share one
+        // projection instead of maintaining two potentially divergent facts.
+        self.view.local_key_exists = self
+            .view
+            .profile_keys
+            .iter()
+            .any(|row| row.profile == "default" && row.state == ProfileKeyState::Created);
         self.view.busy = self.operation.is_some()
             || self.view.login_active
             || self.batch.is_some()
@@ -1908,39 +1951,34 @@ impl Owner {
                 }
                 self.view.login_active = true;
             }
-            Action::CreateClientKey => {
-                if self.key.is_some() {
-                    return Err(RuntimeError::InvalidAction);
-                }
-                let key = Secret::new(&format!(
-                    "mc_{}{}",
-                    crate::provider_server::random_id().map_err(map_server)?,
-                    crate::provider_server::random_id().map_err(map_server)?
-                ))
-                .map_err(|_| RuntimeError::Corrupt)?;
-                filesystem::write_private_atomic(
-                    &self.root.join("client-key"),
-                    key.expose().as_bytes(),
-                )
-                .map_err(|_| RuntimeError::Storage)?;
-                self.gateway
-                    .set_key(clone_secret(Some(&key))?)
-                    .map_err(map_server)?;
-                self.key = Some(key);
+            Action::ProfileKey {
+                request,
+                profile,
+                operation,
+            } => {
+                return Ok(self.perform_key(
+                    request,
+                    profile,
+                    operation,
+                    self.stop_epoch.load(Ordering::Acquire),
+                ));
             }
-            Action::CopyClientKey => {
-                return Ok(Some(Effect::CopyClientKey(
-                    clone_secret(self.key.as_ref())?.ok_or(RuntimeError::MissingClientKey)?,
-                )));
-            }
-            Action::RevokeClientKey => {
-                match std::fs::remove_file(self.root.join("client-key")) {
-                    Ok(()) => {}
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(_) => return Err(RuntimeError::Storage),
-                }
-                self.gateway.set_key(None).map_err(map_server)?;
-                self.key = None;
+            Action::CreateClientKey | Action::CopyClientKey | Action::RevokeClientKey => {
+                let operation = match action {
+                    Action::CreateClientKey => ProfileKeyOperation::Create,
+                    Action::CopyClientKey => ProfileKeyOperation::Copy,
+                    _ => ProfileKeyOperation::Revoke,
+                };
+                let request = self
+                    .last_key_request
+                    .checked_add(1)
+                    .ok_or(RuntimeError::InvalidAction)?;
+                return Ok(self.perform_key(
+                    request,
+                    "default".into(),
+                    operation,
+                    self.stop_epoch.load(Ordering::Acquire),
+                ));
             }
         }
         self.refresh_view()?;
@@ -2032,8 +2070,23 @@ fn run_loaded_owner(
                         | Action::VerifyConnectionAllocation { .. }
                         | Action::ApplyConnectionProfile { .. }
                         | Action::VerifyAndApplyConnectionProfile { .. }
+                        | Action::ProfileKey { .. }
                 );
                 if epoch != stop_requested.load(Ordering::Acquire) && stale_network_action {
+                    if let Action::ProfileKey {
+                        request,
+                        profile,
+                        operation,
+                    } = &action
+                    {
+                        owner.reject_key(
+                            *request,
+                            profile.clone(),
+                            *operation,
+                            RuntimeError::Cancelled,
+                        );
+                        publish(&pending, &notify, owner.view.clone(), None);
+                    }
                     if let Action::VerifyAndApplyConnectionProfile {
                         request,
                         profile,
@@ -2092,6 +2145,16 @@ fn run_loaded_owner(
                         | Action::DiscardUnappliedProfile { .. }
                 ) {
                     owner.view.status = None;
+                }
+                if let Action::ProfileKey {
+                    request,
+                    profile,
+                    operation,
+                } = action
+                {
+                    let effect = owner.perform_key(request, profile, operation, epoch);
+                    publish(&pending, &notify, owner.view.clone(), effect);
+                    continue;
                 }
                 let effect = match owner.action(action, &mut login) {
                     Ok(effect) => effect,
@@ -2195,6 +2258,522 @@ fn map_server(error: ServerError) -> RuntimeError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn k1_owner_batch_and_stop_gates_refuse_before_key_publication_without_replay() {
+        let (root, mut owner, _) = k1_fixture();
+        let before = std::fs::read(root.0.join("client-key")).unwrap();
+        owner
+            .batch_gate
+            .register(profile_batch::BatchIdentity {
+                request: 10,
+                profile: "default".into(),
+                revision: 1,
+                plan: 1,
+                epoch: 0,
+            })
+            .unwrap();
+        let called = AtomicBool::new(false);
+        owner.perform_key_with(
+            1,
+            "default".into(),
+            ProfileKeyOperation::Revoke,
+            0,
+            |_, _| {
+                called.store(true, Ordering::Release);
+                Err(ServerError::Storage)
+            },
+        );
+        assert_eq!(
+            owner.view.profile_key_receipts[0].result,
+            Err(RuntimeError::Busy)
+        );
+        assert!(
+            !called.load(Ordering::Acquire),
+            "reserved batch reached Owner key I/O"
+        );
+        owner.batch_gate.finish_request(10);
+        owner.batch_gate.acknowledge(10);
+        owner.stop_epoch.store(1, Ordering::Release);
+        owner.perform_key_with(
+            2,
+            "default".into(),
+            ProfileKeyOperation::Revoke,
+            0,
+            |_, _| {
+                called.store(true, Ordering::Release);
+                Err(ServerError::Storage)
+            },
+        );
+        assert_eq!(
+            owner.view.profile_key_receipts[0].result,
+            Err(RuntimeError::Cancelled)
+        );
+        assert!(!called.load(Ordering::Acquire));
+        assert!(
+            std::fs::read(root.0.join("client-key")).unwrap() == before,
+            "rejected operation replayed key mutation"
+        );
+        owner.perform_key(3, "default".into(), ProfileKeyOperation::Revoke, 1);
+        assert!(!root.0.join("client-key").exists());
+        assert!(!owner.view.local_key_exists);
+        assert!(owner.server.is_none());
+    }
+    #[test]
+    fn k1_eight_profile_backlog_and_repeated_copy_delivery_stay_bounded_and_targeted() {
+        let (root, owner, _) = cs02_eight_profile_owner();
+        drop(owner);
+        let mut runtime = root.runtime();
+        until(&mut runtime, |view| !view.busy);
+        let ids = runtime
+            .view()
+            .profile_keys
+            .iter()
+            .map(|row| row.profile.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(ids.len(), 8);
+        for (index, profile) in ids.iter().enumerate() {
+            runtime
+                .act(Action::ProfileKey {
+                    request: index as u64 + 1,
+                    profile: profile.clone(),
+                    operation: ProfileKeyOperation::Create,
+                })
+                .unwrap();
+        }
+        assert_eq!(
+            runtime.act(Action::ProfileKey {
+                request: 9,
+                profile: "default".into(),
+                operation: ProfileKeyOperation::Copy
+            }),
+            Err(RuntimeError::Busy)
+        );
+        until(&mut runtime, |view| {
+            view.profile_keys.iter().all(|row| row.exists)
+        });
+        assert!(!runtime.keys_reserved());
+        for round in 0..2 {
+            let first = 9 + round * 8;
+            for (index, profile) in ids.iter().enumerate() {
+                runtime
+                    .act(Action::ProfileKey {
+                        request: first + index as u64,
+                        profile: profile.clone(),
+                        operation: ProfileKeyOperation::Copy,
+                    })
+                    .unwrap();
+            }
+            let effects = until(&mut runtime, |view| {
+                view.profile_key_receipts.len() == 8
+                    && view
+                        .profile_key_receipts
+                        .iter()
+                        .all(|row| row.request >= first)
+            });
+            let mut copies = std::collections::BTreeMap::new();
+            for effect in effects {
+                if let Effect::CopyClientKey(copy) = effect {
+                    assert!(
+                        copies.insert(copy.profile.clone(), copy.request).is_none(),
+                        "duplicate one-shot target delivery"
+                    );
+                }
+            }
+            assert_eq!(
+                copies.len(),
+                8,
+                "actual eight-profile delivery lost an unresolved secret effect"
+            );
+            for (index, profile) in ids.iter().enumerate() {
+                assert_eq!(copies.get(profile), Some(&(first + index as u64)));
+            }
+            assert_eq!(runtime.view().profile_keys.len(), 8);
+            assert_eq!(runtime.view().profile_key_receipts.len(), 8);
+            assert!(!runtime.keys_reserved());
+            assert!(
+                runtime
+                    .poll()
+                    .into_iter()
+                    .all(|effect| !matches!(effect, Effect::CopyClientKey(_)))
+            );
+        }
+        assert_eq!(runtime.view().listener, ListenerState::Stopped);
+    }
+    fn k1_fixture() -> (Root, Owner, String) {
+        let (root, owner, _) = catalogue_owner();
+        filesystem::write_private_atomic(&root.0.join("client-key"), b"k1-synthetic-default")
+            .unwrap();
+        drop(owner);
+        let owner = Owner::load(root.0.clone()).unwrap();
+        (root, owner, "b".repeat(32))
+    }
+    fn k1_meta<'a>(view: &'a View, profile: &str) -> &'a ProfileKeyMetadata {
+        view.profile_keys
+            .iter()
+            .find(|row| row.profile == profile)
+            .unwrap()
+    }
+    #[test]
+    fn k1_targeted_custom_create_restart_copy_and_revoke_preserve_default() {
+        let (root, owner, profile) = k1_fixture();
+        drop(owner);
+        let before = std::fs::read(root.0.join("client-key")).unwrap();
+        let mut runtime = root.runtime();
+        until(&mut runtime, |view| !view.busy);
+        assert!(!k1_meta(runtime.view(), &profile).exists);
+        runtime
+            .act(Action::ProfileKey {
+                request: 1,
+                profile: profile.clone(),
+                operation: ProfileKeyOperation::Create,
+            })
+            .unwrap();
+        until(&mut runtime, |view| {
+            view.profile_key_receipts
+                .iter()
+                .any(|result| result.request == 1)
+        });
+        let result = runtime
+            .view()
+            .profile_key_receipts
+            .iter()
+            .find(|result| result.request == 1)
+            .unwrap();
+        assert_eq!(
+            (result.profile.as_str(), result.result),
+            (profile.as_str(), Ok(()))
+        );
+        assert!(k1_meta(runtime.view(), &profile).exists);
+        assert!(
+            std::fs::read(root.0.join("client-key")).unwrap() == before,
+            "custom Create changed default key bytes"
+        );
+        let stored =
+            filesystem::read_private_bounded(&root.0.join(format!("client-key-{profile}")), 256)
+                .unwrap();
+        drop(runtime);
+        let mut runtime = root.runtime();
+        until(&mut runtime, |view| !view.busy);
+        assert!(
+            k1_meta(runtime.view(), &profile).exists,
+            "actual private custom file must reload into metadata"
+        );
+        runtime
+            .act(Action::ProfileKey {
+                request: 2,
+                profile: profile.clone(),
+                operation: ProfileKeyOperation::Copy,
+            })
+            .unwrap();
+        runtime
+            .act(Action::FocusConnectionProfile("default".into()))
+            .unwrap();
+        let effects = until(&mut runtime, |view| {
+            view.profile_key_receipts
+                .iter()
+                .any(|result| result.request == 2)
+        });
+        let copy = effects
+            .into_iter()
+            .find_map(|effect| {
+                if let Effect::CopyClientKey(copy) = effect {
+                    Some(copy)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        assert_eq!((copy.profile.as_str(), copy.request), (profile.as_str(), 2));
+        assert!(
+            copy.expose().as_bytes() == stored.as_slice(),
+            "Copy returned a different profile's private bytes"
+        );
+        assert!(
+            !format!("{copy:?}").contains(copy.expose()),
+            "Secret effect Debug exposed key"
+        );
+        assert!(
+            runtime
+                .poll()
+                .into_iter()
+                .all(|effect| !matches!(effect, Effect::CopyClientKey(_))),
+            "Copy effect was replayed"
+        );
+        runtime
+            .act(Action::ProfileKey {
+                request: 3,
+                profile: profile.clone(),
+                operation: ProfileKeyOperation::Revoke,
+            })
+            .unwrap();
+        until(&mut runtime, |view| {
+            view.profile_key_receipts
+                .iter()
+                .any(|result| result.request == 3)
+        });
+        assert!(!k1_meta(runtime.view(), &profile).exists);
+        assert!(!root.0.join(format!("client-key-{profile}")).exists());
+        assert!(
+            std::fs::read(root.0.join("client-key")).unwrap() == before,
+            "custom Revoke changed default bytes"
+        );
+        assert_eq!(runtime.view().listener, ListenerState::Stopped);
+        drop(runtime);
+        let mut restarted = root.runtime();
+        until(&mut restarted, |view| !view.busy);
+        assert!(!k1_meta(restarted.view(), &profile).exists);
+        assert!(restarted.view().local_key_exists);
+    }
+    #[test]
+    fn k1_unapplied_profile_refuses_without_creating_an_orphan_file() {
+        let (root, mut owner, _) = k1_fixture();
+        let draft = "f".repeat(32);
+        let revision = owner.drafts.create_profile(&draft).unwrap();
+        assert!(revision > 0);
+        assert!(
+            owner
+                .perform_key(1, draft.clone(), ProfileKeyOperation::Create, 0)
+                .is_none()
+        );
+        assert_eq!(
+            owner
+                .view
+                .profile_key_receipts
+                .iter()
+                .find(|result| result.request == 1)
+                .unwrap()
+                .result,
+            Err(RuntimeError::InvalidAction)
+        );
+        assert!(!root.0.join(format!("client-key-{draft}")).exists());
+        assert!(owner.operation.is_none() && owner.server.is_none());
+    }
+    #[test]
+    fn k1_failed_publication_preserves_cached_default_and_disk_before_live_change() {
+        let (root, mut owner, _) = k1_fixture();
+        let before = std::fs::read(root.0.join("client-key")).unwrap();
+        let epoch = k1_meta(&owner.view, "default").epoch;
+        let called = AtomicBool::new(false);
+        owner.perform_key_with(
+            1,
+            "default".into(),
+            ProfileKeyOperation::Revoke,
+            0,
+            |_, _| {
+                called.store(true, Ordering::Release);
+                Err(ServerError::Storage)
+            },
+        );
+        assert!(called.load(Ordering::Acquire));
+        assert_eq!(
+            owner.view.profile_key_receipts[0].result,
+            Err(RuntimeError::Storage)
+        );
+        assert!(owner.view.local_key_exists);
+        assert_eq!(k1_meta(&owner.view, "default").epoch, epoch);
+        assert!(
+            std::fs::read(root.0.join("client-key")).unwrap() == before,
+            "unpublished failure changed actual disk bytes"
+        );
+        let effect = owner
+            .perform_key(2, "default".into(), ProfileKeyOperation::Copy, 0)
+            .unwrap();
+        let Effect::CopyClientKey(copy) = effect else {
+            panic!("expected explicit Copy")
+        };
+        assert!(
+            copy.expose().as_bytes() == before.as_slice(),
+            "failed Revoke changed cached Copy bytes"
+        );
+    }
+    #[test]
+    fn k1_actual_remove_warning_and_absent_nochange_do_not_fake_durable_rollback_or_clear_warning()
+    {
+        let (root, mut owner, _) = k1_fixture();
+        let old_epoch = k1_meta(&owner.view, "default").epoch;
+        owner.perform_key_with(
+            1,
+            "default".into(),
+            ProfileKeyOperation::Revoke,
+            0,
+            |path, key| {
+                assert!(key.is_none());
+                std::fs::remove_file(path).unwrap();
+                Ok(crate::provider_server::ClientKeyPublication::DurabilityUnconfirmed)
+            },
+        );
+        assert!(!root.0.join("client-key").exists());
+        assert!(!owner.view.local_key_exists);
+        assert!(k1_meta(&owner.view, "default").durability_unconfirmed);
+        assert!(k1_meta(&owner.view, "default").epoch > old_epoch);
+        let revoked_epoch = k1_meta(&owner.view, "default").epoch;
+        owner.perform_key(2, "default".into(), ProfileKeyOperation::Revoke, 0);
+        let receipt = owner
+            .view
+            .profile_key_receipts
+            .iter()
+            .find(|row| row.request == 2)
+            .unwrap();
+        assert_eq!(
+            receipt.publication,
+            Some(crate::provider_server::ClientKeyPublication::NoChange)
+        );
+        assert_eq!(k1_meta(&owner.view, "default").epoch, revoked_epoch);
+        assert!(
+            k1_meta(&owner.view, "default").durability_unconfirmed,
+            "absent Revoke cannot invent a successful durability barrier"
+        );
+        assert!(
+            owner
+                .view
+                .status
+                .as_deref()
+                .unwrap()
+                .contains("unconfirmed")
+        );
+        owner.perform_key(3, "default".into(), ProfileKeyOperation::Create, 0);
+        assert!(owner.view.local_key_exists);
+        assert!(root.0.join("client-key").is_file());
+        assert!(!k1_meta(&owner.view, "default").durability_unconfirmed);
+        assert!(k1_meta(&owner.view, "default").epoch > revoked_epoch);
+    }
+    #[test]
+    fn k1_failed_queue_send_does_not_claim_request_or_block_a_later_explicit_click() {
+        let (commands, incoming) = mpsc::sync_channel(1);
+        let pending = Arc::new(Mutex::new(Pending::default()));
+        let view = View {
+            profile_keys: vec![ProfileKeyMetadata {
+                profile: "default".into(),
+                state: profile_keys::ProfileKeyState::NotCreated,
+                exists: false,
+                epoch: 1,
+                durability_unconfirmed: false,
+            }],
+            ..View::default()
+        };
+        let mut runtime = Runtime {
+            commands,
+            connection_inflight: Default::default(),
+            last_connection_request: 0,
+            pending,
+            view,
+            exit: Arc::new(AtomicBool::new(false)),
+            stop_requested: Arc::new(AtomicU64::new(0)),
+            worker: None,
+        };
+        runtime.act(Action::RefreshAccounts).unwrap();
+        let action = || Action::ProfileKey {
+            request: 1,
+            profile: "default".into(),
+            operation: ProfileKeyOperation::Create,
+        };
+        assert_eq!(runtime.act(action()), Err(RuntimeError::Busy));
+        assert!(!runtime.keys_reserved());
+        incoming.recv().unwrap();
+        assert_eq!(
+            runtime.act(action()),
+            Ok(()),
+            "failed send must not advance the monotonic request or reserve a slot"
+        );
+        assert!(runtime.keys_reserved());
+        assert_eq!(
+            runtime.act(Action::ProfileKey {
+                request: 2,
+                profile: "default".into(),
+                operation: ProfileKeyOperation::Create
+            }),
+            Err(RuntimeError::Busy)
+        );
+    }
+    #[test]
+    fn k1_later_revoke_intent_cancels_queued_copy_without_replaying_busy_mutation() {
+        let (root, owner, _) = k1_fixture();
+        let before = std::fs::read(root.0.join("client-key")).unwrap();
+        let (ready, wait_ready) = mpsc::channel();
+        let (release, wait_release) = mpsc::channel();
+        let wait = Arc::new(Mutex::new(Some(wait_release)));
+        let notify: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            if let Some(wait) = wait.lock().unwrap().take() {
+                ready.send(()).unwrap();
+                wait.recv_timeout(Duration::from_secs(5)).unwrap();
+            }
+        });
+        let (commands, incoming) = mpsc::sync_channel(16);
+        let pending = Arc::new(Mutex::new(Pending::default()));
+        let exit = Arc::new(AtomicBool::new(false));
+        let stop_requested = Arc::new(AtomicU64::new(0));
+        let (output, stopping, stop) = (pending.clone(), exit.clone(), stop_requested.clone());
+        let worker = std::thread::spawn(move || {
+            run_loaded_owner(
+                owner,
+                LoginMetadata {
+                    version: "synthetic".into(),
+                    locale: "en".into(),
+                    timezone_offset_seconds: 0,
+                },
+                notify,
+                output,
+                stopping,
+                stop,
+                incoming,
+            )
+        });
+        let mut runtime = Runtime {
+            commands,
+            connection_inflight: Default::default(),
+            last_connection_request: 0,
+            pending,
+            view: View::default(),
+            exit,
+            stop_requested,
+            worker: Some(worker),
+        };
+        wait_ready.recv_timeout(Duration::from_secs(5)).unwrap();
+        let _ = runtime.poll();
+        runtime
+            .act(Action::ProfileKey {
+                request: 1,
+                profile: "default".into(),
+                operation: ProfileKeyOperation::Copy,
+            })
+            .unwrap();
+        assert_eq!(
+            runtime.act(Action::ProfileKey {
+                request: 2,
+                profile: "default".into(),
+                operation: ProfileKeyOperation::Revoke
+            }),
+            Err(RuntimeError::Busy)
+        );
+        release.send(()).unwrap();
+        let effects = until(&mut runtime, |view| {
+            view.profile_key_receipts.iter().any(|row| row.request == 1)
+        });
+        assert!(
+            effects
+                .into_iter()
+                .all(|effect| !matches!(effect, Effect::CopyClientKey(_))),
+            "cancelled queued Copy leaked a Secret effect"
+        );
+        assert_eq!(
+            runtime.view().profile_key_receipts[0].result,
+            Err(RuntimeError::Cancelled)
+        );
+        assert!(runtime.view().local_key_exists);
+        assert!(
+            std::fs::read(root.0.join("client-key")).unwrap() == before,
+            "Busy mutation was silently replayed"
+        );
+        runtime
+            .act(Action::ProfileKey {
+                request: 2,
+                profile: "default".into(),
+                operation: ProfileKeyOperation::Revoke,
+            })
+            .unwrap();
+        until(&mut runtime, |view| !view.local_key_exists);
+        assert!(!root.0.join("client-key").exists());
+    }
     #[test]
     fn cs05_real_poll_observes_admitted_applying_while_actual_writer_is_blocked() {
         let (_root, mut owner) = cs05_one_checked_batch();

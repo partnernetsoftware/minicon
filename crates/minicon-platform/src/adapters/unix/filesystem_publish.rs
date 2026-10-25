@@ -45,3 +45,9 @@ pub fn copy_executable_mode(staged: &Path, destination: &Path) -> std::io::Resul
 pub fn install_cli_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
     std::os::unix::fs::symlink(target, link)
 }
+
+/// Removal has a distinct barrier contract from replacement.
+#[cfg(feature = "filesystem")]
+pub fn sync_removed_parent(parent: &Path) -> std::io::Result<()> {
+    sync_parent(parent)
+}

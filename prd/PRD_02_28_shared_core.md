@@ -179,6 +179,13 @@ than duplicating the full platform feature catalog.
 | `src/mux.rs`, `harness*.rs` | Bounded mux/harness subcommands | Product policy over native mechanisms and transport | Keep provider/session policy out of reusable native crates; owner [0.2.x horizon](PRD_02_31_v0_2_horizon.md) |
 | `src/provider_*.rs` and settings integration (implementation in progress) | Product-private single-turn request/events, model protocol adapters, account registry, manual selector and loopback API; existing worker and named external client are consumers. Planned journey/state projection and draft/apply composition stay in product settings/runtime code | Protocol/selection and experience projection are OS/ISA-neutral; bounded streaming HTTP, private storage, listener/cancel and child-process mechanisms use platform capability seams; login presentation uses minicon-web only when needed | Owners [provider gateway](PRD_02_31_01_provider_gateway.md) and [connection experience](PRD_02_31_01_01_harness_experience.md); headless serve initializes no GUI/WebView, while native GUI binaries may still link wry. Standalone mechanism consumers remain WebView-free. Extract native mechanisms only when a concrete contract needs them; no new public provider crate or ujs/tinyvm dependency in the first delivery. Auth, client and native target evidence remain separately scoped |
 
+The [applied-profile key owner](PRD_02_31_01_02_02_profile_keys.md) composes
+Gateway-locked key publication with the shared typed private removal mechanism;
+it does not copy native deletion/barrier code into the product. Windows removed
+entry durability remains explicitly unconfirmed; its replacement barrier is
+not silently generalized. The consumer owner records K1 controlled Windows
+development evidence; other native targets and K2/K3 remain open.
+
 Provider account labels/network policies, profile keys/allocations, usage
 attribution, persistence budgets and monitoring policy remain MiniCon-owned
 composition under [PRD 31.01.02](PRD_02_31_01_02_provider_pool.md) and

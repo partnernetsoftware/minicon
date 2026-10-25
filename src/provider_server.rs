@@ -185,6 +185,19 @@ pub enum ConfigPublication {
     DurabilityUnconfirmed,
 }
 
+/// Publication fact for a key mutation; NoChange confirms no new barrier.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ClientKeyPublication {
+    NoChange,
+    Durable,
+    DurabilityUnconfirmed,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ClientKeyUpdate {
+    pub publication: ClientKeyPublication,
+    pub changed: bool,
+}
+
 impl Config {
     pub fn fresh() -> Result<Self, ServerError> {
         Ok(Self {
@@ -728,11 +741,32 @@ impl Gateway {
             .store(true, std::sync::atomic::Ordering::Release);
     }
 
+    #[cfg(test)]
     pub fn set_key(&self, key: Option<Secret>) -> Result<(), ServerError> {
         self.set_client_key("default", key)
     }
 
+    /// Existing in-memory compatibility setter (startup and existing callers).
+    /// Persistent consumers use publish_client_key to join disk and live state.
     pub fn set_client_key(&self, profile: &str, key: Option<Secret>) -> Result<(), ServerError> {
+        self.publish_client_key(profile, key, || Ok(ClientKeyPublication::NoChange))
+            .map(|_| ())
+    }
+    pub(crate) fn publish_client_key(
+        &self,
+        profile: &str,
+        key: Option<Secret>,
+        publish: impl FnOnce() -> Result<ClientKeyPublication, ServerError>,
+    ) -> Result<ClientKeyUpdate, ServerError> {
+        self.publish_client_key_with_generation(profile, key, publish, random_id)
+    }
+    fn publish_client_key_with_generation(
+        &self,
+        profile: &str,
+        key: Option<Secret>,
+        publish: impl FnOnce() -> Result<ClientKeyPublication, ServerError>,
+        generation: impl FnOnce() -> Result<String, ServerError>,
+    ) -> Result<ClientKeyUpdate, ServerError> {
         let mut state = self.state.lock().map_err(|_| ServerError::Storage)?;
         if profile != "default"
             && !state
@@ -748,9 +782,6 @@ impl Gateway {
         } else {
             state.clients.get(profile).map(|access| &access.key) == key.as_ref()
         };
-        if unchanged {
-            return Ok(());
-        }
         if let Some(key) = &key
             && ((profile != "default"
                 && state
@@ -764,28 +795,45 @@ impl Gateway {
         {
             return Err(ServerError::InvalidConfig);
         }
-        let generation = random_id()?;
-        if profile == "default" {
-            state.key = key;
-            state.generation = generation;
-        } else if let Some(key) = key {
+        // Prepare all fallible entropy/capacity and owned fields before I/O.
+        let generation = if unchanged { None } else { Some(generation()?) };
+        let owned_profile = profile.to_owned();
+        if !unchanged && profile != "default" && key.is_some() {
             state
                 .clients
-                .insert(profile.to_owned(), ClientAccess { key, generation });
-        } else {
-            state.clients.remove(profile);
+                .try_reserve(1)
+                .map_err(|_| ServerError::Storage)?;
         }
-        state
-            .sessions
-            .retain(|session| session.binding.profile != profile);
-        for active in &state.active {
-            if active.profile.as_deref() == Some(profile)
-                && let Some(cancel) = active.cancel.upgrade()
-            {
-                cancel.cancel();
+        // Even an unchanged Revoke must observe real intended absence. NoChange
+        // is not a new durability confirmation and must not clear old warnings.
+        let publication = publish()?;
+        if !unchanged {
+            let generation = generation.expect("prepared changed-key generation");
+            if profile == "default" {
+                state.key = key;
+                state.generation = generation;
+            } else if let Some(key) = key {
+                state
+                    .clients
+                    .insert(owned_profile, ClientAccess { key, generation });
+            } else {
+                state.clients.remove(profile);
+            }
+            state
+                .sessions
+                .retain(|session| session.binding.profile != profile);
+            for active in &state.active {
+                if active.profile.as_deref() == Some(profile)
+                    && let Some(cancel) = active.cancel.upgrade()
+                {
+                    cancel.cancel();
+                }
             }
         }
-        Ok(())
+        Ok(ClientKeyUpdate {
+            publication,
+            changed: !unchanged,
+        })
     }
 
     /// First close admission, then cancel every currently owned exchange. The
@@ -2230,6 +2278,205 @@ impl Gateway {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn k1_gateway_generation_failure_precedes_actual_disk_callback_and_live_swap() {
+        let fixture = Fixture::new();
+        let server = fixture.server();
+        let before =
+            read_binding(server.get("/v1/minicon/binding", "x-minicon-session: k1-entropy\r\n"));
+        let path = fixture.root.join("k1-entropy-key");
+        std::fs::write(&path, b"synthetic-old").unwrap();
+        let called = std::sync::atomic::AtomicBool::new(false);
+        let result = fixture.gateway.publish_client_key_with_generation(
+            "default",
+            Some(Secret::new("synthetic-next").unwrap()),
+            || {
+                called.store(true, std::sync::atomic::Ordering::Release);
+                std::fs::write(&path, b"synthetic-next").unwrap();
+                Ok(ClientKeyPublication::Durable)
+            },
+            || Err(ServerError::Storage),
+        );
+        assert_eq!(result, Err(ServerError::Storage));
+        assert!(
+            !called.load(std::sync::atomic::Ordering::Acquire),
+            "fallible key generation ran after the actual publication callback"
+        );
+        assert!(
+            std::fs::read(&path).unwrap() == b"synthetic-old",
+            "failed prepublication preparation changed actual disk bytes"
+        );
+        assert_eq!(
+            read_binding(server.get("/v1/minicon/binding", "x-minicon-session: k1-entropy\r\n")),
+            before
+        );
+    }
+    #[test]
+    fn k1_gateway_duplicate_and_unpublished_failure_never_reach_live_key_swap() {
+        let fixture = Fixture::new();
+        let profile = add_profile(&fixture, &fixture.account);
+        let server = fixture.server();
+        let old = read_binding(server.get_key(
+            "/v1/minicon/binding",
+            "synthetic-other",
+            "x-minicon-session: k1-existing\r\n",
+        ));
+        let called = std::sync::atomic::AtomicBool::new(false);
+        assert_eq!(
+            fixture.gateway.publish_client_key(
+                &profile,
+                Some(Secret::new("synthetic-local").unwrap()),
+                || {
+                    called.store(true, std::sync::atomic::Ordering::Release);
+                    Ok(ClientKeyPublication::Durable)
+                }
+            ),
+            Err(ServerError::InvalidConfig)
+        );
+        assert!(
+            !called.load(std::sync::atomic::Ordering::Acquire),
+            "duplicate key reached publication"
+        );
+        assert_eq!(
+            fixture.gateway.publish_client_key(
+                &profile,
+                Some(Secret::new("synthetic-new").unwrap()),
+                || {
+                    called.store(true, std::sync::atomic::Ordering::Release);
+                    Err(ServerError::Storage)
+                }
+            ),
+            Err(ServerError::Storage)
+        );
+        assert!(called.load(std::sync::atomic::Ordering::Acquire));
+        assert_eq!(
+            read_binding(server.get_key(
+                "/v1/minicon/binding",
+                "synthetic-other",
+                "x-minicon-session: k1-existing\r\n"
+            )),
+            old
+        );
+        assert!(
+            server
+                .get_key("/v1/models", "synthetic-new", "")
+                .starts_with("HTTP/1.1 401")
+        );
+    }
+    #[test]
+    fn k1_gateway_unchanged_mutation_still_calls_publisher_without_rotating_binding() {
+        let fixture = Fixture::new();
+        let server = fixture.server();
+        let before =
+            read_binding(server.get("/v1/minicon/binding", "x-minicon-session: k1-same\r\n"));
+        let called = std::sync::atomic::AtomicBool::new(false);
+        let result = fixture
+            .gateway
+            .publish_client_key(
+                "default",
+                Some(Secret::new("synthetic-local").unwrap()),
+                || {
+                    called.store(true, std::sync::atomic::Ordering::Release);
+                    Ok(ClientKeyPublication::NoChange)
+                },
+            )
+            .unwrap();
+        assert!(
+            called.load(std::sync::atomic::Ordering::Acquire),
+            "unchanged key must not bypass the caller's publication boundary"
+        );
+        assert!(!result.changed);
+        assert_eq!(result.publication, ClientKeyPublication::NoChange);
+        assert_eq!(
+            read_binding(server.get("/v1/minicon/binding", "x-minicon-session: k1-same\r\n")),
+            before
+        );
+    }
+    #[test]
+    fn k1_published_revoke_warning_cancels_only_target_and_recreate_refuses_old_key() {
+        let fixture = Fixture::new();
+        let profile = add_profile(&fixture, &fixture.account);
+        let server = fixture.server();
+        let unaffected =
+            read_binding(server.get("/v1/minicon/binding", "x-minicon-session: k1-default\r\n"));
+        let (binding, _, _) = fixture
+            .gateway
+            .sticky(&head("synthetic-other"), None)
+            .unwrap();
+        let (ordinary, _, _) = fixture
+            .gateway
+            .sticky(&head("synthetic-local"), None)
+            .unwrap();
+        let one = Arc::new(NetworkHttpCancel::new());
+        let two = Arc::new(NetworkHttpCancel::new());
+        let first = BorrowedLease::acquire(
+            &fixture.gateway,
+            &fixture.account,
+            &one,
+            Some((&head("synthetic-other"), &binding)),
+        )
+        .unwrap();
+        let second = BorrowedLease::acquire(
+            &fixture.gateway,
+            &fixture.account,
+            &two,
+            Some((&head("synthetic-local"), &ordinary)),
+        )
+        .unwrap();
+        let path = fixture.root.join("k1-custom-key");
+        std::fs::write(&path, b"synthetic-other").unwrap();
+        let result = fixture
+            .gateway
+            .publish_client_key(&profile, None, || {
+                std::fs::remove_file(&path).unwrap();
+                Ok(ClientKeyPublication::DurabilityUnconfirmed)
+            })
+            .unwrap();
+        assert!(result.changed);
+        assert_eq!(
+            result.publication,
+            ClientKeyPublication::DurabilityUnconfirmed
+        );
+        assert!(!path.exists());
+        assert!(
+            one.is_cancelled(),
+            "target active lease did not receive revocation"
+        );
+        assert!(!two.is_cancelled(), "other profile work was cancelled");
+        assert!(
+            server
+                .get_key("/v1/models", "synthetic-other", "")
+                .starts_with("HTTP/1.1 401")
+        );
+        assert_eq!(
+            read_binding(server.get("/v1/minicon/binding", "x-minicon-session: k1-default\r\n")),
+            unaffected
+        );
+        fixture
+            .gateway
+            .publish_client_key(
+                &profile,
+                Some(Secret::new("synthetic-recreated").unwrap()),
+                || {
+                    std::fs::write(&path, b"synthetic-recreated").unwrap();
+                    Ok(ClientKeyPublication::Durable)
+                },
+            )
+            .unwrap();
+        assert!(
+            server
+                .get_key("/v1/models", "synthetic-other", "")
+                .starts_with("HTTP/1.1 401")
+        );
+        assert!(
+            server
+                .get_key("/v1/models", "synthetic-recreated", "")
+                .starts_with("HTTP/1.1 200")
+        );
+        assert!(!two.is_cancelled());
+        drop(first);
+        drop(second);
+    }
     fn cs03_candidate(
         fixture: &Fixture,
     ) -> (

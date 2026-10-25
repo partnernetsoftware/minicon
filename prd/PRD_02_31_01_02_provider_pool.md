@@ -163,6 +163,11 @@ Closing the auth surface must not destroy unrelated page or terminal drafts.
 
 ## Profiles, routing and key lifecycle
 
+The [applied-profile key owner](PRD_02_31_01_02_02_profile_keys.md) owns exact
+operation targeting, private publication/removal, finite metadata and secret
+delivery. Its K1 development checkpoint and remaining K2/K3 presentation/public
+handoff evidence are recorded there. This pool section retains profile/routing policy.
+
 Create/edit/disable/revoke profiles in Harness. Each profile has its own local
 key, display label and bounded model allocations; upstream secrets never reach
 the client. The initial `default` connection becomes the default profile during

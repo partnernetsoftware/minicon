@@ -595,6 +595,81 @@ impl Owner {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn k1_runtime_key_operations_refuse_each_reserved_batch_phase_without_replay() {
+        for phase in [
+            GatePhase::Pending,
+            GatePhase::Active,
+            GatePhase::CommitAdmitted,
+            GatePhase::Finished,
+        ] {
+            let (commands, incoming) = mpsc::sync_channel(16);
+            let pending = Arc::new(Mutex::new(Pending::default()));
+            let gate = pending.lock().unwrap().batch_gate.clone();
+            let id = identity();
+            gate.register(id.clone()).unwrap();
+            if phase != GatePhase::Pending {
+                gate.activate(&id, Instant::now() + Duration::from_secs(60), 0)
+                    .unwrap();
+            }
+            if phase == GatePhase::CommitAdmitted {
+                gate.commit(&id, 0).unwrap();
+            }
+            if phase == GatePhase::Finished {
+                gate.finish(&id);
+            }
+            let view = View {
+                profile_keys: vec![ProfileKeyMetadata {
+                    profile: "default".into(),
+                    state: crate::provider_runtime::profile_keys::ProfileKeyState::NotCreated,
+                    exists: false,
+                    epoch: 1,
+                    durability_unconfirmed: false,
+                }],
+                ..View::default()
+            };
+            let mut runtime = Runtime {
+                commands,
+                connection_inflight: Default::default(),
+                last_connection_request: 0,
+                pending,
+                view,
+                exit: Arc::new(AtomicBool::new(false)),
+                stop_requested: Arc::new(AtomicU64::new(0)),
+                worker: None,
+            };
+            for operation in [
+                ProfileKeyOperation::Create,
+                ProfileKeyOperation::Copy,
+                ProfileKeyOperation::Revoke,
+            ] {
+                assert_eq!(
+                    runtime.act(Action::ProfileKey {
+                        request: 1,
+                        profile: "default".into(),
+                        operation
+                    }),
+                    Err(RuntimeError::Busy)
+                );
+                assert!(
+                    matches!(incoming.try_recv(), Err(mpsc::TryRecvError::Empty)),
+                    "Busy key intent leaked into the actual command queue"
+                );
+            }
+            assert!(!runtime.keys_reserved());
+            gate.finish(&id);
+            gate.acknowledge(id.request);
+            assert_eq!(
+                runtime.act(Action::ProfileKey {
+                    request: 1,
+                    profile: "default".into(),
+                    operation: ProfileKeyOperation::Create
+                }),
+                Ok(()),
+                "explicit later click must not be poisoned by a rejected request"
+            );
+        }
+    }
     use super::*;
     fn identity() -> BatchIdentity {
         BatchIdentity {

@@ -225,7 +225,8 @@ Profile detail contains **Connection**, **Model allocations**, and **Local key**
   relevant capabilities and exact-route verification state. One alias is marked
   default for the built-in recipe. **Add model**, **Verify**, **Apply allocation**
   are explicit; remove affects this profile and explains continuation rules.
-- Local key: Created / Not created / Revoked plus explicit Create, Copy and
+- Local key lifecycle authority: [applied-profile keys](PRD_02_31_01_02_02_profile_keys.md).
+  Created / Not created / Revoked plus explicit Create, Copy and
   Replace/Revoke actions. The key value stays masked. Show that sharing a key
   also shares route allocation and local usage attribution.
 

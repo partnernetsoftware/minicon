@@ -54,6 +54,7 @@ MiniCon — one-file local terminal
 │       └── [-] Harness settings / provider-pool / model API → prd/PRD_02_31_01_provider_gateway.md
 │           ├── [_] Guided connection experience and recovery → prd/PRD_02_31_01_01_harness_experience.md
 │           ├── [-] Multi-account pool / account networks / client allocation → prd/PRD_02_31_01_02_provider_pool.md
+│           │   ├── [-] Applied-profile private keys → prd/PRD_02_31_01_02_02_profile_keys.md
 │           │   └── [-] Account catalogues / drafts / verified atomic apply → prd/PRD_02_31_01_02_01_connection_selection.md
 │           │       └── [-] Whole-profile Verify and apply → prd/PRD_02_31_01_02_01_01_profile_verification.md
 │           └── [_] Usage statistics / balance and allowance monitoring → prd/PRD_02_31_01_03_usage_monitoring.md
@@ -106,6 +107,7 @@ flowchart LR
     HX["PRD 31.01.01: account -> verified model -> local tool"] --> GW["PRD 31.01: local model API / manual account pool"]
     GW --> AUTH{Verified inference authorization?}
     POOL["PRD 31.01.02: account networks / keyed client allocations"] --> GW
+    KEYS["PRD 31.01.02.02: exact profile-key publication / finite secret delivery"] --> POOL
     GW --> MON["PRD 31.01.03: attributed usage / provider balances and quota"]
     ROB["PRD 36: robot beside Settings / visual Harness workspace"] --> HX
     POOL & MON --> ROB
