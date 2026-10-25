@@ -506,6 +506,84 @@ def validate(driver, observed, build, driver_snapshot):
         raise CourtError("page-navigation-count-mismatch")
 
 
+
+# Optional finite DACL read on exact fresh fixture directories. No SID, SDDL,
+# ACE payload, descriptor bytes, owner name or raw error/path is published.
+def _windows_dacl_summary(path):
+    try:
+        api = ctypes.WinDLL("advapi32", use_last_error=True)
+        get_file = api.GetFileSecurityW
+        get_file.argtypes = (ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_void_p,
+                             ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32))
+        get_file.restype = ctypes.c_int
+        get_control = api.GetSecurityDescriptorControl
+        get_control.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint16), ctypes.POINTER(ctypes.c_uint32))
+        get_control.restype = ctypes.c_int
+        get_dacl = api.GetSecurityDescriptorDacl
+        get_dacl.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.c_int),
+                            ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_int))
+        get_dacl.restype = ctypes.c_int
+        needed = ctypes.c_uint32()
+        get_file(str(path), 4, None, 0, ctypes.byref(needed))  # DACL_SECURITY_INFORMATION, READ ONLY
+        if not needed.value and ctypes.get_last_error() == 5:
+            return {"status": "permission-denied"}
+        if not 0 < needed.value <= 65536:
+            return {"status": "descriptor-unavailable-or-bound"}
+        data = ctypes.create_string_buffer(needed.value)
+        if not get_file(str(path), 4, data, len(data), ctypes.byref(needed)):
+            return {"status": "permission-denied" if ctypes.get_last_error() == 5 else "descriptor-read-unavailable"}
+        control, revision = ctypes.c_uint16(), ctypes.c_uint32()
+        present, defaulted, dacl = ctypes.c_int(), ctypes.c_int(), ctypes.c_void_p()
+        if (not get_control(data, ctypes.byref(control), ctypes.byref(revision))
+                or not get_dacl(data, ctypes.byref(present), ctypes.byref(dacl), ctypes.byref(defaulted))):
+            return {"status": "descriptor-parse-unavailable"}
+        result = {"status": "observed", "protected": bool(control.value & 0x1000),
+                  "dacl_present": bool(present.value), "null_dacl": not bool(dacl.value)}
+        if not present.value or not dacl.value:
+            return result
+        offset = dacl.value - ctypes.addressof(data)
+        if offset < 0 or offset + 8 > len(data):
+            return {"status": "descriptor-layout-unavailable"}
+        raw = data.raw  # Kept in process memory only, never serialized.
+        size = int.from_bytes(raw[offset+2:offset+4], "little")
+        count = int.from_bytes(raw[offset+4:offset+6], "little")
+        if size < 8 or offset + size > len(raw) or count > 4096:
+            return {"status": "acl-layout-unavailable"}
+        cursor, inherited, allowed = offset + 8, 0, 0
+        for _ in range(count):
+            if cursor + 4 > offset + size:
+                return {"status": "ace-layout-unavailable"}
+            ace_type, flags = raw[cursor], raw[cursor+1]
+            length = int.from_bytes(raw[cursor+2:cursor+4], "little")
+            if length < 4 or cursor + length > offset + size:
+                return {"status": "ace-layout-unavailable"}
+            inherited += bool(flags & 0x10)
+            allowed += ace_type in (0, 5, 9, 11)
+            cursor += length
+        return result | {"ace_count": count, "inherited_ace_count": inherited,
+                         "allow_ace_count": allowed, "other_ace_count": count - allowed}
+    except (OSError, AttributeError, ValueError, OverflowError, TypeError, ctypes.ArgumentError):
+        return {"status": "acl-diagnostic-unavailable"}
+
+
+def windows_acl_snapshot(manifest, output, stage):
+    try:
+        if manifest.get("schema") != 1 or manifest.get("test_only") is not True:
+            raise ValueError("not-owned-test-manifest")
+        profiles = {}
+        for label in ("a", "b"):
+            root = output / "profiles" / label
+            if Path(manifest["profiles"][label]["directory"]) != root or root.resolve(strict=True) != root:
+                raise ValueError("not-exact-fixture-directory")
+            _diagnostic_directory_ancestry(root)
+            profiles[label] = _windows_dacl_summary(root)
+        return {"stage": stage, "status": "diagnostics-only", "profiles": profiles,
+                "output_root": _windows_dacl_summary(output),
+                "profiles_parent": _windows_dacl_summary(output / "profiles")}
+    except (OSError, ValueError, KeyError, TypeError):
+        return {"stage": stage, "status": "acl-authority-or-read-unavailable"}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, required=True)
@@ -513,12 +591,20 @@ def main():
     parser.add_argument("--helper", type=Path, help="explicit Linux native page helper")
     parser.add_argument("--timeout", type=float, default=120)
     parser.add_argument("--build-receipt", type=Path)
+    parser.add_argument("--windows-profile-acl-mode", choices=("owner-only", "inherit-default"), default="owner-only",
+                        help="test-fixture-only initial UDF policy; never a production repair")
     args = parser.parse_args()
     if not 0 < args.timeout <= 180:
         parser.error("--timeout must be in (0, 180]")
+    if args.windows_profile_acl_mode != "owner-only" and host_os() != "windows":
+        parser.error("alternate fixture ACL policy requires Windows")
     output = args.output.expanduser().resolve()
     try:
-        output.mkdir(mode=0o700, parents=True, exist_ok=False)
+        # Permission policy is the whole fresh synthetic arm, not a rewrite of
+        # any existing directory. Windows Python >=3.12.4 gives 0700 a protected
+        # DACL, so control must also avoid that policy on its new parent root.
+        output.mkdir(mode=(0o777 if args.windows_profile_acl_mode == "inherit-default" else 0o700),
+                     parents=True, exist_ok=False)
     except OSError:
         parser.error("--output must be a fresh writable directory")
     result = dict(kind="native-auth-context-court", schema=1, test_only=True,
@@ -535,6 +621,9 @@ def main():
     manifest = None
     diagnostic_clock = (time.time(), time.monotonic())
     cookie_diagnostics = []
+    acl_diagnostics = []
+    result["windows_profile_acl_mode"] = args.windows_profile_acl_mode
+    result["native_qualification_from_acl_comparison"] = "NOT_CLAIMED"
     try:
         binary = executable(args.binary)
         helper = executable(args.helper) if args.helper else None
@@ -552,8 +641,18 @@ def main():
         result["build_receipt_sha256"] = sha(args.build_receipt)
         if host_os() == "linux" and not os.environ.get("DISPLAY"):
             raise CourtError("x11-display-unavailable", True)
+        if args.windows_profile_acl_mode == "inherit-default":
+            # Preallocate only the fresh exact A/B fixtures. The unchanged
+            # fixture.manifest(exist_ok=True) reuses them without setting 0700.
+            profiles = output / "profiles"
+            profiles.mkdir(mode=0o777, exist_ok=False)
+            for label in ("a", "b"):
+                (profiles / label).mkdir(mode=0o777, exist_ok=False)
         with fixture.Fixture(args.timeout) as court:
             manifest = court.manifest(output)
+            manifest["windows_profile_acl_mode"] = args.windows_profile_acl_mode
+            if host_os() == "windows":
+                acl_diagnostics.append(windows_acl_snapshot(manifest, output, "allocated-before-driver-policy"))
             if helper:
                 manifest["helper"] = str(helper)
             fixture.private_json(output / "manifest.private.json", manifest)
@@ -575,10 +674,14 @@ def main():
             result["actual_exit_code"] = owned.process.wait(timeout=1)
             if host_os() == "windows":
                 cookie_diagnostics.append(windows_cookie_snapshot(manifest, output, "driver-exited-before-job-cleanup", diagnostic_clock))
+                acl_diagnostics.append(windows_acl_snapshot(manifest, output, "driver-exited-before-job-cleanup"))
             observed = court.state.receipt()
             fixture.private_json(output / "fixture-receipt.json", observed)
             result["checks"] = observed["checks"]
             driver = read_json(output / "native-driver-receipt.json")
+            result["driver_windows_profile_acl_mode"] = driver.get("windows_profile_acl_mode")
+            if driver.get("windows_profile_acl_mode") != args.windows_profile_acl_mode:
+                raise CourtError("native-driver-profile-acl-mode-mismatch")
             validate(driver, observed, build, court.state.driver_receipt_snapshot)
             if result["actual_exit_code"] != 0:
                 raise CourtError("native-driver-nonzero-exit")
@@ -609,6 +712,8 @@ def main():
             fixture.private_json(output / "fixture-receipt.json", observed)
         if host_os() == "windows" and manifest is not None:
             cookie_diagnostics.append(windows_cookie_snapshot(manifest, output, "after-owned-job-cleanup", diagnostic_clock))
+            acl_diagnostics.append(windows_acl_snapshot(manifest, output, "after-owned-job-cleanup"))
+            result["windows_profile_acl_observations"] = acl_diagnostics
             diagnostic = dict(kind="owned-fresh-windows-cookie-diagnostics", schema=1,
                               status="diagnostics-only", changes_court_verdict=False,
                               snapshots=cookie_diagnostics,

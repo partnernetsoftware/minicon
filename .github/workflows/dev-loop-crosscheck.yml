@@ -40,6 +40,11 @@ on:
         type: boolean
         required: false
         default: false
+      windows_profile_acl_contrast:
+        description: "Windows x64 only: same-image synthetic UDF permission-policy diagnostic (not qualification)"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -54,6 +59,8 @@ jobs:
         shell: bash
         env:
           CELLS: ${{ inputs.cells }}
+          ACL_CONTRAST: ${{ inputs.windows_profile_acl_contrast }}
+          NATIVE_AUTH: ${{ inputs.native_auth_context }}
         run: |
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import json, os
@@ -73,6 +80,9 @@ jobs:
               wanted = list(runners)
           else:
               wanted = raw
+          if os.environ.get("ACL_CONTRAST", "").lower() == "true":
+              if wanted != ["win-x86_64"] or os.environ.get("NATIVE_AUTH", "").lower() == "true":
+                  raise SystemExit("ACL diagnostic requires exactly win-x86_64 and native_auth_context=false")
           unknown = [c for c in wanted if c not in runners]
           if unknown:
               raise SystemExit(f"unknown cells: {unknown}")
@@ -185,6 +195,16 @@ jobs:
           python3 scripts/native-auth-context/qualify.py --target "$triple" \
             --canonical-product "$PWD/target/browser-canonical/minicon$extension" \
             --output probe-logs/native-auth-context "$@"
+
+      - name: Observe fresh Windows fixture permission-policy contrast
+        if: inputs.windows_profile_acl_contrast && matrix.cell == 'win-x86_64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B scripts/native-auth-context/acl_selfcheck.py
+          python3 scripts/native-auth-context/qualify.py --target '${{ matrix.triple }}' \
+            --canonical-product "$PWD/target/browser-canonical/minicon.exe" \
+            --output probe-logs/native-auth-context --windows-profile-acl-contrast
 
       - name: Qualify bounded control shutdown responses
         # Required on every cell, independently of the optional suite filter.
@@ -536,6 +556,7 @@ jobs:
             probe-logs/console-lifecycle/
             probe-logs/browser-workspace/
             probe-logs/native-auth-context/qualification-receipt.json
+            probe-logs/native-auth-context/acl-contrast-receipt.json
             probe-logs/native-auth-context/protocol.log
             probe-logs/native-auth-context/protocol/
             probe-logs/native-auth-context/*-build.log

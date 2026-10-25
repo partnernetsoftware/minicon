@@ -15,7 +15,7 @@ dev-loop-crosscheck — agent cross-arch dev/test loop
 ├── Problem: a cloud session can reach only its own host's architecture
 ├── Non-goal: never a release-evidence path, never publishes, never needs write
 ├── Mechanism: GitHub-hosted native per-cell build + test on request
-│   ├── inputs: ref, cells, test_filter, native_auth_context, private_publication
+│   ├── inputs: ref, cells, test_filter, native_auth_context, private_publication, windows_profile_acl_contrast
 │   ├── core and UI library tests, including each native ISA kernel
 │   ├── isolated minimal consumer; no workspace feature leakage
 │   ├── [-] provider / worker / HTTP mechanism and real CLI gateway courts (0.2.23)
@@ -30,6 +30,11 @@ dev-loop-crosscheck — agent cross-arch dev/test loop
 │   │   evidence: qualification receipt, eight engine observations and two actual counterexamples
 │   │   safe failure: preserve BLOCKED/failed result; do not count compilation or timeout as RED
 │   │   dependency: canonical browser/helper and isolated desktop; non-goal: release/provider/visibility proof
+│   ├── [-] explicit Windows fixture ACL comparison → PRD 28.01
+│   │   invariant: diagnostic entry requires exactly win-x86_64 and native_auth_context=false
+│   │   evidence: real workflow-plan consumer and separate diagnostic aggregate
+│   │   safe failure: reject incompatible selection; retain the comparison's nonzero failure
+│   │   dependency: canonical browser and dedicated qualifier; non-goal: native/release qualification
 │   ├── [-] explicit private_publication source court → PRD 28.02
 │   │   invariant: private native files and actual guard failures retain exact restored source
 │   │   evidence: three named baseline tests, three runtime REDs and three restored passes
@@ -52,6 +57,8 @@ flowchart LR
     G --> L
     W -->|explicit native_auth_context| T[Separate test bytes / native context and live-DOM court]
     T -->|actual observations + RED controls + exact restore| L
+    W -->|explicit windows_profile_acl_contrast / exact Winx64 only| ACL[Diagnostic entry / PRD 28.01]
+    ACL --> L
     W -->|explicit private_publication| PP[Private native files / publication / errno / platform access controls]
     PP -->|actual tests + RED controls + exact restore| L
     W -. never .-> R["release / GHCR / tag / version"]
@@ -204,6 +211,20 @@ authority, bounds and finite public diagnostics belong to the
 [verified-directory join](PRD_02_28_01_browser_context_lifecycle.md#verified-directory-diagnostic-join).
 Protocol selfcheck counts come from the actual restored receipt; the protocol
 control count is separate and must not grow merely because checks were added.
+
+### Opt-in Windows fixture permission-policy comparison
+
+`windows_profile_acl_contrast=true` selects the dedicated qualifier's
+`--windows-profile-acl-contrast` entry. The workflow planner requires exactly
+`cells=win-x86_64` and `native_auth_context=false`; incompatible selections
+fail before dispatching cells. Defaults retain the ordinary qualification path.
+Run this only on the allocated CI desktop, after the canonical browser court.
+Its separate public `acl-contrast-receipt.json` joins the existing per-arm
+allowlist and private-store exclusions. Diagnostic behavior, original verdicts
+and the limits of ACL observations belong to the
+[lifecycle owner](PRD_02_28_01_browser_context_lifecycle.md#fresh-permission-policy-diagnostic-join-in-progress).
+
+### Provider and authorization court feedback
 
 Provider/Harness/auth focused runs also select the H0 host tests, pending-control
 ownership tests and exact public H0 journey with nonzero passing execution

@@ -20,7 +20,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = Path(__file__).resolve().parent
 INPUTS = (
-    "Cargo.toml", "Cargo.lock", "src/main.rs", "src/harness_auth_court.rs",
+    "Cargo.toml", "Cargo.lock", ".github/workflows/dev-loop-crosscheck.yml", "src/main.rs", "src/harness_auth_court.rs",
     "src/harness_auth_ui.rs", "src/harness_settings_ui.rs",
     "src/harness_workspace_ui.rs",
     "crates/minicon-web/Cargo.toml",
@@ -30,6 +30,7 @@ INPUTS = (
     "crates/minicon-web/src/profile.rs", "crates/minicon-web/src/wry_host.rs",
     "scripts/native-auth-context/fixture.py", "scripts/native-auth-context/page.js",
     "scripts/native-auth-context/fixture_selfcheck.py", "scripts/native-auth-context/verify_protocol.py",
+    "scripts/native-auth-context/acl_selfcheck.py",
     "scripts/native-auth-context/run.py", "scripts/native-auth-context/qualify.py",
     "scripts/build.sh", "scripts/test-plan.py",
 )
@@ -65,6 +66,140 @@ def choose_bash():
     return module.choose_bash()
 
 
+
+def acl_contrast(args, output, env, source, binary, canonical, canonical_hash, original_hashes, bash):
+    """Diagnostic only: one build, two fresh arms, each original verdict retained."""
+    result = dict(kind="native-auth-context-acl-diagnostic-comparison", schema=1,
+                  source_commit=source, target=args.target, test_only=True,
+                  status="FAIL", native_qualification=False, production_artifact_qualification=False,
+                  qualification_negative_controls_executed=False, qualification_restored_run_executed=False,
+                  source_sha256=original_hashes, canonical_product_sha256=canonical_hash,
+                  controlled_variable="Whole create-new synthetic fixture directory permission policy",
+                  timing_interference_possible=True, arms=[], failure_code=None)
+    identity = None
+    aggregate = output / "acl-contrast-receipt.json"
+    def same_sources():
+        try:
+            return hashes() == original_hashes
+        except OSError:
+            return False
+    def same_bytes(path, expected):
+        try:
+            return sha(path) == expected
+        except OSError:
+            return False
+    try:
+        protocol = command([sys.executable, str(SCRIPTS / "verify_protocol.py"), "--output", str(output / "protocol")],
+                           output / "protocol.log", env, 120)
+        if protocol != 0 or not same_sources():
+            result["failure_code"] = "protocol-or-source-check-failed"
+            return 1
+        protocol_receipt = output / "protocol/protocol-guard-receipt.json"
+        protocol_result = json.loads(protocol_receipt.read_text(encoding="utf-8"))
+        if (type(protocol_result["restored_checks"]) is not int or protocol_result["restored_checks"] <= 0
+                or not protocol_result["expected_assertion_reds"]
+                or protocol_result["byte_exact_source_restored"] is not True):
+            result["failure_code"] = "protocol-evidence-unavailable"
+            return 1
+        result["protocol_receipt_sha256"] = sha(protocol_receipt)
+        result["protocol_restored_checks"] = protocol_result["restored_checks"]
+        result["protocol_assertion_red_controls"] = len(protocol_result["expected_assertion_reds"])
+        build = [bash, "scripts/build.sh", "dev", "--target", args.target,
+                 "--bin", "minicon", "--features", "native-auth-court"]
+        result["dedicated_build_invocations"] = 1
+        if command(build, output / "acl-shared-build.log", env, 900) != 0:
+            result["failure_code"] = "dedicated-build-failed-not-runtime-evidence"
+            return 1
+        identity = sha(binary)
+        if not same_sources() or not same_bytes(canonical, canonical_hash):
+            result["failure_code"] = "source-or-canonical-changed-after-build"
+            return 1
+        metadata = dict(schema=1, source_commit=source, test_only=True,
+                        features=["default", "experimental-rust-console", "native-auth-court"],
+                        diagnostic_features=["minicon-web/native-profile-diagnostics"],
+                        binary_sha256=identity, helper_sha256=None, os="windows", isa="x86_64",
+                        source_sha256=original_hashes, source_tree_clean=True,
+                        variant="acl-shared-diagnostic-image", source_authority="serialized native CI build declaration")
+        build_receipt = output / "acl-shared-build-receipt.json"
+        write(build_receipt, metadata)
+        result["shared_binary_sha256"] = identity
+        result["shared_build_receipt_sha256"] = sha(build_receipt)
+        for label, mode in (("acl-owner-only", "owner-only"), ("acl-inherit-default", "inherit-default")):
+            arm_output = output / label
+            log = output / f"{label}-run.log"
+            arm = dict(label=label, mode=mode, status="FAIL", process_exit=None,
+                       binary_sha256=identity, observed_checks={}, failure_code=None,
+                       native_execution_started=False, diagnostic_stage_only=True)
+            # A baseline observation FAIL must not prevent the second arm.
+            # Identity/source failure is recorded separately; never run changed bytes.
+            if not same_bytes(binary, identity) or not same_bytes(canonical, canonical_hash) or not same_sources():
+                arm["failure_code"] = "exact-image-or-source-changed-before-arm"
+                result["arms"].append(arm)
+                continue
+            argv = [sys.executable, str(SCRIPTS / "run.py"), "--binary", str(binary),
+                    "--output", str(arm_output), "--timeout", str(args.timeout),
+                    "--build-receipt", str(build_receipt), "--windows-profile-acl-mode", mode]
+            try:
+                arm["process_exit"] = command(argv, log, env, args.timeout + 30)
+                receipt_path = arm_output / "receipt.json"
+                receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+                arm.update(status=receipt["status"], receipt=f"{label}/receipt.json",
+                           receipt_sha256=sha(receipt_path), native_execution_started=receipt["native_execution_started"],
+                           observed_checks=receipt.get("checks", {}), failure_code=receipt.get("failure_code"),
+                           fixture_failure_code=receipt.get("fixture_failure_code"), actual_exit_code=receipt.get("actual_exit_code"),
+                           driver_mode=receipt.get("driver_windows_profile_acl_mode"),
+                           finite_acl_observations=receipt.get("windows_profile_acl_observations", []))
+                driver_path = arm_output / "native-driver-receipt.json"
+                if driver_path.exists():
+                    driver = json.loads(driver_path.read_text(encoding="utf-8"))
+                    arm["driver_failure_code"] = driver.get("failure_code")
+                    arm["cookie_metadata_observations"] = driver.get("windows_cookie_metadata_observations", [])
+                    arm["driver_receipt_sha256"] = sha(driver_path)
+                arm["valid_original_native_pass"] = (arm["process_exit"] == 0 and arm["status"] == "PASS"
+                    and arm["actual_exit_code"] == 0 and arm["driver_mode"] == mode)
+            except subprocess.TimeoutExpired:
+                arm.update(status="FAIL", failure_code="arm-controller-timeout", owned_cleanup_not_observed=True)
+            except (OSError, ValueError, KeyError, TypeError):
+                arm.update(status="FAIL", failure_code="arm-public-receipt-unavailable")
+            if log.exists():
+                arm["run_log_sha256"] = sha(log)
+            arm["binary_unchanged_after"] = same_bytes(binary, identity)
+            arm["source_unchanged_after"] = same_sources()
+            result["arms"].append(arm)
+            write(aggregate, result)
+        initial_acl = []
+        for arm in result["arms"]:
+            snapshot = next((item for item in arm.get("finite_acl_observations", [])
+                             if item.get("stage") == "allocated-before-driver-policy"), {})
+            entries = [snapshot.get("output_root", {}), snapshot.get("profiles_parent", {})]
+            entries.extend(snapshot.get("profiles", {}).get(label, {}) for label in ("a", "b"))
+            if all(entry.get("status") == "observed" and "ace_count" in entry for entry in entries):
+                fields = ("protected", "dacl_present", "null_dacl", "ace_count", "inherited_ace_count", "allow_ace_count", "other_ace_count")
+                initial_acl.append([[entry.get(key) for key in fields] for entry in entries])
+        result["initial_acl_structure_comparison"] = (
+            "unavailable" if len(initial_acl) != 2 else
+            "inconclusive-no-observed-structural-difference" if initial_acl[0] == initial_acl[1] else
+            "structural-difference-observed-not-effective-access-proof")
+        result["effective_child_access_or_cookie_flush_claimed"] = False
+        if (len(result["arms"]) == 2 and all(arm.get("valid_original_native_pass") for arm in result["arms"])
+                and all(arm.get("binary_unchanged_after") and arm.get("source_unchanged_after") for arm in result["arms"])):
+            result["status"] = "PASS"
+        else:
+            result["failure_code"] = "one-or-more-original-arms-failed-or-unavailable"
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+        result["failure_code"] = "comparison-setup-or-io-unavailable"
+    finally:
+        result["source_unchanged"] = same_sources()
+        result["canonical_product_unchanged"] = same_bytes(canonical, canonical_hash)
+        result["shared_binary_unchanged"] = identity is not None and same_bytes(binary, identity)
+        if not all(result[name] for name in ("source_unchanged", "canonical_product_unchanged", "shared_binary_unchanged")):
+            result["status"] = "FAIL"
+            if result["failure_code"] is None:
+                result["failure_code"] = "exact-image-source-or-canonical-changed"
+        write(aggregate, result)
+    return 0 if result["status"] == "PASS" else 1
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", required=True)
@@ -72,6 +207,8 @@ def main():
     parser.add_argument("--helper", type=Path)
     parser.add_argument("--canonical-product", type=Path, required=True)
     parser.add_argument("--timeout", type=int, default=120)
+    parser.add_argument("--windows-profile-acl-contrast", action="store_true",
+                        help="Windows x64 diagnostic only: same-image fresh permission-policy arms; not qualification")
     args = parser.parse_args()
     targets = {f"{isa}-{suffix}": (system, isa) for isa in ("x86_64", "aarch64")
                for system, suffix in (("windows", "pc-windows-msvc"),
@@ -80,6 +217,8 @@ def main():
     if args.target not in targets or not 0 < args.timeout <= 180:
         parser.error("requires a selected native OS/ISA target and timeout in (0, 180]")
     system, isa = targets[args.target]
+    if args.windows_profile_acl_contrast and (sys.platform != "win32" or args.target != "x86_64-pc-windows-msvc" or args.helper):
+        parser.error("fixture ACL contrast requires an actual Windows x64 host/target and no helper")
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     canonical = args.canonical_product.resolve(strict=True)
@@ -104,6 +243,9 @@ def main():
                    production_artifact_qualification=False, status="FAIL",
                    source_sha256=original_hashes, canonical_product_sha256=canonical_hash,
                    runs=[], source_restored_exact=False)
+
+    if args.windows_profile_acl_contrast:
+        return acl_contrast(args, output, env, source, binary, canonical, canonical_hash, original_hashes, bash)
 
     def run(label, negative=False):
         print(f"native auth {label}: build dedicated feature", flush=True)

@@ -527,7 +527,20 @@ format checking, nine fresh public form checks and 22 ordinary-browser checks:
 Its explicit default build has SHA-256
 `c5f4cb33fd0f71e891aed5f1d26b708e494450a5816036dd63adc64fce00aee4`.
 The UI controls restore exactly the source qualified by this broader gate;
-the later documentation-only evidence closeout does not change those product
-bytes. Independent postcommit verification remains required before push.
+the later documentation-only evidence closeout does not change that product
+source. Independent postcommit verification of
+`d082e75e319306af88e526966d3a105c90ca999c` passes 300 Rust consumers with
+one named Pi opt-in ignored and nine public form checks. The verifier rejects
+the canonical path's unexpected post-test bytes, then explicitly rebuilds the
+default product and pins its new SHA-256
+`d46adf1e44f2a1513284e4986c1b670806d007863fd310e964ea44abf3bc0849`.
+Both the nine form checks and 22 ordinary-browser checks pass on those new
+bytes. Historical c5 receipts are retained without relabeling. Evidence:
+`target-six/v0.2.23-provider/leaf2-independent-d082e75/receipt.json`.
+The verifier is distinct from this slice's product producers; shared Cargo
+cache is explicitly `isolated=false`. Its AB-control audit acknowledges its
+own earlier manifest contribution and is not independent proof of that manifest.
+The exact commit is pushed after genuine independent ledger PASS. Matching-source
+six-cell development feedback runs separately; none of this is release evidence.
 This draft-form join does not complete candidate verification, atomic Apply,
 native auth-cookie persistence, actual provider/client journeys or the release.

@@ -42,6 +42,12 @@ Outcome: reuse an account's browser context only after its previous native host 
 │   safe failure: finite unavailable within the original deadline; stale/cancelled actions never resume
 │   dependency: verified native host, dedicated court and unchanged storage oracle
 │   non-goal: cookie values, provider profiles, persistence waits/flush/repair or changing the oracle
+├── [-] ACL CONTRAST — compare fresh fixture permission policies on one exact test image
+│   invariant: retain both original storage verdicts; a failed baseline still permits the control observation
+│   evidence: AC-01 coordinator/source controls and AC-02 matching-source Windows SDK comparison
+│   safe failure: either failed arm fails the aggregate; absent structural difference is inconclusive
+│   dependency: COOKIE METADATA and explicit Windows-only developer entry in PRD 32
+│   non-goal: production UDF/credential-policy changes, effective child-token access or a persistence repair
 └── [_] LATER DELETE — compose release with an explicitly authorized store deletion
     invariant: observation, deletion and durable completion are separate results
     evidence: future OS-specific deletion/retry courts; currently unavailable
@@ -72,6 +78,9 @@ flowchart TD
     QUERY --> META[Bounded status/counts; no names/values/raw expiry]
     META -. revalidate original action / bounded resume .-> CLOSE
     META --> STORE
+    IMAGE[One exact dedicated Windows test image] --> ACL[Two fresh permission-policy fixture arms]
+    ACL --> STORE
+    STORE --> BOTH[Preserve each original verdict; either failure fails the comparison]
     PRIVATE --> ROOTS{Fresh roots and every ancestor valid?}
     ROOTS -->|yes| DB[Bounded immutable value-free DB counts]
     ROOTS -->|no| UNAVAILABLE[No diagnostic file reads / unchanged court verdict]
@@ -405,3 +414,45 @@ was an access denial. Any later production browser-directory mechanism must
 remain separate from private credential protection and preserve SDK-owned
 permissions across account-store writes and browser reuse. The permission
 contrast is planned, not an executed comparison or a persistence fix.
+
+### Fresh permission-policy diagnostic join (in progress)
+
+The development coordinator builds one dedicated image and runs the original
+eight-oracle fixture in two create-new arms, even when the baseline observation
+fails. The control changes creation of the complete synthetic arm to inherited
+permissions and omits only its initial Rust A/B directory rewrite. It accepts
+only exact empty, unlinked fixture paths; existing account profiles and private
+credential protection retain their current policy.
+
+Check source, dedicated image and canonical default-product bytes around both
+arms. Preserve each actual exit, absent/failed oracle, SDK sample and finite
+ACL observation independently. Either original arm failing makes the aggregate
+FAIL; even two passing arms establish only a diagnostic comparison. This mode
+does not run or claim the ordinary native negative/restored qualification chain.
+The public aggregate is `acl-contrast-receipt.json`; private carrier/store
+exclusions remain the ordinary court's responsibility.
+
+An initial local read-only observation invokes the actual preview ACL reader
+on newly created empty directories, without any browser or Rust rewrite:
+`target-six/v0.2.23-provider/acl-preview-host-observation/receipt.json`.
+On Python 3.11.15, all four 0700 directories report protected DACL/three ACEs/
+zero inherited ACEs; their 0777 counterparts report unprotected DACL/nine ACEs/
+nine inherited ACEs. This proves a finite structural difference on this host,
+not effective sandbox access, a cookie cause or native persistence.
+
+Local strict-wrapper tests pass eleven native-auth UI/court consumers, including
+two new fixture-policy tests. Changing invalid-mode admission and occupied-path
+refusal produces their original assertion REDs; exact restoration passes all
+eleven again. The initial final alignment gate rejects raw Windows attribute
+access in the product driver; the corrected driver reuses the existing shared
+link/reparse classifier without weakening that gate. Current-source controls:
+`target-six/v0.2.23-provider/acl-rust-controls-v2/receipt.json`.
+Five Python consumers execute the actual coordinator and workflow planner using
+bounded controlled child fixtures. Six serial controls fail their original
+assertions for baseline short-circuit, erased baseline failure, duplicate build,
+changed-source dispatch, mismatched driver mode and invalid WinARM selection.
+Exact restoration passes all five:
+`target-six/v0.2.23-provider/acl-python-controls/receipt.json`.
+These are non-GUI consumer results, not an executed browser comparison.
+Independent postcommit verification and matching-source native comparison
+remain open; the original native cookie-persistence verdict remains FAIL.

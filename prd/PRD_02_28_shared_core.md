@@ -578,6 +578,13 @@ keeps the owning-STA native query/status/cancellation mechanism inside
 The default product does not expose this diagnostic API; its finite observations
 and scoped evidence remain with that owner.
 
+The dedicated fixture's fresh-directory permission contrast reuses
+`minicon-platform::filesystem::metadata_is_link_like` for symlink/reparse
+classification. OS attribute handling stays in the shared platform adapter;
+fixture path ownership and opt-in policy remain in the product test driver.
+Its behavior and qualification belong to the
+[lifecycle diagnostic owner](PRD_02_28_01_browser_context_lifecycle.md#fresh-permission-policy-diagnostic-join-in-progress).
+
 The next development join exercises the existing product auth presentation and
 shared native hosts through a non-default `native-auth-court` test build. The
 default product neither compiles its driver nor accepts its test-only argument.

@@ -20,6 +20,131 @@ use std::time::Duration;
 const HTTP_LIMIT: usize = 65_536;
 const MANIFEST_LIMIT: u64 = 32_768;
 
+// Only this non-default court may omit its initial fixture UDF rewrite.
+// Credential publication and production AccountStore policies are unchanged.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WindowsProfileAclMode {
+    OwnerOnly,
+    InheritDefault,
+}
+
+impl WindowsProfileAclMode {
+    fn read(value: Option<&serde_json::Value>) -> Result<Self, &'static str> {
+        match value {
+            None => Ok(Self::OwnerOnly),
+            Some(serde_json::Value::String(value)) if value == "owner-only" => Ok(Self::OwnerOnly),
+            Some(serde_json::Value::String(value))
+                if value == "inherit-default" && cfg!(windows) =>
+            {
+                Ok(Self::InheritDefault)
+            }
+            _ => Err("native-court-profile-acl-mode-invalid"),
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::OwnerOnly => "owner-only",
+            Self::InheritDefault => "inherit-default",
+        }
+    }
+}
+
+// The control accepts only this manifest's fresh exact A/B directories.
+// It never accepts an arbitrary existing profile as a relaxed-policy target.
+fn fresh_acl_control_directory(
+    output: &Path,
+    directory: &Path,
+    name: &str,
+) -> Result<(), &'static str> {
+    if !matches!(name, "a" | "b") || directory != output.join("profiles").join(name) {
+        return Err("native-court-profile-acl-control-outside-fixture");
+    }
+    for ancestor in directory.ancestors() {
+        let metadata = std::fs::symlink_metadata(ancestor)
+            .map_err(|_| "native-court-profile-acl-control-unavailable")?;
+        if !metadata.is_dir() || minicon_platform::filesystem::metadata_is_link_like(&metadata) {
+            return Err("native-court-profile-acl-control-link-like");
+        }
+    }
+    if std::fs::read_dir(directory)
+        .map_err(|_| "native-court-profile-acl-control-unavailable")?
+        .next()
+        .is_some()
+    {
+        return Err("native-court-profile-acl-control-not-empty");
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod profile_acl_tests {
+    use super::*;
+
+    #[test]
+    fn alternate_acl_policy_requires_an_explicit_supported_fixture_mode() {
+        assert!(matches!(
+            WindowsProfileAclMode::read(None),
+            Ok(WindowsProfileAclMode::OwnerOnly)
+        ));
+        assert!(matches!(
+            WindowsProfileAclMode::read(Some(&serde_json::json!("owner-only"))),
+            Ok(WindowsProfileAclMode::OwnerOnly)
+        ));
+        for value in [
+            serde_json::json!(null),
+            serde_json::json!(true),
+            serde_json::json!("inherit"),
+        ] {
+            assert!(WindowsProfileAclMode::read(Some(&value)).is_err());
+        }
+        let alternate = WindowsProfileAclMode::read(Some(&serde_json::json!("inherit-default")));
+        assert_eq!(alternate.is_ok(), cfg!(windows));
+    }
+
+    #[test]
+    fn alternate_acl_fixture_refuses_other_paths_and_nonempty_profiles() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let allocated = std::env::temp_dir().join(format!(
+            "minicon-acl-fixture-{}-{nonce}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&allocated).unwrap();
+        let output = allocated.canonicalize().unwrap();
+        std::fs::create_dir(output.join("profiles")).unwrap();
+        for name in ["a", "b"] {
+            let directory = output.join("profiles").join(name);
+            std::fs::create_dir(&directory).unwrap();
+            assert_eq!(
+                fresh_acl_control_directory(&output, &directory, name),
+                Ok(())
+            );
+        }
+        let a = output.join("profiles/a");
+        assert_eq!(
+            fresh_acl_control_directory(&output, &output, "a"),
+            Err("native-court-profile-acl-control-outside-fixture")
+        );
+        assert_eq!(
+            fresh_acl_control_directory(&output, &a, "b"),
+            Err("native-court-profile-acl-control-outside-fixture")
+        );
+        std::fs::write(a.join("occupied"), b"synthetic").unwrap();
+        assert_eq!(
+            fresh_acl_control_directory(&output, &a, "a"),
+            Err("native-court-profile-acl-control-not-empty")
+        );
+        std::fs::remove_file(a.join("occupied")).unwrap();
+        std::fs::remove_dir(a).unwrap();
+        std::fs::remove_dir(output.join("profiles/b")).unwrap();
+        std::fs::remove_dir(output.join("profiles")).unwrap();
+        std::fs::remove_dir(output).unwrap();
+    }
+}
+
 struct Recipe {
     address: SocketAddr,
     token: String,
@@ -29,6 +154,7 @@ struct Recipe {
     b: browser::PageContext,
     output: PathBuf,
     timeout: Duration,
+    profile_acl_mode: WindowsProfileAclMode,
 }
 
 fn hex16(value: &str) -> Result<[u8; 16], &'static str> {
@@ -141,6 +267,7 @@ impl Recipe {
             }
             _ => return Err("native-court-helper-not-configured"),
         }
+        let profile_acl_mode = WindowsProfileAclMode::read(json.get("windows_profile_acl_mode"))?;
         let profile = |name: &str| -> Result<browser::PageContext, &'static str> {
             let value = &json["profiles"][name];
             let directory = PathBuf::from(
@@ -154,8 +281,12 @@ impl Recipe {
             if !directory.starts_with(&output) || directory == output {
                 return Err("native-court-profile-outside-output");
             }
-            minicon_platform::filesystem::protect_private_directory(&directory)
-                .map_err(|_| "native-court-profile-not-private")?;
+            if profile_acl_mode == WindowsProfileAclMode::InheritDefault {
+                fresh_acl_control_directory(&output, &directory, name)?;
+            } else {
+                minicon_platform::filesystem::protect_private_directory(&directory)
+                    .map_err(|_| "native-court-profile-not-private")?;
+            }
             let context = browser::PageContext {
                 profile: minicon_web::PageProfile {
                     data_directory: directory,
@@ -204,6 +335,7 @@ impl Recipe {
             b,
             output,
             timeout: Duration::from_secs_f64(seconds),
+            profile_acl_mode,
         })
     }
 }
@@ -1441,6 +1573,7 @@ impl Drop for CourtApplication {
 pub(super) fn run_application(manifest: &Path) -> Result<(), &'static str> {
     let recipe = Recipe::read(manifest)?;
     let output = recipe.output.clone();
+    let profile_acl_mode = recipe.profile_acl_mode.as_str();
     #[cfg(windows)]
     let locator_run = recipe.run.clone();
     #[cfg(windows)]
@@ -1538,6 +1671,8 @@ pub(super) fn run_application(manifest: &Path) -> Result<(), &'static str> {
     let diagnostic_features: Vec<&str> = Vec::new();
     let data = serde_json::json!({
         "kind":"native-auth-court-test-build", "status":status,
+        "windows_profile_acl_mode":profile_acl_mode,
+        "profile_acl_control_is_production_repair":false,
         "test_only":true, "production_test_build":true,
         "features":features,
         "diagnostic_features":diagnostic_features,
