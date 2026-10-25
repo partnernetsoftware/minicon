@@ -171,6 +171,7 @@ pub enum RuntimeError {
     Corrupt,
     MissingAccount,
     MissingModel,
+    VerificationRequired,
     Cancelled,
     AccountChanged,
     MissingClientKey,
@@ -434,14 +435,14 @@ struct Owner {
 impl Owner {
     fn load(root: PathBuf) -> Result<Self, RuntimeError> {
         prepare_root(&root)?;
-        let config = match filesystem::read_private_bounded(&root.join("gateway.json"), 1024 * 1024)
-        {
-            Ok(bytes) => {
-                serde_json::from_slice::<Config>(&bytes).map_err(|_| RuntimeError::Corrupt)?
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                Config::fresh().map_err(map_server)?
-            }
+        let config = match filesystem::read_private_bounded(
+            &root.join("gateway.json"),
+            crate::provider_server::CONFIG_BYTES,
+        ) {
+            Ok(bytes) => Config::decode_applied(&bytes).map_err(|_| RuntimeError::Corrupt)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Config::fresh()
+                .and_then(Config::upgrade_applied)
+                .map_err(map_server)?,
             Err(_) => return Err(RuntimeError::Storage),
         };
         config.validate().map_err(map_server)?;
@@ -580,8 +581,7 @@ impl Owner {
         config: Config,
         publish: impl FnOnce(&Path, &[u8]) -> Result<ConfigPublication, ServerError>,
     ) -> Result<(), RuntimeError> {
-        config.validate().map_err(map_server)?;
-        let bytes = serde_json::to_vec(&config).map_err(|_| RuntimeError::Corrupt)?;
+        let bytes = config.encode_applied().map_err(map_server)?;
         // Account reads may fail. Finish them before publication so a later
         // metadata read cannot turn an already-applied save into a false error.
         self.refresh_view()?;
@@ -754,11 +754,10 @@ impl Owner {
         }
         let route = self
             .config
-            .models
-            .iter()
-            .find(|route| route.id == self.config.model)
-            .cloned()
-            .ok_or(RuntimeError::MissingModel)?;
+            .resolve_allocation("default", None)
+            .map_err(map_server)?
+            .route
+            .clone();
         let gateway = self.gateway.clone();
         let identity = self.config.identity.clone();
         let cancel = Arc::new(NetworkHttpCancel::new());
@@ -918,6 +917,9 @@ impl Owner {
                 self.view.actual_port = None;
             }
             Action::SelectAccount(id) => {
+                if self.config.version == 3 {
+                    return Err(RuntimeError::VerificationRequired);
+                }
                 if self.operation.is_some() {
                     return Err(RuntimeError::Busy);
                 }
@@ -936,6 +938,9 @@ impl Owner {
                 self.save(config)?;
             }
             Action::SelectModel(id) => {
+                if self.config.version == 3 {
+                    return Err(RuntimeError::VerificationRequired);
+                }
                 if self.operation.is_some() {
                     return Err(RuntimeError::Busy);
                 }
@@ -1369,7 +1374,7 @@ mod tests {
                 route: config.model.clone(),
             }],
         }];
-        owner.save(config).unwrap();
+        owner = load_legacy_fixture(owner, config);
         owner
             .gateway
             .set_key(Some(Secret::new("synthetic-default").unwrap()))
@@ -1411,6 +1416,123 @@ mod tests {
             "local binding was changed by metadata: {bytes}"
         );
         serde_json::from_str(bytes.split_once("\r\n\r\n").unwrap().1).unwrap()
+    }
+
+    #[test]
+    fn cs02_runtime_load_migrates_only_memory_keeps_private_bytes_keys_and_existing_route() {
+        let root = Root::new();
+        let (owner, account) = seed_ready(&root);
+        let original = owner.config.clone();
+        drop(owner);
+        let path = root.0.join("gateway.json");
+        // Prepare the exact old file immediately before the observed load;
+        // fixture setup also uses the decoder and cannot stand in for it.
+        let mut legacy = original.clone();
+        legacy.version = 1;
+        legacy.default_route = None;
+        legacy.applied_evidence.clear();
+        filesystem::write_private_atomic(&path, &legacy.encode_applied().unwrap()).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        let key_path = root.0.join("client-key");
+        let key = std::fs::read(&key_path).unwrap();
+        let mut loaded = Owner::load(root.0.clone()).unwrap();
+        assert_eq!(loaded.config.version, 3);
+        assert_eq!(
+            loaded.config.selected_account.as_deref(),
+            Some(account.as_str())
+        );
+        assert_eq!(loaded.config.model, original.model);
+        assert_eq!(loaded.config.models, original.models);
+        assert!(matches!(
+            loaded.config.applied_evidence[0].origin,
+            crate::provider_server::AppliedOrigin::LegacyApplied { .. }
+        ));
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            before,
+            "read-time migration rewrote applied bytes"
+        );
+        assert_eq!(std::fs::read(&key_path).unwrap(), key);
+        assert!(loaded.server.is_none());
+        let mut login = LoginCoordinator::new(
+            loaded.store.clone(),
+            LoginMetadata {
+                version: "synthetic".into(),
+                locale: "en".into(),
+                timezone_offset_seconds: 0,
+            },
+        );
+        for action in [
+            Action::SelectAccount(account),
+            Action::SelectModel(original.model),
+        ] {
+            assert!(matches!(
+                loaded.action(action, &mut login),
+                Err(RuntimeError::VerificationRequired)
+            ));
+        }
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert_eq!(std::fs::read(&key_path).unwrap(), key);
+        // A deliberate unrelated save persists v3 provenance through the real
+        // private publication path; reopening must preserve that origin.
+        let config = loaded.config.clone();
+        loaded.save(config).unwrap();
+        let stored = std::fs::read(&path).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&stored).unwrap()["version"],
+            3
+        );
+        let reopened = Owner::load(root.0.clone()).unwrap();
+        assert_eq!(
+            reopened.config.applied_evidence,
+            loaded.config.applied_evidence
+        );
+        assert_eq!(std::fs::read(&key_path).unwrap(), key);
+    }
+
+    #[test]
+    fn cs02_runtime_keeps_incomplete_legacy_model_on_load_but_refuses_broken_complete_reference() {
+        for version in [1, 2] {
+            let root = Root::new();
+            let mut pending = Config::fresh().unwrap();
+            pending.version = version;
+            pending.model = "legacy-pending".into();
+            assert!(pending.selected_account.is_none());
+            assert!(pending.models.is_empty());
+            let path = root.0.join("gateway.json");
+            let before = serde_json::to_vec(&pending).unwrap();
+            filesystem::write_private_atomic(&path, &before).unwrap();
+            let loaded = Owner::load(root.0.clone());
+            assert!(
+                loaded.is_ok(),
+                "valid incomplete legacy setup must load: {:?}",
+                loaded.as_ref().err()
+            );
+            let owner = loaded.unwrap();
+            assert_eq!(owner.config.version, 3);
+            assert_eq!(owner.config.model, "legacy-pending");
+            assert!(owner.config.models.is_empty());
+            assert!(owner.config.selected_account.is_none());
+            assert!(owner.config.applied_evidence.is_empty());
+            assert_eq!(owner.view.model, "legacy-pending");
+            assert!(owner.view.models.is_empty());
+            assert!(owner.server.is_none());
+            assert_eq!(owner.view.listener, ListenerState::Stopped);
+            assert_eq!(std::fs::read(&path).unwrap(), before);
+            assert!(!root.0.join("client-key").exists());
+            // Completing the account reference without supplying its route
+            // is structurally broken. Keep the same model string on disk and
+            // return typed unavailable rather than deleting it during load.
+            pending.selected_account = Some("e".repeat(32));
+            let broken = serde_json::to_vec(&pending).unwrap();
+            filesystem::write_private_atomic(&path, &broken).unwrap();
+            assert!(matches!(
+                Owner::load(root.0.clone()),
+                Err(RuntimeError::Corrupt)
+            ));
+            assert_eq!(std::fs::read(&path).unwrap(), broken);
+            assert!(!root.0.join("client-key").exists());
+        }
     }
 
     #[test]
@@ -1927,10 +2049,11 @@ mod tests {
                 timezone_offset_seconds: 0,
             },
         );
-        owner
-            .action(Action::SelectAccount(account.id.clone()), &mut login)
-            .unwrap();
-        assert_eq!(owner.view.selected_account.as_ref(), Some(&account.id));
+        assert!(matches!(
+            owner.action(Action::SelectAccount(account.id.clone()), &mut login),
+            Err(RuntimeError::VerificationRequired)
+        ));
+        assert!(owner.view.selected_account.is_none());
     }
 
     #[test]
@@ -2172,7 +2295,7 @@ mod tests {
     }
 
     #[test]
-    fn switching_default_account_and_refreshing_catalog_preserves_allocated_routes() {
+    fn legacy_selectors_and_other_account_catalogue_keep_applied_allocations_unchanged() {
         use crate::provider_server::{ClientAllocation, ClientProfile};
         let root = Root::new();
         let (mut owner, account) = seed_ready(&root);
@@ -2205,7 +2328,9 @@ mod tests {
                 route: config.model.clone(),
             }],
         });
-        owner.save(config).unwrap();
+        owner = load_legacy_fixture(owner, config);
+        let applied = owner.config.clone();
+        let disk = std::fs::read(root.0.join("gateway.json")).unwrap();
         let mut login = LoginCoordinator::new(
             owner.store.clone(),
             LoginMetadata {
@@ -2214,14 +2339,12 @@ mod tests {
                 timezone_offset_seconds: 0,
             },
         );
-        owner
-            .action(Action::SelectAccount(other.id.clone()), &mut login)
-            .unwrap();
+        assert!(matches!(
+            owner.action(Action::SelectAccount(other.id.clone()), &mut login),
+            Err(RuntimeError::VerificationRequired)
+        ));
         assert_eq!(owner.config.models.len(), 1);
-        assert!(
-            owner.view.models.is_empty(),
-            "Other provider's cached routes must not be selectable"
-        );
+        assert_eq!(owner.view.models, vec![applied.model.clone()]);
         let route = ModelRoute {
             id: "opencode/go/new".into(),
             model_id: "new-wire".into(),
@@ -2257,7 +2380,9 @@ mod tests {
             1,
             "metadata cannot import applied routes"
         );
-        assert!(owner.view.models.is_empty());
+        assert_eq!(owner.view.models, vec![applied.model.clone()]);
+        assert_eq!(owner.config, applied);
+        assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), disk);
         let catalogue = owner
             .view
             .catalogues
@@ -2323,7 +2448,7 @@ mod tests {
                 route: original.id.clone(),
             }],
         });
-        owner.save(config).unwrap();
+        owner = load_legacy_fixture(owner, config);
         owner
             .gateway
             .set_client_key(&profile, Some(Secret::new("synthetic-profile").unwrap()))
@@ -2345,9 +2470,10 @@ mod tests {
                 timezone_offset_seconds: 0,
             },
         );
-        owner
-            .action(Action::SelectAccount(accounts[1].id.clone()), &mut login)
-            .unwrap();
+        assert!(matches!(
+            owner.action(Action::SelectAccount(accounts[1].id.clone()), &mut login),
+            Err(RuntimeError::VerificationRequired)
+        ));
         let disk = std::fs::read(root.0.join("gateway.json")).unwrap();
         let mut conflicting = original.clone();
         conflicting.url = "https://opencode.ai/inference/go/openai/v1/chat/completions".into();
@@ -2438,6 +2564,7 @@ mod tests {
             .unwrap();
         let mut changed = owner.config.clone();
         changed.models[0].model_id = "published-wire-model".into();
+        fixture_verified_default(&owner, &mut changed);
         let registry = root.0.join("accounts/accounts.json");
         let account_bytes = filesystem::read_private_bounded(&registry, 1024 * 1024).unwrap();
         let result = owner.save_with(changed.clone(), |path, bytes| {
@@ -2470,6 +2597,7 @@ mod tests {
             filesystem::read_private_bounded(&root.0.join("gateway.json"), 1024 * 1024).unwrap();
         let mut rejected = changed.clone();
         rejected.models[0].model_id = "must-not-apply".into();
+        fixture_verified_default(&owner, &mut rejected);
         assert_eq!(
             owner.save_with(rejected, |_, _| Err(ServerError::Storage)),
             Err(RuntimeError::Storage)
@@ -2570,6 +2698,7 @@ mod tests {
             .unwrap();
         owner.store.mark_ready(&account.id).unwrap();
         let mut config = owner.config.clone();
+        config.version = 1;
         config.port = port;
         config.selected_account = Some(account.id.clone());
         config.model = "deepseek/synthetic".into();
@@ -2581,7 +2710,7 @@ mod tests {
             url: "https://api.deepseek.com/anthropic/v1/messages".into(),
             headers: vec![],
         }];
-        owner.save(config).unwrap();
+        owner = load_legacy_fixture(owner, config);
         owner
             .gateway
             .set_key(Some(Secret::new("synthetic-client").unwrap()))
@@ -2632,6 +2761,7 @@ mod tests {
             .unwrap();
         owner.store.mark_ready(&account.id).unwrap();
         let mut config = owner.config.clone();
+        config.version = 1;
         config.port = TcpListener::bind("127.0.0.1:0")
             .unwrap()
             .local_addr()
@@ -2647,13 +2777,79 @@ mod tests {
             url: "https://api.deepseek.com/anthropic/v1/messages".into(),
             headers: vec![],
         }];
-        owner.save(config).unwrap();
+        // This fixture represents an already-applied v1 private file. The
+        // production v3 publication API must reject a downgrade/new legacy
+        // allocation; prepare old bytes before exercising the real loader.
+        owner = load_legacy_fixture(owner, config);
         filesystem::write_private_atomic(&root.0.join("client-key"), b"synthetic-client").unwrap();
         owner
             .gateway
             .set_key(Some(Secret::new("synthetic-client").unwrap()))
             .unwrap();
         (owner, account.id)
+    }
+
+    fn load_legacy_fixture(owner: Owner, mut config: Config) -> Owner {
+        assert!(matches!(config.version, 1 | 2));
+        config.default_route = None;
+        config.applied_evidence.clear();
+        let root = owner.root.clone();
+        filesystem::write_private_atomic(
+            &root.join("gateway.json"),
+            &config.encode_applied().unwrap(),
+        )
+        .unwrap();
+        drop(owner);
+        Owner::load(root).unwrap()
+    }
+
+    // Supplies an already-successful synthetic prerequisite solely for the
+    // publication consumer fault test. It performs no provider inference and
+    // is not evidence of the future production paid-probe/Apply consumer.
+    fn fixture_verified_default(owner: &Owner, config: &mut Config) {
+        use crate::provider_selection::{
+            AllocationDraft, DEFAULT_PROFILE, DraftBook, DraftEdit, FrozenRoute,
+        };
+        use crate::provider_server::{AppliedEvidence, AppliedOrigin, MODEL_ALIAS};
+        let allocation = config.resolve_allocation(DEFAULT_PROFILE, None).unwrap();
+        let account = allocation.account.to_owned();
+        let snapshot = owner.store.snapshot(&account).unwrap();
+        let selected = FrozenRoute::from_applied_snapshot(&snapshot, allocation.route).unwrap();
+        let mut drafts = DraftBook::default();
+        drafts
+            .replace(
+                DEFAULT_PROFILE,
+                DraftEdit {
+                    label: "Synthetic publication prerequisite".into(),
+                    enabled: true,
+                    default_alias: MODEL_ALIAS.into(),
+                    allocations: vec![AllocationDraft {
+                        alias: MODEL_ALIAS.into(),
+                        selected,
+                    }],
+                },
+            )
+            .unwrap();
+        let ticket = drafts
+            .begin_probe(DEFAULT_PROFILE, MODEL_ALIAS, &snapshot)
+            .unwrap();
+        drafts.accept_probe(ticket, &snapshot, 1).unwrap();
+        let proof = drafts
+            .verification(DEFAULT_PROFILE, MODEL_ALIAS, &snapshot)
+            .unwrap()
+            .unwrap()
+            .persisted();
+        config
+            .applied_evidence
+            .retain(|entry| entry.profile != DEFAULT_PROFILE || entry.alias != MODEL_ALIAS);
+        config.applied_evidence.push(AppliedEvidence {
+            profile: DEFAULT_PROFILE.into(),
+            alias: MODEL_ALIAS.into(),
+            account,
+            origin: AppliedOrigin::Inference {
+                proof: Box::new(proof),
+            },
+        });
     }
     #[test]
     fn reconnect_action_and_cancel_keep_the_applied_connection_and_existing_grant() {

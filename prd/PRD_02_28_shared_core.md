@@ -210,6 +210,10 @@ The product-private `provider_selection.rs` cache now joins the production
 Owner/Gateway/account-detail consumer under development; draft/frozen-candidate/
 proof mechanisms retain their test gate. Its acceptance and scoped evidence
 remain with that owner.
+Its [version-3 resolver/migration prerequisite](PRD_02_31_01_02_01_connection_selection.md#version-3-resolver-and-migration-prerequisite-in-progress)
+also keeps private provenance and compatibility resolution in these product
+modules; its production consumer does not promote the future paid-probe/draft
+engine into a shared adapter.
 Production binding updates compare effective model transport, independently of
 private registry keys, through the existing gateway's request-header mechanism.
 The [commit-aware private-publication owner](PRD_02_28_02_private_publication.md)

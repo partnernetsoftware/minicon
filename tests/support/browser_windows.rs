@@ -1912,7 +1912,58 @@ fn host_browser_authorization_queries_are_private_in_public_observations() {
 }
 
 pub(super) fn h0_harness_destination_preserves_console_and_web_drafts_and_observes_only() {
-    let card_pixels = |path: &Path, card: &Value| {
+    fn first_visible_card(snapshot: &Value) -> &Value {
+        let workspace = &snapshot["geometry"]["harness_workspace"];
+        let scroll = workspace["scroll"]
+            .as_u64()
+            .unwrap_or_else(|| panic!("missing published scroll: {snapshot}"));
+        let cards = workspace["cards"]
+            .as_array()
+            .unwrap_or_else(|| panic!("missing published cards: {snapshot}"));
+        let (index, card) = cards
+            .iter()
+            .enumerate()
+            .find(|(_, card)| {
+                card["rect"]["width"]
+                    .as_u64()
+                    .is_some_and(|width| width > 0)
+                    && card["rect"]["height"]
+                        .as_u64()
+                        .is_some_and(|height| height > 0)
+            })
+            .unwrap_or_else(|| panic!("no visible dashboard card: {snapshot}"));
+        assert_eq!(
+            u64::try_from(index).unwrap(),
+            scroll,
+            "published scroll and first visible card disagree: card={card}, snapshot={snapshot}"
+        );
+        card
+    }
+
+    fn card_pixels(
+        path: &Path,
+        snapshot: &Value,
+        card: &Value,
+        from_right: bool,
+    ) -> ([u8; 3], [u8; 3]) {
+        let rect = &card["rect"];
+        let coordinate = |field: &str| {
+            rect[field]
+                .as_u64()
+                .unwrap_or_else(|| panic!("invalid card {field}: card={card}, snapshot={snapshot}"))
+        };
+        let (left, top, width, height) = (
+            coordinate("x"),
+            coordinate("y"),
+            coordinate("width"),
+            coordinate("height"),
+        );
+        // Guard dimensions before any inset subtraction. Hidden rows publish
+        // zero rectangles and must never silently become a pixel probe.
+        assert!(
+            width >= 4 && height >= 3,
+            "card cannot contain the required inset: card={card}, snapshot={snapshot}"
+        );
         let decoder = png::Decoder::new(fs::File::open(path).unwrap());
         let mut reader = decoder.read_info().unwrap();
         let mut pixels = vec![0; reader.output_buffer_size()];
@@ -1920,19 +1971,45 @@ pub(super) fn h0_harness_destination_preserves_console_and_web_drafts_and_observ
         let channels = match image.color_type {
             png::ColorType::Rgb => 3,
             png::ColorType::Rgba => 4,
-            other => panic!("unexpected dashboard PNG {other:?}"),
+            other => panic!("unexpected dashboard PNG {other:?}: card={card}, snapshot={snapshot}"),
         };
-        let x = (card["x"].as_u64().unwrap() + card["width"].as_u64().unwrap() - 4) as usize;
-        let y = card["y"].as_u64().unwrap() as usize + 2;
-        let gap =
-            card["y"].as_u64().unwrap() as usize + card["height"].as_u64().unwrap() as usize + 2;
-        assert!(gap < image.height as usize && x < image.width as usize);
-        let sample = |row: usize| {
-            let start = (row * image.width as usize + x) * channels;
+        let (image_width, image_height) = (u64::from(image.width), u64::from(image.height));
+        assert!(
+            left <= image_width
+                && top <= image_height
+                && width <= image_width - left
+                && height <= image_height - top,
+            "card exceeds PNG {}x{}: card={card}, snapshot={snapshot}",
+            image.width,
+            image.height
+        );
+        let x = if from_right {
+            left + width - 4
+        } else {
+            left + 2
+        };
+        let y = top + 2;
+        let gap = top + height + 2;
+        assert!(
+            x < image_width && y < image_height && gap < image_height,
+            "card/gap probe outside PNG {}x{}: x={x}, y={y}, gap={gap}, card={card}, snapshot={snapshot}",
+            image.width,
+            image.height
+        );
+        let sample = |row: u64| {
+            let start = usize::try_from(row)
+                .ok()
+                .and_then(|row| row.checked_mul(image.width as usize))
+                .and_then(|offset| offset.checked_add(x as usize))
+                .and_then(|offset| offset.checked_mul(channels))
+                .filter(|start| start.checked_add(3).is_some_and(|end| end <= pixels.len()))
+                .unwrap_or_else(|| {
+                    panic!("invalid PNG sample offset: row={row}, card={card}, snapshot={snapshot}")
+                });
             <[u8; 3]>::try_from(&pixels[start..start + 3]).unwrap()
         };
         (sample(y), sample(gap))
-    };
+    }
     let mut host = BrowserGui::spawn(true, None, None);
     host.cli(&["send-ui-keys", "Ctrl+Shift+I"]);
     host.cli(&["send-ui-ime", "commit", "h0-console-draft"]);
@@ -1944,30 +2021,13 @@ pub(super) fn h0_harness_destination_preserves_console_and_web_drafts_and_observ
     // A real Console tab is still alive: require dashboard raster, not only state.
     let shot = host.gui.screenshot.to_string_lossy().into_owned();
     host.cli(&["screenshot-pane", "--output", &shot]);
-    let decoder = png::Decoder::new(fs::File::open(&host.gui.screenshot).unwrap());
-    let mut reader = decoder.read_info().unwrap();
-    let mut pixels = vec![0; reader.output_buffer_size()];
-    let image = reader.next_frame(&mut pixels).unwrap();
-    let channels = match image.color_type {
-        png::ColorType::Rgb => 3,
-        png::ColorType::Rgba => 4,
-        other => panic!("unexpected dashboard PNG {other:?}"),
-    };
-    let card = &overview["geometry"]["harness_workspace"]["cards"][0]["rect"];
-    let x = card["x"].as_u64().unwrap() as usize + 2;
-    let y = card["y"].as_u64().unwrap() as usize + 2;
-    let gap = card["y"].as_u64().unwrap() as usize + card["height"].as_u64().unwrap() as usize + 2;
-    assert!(gap < image.height as usize);
-    let sample = |row: usize| {
-        let start = (row * image.width as usize + x) * channels;
-        pixels[start..start + 3].to_vec()
-    };
+    let card = first_visible_card(&overview);
+    let first_card_pixels = card_pixels(&host.gui.screenshot, &overview, card, false);
     assert_ne!(
-        sample(y),
-        sample(gap),
-        "live Console must display the dashboard card/gap pixels, not its unchanged sidebar"
+        first_card_pixels.0, first_card_pixels.1,
+        "live Console must display the dashboard card/gap pixels, not its unchanged sidebar: card={card}, snapshot={overview}"
     );
-    let same_tab_card = card_pixels(&host.gui.screenshot, card);
+    let same_tab_card = card_pixels(&host.gui.screenshot, &overview, card, true);
     let discarded = host.cli(&["perf-stats"])["discarded_capture_frames"]
         .as_u64()
         .unwrap();
@@ -1979,7 +2039,7 @@ pub(super) fn h0_harness_destination_preserves_console_and_web_drafts_and_observ
         &shot,
     ]);
     assert_ne!(
-        card_pixels(&host.gui.screenshot, card).0,
+        card_pixels(&host.gui.screenshot, &overview, card, true).0,
         same_tab_card.0,
         "an explicit underlying active Console still captures its pane"
     );
@@ -2049,7 +2109,7 @@ pub(super) fn h0_harness_destination_preserves_console_and_web_drafts_and_observ
         (expected_scroll..(expected_scroll + capacity).min(cards.len())).collect::<Vec<_>>(),
         "visible card rows must be contiguous and fill the actual capacity: {resized}"
     );
-    let first = &cards[expected_scroll];
+    let first = first_visible_card(&resized);
     host.click_rect(&first["rect"], "first_visible_card", &resized["geometry"]);
     let selected = host.cli(&["ui-snapshot"]);
     assert_eq!(
@@ -2110,10 +2170,13 @@ pub(super) fn h0_harness_destination_preserves_console_and_web_drafts_and_observ
     let web = host.cli(&["ui-snapshot"]);
     host.click_geometry("harness_entry");
     let active = host.cli(&["ui-snapshot"]);
-    let card = &active["geometry"]["harness_workspace"]["cards"][0]["rect"];
+    let card = first_visible_card(&active);
     host.cli(&["screenshot-pane", "--output", &shot]);
-    let visible_card = card_pixels(&host.gui.screenshot, card);
-    assert_ne!(visible_card.0, visible_card.1);
+    let visible_card = card_pixels(&host.gui.screenshot, &active, card, true);
+    assert_ne!(
+        visible_card.0, visible_card.1,
+        "Browser entry must display dashboard card/gap pixels: card={card}, snapshot={active}"
+    );
     host.cli(&[
         "screenshot-pane",
         "--target",
@@ -2127,7 +2190,7 @@ pub(super) fn h0_harness_destination_preserves_console_and_web_drafts_and_observ
         "capturing another pane must restore the active Browser"
     );
     assert_eq!(captured["geometry"]["harness_workspace"]["active"], true);
-    let explicit_pane = card_pixels(&host.gui.screenshot, card);
+    let explicit_pane = card_pixels(&host.gui.screenshot, &captured, card, true);
     assert_ne!(
         explicit_pane.0, visible_card.0,
         "an explicit Console target must capture its pane, not the Dashboard"

@@ -38,7 +38,7 @@ Outcome: safely prepare one client's model connection while other clients keep w
 │   safe failure: no partial binding; retain draft and matching proof for a deliberate retry
 │   dependency: VERIFY and serialized gateway/store publication
 │   non-goal: rotating unrelated bindings, account fallback or cancelling streams on highlight
-└── [_] MIGRATE — preserve existing usable connections without inventing inference evidence
+└── [-] MIGRATE — preserve existing usable connections without inventing inference evidence
     invariant: default key/aliases and custom allocations retain their meaning
     evidence: CS-07 version-1/2 load, default/custom worker resume and migration no-op
     safe failure: corrupt or ambiguous migration refuses publication without rewriting private state
@@ -155,7 +155,8 @@ in private state and user-visible status.
 
 ## Evidence frontier
 
-CS-01 is `[-]` in development; CS-02..07 remain `[_]` implementation obligations.
+CS-01 is `[-]` in development. The version-3 resolver/migration prerequisite is
+also `[-]`; the full CS-02..07 draft/verify/atomic-apply obligations remain open.
 Each trusted
 regression must fail at runtime when its guarded identity/transaction condition
 is removed, then pass after exact restoration. Public Settings journeys must
@@ -368,3 +369,81 @@ and dedicated-feature all-target strict Clippy pass. An explicit fresh dev build
 also passes all 22 canonical native-browser checks. The scope remains controlled
 HTTP and isolated Windows development; it does not close actual provider grants,
 physical input/scales, matching-source six-cell or release qualification.
+
+### Version-3 resolver and migration prerequisite (in progress)
+
+The production codec now validates and upgrades version-1/2 configurations in
+memory to version 3. Loading an existing file does not rewrite its bytes,
+create/rotate client keys, load a catalogue or start network work. Structurally
+valid unresolved account references remain intact; admission reports the actual
+account failure. Incomplete old setup with no selected account and a retained
+model string remains loadable without manufacturing an allocation.
+
+The original file has a 1 MiB read bound. Explicit publication validates and
+serializes within the same write bound before invoking the private writer.
+Provenance can make a near-limit legacy file's in-memory representation larger
+than that bound: its unchanged existing routes remain readable/usable, while
+an oversized future save is refused before changing disk or live bindings.
+
+One canonical allocation resolver now serves admission, default Start,
+binding/model observations, migration and generation comparison. The optional
+private `default_route` registry key is separate from `model`, which retains
+the previously accepted default public name. `minicon-selected`, that old name
+and the upstream model ID remain accepted; retagging a private registry key
+does not introduce a new public alias. Custom aliases/defaults are unchanged.
+Mechanical registry changes preserve effective account/wire generations.
+
+Version 3 records exactly one explicit provenance item per complete allocation.
+LegacyApplied has an effective-route digest and no fabricated time/account
+authority. A live transition checks its actual previous allocation and refuses
+copying that history to another account/profile/alias/wire or downgrading back
+to version 1/2. Persisted inference evidence has a versioned exact candidate,
+positive check time, canonical wire fingerprint and credential/service/
+organization authority. Decode checks its allocation identity; admission also
+checks current authority. The proof creation bridge remains test-only until
+the real paid-probe consumer is integrated.
+
+Both loaded and fresh Owner configurations become version 3. The old immediate
+SelectAccount/SelectModel actions now return VerificationRequired. The existing
+GUI callers still require replacement with the complete draft/verify/apply
+flow. This intentionally incomplete development checkpoint cannot qualify that
+connection experience or a releasable Candidate. Existing applied routes remain
+usable independently of those new-selection actions.
+
+The first corrected strict-wrapper run passes ten new `cs02_` tests, increasing
+the main inventory from 669 to 679:
+`target-six/v0.2.23-provider/cs02-leaf1-initial-green.log`.
+Migration/name compatibility reaches real loopback POSTs and named bindings;
+seven custom profiles, all 32 allocations each, unresolved accounts, malformed
+provenance, write bounds, read-only migration and downgrade refusal are covered.
+Older fixture setup is adapted by writing actual legacy private files before
+the real decoder, preserving the production transition guard. The publication
+fault regression uses a clearly synthetic DraftBook proof prerequisite to reach
+its actual disk/live warning/failure consumer; it establishes no paid inference.
+The broader existing bin consumer gate passes 249 with one unselected Pi opt-in
+ignored in `cs02-leaf1-existing-consumers-repaired.log`.
+
+Fifteen actual runtime assertion controls cover all ten new tests, followed by
+their byte-exact restored passing executions:
+`target-six/v0.2.23-provider/cs02-leaf1-controls/receipt.json`.
+They exercise old-name HTTP admission, registry-only generation stability,
+legacy digest/history, custom default-alias resolution, independent read/write
+size boundaries, exact proof wire/organization authority, downgrade refusal,
+incomplete setup, read-time byte preservation and both old-selector refusals.
+The seven-profile test's quota rejection also has provenance validation; it is
+not counted as an independently proved quota guard. Setup/compile errors,
+timeouts or passing mutants count as no assertion RED. Independent frozen-source
+read-only review found no substantiated must-fix, retaining the incomplete-GUI
+boundary; its frozen source and findings remain under
+`target-six/v0.2.23-provider/cs02-leaf1-readonly-review/`.
+The joined local development gate passes 290 actual Rust executions with one
+unselected Pi opt-in ignored, default/dedicated-feature strict all-target Clippy,
+formatting and all 22 canonical native-browser checks:
+`target-six/v0.2.23-provider/cs02-final-gate-receipt.json`.
+Its first alignment attempt rejects an ignored Markdown evidence-file reference;
+the retained failed attempt is `cs02-final-attempt1/receipt.json`. Only that PRD
+pointer is corrected to its output directory. The final receipt explicitly
+reuses the six passing compiled gates with unchanged source bytes and reruns
+the full documentation alignment and remaining gates. No failed attempt is
+relabelled as PASS. Matching-source native feedback, independent postcommit
+verification, complete CS-02..07 and release qualification remain open.

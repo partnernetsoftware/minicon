@@ -421,6 +421,32 @@ its native host PNGs and fresh live-document reports are retained in
 `cs01-artifact-local-final/` under the same output root. The cross-platform
 failed-source result above remains retained until a new matching-source run.
 
+The exact-source `5a64ca4c1c3a5668f6c74dc9ec082f73120f814d` native development
+run `40179668925` also ends with five successful cells and one Mac ARM failure.
+All six canonical browser smokes pass 22 checks; the Mac ARM H0 public journey
+panics on unsigned subtraction in the `card_pixels` closure. The raw failure
+does not identify which invocation or retain its card/frame, so the explanation
+that later Browser-entry sampling selected a hidden first card remains an
+inference. Terminal job/API/archive-digest audit:
+`target-six/v0.2.23-provider/ci-5a64ca4-native/verification-index.json`.
+The subsequent test-only repair samples the actual first visible card, requires
+its index to equal published scroll, checks dimensions before inset subtraction
+and bounds the PNG probes with card/snapshot diagnostics. Product scroll is
+unchanged. The repaired public journey passes locally; removing the actual
+production pane-capture guard makes its explicit Console pixel assertion fail,
+then the same journey passes after byte-exact restoration:
+`target-six/v0.2.23-provider/h0-visible-sampling-controls/receipt.json`.
+New matching-source Mac feedback remains open; neither failed run is a release
+six-cell or native physical-input pass.
+
+The subsequent restored-source local integration passes both public H0/menu
+journeys and all 22 canonical native-browser checks with default executable
+SHA-256 `d7957c21b78d1d19e4b59148f0e52ab5529527f122c8c15df5de345ba32a34bc`.
+Receipt: `target-six/v0.2.23-provider/cs02-final-gate-receipt.json`; native host
+PNGs and fresh live-document reports are under `cs02-artifact-local-final/` in
+that output root. This remains Windows local development evidence; new-source
+Mac feedback and physical-input/artifact qualification retain the boundary above.
+
 Sixteen actual runtime assertion failures cover projection, attempt identity,
 geometry, loading, host/pane capture, Browser restoration, scratch-frame discard,
 input/return focus and both menu traversal boundaries. Nine accepted controls

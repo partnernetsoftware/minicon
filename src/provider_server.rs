@@ -29,6 +29,7 @@ use std::{
 };
 
 pub const MODEL_ALIAS: &str = "minicon-selected";
+pub(crate) const CONFIG_BYTES: usize = 1024 * 1024;
 const NON_STREAM_BYTES: usize = 8 * 1024 * 1024;
 pub(crate) const CATALOG_BYTES: usize = 2 * 1024 * 1024;
 pub(crate) const MAX_MODELS: usize = 512;
@@ -170,6 +171,10 @@ pub struct Config {
     /// profile. Additional profiles are admitted only by the version 2 schema.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub profiles: Vec<ClientProfile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_route: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub applied_evidence: Vec<AppliedEvidence>,
 }
 
 /// Both outcomes have installed the complete configuration. A durability
@@ -190,10 +195,12 @@ impl Config {
             identity: random_id()?,
             models: Vec::new(),
             profiles: Vec::new(),
+            default_route: None,
+            applied_evidence: Vec::new(),
         })
     }
     pub fn validate(&self) -> Result<(), ServerError> {
-        if !matches!(self.version, 1 | 2)
+        if !matches!(self.version, 1..=3)
             || (self.version == 1 && !self.profiles.is_empty())
             || self.profiles.len() >= MAX_CLIENT_PROFILES
             || self.port < 1024
@@ -213,6 +220,13 @@ impl Config {
             if !ids.insert(&model.id) {
                 return Err(ServerError::InvalidConfig);
             }
+        }
+        if self.selected_account.is_some()
+            && !self.model.is_empty()
+            && self.default_route.is_none()
+            && !ids.contains(&self.model)
+        {
+            return Err(ServerError::InvalidConfig);
         }
         let mut profiles = HashSet::new();
         for profile in &self.profiles {
@@ -238,6 +252,257 @@ impl Config {
                 }
             }
             if !profile.allocations.is_empty() && !aliases.contains(&profile.default_model) {
+                return Err(ServerError::InvalidConfig);
+            }
+        }
+        self.validate_applied()
+    }
+}
+
+/// Explicit origin of an existing allocation. A legacy import is not an
+/// inference and carries no manufactured credential authority or check time.
+#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum AppliedOrigin {
+    LegacyApplied {
+        snapshot_digest: String,
+    },
+    Inference {
+        proof: Box<crate::provider_selection::InferenceProof>,
+    },
+}
+impl std::fmt::Debug for AppliedOrigin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::LegacyApplied { .. } => "LegacyApplied([REDACTED])",
+            Self::Inference { .. } => "Inference([REDACTED])",
+        })
+    }
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AppliedEvidence {
+    pub profile: String,
+    pub alias: String,
+    pub account: String,
+    pub origin: AppliedOrigin,
+}
+
+/// Borrowed resolution only; no grant, I/O or mutation. All product routing
+/// paths share this interpretation of public aliases and private route keys.
+pub(crate) struct ResolvedAllocation<'a> {
+    pub account: &'a str,
+    pub alias: &'a str,
+    pub route: &'a ModelRoute,
+    pub evidence: Option<&'a AppliedEvidence>,
+}
+
+impl Config {
+    pub(crate) fn decode_applied(bytes: &[u8]) -> Result<Self, ServerError> {
+        if bytes.len() > CONFIG_BYTES {
+            return Err(ServerError::InvalidConfig);
+        }
+        let config: Self = serde_json::from_slice(bytes).map_err(|_| ServerError::InvalidConfig)?;
+        config.upgrade_applied()
+    }
+
+    /// In-memory only. No catalogue/account/key reads and no disk rewrite.
+    pub(crate) fn upgrade_applied(mut self) -> Result<Self, ServerError> {
+        self.validate()?;
+        if self.version == 3 {
+            return Ok(self);
+        }
+        let mut evidence = Vec::new();
+        if let Ok(allocation) = self.resolve_allocation("default", None) {
+            evidence.push(AppliedEvidence {
+                profile: "default".into(),
+                alias: MODEL_ALIAS.into(),
+                account: allocation.account.into(),
+                origin: AppliedOrigin::LegacyApplied {
+                    snapshot_digest: crate::provider_selection::legacy_snapshot_digest(
+                        allocation.route,
+                    )
+                    .map_err(|_| ServerError::InvalidConfig)?,
+                },
+            });
+        }
+        for profile in &self.profiles {
+            for allocation in &profile.allocations {
+                let resolved = self.resolve_allocation(&profile.id, Some(&allocation.alias))?;
+                evidence.push(AppliedEvidence {
+                    profile: profile.id.clone(),
+                    alias: allocation.alias.clone(),
+                    account: allocation.account.clone(),
+                    origin: AppliedOrigin::LegacyApplied {
+                        snapshot_digest: crate::provider_selection::legacy_snapshot_digest(
+                            resolved.route,
+                        )
+                        .map_err(|_| ServerError::InvalidConfig)?,
+                    },
+                });
+            }
+        }
+        self.version = 3;
+        self.applied_evidence = evidence;
+        self.validate()?;
+        Ok(self)
+    }
+
+    pub(crate) fn encode_applied(&self) -> Result<Vec<u8>, ServerError> {
+        self.validate()?;
+        let bytes = serde_json::to_vec(self).map_err(|_| ServerError::InvalidConfig)?;
+        if bytes.len() > CONFIG_BYTES {
+            return Err(ServerError::InvalidConfig);
+        }
+        Ok(bytes)
+    }
+
+    pub(crate) fn resolve_allocation(
+        &self,
+        profile: &str,
+        requested: Option<&str>,
+    ) -> Result<ResolvedAllocation<'_>, ServerError> {
+        let (account, alias, key) = if profile == "default" {
+            (
+                self.selected_account
+                    .as_deref()
+                    .ok_or(ServerError::MissingAccount)?,
+                MODEL_ALIAS,
+                self.default_route.as_deref().unwrap_or(&self.model),
+            )
+        } else {
+            let client = self
+                .profiles
+                .iter()
+                .find(|entry| entry.id == profile)
+                .ok_or(ServerError::MissingKey)?;
+            let alias = requested.unwrap_or(&client.default_model);
+            let allocation = client
+                .allocations
+                .iter()
+                .find(|entry| entry.alias == alias)
+                .ok_or(ServerError::MissingModel)?;
+            (
+                allocation.account.as_str(),
+                allocation.alias.as_str(),
+                allocation.route.as_str(),
+            )
+        };
+        let route = self
+            .models
+            .iter()
+            .find(|entry| entry.id == key)
+            .ok_or(ServerError::MissingModel)?;
+        if profile == "default"
+            && requested.is_some_and(|name| {
+                name != MODEL_ALIAS && name != self.model && name != route.model_id
+            })
+        {
+            return Err(ServerError::MissingModel);
+        }
+        let evidence = self
+            .applied_evidence
+            .iter()
+            .find(|entry| entry.profile == profile && entry.alias == alias);
+        if self.version == 3 && evidence.is_none() {
+            return Err(ServerError::InvalidConfig);
+        }
+        Ok(ResolvedAllocation {
+            account,
+            alias,
+            route,
+            evidence,
+        })
+    }
+
+    fn validate_applied(&self) -> Result<(), ServerError> {
+        if self.version != 3 {
+            return if self.default_route.is_none() && self.applied_evidence.is_empty() {
+                Ok(())
+            } else {
+                Err(ServerError::InvalidConfig)
+            };
+        }
+        if self.default_route.as_ref().is_some_and(|key| {
+            self.model.is_empty() || !self.models.iter().any(|route| &route.id == key)
+        }) {
+            return Err(ServerError::InvalidConfig);
+        }
+        let mut expected = 0;
+        let mut identities = HashSet::new();
+        for evidence in &self.applied_evidence {
+            if !identities.insert((&evidence.profile, &evidence.alias))
+                || !opaque_id(&evidence.account)
+            {
+                return Err(ServerError::InvalidConfig);
+            }
+            let allocation = self.resolve_allocation(&evidence.profile, Some(&evidence.alias))?;
+            if allocation.account != evidence.account || allocation.alias != evidence.alias {
+                return Err(ServerError::InvalidConfig);
+            }
+            match &evidence.origin {
+                AppliedOrigin::LegacyApplied { snapshot_digest } => {
+                    if crate::provider_selection::legacy_snapshot_digest(allocation.route)
+                        .map_err(|_| ServerError::InvalidConfig)?
+                        != *snapshot_digest
+                    {
+                        return Err(ServerError::InvalidConfig);
+                    }
+                }
+                AppliedOrigin::Inference { proof } => {
+                    if !proof.matches_route(
+                        &evidence.profile,
+                        &evidence.alias,
+                        &evidence.account,
+                        allocation.route,
+                    ) {
+                        return Err(ServerError::InvalidConfig);
+                    }
+                }
+            }
+        }
+        if self.selected_account.is_some() && !self.model.is_empty() {
+            self.resolve_allocation("default", None)?;
+            expected += 1;
+        }
+        for profile in &self.profiles {
+            for allocation in &profile.allocations {
+                self.resolve_allocation(&profile.id, Some(&allocation.alias))?;
+                expected += 1;
+            }
+        }
+        if expected != self.applied_evidence.len() {
+            return Err(ServerError::InvalidConfig);
+        }
+        Ok(())
+    }
+
+    /// A self-consistent JSON origin cannot establish history. Preserve legacy
+    /// only against the previous actual allocation, never on a new selection.
+    fn validate_legacy_transition(&self, previous: &Self) -> Result<(), ServerError> {
+        if previous.version == 3 && self.version != 3 {
+            return Err(ServerError::InvalidConfig);
+        }
+        if self.version != 3 {
+            return Ok(());
+        }
+        for evidence in &self.applied_evidence {
+            let AppliedOrigin::LegacyApplied { snapshot_digest } = &evidence.origin else {
+                continue;
+            };
+            let prior = previous.resolve_allocation(&evidence.profile, Some(&evidence.alias))?;
+            if prior.account != evidence.account
+                || prior.alias != evidence.alias
+                || crate::provider_selection::legacy_snapshot_digest(prior.route)
+                    .map_err(|_| ServerError::InvalidConfig)?
+                    != *snapshot_digest
+                || (evidence.profile == "default" && previous.model != self.model)
+                || (previous.version == 3
+                    && !matches!(
+                        prior.evidence.map(|entry| &entry.origin),
+                        Some(AppliedOrigin::LegacyApplied { .. })
+                    ))
+            {
                 return Err(ServerError::InvalidConfig);
             }
         }
@@ -362,7 +627,7 @@ impl Gateway {
         config: Config,
         publish: impl FnOnce() -> Result<ConfigPublication, ServerError>,
     ) -> Result<ConfigPublication, ServerError> {
-        config.validate()?;
+        config.encode_applied()?;
         #[cfg(test)]
         if self
             .fail_update
@@ -371,12 +636,17 @@ impl Gateway {
             return Err(ServerError::Storage);
         }
         let mut state = self.state.lock().map_err(|_| ServerError::Storage)?;
+        config.validate_legacy_transition(&state.config)?;
         let selected = |config: &Config| {
             config
-                .models
-                .iter()
-                .find(|route| route.id == config.model)
-                .map(|route| (config.selected_account.clone(), model_transport(route)))
+                .resolve_allocation("default", None)
+                .ok()
+                .map(|allocation| {
+                    (
+                        allocation.account.to_owned(),
+                        model_transport(allocation.route),
+                    )
+                })
         };
         let generation = if selected(&state.config) != selected(&config) {
             random_id()?
@@ -384,18 +654,11 @@ impl Gateway {
             state.generation.clone()
         };
         let route_identity = |config: &Config, profile: &str, alias: &str| {
-            let allocation = config
-                .profiles
-                .iter()
-                .find(|entry| entry.id == profile)?
-                .allocations
-                .iter()
-                .find(|entry| entry.alias == alias)?;
-            let route = config
-                .models
-                .iter()
-                .find(|route| route.id == allocation.route)?;
-            Some((allocation.account.clone(), model_transport(route)))
+            let allocation = config.resolve_allocation(profile, Some(alias)).ok()?;
+            Some((
+                allocation.account.to_owned(),
+                model_transport(allocation.route),
+            ))
         };
         let mut generations = HashMap::new();
         for profile in &config.profiles {
@@ -644,41 +907,26 @@ impl Gateway {
         profile: &str,
         requested: Option<&str>,
     ) -> Result<(Binding, ModelRoute), ServerError> {
-        let (account, route_id, alias, generation) = if profile == "default" {
-            (
-                state
-                    .config
-                    .selected_account
-                    .as_ref()
-                    .ok_or(ServerError::MissingAccount)?,
-                state.config.model.as_str(),
-                MODEL_ALIAS,
-                state.generation.clone(),
-            )
+        let allocation = state.config.resolve_allocation(profile, requested)?;
+        let account = allocation.account;
+        let alias = allocation.alias;
+        let generation = if profile == "default" {
+            state.generation.clone()
         } else {
-            let client = state
+            if !state
                 .config
                 .profiles
                 .iter()
-                .find(|entry| entry.id == profile && entry.enabled)
-                .ok_or(ServerError::MissingKey)?;
-            let alias = requested.unwrap_or(&client.default_model);
-            let allocation = client
-                .allocations
-                .iter()
-                .find(|entry| entry.alias == alias)
-                .ok_or(ServerError::MissingModel)?;
+                .any(|entry| entry.id == profile && entry.enabled)
+            {
+                return Err(ServerError::MissingKey);
+            }
             let access = state.clients.get(profile).ok_or(ServerError::MissingKey)?;
             let generation = state
                 .route_generations
                 .get(&(profile.to_owned(), alias.to_owned()))
                 .ok_or(ServerError::InvalidConfig)?;
-            (
-                &allocation.account,
-                allocation.route.as_str(),
-                allocation.alias.as_str(),
-                format!("{}-{generation}", access.generation),
-            )
+            format!("{}-{generation}", access.generation)
         };
         if state.disabled.contains(account) {
             return Err(ServerError::NeedsLogin);
@@ -692,26 +940,24 @@ impl Gateway {
         if !preferences.enabled {
             return Err(ServerError::NeedsLogin);
         }
-        let route = state
-            .config
-            .models
-            .iter()
-            .find(|model| model.id == route_id && model.provider == summary.provider)
-            .ok_or(ServerError::MissingModel)?
-            .clone();
-        if profile == "default"
-            && requested.is_some_and(|model| {
-                model != MODEL_ALIAS && model != route.model_id && model != route.id
-            })
-        {
+        let route = allocation.route.clone();
+        if route.provider != summary.provider {
             return Err(ServerError::MissingModel);
+        }
+        if let Some(AppliedEvidence {
+            origin: AppliedOrigin::Inference { proof },
+            ..
+        }) = allocation.evidence
+            && !proof.matches_current(&snapshot)
+        {
+            return Err(ServerError::BindingChanged);
         }
         Ok((
             Binding {
                 profile: profile.to_owned(),
                 alias: alias.to_owned(),
                 provider: summary.provider,
-                account: account.clone(),
+                account: account.to_owned(),
                 model: route.model_id.clone(),
                 generation: format!(
                     "{generation}:{}:{}:{}:{}",
@@ -2045,6 +2291,467 @@ mod tests {
     const FIRST: &str = "data: {\"id\":\"synthetic\",\"model\":\"fixture-wire\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello\"},\"finish_reason\":null}]}\n\n";
     const END: &str = "data: {\"id\":\"synthetic\",\"model\":\"fixture-wire\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
     const BODY: &str = r#"{"model":"minicon-selected","stream":true,"messages":[{"role":"user","content":"test"}]}"#;
+
+    #[test]
+    fn cs02_v1_v2_migration_and_private_interning_preserve_real_http_names_and_named_bindings() {
+        for version in [1, 2] {
+            let fixture = Fixture::new();
+            let profile = (version == 2).then(|| add_profile(&fixture, &fixture.account));
+            let server = fixture.server();
+            let session = "x-minicon-session: cs02-migration\r\n";
+            let before = server.get("/v1/minicon/binding", session);
+            assert!(before.starts_with("HTTP/1.1 200"));
+            let custom_before = profile
+                .as_ref()
+                .map(|_| server.get_key("/v1/minicon/binding", "synthetic-other", session));
+            let old = fixture.gateway.state.lock().unwrap().config.clone();
+            assert_eq!(old.version, version);
+            let bytes = old.encode_applied().unwrap();
+            let mut migrated = Config::decode_applied(&bytes).unwrap();
+            assert_eq!(migrated.version, 3);
+            assert_eq!(migrated.identity, old.identity);
+            assert_eq!(migrated.model, old.model);
+            assert_eq!(migrated.profiles, old.profiles);
+            assert_eq!(migrated.models, old.models);
+            assert!(
+                migrated
+                    .applied_evidence
+                    .iter()
+                    .all(|entry| matches!(entry.origin, AppliedOrigin::LegacyApplied { .. }))
+            );
+            // Intern only the private key, retaining old accepted names and
+            // immutable provenance. This must not rotate default/custom pins.
+            let private = "private/cs02-snapshot";
+            migrated.models[0].id = private.into();
+            migrated.default_route = Some(private.into());
+            for client in &mut migrated.profiles {
+                client.allocations[0].route = private.into();
+            }
+            fixture.gateway.update(migrated).unwrap();
+            assert_eq!(server.get("/v1/minicon/binding", session), before);
+            if let Some(custom_before) = custom_before {
+                assert_eq!(
+                    server.get_key("/v1/minicon/binding", "synthetic-other", session),
+                    custom_before
+                );
+            }
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            *fixture.gateway.fixture_upstream.lock().unwrap() = Some(format!(
+                "http://{}/inference",
+                listener.local_addr().unwrap()
+            ));
+            let request_count = 3 + usize::from(profile.is_some());
+            thread::scope(|scope| {
+                let peer = scope.spawn(|| {
+                    for _ in 0..request_count {
+                        let (stream, headers, body) = controlled_peer_request(&listener);
+                        assert!(headers.starts_with("POST "));
+                        assert!(headers.to_ascii_lowercase().contains("x-opencode-session:"));
+                        assert_eq!(body["model"], "fixture-wire");
+                        reply_controlled_peer(stream, json!({"id":"cs02","object":"chat.completion","model":"fixture-wire","choices":[{"index":0,"message":{"role":"assistant","content":"CS02_OK"},"finish_reason":"stop"}]}));
+                    }
+                });
+                for model in [MODEL_ALIAS, old.model.as_str(), "fixture-wire"] {
+                    let body = json!({"model":model,"messages":[{"role":"user","content":"synthetic"}],"max_tokens":1,"stream":false}).to_string();
+                    let mut stream = server.request("/v1/chat/completions", session, Some(&body));
+                    let mut response = String::new();
+                    stream.read_to_string(&mut response).unwrap();
+                    assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+                    let json: Value =
+                        serde_json::from_str(response.split_once("\r\n\r\n").unwrap().1).unwrap();
+                    assert_eq!(json["choices"][0]["message"]["content"], "CS02_OK");
+                }
+                if profile.is_some() {
+                    let body = json!({"model":"work","messages":[{"role":"user","content":"synthetic"}],"max_tokens":1,"stream":false}).to_string();
+                    let mut stream = server.request_key(
+                        "/v1/chat/completions",
+                        "synthetic-other",
+                        session,
+                        Some(&body),
+                    );
+                    let mut response = String::new();
+                    stream.read_to_string(&mut response).unwrap();
+                    assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+                }
+                peer.join().unwrap();
+            });
+            // The new private key is not a newly published public alias.
+            let body = json!({"model":private,"messages":[{"role":"user","content":"synthetic"}],"max_tokens":1}).to_string();
+            let mut stream = server.request("/v1/chat/completions", "", Some(&body));
+            let mut response = String::new();
+            stream.read_to_string(&mut response).unwrap();
+            assert!(response.starts_with("HTTP/1.1 400"), "{response}");
+        }
+    }
+
+    #[test]
+    fn cs02_v3_rejects_forged_legacy_origins_bad_references_and_wrong_evidence_identity() {
+        let fixture = Fixture::new();
+        add_profile(&fixture, &fixture.account);
+        let old = fixture.gateway.state.lock().unwrap().config.clone();
+        let migrated = old.clone().upgrade_applied().unwrap();
+        for change in [
+            "wire",
+            "account",
+            "alias",
+            "duplicate",
+            "missing",
+            "unknown-field",
+            "version",
+            "bad-digest",
+        ] {
+            let mut value = serde_json::to_value(&migrated).unwrap();
+            match change {
+                "wire" => {
+                    value["models"][0]["url"] =
+                        "https://opencode.ai/inference/go/openai/v1/chat/completions".into()
+                }
+                "account" => value["applied_evidence"][0]["account"] = "e".repeat(32).into(),
+                "alias" => value["applied_evidence"][0]["alias"] = "fixture-wire".into(),
+                "duplicate" => {
+                    let entry = value["applied_evidence"][0].clone();
+                    value["applied_evidence"]
+                        .as_array_mut()
+                        .unwrap()
+                        .push(entry);
+                }
+                "missing" => {
+                    value["applied_evidence"].as_array_mut().unwrap().remove(0);
+                }
+                "unknown-field" => {
+                    value["applied_evidence"][0]["origin"]["checked_unix_ms"] = 1.into()
+                }
+                "version" => value["version"] = 2.into(),
+                "bad-digest" => {
+                    value["applied_evidence"][0]["origin"]["snapshot_digest"] = "bad".into()
+                }
+                _ => unreachable!(),
+            }
+            assert!(
+                Config::decode_applied(&serde_json::to_vec(&value).unwrap()).is_err(),
+                "accepted {change}"
+            );
+        }
+        let mut invalid_legacy = serde_json::to_value(&old).unwrap();
+        let duplicate = invalid_legacy["models"][0].clone();
+        invalid_legacy["models"]
+            .as_array_mut()
+            .unwrap()
+            .push(duplicate);
+        assert!(Config::decode_applied(&serde_json::to_vec(&invalid_legacy).unwrap()).is_err());
+        assert_eq!(
+            Config::fresh()
+                .unwrap()
+                .upgrade_applied()
+                .unwrap()
+                .applied_evidence,
+            Vec::new()
+        );
+    }
+
+    #[test]
+    fn cs02_all_seven_profiles_and_unresolved_accounts_survive_memory_migration() {
+        let fixture = Fixture::new();
+        let mut config = fixture.gateway.state.lock().unwrap().config.clone();
+        config.version = 2;
+        config.selected_account = Some("f".repeat(32)); // deliberately not stored
+        for index in 1..=7 {
+            config.profiles.push(ClientProfile {
+                id: format!("{index:032x}"),
+                label: format!("Client {index}"),
+                enabled: index != 7,
+                default_model: "default-work".into(),
+                allocations: (0..32)
+                    .map(|alias| ClientAllocation {
+                        alias: if alias == 0 {
+                            "default-work".into()
+                        } else {
+                            format!("work-{alias}")
+                        },
+                        account: "e".repeat(32),
+                        route: config.model.clone(),
+                    })
+                    .collect(),
+            });
+        }
+        let migrated = Config::decode_applied(&config.encode_applied().unwrap()).unwrap();
+        assert_eq!(migrated.profiles, config.profiles);
+        assert_eq!(migrated.selected_account, config.selected_account);
+        assert_eq!(migrated.applied_evidence.len(), 1 + 7 * 32);
+        assert_eq!(
+            migrated
+                .resolve_allocation("default", None)
+                .unwrap()
+                .account,
+            "f".repeat(32)
+        );
+        for profile in &config.profiles {
+            assert_eq!(
+                migrated
+                    .resolve_allocation(&profile.id, None)
+                    .unwrap()
+                    .alias,
+                profile.default_model
+            );
+        }
+        let mut over = migrated.clone();
+        over.profiles.push(over.profiles[0].clone());
+        over.profiles.last_mut().unwrap().id = "8".repeat(32);
+        assert_eq!(over.validate(), Err(ServerError::InvalidConfig));
+        let mut over = migrated.clone();
+        over.profiles[0].allocations.push(ClientAllocation {
+            alias: "thirty-third".into(),
+            account: "e".repeat(32),
+            route: config.model,
+        });
+        assert_eq!(over.validate(), Err(ServerError::InvalidConfig));
+    }
+
+    #[test]
+    fn cs02_config_encode_bound_blocks_publication_and_keeps_live_binding() {
+        let fixture = Fixture::new();
+        let server = fixture.server();
+        let before = server.get("/v1/minicon/binding", "x-minicon-session: cs02-size\r\n");
+        let old = fixture.gateway.state.lock().unwrap().config.clone();
+        let mut config = old.clone().upgrade_applied().unwrap();
+        let route = config.models[0].clone();
+        for index in 1..MAX_MODELS {
+            let mut extra = route.clone();
+            extra.id = format!("extra-{index}");
+            extra.url = format!(
+                "https://opencode.ai/inference/{}/chat/completions",
+                "a".repeat(2400)
+            );
+            config.models.push(extra);
+        }
+        config.validate().unwrap();
+        assert!(serde_json::to_vec(&config).unwrap().len() > CONFIG_BYTES);
+        let called = std::sync::atomic::AtomicBool::new(false);
+        assert_eq!(
+            fixture.gateway.update_and_publish(config, || {
+                called.store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(ConfigPublication::Durable)
+            }),
+            Err(ServerError::InvalidConfig)
+        );
+        assert!(!called.load(std::sync::atomic::Ordering::SeqCst));
+        assert_eq!(fixture.gateway.state.lock().unwrap().config, old);
+        assert_eq!(
+            server.get("/v1/minicon/binding", "x-minicon-session: cs02-size\r\n"),
+            before
+        );
+    }
+
+    #[test]
+    fn cs02_maximum_legacy_file_still_loads_when_provenance_would_exceed_the_write_bound() {
+        let fixture = Fixture::new();
+        let mut config = fixture.gateway.state.lock().unwrap().config.clone();
+        config.version = 2;
+        for profile in 1..=7 {
+            config.profiles.push(ClientProfile {
+                id: format!("{profile:032x}"),
+                label: format!("Client {profile}"),
+                enabled: true,
+                default_model: "work-0".into(),
+                allocations: (0..32)
+                    .map(|index| ClientAllocation {
+                        alias: format!("work-{index}"),
+                        account: fixture.account.clone(),
+                        route: config.model.clone(),
+                    })
+                    .collect(),
+            });
+        }
+        let base = config.models[0].clone();
+        for index in 1..MAX_MODELS {
+            let mut row = base.clone();
+            row.id = format!("spare-{index}");
+            config.models.push(row);
+        }
+        let mut low: usize = 0;
+        let mut high = 7000;
+        while low < high {
+            let middle = (low + high).div_ceil(2);
+            let url = format!(
+                "https://opencode.ai/inference/{}/chat/completions",
+                "p".repeat(middle)
+            );
+            for row in &mut config.models[1..] {
+                row.url.clone_from(&url);
+            }
+            if serde_json::to_vec(&config).unwrap().len() <= CONFIG_BYTES {
+                low = middle;
+            } else {
+                high = middle - 1;
+            }
+        }
+        let url = format!(
+            "https://opencode.ai/inference/{}/chat/completions",
+            "p".repeat(low)
+        );
+        for row in &mut config.models[1..] {
+            row.url.clone_from(&url);
+        }
+        let bytes = config.encode_applied().unwrap();
+        assert!(bytes.len() > CONFIG_BYTES - 1024);
+        let migrated = Config::decode_applied(&bytes);
+        assert!(
+            migrated.is_ok(),
+            "valid legacy file must migrate before write-size checks: {:?}",
+            migrated.as_ref().err()
+        );
+        let migrated = migrated.unwrap();
+        assert!(serde_json::to_vec(&migrated).unwrap().len() > CONFIG_BYTES);
+        assert_eq!(migrated.encode_applied(), Err(ServerError::InvalidConfig));
+        let gateway = Gateway::new(
+            fixture.gateway.store.clone(),
+            migrated,
+            Some(Secret::new("synthetic-local").unwrap()),
+        )
+        .unwrap();
+        let server = local::Server::start(0, gateway.clone()).unwrap();
+        gateway.state.lock().unwrap().config.port = server.address().port();
+        let response = ServerFixture { server }.get("/v1/minicon/binding", "");
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+    }
+
+    #[test]
+    fn cs02_gateway_will_not_copy_legacy_provenance_into_a_new_account_or_profile() {
+        let fixture = Fixture::new();
+        let server = fixture.server();
+        let session = "x-minicon-session: cs02-legacy-copy\r\n";
+        let before = server.get("/v1/minicon/binding", session);
+        let original = fixture.gateway.state.lock().unwrap().config.clone();
+        let migrated = original.clone().upgrade_applied().unwrap();
+        fixture.gateway.update(migrated.clone()).unwrap();
+        for change in ["account", "profile"] {
+            let mut config = migrated.clone();
+            if change == "account" {
+                config.selected_account = Some("e".repeat(32));
+                config.applied_evidence[0].account = "e".repeat(32);
+            } else {
+                let id = "c".repeat(32);
+                config.profiles.push(ClientProfile {
+                    id: id.clone(),
+                    label: "Unverified new client".into(),
+                    enabled: true,
+                    default_model: "copied".into(),
+                    allocations: vec![ClientAllocation {
+                        alias: "copied".into(),
+                        account: fixture.account.clone(),
+                        route: config.model.clone(),
+                    }],
+                });
+                let mut copied = config.applied_evidence[0].clone();
+                copied.profile = id;
+                copied.alias = "copied".into();
+                config.applied_evidence.push(copied);
+            }
+            // The document is locally consistent, but history is false. The
+            // live transition guard must reject before calling its writer.
+            config.validate().unwrap();
+            let called = std::sync::atomic::AtomicBool::new(false);
+            assert!(
+                fixture
+                    .gateway
+                    .update_and_publish(config, || {
+                        called.store(true, std::sync::atomic::Ordering::SeqCst);
+                        Ok(ConfigPublication::Durable)
+                    })
+                    .is_err()
+            );
+            assert!(!called.load(std::sync::atomic::Ordering::SeqCst));
+            assert_eq!(fixture.gateway.state.lock().unwrap().config, migrated);
+            assert_eq!(server.get("/v1/minicon/binding", session), before);
+        }
+    }
+
+    #[test]
+    fn cs02_live_v3_cannot_downgrade_then_mint_legacy_for_a_changed_binding() {
+        let fixture = Fixture::new();
+        let profile = add_profile(&fixture, &fixture.account);
+        let server = fixture.server();
+        let session = "x-minicon-session: cs02-downgrade\r\n";
+        let before = server.get("/v1/minicon/binding", session);
+        let custom_before = server.get_key("/v1/minicon/binding", "synthetic-other", session);
+        assert!(before.starts_with("HTTP/1.1 200"));
+        assert!(custom_before.starts_with("HTTP/1.1 200"));
+        let old = fixture.gateway.state.lock().unwrap().config.clone();
+        let applied = old.upgrade_applied().unwrap();
+        fixture.gateway.update(applied.clone()).unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        *fixture.gateway.fixture_upstream.lock().unwrap() = Some(format!(
+            "http://{}/inference",
+            listener.local_addr().unwrap()
+        ));
+        thread::scope(|scope| {
+            let peer = scope.spawn(|| {
+                for _ in 0..2 {
+                    let (stream, headers, body) = controlled_peer_request(&listener);
+                    assert!(headers.starts_with("POST "));
+                    assert_eq!(body["model"], "fixture-wire");
+                    reply_controlled_peer(stream, json!({"id":"unchanged","model":"fixture-wire","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"STILL_ORIGINAL"},"finish_reason":"stop"}]}));
+                }
+            });
+            for version in [1, 2] {
+                let mut downgraded = applied.clone();
+                downgraded.version = version;
+                downgraded.default_route = None;
+                downgraded.applied_evidence.clear();
+                downgraded.selected_account = Some("e".repeat(32));
+                downgraded.models[0].model_id = "unverified-new-model".into();
+                if version == 1 {
+                    downgraded.profiles.clear();
+                }
+                downgraded.validate().unwrap();
+                let writer_called = std::sync::atomic::AtomicBool::new(false);
+                let result = fixture.gateway.update_and_publish(downgraded.clone(), || {
+                    writer_called.store(true, std::sync::atomic::Ordering::SeqCst);
+                    Ok(ConfigPublication::Durable)
+                });
+                assert_eq!(result, Err(ServerError::InvalidConfig));
+                assert!(!writer_called.load(std::sync::atomic::Ordering::SeqCst));
+                assert_eq!(fixture.gateway.state.lock().unwrap().config, applied);
+                // A second-stage re-import must not launder the new connection
+                // as historical even when called as a separate operation.
+                let laundered = downgraded.upgrade_applied().unwrap();
+                let writer_called = std::sync::atomic::AtomicBool::new(false);
+                assert!(
+                    fixture
+                        .gateway
+                        .update_and_publish(laundered, || {
+                            writer_called.store(true, std::sync::atomic::Ordering::SeqCst);
+                            Ok(ConfigPublication::Durable)
+                        })
+                        .is_err()
+                );
+                assert!(!writer_called.load(std::sync::atomic::Ordering::SeqCst));
+                assert_eq!(server.get("/v1/minicon/binding", session), before);
+                assert_eq!(
+                    server.get_key("/v1/minicon/binding", "synthetic-other", session),
+                    custom_before
+                );
+                assert!(
+                    fixture
+                        .gateway
+                        .state
+                        .lock()
+                        .unwrap()
+                        .config
+                        .profiles
+                        .iter()
+                        .any(|entry| entry.id == profile)
+                );
+                let body = json!({"model":applied.model,"messages":[{"role":"user","content":"synthetic"}],"max_tokens":1,"stream":false}).to_string();
+                let mut stream = server.request("/v1/chat/completions", session, Some(&body));
+                let mut response = String::new();
+                stream.read_to_string(&mut response).unwrap();
+                assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+                assert!(response.contains("STILL_ORIGINAL"));
+            }
+            peer.join().unwrap();
+        });
+    }
 
     #[test]
     fn cs01_real_catalogue_deadline_spans_all_metadata_exchanges() {

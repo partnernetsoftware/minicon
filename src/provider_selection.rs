@@ -466,7 +466,6 @@ fn organization_value_digest(value: Option<&str>) -> String {
     hash.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
-#[cfg(test)]
 #[derive(Clone, Eq, PartialEq)]
 struct WireIdentity([u8; 32]);
 
@@ -500,12 +499,24 @@ fn catalogue_route_headers<'a>(
     Ok(headers)
 }
 
-#[cfg(test)]
 fn wire_identity(
     authority: &ResolvedAuthority,
     route: &ModelRoute,
 ) -> Result<WireIdentity, SelectionError> {
     let headers = catalogue_route_headers(authority, route)?;
+    let effective_org = if route.provider == Provider::OpenCode {
+        authority.organization.digest.clone()
+    } else {
+        organization_value_digest(None)
+    };
+    Ok(wire_fingerprint(route, headers, &effective_org))
+}
+
+fn wire_fingerprint(
+    route: &ModelRoute,
+    headers: BTreeMap<String, &str>,
+    effective_org: &str,
+) -> WireIdentity {
     let mut hash = Sha256::new();
     hash.update(b"minicon.selection.wire.v1\0");
     framed(
@@ -524,18 +535,168 @@ fn wire_identity(
         },
     );
     framed(&mut hash, route.url.as_bytes());
-    let effective_org = if route.provider == Provider::OpenCode {
-        authority.organization.digest.clone()
-    } else {
-        organization_value_digest(None)
-    };
     framed(&mut hash, effective_org.as_bytes());
     framed(&mut hash, &(headers.len() as u64).to_be_bytes());
     for (name, value) in headers {
         framed(&mut hash, name.as_bytes());
         framed(&mut hash, value.as_bytes());
     }
-    Ok(WireIdentity(hash.finalize().into()))
+    WireIdentity(hash.finalize().into())
+}
+
+/// Legacy provenance records only the unchanged effective transport. It is not
+/// an exact inference proof and deliberately supplies no account/org authority.
+pub(crate) fn legacy_snapshot_digest(route: &ModelRoute) -> Result<String, SelectionError> {
+    validate_route(route).map_err(|_| SelectionError::InvalidRoute)?;
+    let headers = route
+        .headers
+        .iter()
+        .filter(|(name, _)| {
+            !name.eq_ignore_ascii_case("x-org-id")
+                && !name.eq_ignore_ascii_case("anthropic-version")
+        })
+        .map(|(name, value)| (name.to_ascii_lowercase(), value.as_str()))
+        .collect();
+    let wire = wire_fingerprint(route, headers, &organization_value_digest(None));
+    Ok(wire.0.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+/// Stable private serialization of an exact candidate. Only this module owns
+/// effective wire hashing; loading this record never invents an inference.
+#[derive(Clone, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CandidateRecord {
+    version: u8,
+    profile: String,
+    alias: String,
+    account: String,
+    provider: Provider,
+    credential: String,
+    service_generation: String,
+    service: NetworkPolicy,
+    organization_epoch: String,
+    organization_digest: String,
+    wire_digest: String,
+}
+impl fmt::Debug for CandidateRecord {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("CandidateRecord([REDACTED])")
+    }
+}
+impl CandidateRecord {
+    fn authority(&self) -> Result<ResolvedAuthority, SelectionError> {
+        let hex_digest = |value: &str| {
+            value.len() == 64
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        };
+        if self.version != 1
+            || (self.profile != "default" && !opaque_id(&self.profile))
+            || !crate::provider_server::safe_model(&self.alias, false)
+            || self.alias.chars().any(char::is_whitespace)
+            || !opaque_id(&self.account)
+            || !opaque_id(&self.credential)
+            || !opaque_id(&self.service_generation)
+            || !opaque_id(&self.organization_epoch)
+            || !hex_digest(&self.organization_digest)
+            || !hex_digest(&self.wire_digest)
+        {
+            return Err(SelectionError::InvalidAuthority);
+        }
+        self.service
+            .validate()
+            .map_err(|_| SelectionError::InvalidAuthority)?;
+        Ok(ResolvedAuthority {
+            account: self.account.clone(),
+            provider: self.provider,
+            credential: self.credential.clone(),
+            service_generation: self.service_generation.clone(),
+            service: self.service.clone(),
+            organization: OrganizationAuthority {
+                epoch: self.organization_epoch.clone(),
+                digest: self.organization_digest.clone(),
+            },
+        })
+    }
+    pub(crate) fn matches_route(
+        &self,
+        profile: &str,
+        alias: &str,
+        account: &str,
+        route: &ModelRoute,
+    ) -> bool {
+        let Ok(authority) = self.authority() else {
+            return false;
+        };
+        if self.profile != profile || self.alias != alias || self.account != account {
+            return false;
+        }
+        wire_identity(&authority, route).is_ok_and(|wire| {
+            let digest: String = wire.0.iter().map(|byte| format!("{byte:02x}")).collect();
+            digest == self.wire_digest
+        })
+    }
+    pub(crate) fn matches_current(&self, current: &AccountSnapshot) -> bool {
+        match (self.authority(), ResolvedAuthority::from_snapshot(current)) {
+            (Ok(expected), Ok(actual)) => expected == actual,
+            _ => false,
+        }
+    }
+}
+
+/// Persisted evidence from a successful exact-candidate inference. No legacy
+/// conversion constructor exists. CS-03 will consume the checked ticket seam.
+#[derive(Clone, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct InferenceProof {
+    candidate: CandidateRecord,
+    checked_unix_ms: u64,
+}
+impl InferenceProof {
+    pub(crate) fn matches_route(
+        &self,
+        profile: &str,
+        alias: &str,
+        account: &str,
+        route: &ModelRoute,
+    ) -> bool {
+        self.checked_unix_ms != 0 && self.candidate.matches_route(profile, alias, account, route)
+    }
+    pub(crate) fn matches_current(&self, current: &AccountSnapshot) -> bool {
+        self.candidate.matches_current(current)
+    }
+}
+
+#[cfg(test)]
+impl Verification {
+    /// Future production persistence bridge: a successful verification's exact
+    /// identity is serialized directly, never reconstructed from a cache row.
+    pub(crate) fn persisted(&self) -> InferenceProof {
+        let identity = &self.identity;
+        let authority = &identity.authority;
+        InferenceProof {
+            candidate: CandidateRecord {
+                version: 1,
+                profile: identity.profile.clone(),
+                alias: identity.alias.clone(),
+                account: authority.account.clone(),
+                provider: authority.provider,
+                credential: authority.credential.clone(),
+                service_generation: authority.service_generation.clone(),
+                service: authority.service.clone(),
+                organization_epoch: authority.organization.epoch.clone(),
+                organization_digest: authority.organization.digest.clone(),
+                wire_digest: identity
+                    .wire
+                    .0
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect(),
+            },
+            checked_unix_ms: self.checked_unix_ms,
+        }
+    }
 }
 
 /// Immutable selected wire snapshot, deliberately independent of cache IDs and
@@ -996,6 +1157,54 @@ mod tests {
                 selected,
             }],
         }
+    }
+
+    #[test]
+    fn cs02_exact_proof_json_uses_the_existing_candidate_identity_and_refuses_scope_or_wire_edits()
+    {
+        let current = account('a', None);
+        let row = route("catalogue-id", "openai/v1");
+        let mut drafts = DraftBook::default();
+        drafts
+            .replace(DEFAULT_PROFILE, edit(selection(&current, row.clone())))
+            .unwrap();
+        let ticket = drafts
+            .begin_probe(DEFAULT_PROFILE, "model", &current)
+            .unwrap();
+        drafts.accept_probe(ticket, &current, 1234).unwrap();
+        let proof = drafts
+            .verification(DEFAULT_PROFILE, "model", &current)
+            .unwrap()
+            .unwrap()
+            .persisted();
+        let bytes = serde_json::to_vec(&proof).unwrap();
+        let restored: InferenceProof = serde_json::from_slice(&bytes).unwrap();
+        assert!(restored.matches_route(DEFAULT_PROFILE, "model", &current.summary.id, &row));
+        assert!(restored.matches_current(&current));
+        let mut renamed = row.clone();
+        renamed.id = "private/other-registry-key".into();
+        assert!(restored.matches_route(DEFAULT_PROFILE, "model", &current.summary.id, &renamed));
+        renamed.model_id = "different-paid-model".into();
+        assert!(!restored.matches_route(DEFAULT_PROFILE, "model", &current.summary.id, &renamed));
+        let mut changed = current.clone();
+        changed.organization.epoch = "e".repeat(32);
+        assert!(!restored.matches_current(&changed));
+        assert!(!restored.matches_route(DEFAULT_PROFILE, "new-alias", &current.summary.id, &row));
+        let value = serde_json::to_value(&proof).unwrap();
+        assert!(value["candidate"].get("organization").is_none());
+        for field in ["version", "wire_digest", "organization_epoch"] {
+            let mut value = value.clone();
+            value["candidate"][field] = if field == "version" {
+                99.into()
+            } else {
+                "invalid".into()
+            };
+            let invalid: InferenceProof = serde_json::from_value(value).unwrap();
+            assert!(!invalid.matches_route(DEFAULT_PROFILE, "model", &current.summary.id, &row));
+        }
+        let mut unknown = value;
+        unknown["candidate"]["token"] = "must-not-be-in-proof".into();
+        assert!(serde_json::from_value::<InferenceProof>(unknown).is_err());
     }
 
     #[test]
