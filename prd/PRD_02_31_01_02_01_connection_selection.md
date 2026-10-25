@@ -26,7 +26,7 @@ Outcome: safely prepare one client's model connection while other clients keep w
 │   safe failure: invalid edits retain the last valid applied connection and the user's draft
 │   dependency: profile identity, catalogue and existing field mechanisms
 │   non-goal: persisting unapplied edits on exit or adding model-HTTP management endpoints
-├── [_] VERIFY — bind a deliberate inference check to the exact candidate
+├── [-] VERIFY — bind a deliberate inference check to the exact candidate
 │   invariant: profile/alias/account/grant/network/organization/wire identity must all match
 │   evidence: CS-03/04 real bounded HTTP with authority changes before send and before return
 │   safe failure: late checks cannot authorize a changed candidate; preserve existing allocations
@@ -56,6 +56,8 @@ flowchart TD
     D --> V[Explicit small inference check]
     V --> P[Exact candidate proof]
     P --> G{Draft and current authority still match?}
+    STOP[Cancel / Stop / changed draft revision] --> INVALID[Invalidate exact permit; reject late proof]
+    INVALID --> KEEP
     G -->|yes| T[Prepare full profile transaction]
     G -->|no| KEEP[Keep draft / reject stale proof]
     T --> LOCK[Gateway state then account-store authority lock]
@@ -123,6 +125,26 @@ then applies the complete profile atomically. A previous exact check can be
 reused by explicit Apply without another paid request. Failure preserves the
 draft, matching successful proofs and previous applied profile. Readiness of
 the account alone never authorizes a newly selected model.
+
+The initial manual check uses one 60-second deadline and a 2 MiB aggregate
+decoded-response budget, including credential refresh, with an output limit of
+eight tokens. The actual localized Verify control must display the possible
+charge and output limit whenever it can be activated; an offscreen notice does
+not suffice. A form with pending or unsent input cannot verify an older Owner
+candidate. Valid retained applied references and selected catalogue rows can be
+checked independently within one mixed form.
+
+Keep one active check and one last terminal result. A rejected attempt cannot
+replace the active identity. Cancel refers to the actual active request, not
+the focused form. Stop invalidates queued checks from its previous epoch;
+a new explicit check requested afterward remains allowed. A real draft revision
+change invalidates its permit and prevents late acceptance, including value ABA.
+
+Accepted inference proof and account-health persistence are separate. Only an
+actual postvalidation readiness write failure may retain the accepted proof
+with a storage warning and offer local persistence retry without another paid
+request. Failure to reread or validate current account authority is failure or
+staleness, never a warning that presents an unverified scope as current.
 
 ## Publication and migration
 
@@ -477,7 +499,7 @@ Successful Discard consumes its exact receipt even when metadata is unavailable.
 Form return restores its last legal field/slot; profile-chooser navigation needs
 confirmation. Applied alias/account/upstream-model rows remain visible beside
 the draft. The experience owner specifies the product behavior. The old
-immediate-selector GUI callers are gone. Verify and Apply remain unavailable;
+immediate-selector GUI callers are gone. At this checkpoint Verify and Apply remain unavailable;
 the retired unused runtime applied-only probe path is removed, while existing
 server probe regressions remain test-only. CS-03 must add a real candidate probe.
 
@@ -544,3 +566,69 @@ The exact commit is pushed after genuine independent ledger PASS. Matching-sourc
 six-cell development feedback runs separately; none of this is release evidence.
 This draft-form join does not complete candidate verification, atomic Apply,
 native auth-cookie persistence, actual provider/client journeys or the release.
+
+### Production exact-candidate check join (in progress)
+
+The deliberate check now joins the raw default/custom form, frozen exact
+candidate, real existing native HTTP/refresh path, sealed successful response
+and Owner's final revision/authority acceptance. A mixed applied/selected form
+does not fall back to its older semantic edit. The in-memory proof and the
+separate account-health write retain the failure distinctions specified above.
+Apply remains unavailable; checking never starts a listener or creates a key.
+
+Runtime uses the existing loaded-Owner loop for actual bounded commands.
+Old-epoch queued Verify is cancelled after Stop without dispatching a paid
+request; a genuinely new explicit check can still run. Settings uses distinct
+full-width Verify/Cancel rows. Its actual painter and pointer route share the
+localized cost-caption fit predicate; a cell too small for that caption cannot
+dispatch verification. An offscreen detailed notice or a local form error does
+not remove the control's visible charge/output indication.
+
+Initial Windows shared-cache gates pass formatting, both strict all-target
+Clippy configurations, eighteen alignment tests and 297 selected consumers
+with one named Pi opt-in ignored. All 282 previous passing names remain and
+fifteen new CS-03 tests actually execute:
+`target-six/v0.2.23-provider/cs03-initial-gates/receipt.json`.
+The first static attempt fails the helper-placement lint, recorded separately
+in `cs03-first-clippy-failure.json`; moving the appended production blocks
+before test modules fixes it without lint suppression. It is not runtime RED.
+The initial source bytes and subsequent LF-only normalization are explicitly
+bound in `target-six/v0.2.23-provider/cs03-source-freeze-v1/receipt.json`.
+All fifteen new tests now have actual original-assertion failure controls.
+Five use one temporary compound-source image with a separate tagged exact test
+per fresh process; nine more use separate serial mutations. Exact restoration
+passes all 148 selected consumers, with only the named external Pi opt-in ignored.
+Evidence: `target-six/v0.2.23-provider/cs03-compound5-controls/receipt.json`
+and `target-six/v0.2.23-provider/cs03-serial10-controls/receipt.json`.
+These are distinct control methods, not fifteen independently rebuilt images.
+
+The serial runner deliberately retains FAIL for its exact-request Cancel case:
+the original main assertion rejects the mutation, followed by a second fixture
+cleanup panic because the erroneously cancelled request never reaches its peer.
+The separately retained, exact-result adjudication accepts only that primary
+original assertion as RED, not the cleanup failure or a generic multi-panic rule:
+`target-six/v0.2.23-provider/cs03-cancel-control-adjudication.json`.
+No test or fixture was changed, all six product files are restored byte-exactly,
+and the final 148-consumer strict wrapper passes.
+
+The final current-source Windows development gate passes 319 Rust execution
+instances (297 related consumers, two default/custom gateway worker journeys,
+two main-window journeys and eighteen alignment checks), formatting and both
+strict all-target Clippy configurations. After Rust tests, an explicit default
+dev build is pinned before any GUI replay: SHA-256
+`f0ecb034516fb0a5163dd203ea18d66d7ab4f73ed3ad2d6507ab9e9962e2a456`.
+Nine form checks and all 22 ordinary-browser checks pass on these exact bytes:
+`target-six/v0.2.23-provider/cs03-final-gate-receipt.json`.
+
+An additional public replay retains all nine form assertions and passes three
+check/cancellation observations. Initial and post-Revert explicit Verify both
+produce a new exact default/revision/slot-0 `Failed/MissingAccount` terminal,
+with no check timestamp; idle Cancel creates or replaces no operation. Editing,
+form switches and Revert produce no implicit check. Config/key bytes remain
+unchanged and the owned GUI exits normally:
+`target-six/v0.2.23-provider/cs03-public-negative-final/receipt.json`.
+These twelve observations overlap the earlier nine; they are not twenty-one
+unique checks. The fixture has no real account, does not measure upstream
+traffic and proves no successful paid/provider call or physical input.
+Independent postcommit, actual provider/native input, atomic Apply and full
+release acceptance remain open.

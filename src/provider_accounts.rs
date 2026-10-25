@@ -210,6 +210,8 @@ struct Credential {
 pub struct AccountStore {
     root: PathBuf,
     mutation: Mutex<()>,
+    #[cfg(test)]
+    fixture_ready_failure: std::sync::atomic::AtomicBool,
 }
 
 impl AccountStore {
@@ -221,6 +223,8 @@ impl AccountStore {
         Ok(Self {
             root,
             mutation: Mutex::new(()),
+            #[cfg(test)]
+            fixture_ready_failure: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -1021,8 +1025,116 @@ fn valid_label(label: &str) -> bool {
     !label.trim().is_empty() && label.len() <= 128 && !label.chars().any(char::is_control)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ReadinessError {
+    Authority(StoreError),
+    Persist,
+}
+
+impl AccountStore {
+    /// A real successful inference can update health only for its exact model
+    /// authority. Labels/login policy/context are intentionally not compared.
+    pub(crate) fn mark_ready_for_snapshot(
+        &self,
+        expected: &AccountSnapshot,
+    ) -> Result<AccountSummary, ReadinessError> {
+        let _guard = self
+            .mutation
+            .lock()
+            .map_err(|_| ReadinessError::Authority(StoreError::Storage))?;
+        let current = self
+            .snapshot_locked(&expected.summary.id)
+            .map_err(ReadinessError::Authority)?;
+        if current.summary.provider != expected.summary.provider
+            || current.generation != expected.generation
+            || !current.preferences.enabled
+            || !expected.preferences.enabled
+            || current.preferences.service_generation != expected.preferences.service_generation
+            || current.preferences.service != expected.preferences.service
+            || current.organization != expected.organization
+        {
+            return Err(ReadinessError::Authority(StoreError::Changed));
+        }
+        let mut credential = self
+            .read_credential(&expected.summary.id, expected.summary.provider)
+            .map_err(ReadinessError::Authority)?;
+        check_generation(
+            &credential,
+            &expected.summary.id,
+            Some(&expected.generation),
+        )
+        .map_err(ReadinessError::Authority)?;
+        if organization_authority(&credential, &expected.summary.id) != expected.organization {
+            return Err(ReadinessError::Authority(StoreError::Changed));
+        }
+        #[cfg(test)]
+        if self
+            .fixture_ready_failure
+            .swap(false, std::sync::atomic::Ordering::AcqRel)
+        {
+            return Err(ReadinessError::Persist);
+        }
+        credential.generation = Some(expected.generation.clone());
+        credential.version = 2;
+        credential.ready = Some(true);
+        self.write_credential(&expected.summary.id, &credential)
+            .map_err(|_| ReadinessError::Persist)?;
+        let mut summary = current.summary;
+        summary.state = AccountState::AccountReady;
+        Ok(summary)
+    }
+    #[cfg(test)]
+    pub(crate) fn fixture_fail_readiness_once(&self) {
+        self.fixture_ready_failure
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cs03_readiness_requires_full_current_service_and_organization_authority() {
+        let fixture = Fixture::new();
+        let store = AccountStore::new(fixture.0.clone()).unwrap();
+        let account = store
+            .insert("Before", catalogue_org_grant("synthetic-access"))
+            .unwrap();
+        let before = store.snapshot(&account.id).unwrap();
+        let mut preferences = before.preferences.clone();
+        preferences.service_generation = "b".repeat(32);
+        store
+            .update_preferences(&account.id, "Renamed", preferences.clone())
+            .unwrap();
+        let bytes = std::fs::read(store.credential_path(&account.id).unwrap()).unwrap();
+        assert_eq!(
+            store.mark_ready_for_snapshot(&before),
+            Err(ReadinessError::Authority(StoreError::Changed))
+        );
+        assert_eq!(
+            std::fs::read(store.credential_path(&account.id).unwrap()).unwrap(),
+            bytes
+        );
+        let current = store.snapshot(&account.id).unwrap();
+        let mut next = catalogue_org_grant("synthetic-new");
+        next.organization = Some("new-org".into());
+        store
+            .replace_grant_if_current(&account.id, &current.generation, next)
+            .unwrap();
+        assert_eq!(
+            store.mark_ready_for_snapshot(&current),
+            Err(ReadinessError::Authority(StoreError::Changed))
+        );
+        let current = store.snapshot(&account.id).unwrap();
+        preferences.login = NetworkPolicy::Proxy("http://127.0.0.1:8021".into());
+        store
+            .update_preferences(&account.id, "Metadata only", preferences)
+            .unwrap();
+        assert_eq!(
+            store.mark_ready_for_snapshot(&current).unwrap().state,
+            AccountState::AccountReady
+        );
+    }
+
     use super::*;
 
     struct Fixture(PathBuf);

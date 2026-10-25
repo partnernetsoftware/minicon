@@ -844,7 +844,6 @@ impl Verification {
     }
 }
 
-#[cfg(test)]
 pub(crate) struct ProbeTicket {
     identity: CandidateIdentity,
     revision: u64,
@@ -937,6 +936,21 @@ impl DraftBook {
         if !self.drafts.contains_key(profile) && self.drafts.len() >= MAX_CLIENT_PROFILES {
             return Err(SelectionError::ProfileBound);
         }
+        let proofs: BTreeMap<String, Verification> = self
+            .drafts
+            .get(profile)
+            .map(|draft| {
+                draft
+                    .proofs
+                    .iter()
+                    .filter(|(alias, _)| edit.allocations.iter().any(|a| &a.alias == *alias))
+                    .map(|(alias, proof)| (alias.clone(), proof.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let bytes = bytes
+            .checked_add(proofs.values().map(verification_bytes).sum::<usize>())
+            .ok_or(SelectionError::AggregateBound)?;
         let old = self.drafts.get(profile).map_or(0, |draft| draft.bytes);
         let total = self
             .bytes
@@ -952,18 +966,6 @@ impl DraftBook {
             .ok_or(SelectionError::RevisionExhausted)?;
         // Keep successful proofs for still-present aliases. Their exact identity
         // is checked at use; draft revision only guards in-flight probe returns.
-        let proofs = self
-            .drafts
-            .get(profile)
-            .map(|draft| {
-                draft
-                    .proofs
-                    .iter()
-                    .filter(|(alias, _)| edit.allocations.iter().any(|a| &a.alias == *alias))
-                    .map(|(alias, proof)| (alias.clone(), proof.clone()))
-                    .collect()
-            })
-            .unwrap_or_default();
         self.drafts.insert(
             profile.into(),
             ConnectionDraft {
@@ -1624,18 +1626,6 @@ impl DraftBook {
         }
         let compact = edit.compact();
         let edit_bytes = compact.validate()?;
-        let bytes = edit_bytes
-            .checked_add(form.bytes()?)
-            .ok_or(SelectionError::AggregateBound)?;
-        let old = self.drafts.get(profile).map_or(0, |draft| draft.bytes);
-        let total = self
-            .bytes
-            .checked_sub(old)
-            .and_then(|value| value.checked_add(bytes))
-            .ok_or(SelectionError::AggregateBound)?;
-        if total > MAX_DRAFT_BYTES {
-            return Err(SelectionError::AggregateBound);
-        }
         if profile != DEFAULT_PROFILE && !opaque_id(profile) {
             return Err(SelectionError::InvalidDraft);
         }
@@ -1664,6 +1654,19 @@ impl DraftBook {
                 })
                 .unwrap_or_default()
         });
+        let bytes = edit_bytes
+            .checked_add(form.bytes()?)
+            .and_then(|n| n.checked_add(proofs.values().map(verification_bytes).sum::<usize>()))
+            .ok_or(SelectionError::AggregateBound)?;
+        let old = self.drafts.get(profile).map_or(0, |draft| draft.bytes);
+        let total = self
+            .bytes
+            .checked_sub(old)
+            .and_then(|value| value.checked_add(bytes))
+            .ok_or(SelectionError::AggregateBound)?;
+        if total > MAX_DRAFT_BYTES {
+            return Err(SelectionError::AggregateBound);
+        }
         let revision = self.replace(profile, compact)?;
         let draft = self
             .drafts
@@ -1823,7 +1826,14 @@ impl DraftBook {
                         Some(FormSource::Applied(reference)) => {
                             if snapshot.summary.provider != reference.route.provider {
                                 ConnectionAvailability::AuthorityChanged
-                            } else { match &reference.origin {
+                            } else if draft.proofs.get(&row.alias).is_some_and(|proof| {
+                                proof.identity.profile == *id && proof.identity.alias == row.alias
+                                    && proof.identity.authority.account() == reference.account
+                                    && ResolvedAuthority::from_snapshot(snapshot).is_ok_and(|authority| {
+                                        authority == proof.identity.authority
+                                            && wire_identity(&authority,&reference.route).is_ok_and(|wire|wire==proof.identity.wire)
+                                    })
+                            }) { ConnectionAvailability::Available } else { match &reference.origin {
                                 crate::provider_server::AppliedOrigin::Inference { proof } if !proof.matches_current(snapshot) => ConnectionAvailability::AuthorityChanged,
                                 _ => ConnectionAvailability::Available,
                             } }
@@ -1860,8 +1870,293 @@ impl DraftBook {
     }
 }
 
+/// Immutable exact raw-form candidate. Never contains a grant or public route.
+pub(crate) struct FrozenCandidate {
+    identity: CandidateIdentity,
+    route: std::sync::Arc<ModelRoute>,
+}
+impl fmt::Debug for FrozenCandidate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("FrozenCandidate([REDACTED])")
+    }
+}
+impl FrozenCandidate {
+    pub(crate) fn account(&self) -> &str {
+        self.identity.authority.account()
+    }
+    pub(crate) fn route(&self) -> &ModelRoute {
+        &self.route
+    }
+    pub(crate) fn identity(&self) -> &CandidateIdentity {
+        &self.identity
+    }
+    pub(crate) fn matches_current(&self, current: &AccountSnapshot) -> bool {
+        ResolvedAuthority::from_snapshot(current).is_ok_and(|authority| {
+            authority == self.identity.authority
+                && wire_identity(&authority, &self.route)
+                    .is_ok_and(|wire| wire == self.identity.wire)
+        })
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct ProbePermit(std::sync::Arc<std::sync::atomic::AtomicU8>);
+impl ProbePermit {
+    pub(crate) fn new() -> Self {
+        Self(std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0)))
+    }
+    pub(crate) fn invalidate(&self) {
+        self.0.store(2, std::sync::atomic::Ordering::Release);
+    }
+    pub(crate) fn try_admit(&self) -> bool {
+        self.0
+            .compare_exchange(
+                0,
+                1,
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Acquire,
+            )
+            .is_ok()
+    }
+    pub(crate) fn is_admitted(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::Acquire) == 1
+    }
+}
+
+impl DraftBook {
+    pub(crate) fn probe_account(
+        &self,
+        profile: &str,
+        revision: u64,
+        slot: u8,
+    ) -> Result<&str, SelectionError> {
+        self.check_revision(profile, revision)?;
+        let form = self.form(profile)?;
+        if form.error.is_some() {
+            return Err(SelectionError::InvalidDraft);
+        }
+        form.input
+            .allocations
+            .iter()
+            .find(|row| row.slot == slot)
+            .and_then(|row| row.account.as_deref())
+            .ok_or(SelectionError::InvalidDraft)
+    }
+
+    pub(crate) fn freeze_probe(
+        &self,
+        profile: &str,
+        revision: u64,
+        slot: u8,
+        current: &AccountSnapshot,
+    ) -> Result<(ProbeTicket, FrozenCandidate), SelectionError> {
+        let account = self.probe_account(profile, revision, slot)?;
+        let form = self.form(profile)?;
+        let row = form
+            .input
+            .allocations
+            .iter()
+            .find(|row| row.slot == slot)
+            .ok_or(SelectionError::MissingAlias)?;
+        let selected = form
+            .selections
+            .get(&slot)
+            .ok_or(SelectionError::MissingRoute)?;
+        if selected.text != row.model || account != current.summary.id {
+            return Err(SelectionError::DraftChanged);
+        }
+        let authority = ResolvedAuthority::from_snapshot(current)?;
+        let route = match &selected.source {
+            FormSource::Selected(frozen) => {
+                if frozen.authority != authority {
+                    return Err(SelectionError::AuthorityChanged);
+                }
+                std::sync::Arc::new(compact_route(&frozen.route))
+            }
+            FormSource::Applied(applied) => {
+                if applied.profile != profile
+                    || applied.alias != row.alias
+                    || applied.account != account
+                    || applied.route.model_id != row.model
+                {
+                    return Err(SelectionError::DraftChanged);
+                }
+                applied.route.clone()
+            }
+        };
+        let identity = CandidateIdentity {
+            profile: profile.into(),
+            alias: row.alias.clone(),
+            wire: wire_identity(&authority, &route)?,
+            authority,
+        };
+        Ok((
+            ProbeTicket {
+                identity: identity.clone(),
+                revision,
+            },
+            FrozenCandidate { identity, route },
+        ))
+    }
+
+    pub(crate) fn accept_probe_observation(
+        &mut self,
+        ticket: ProbeTicket,
+        observation: crate::provider_server::ProbeObservation,
+        current: &AccountSnapshot,
+        permit: &ProbePermit,
+    ) -> Result<(), SelectionError> {
+        if !permit.is_admitted() {
+            return Err(SelectionError::LateResult);
+        }
+        let profile = &ticket.identity.profile;
+        let form = self.form(profile)?;
+        let slot = form
+            .input
+            .allocations
+            .iter()
+            .find(|row| row.alias == ticket.identity.alias)
+            .map(|row| row.slot)
+            .ok_or(SelectionError::MissingAlias)?;
+        let (fresh, _) = self.freeze_probe(profile, ticket.revision, slot, current)?;
+        let (observed, checked_unix_ms) = observation.into_parts();
+        if fresh.identity != ticket.identity || observed != ticket.identity || checked_unix_ms == 0
+        {
+            return Err(SelectionError::DraftChanged);
+        }
+        // Bounded current proof state only; never accumulate operation history.
+        let proof = Verification {
+            identity: ticket.identity.clone(),
+            checked_unix_ms,
+        };
+        let additional = verification_bytes(&proof);
+        let old = self
+            .get(profile)?
+            .proofs
+            .get(&ticket.identity.alias)
+            .map_or(0, verification_bytes);
+        let total = self
+            .bytes
+            .checked_sub(old)
+            .and_then(|n| n.checked_add(additional))
+            .ok_or(SelectionError::AggregateBound)?;
+        if total > MAX_DRAFT_BYTES {
+            return Err(SelectionError::AggregateBound);
+        }
+        let draft = self
+            .drafts
+            .get_mut(profile)
+            .ok_or(SelectionError::MissingProfile)?;
+        draft.bytes = draft
+            .bytes
+            .checked_sub(old)
+            .and_then(|n| n.checked_add(additional))
+            .ok_or(SelectionError::AggregateBound)?;
+        draft.proofs.insert(ticket.identity.alias, proof);
+        self.bytes = total;
+        Ok(())
+    }
+}
+
+fn verification_bytes(proof: &Verification) -> usize {
+    size_of::<(String, Verification)>()
+        + proof.identity.profile.capacity()
+        + 2 * proof.identity.alias.capacity()
+        + proof.identity.authority.bytes()
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cs03_mixed_raw_applied_and_selected_rows_freeze_their_actual_independent_wires() {
+        let config = cs02_applied_fixture();
+        let account = account('a', None);
+        let mut book = DraftBook::from_applied(&config).unwrap();
+        let profile = config.profiles[0].id.clone();
+        let first = book
+            .views(&ConnectionAccounts::new())
+            .into_iter()
+            .find(|row| row.id == profile)
+            .unwrap();
+        let mut input = first.input;
+        input.allocations.push(ConnectionAllocationInput {
+            slot: 1,
+            alias: "new-model".into(),
+            account: Some(account.summary.id.clone()),
+            model: "new-catalogue".into(),
+        });
+        let revision = book.edit_input(&profile, first.revision, input).unwrap();
+        let fresh_route = route("new-catalogue", "a-new-scope/v1");
+        let revision = book
+            .choose(
+                &profile,
+                revision,
+                1,
+                selection(&account, fresh_route.clone()),
+                "new-catalogue",
+            )
+            .unwrap();
+        let (_, applied) = book.freeze_probe(&profile, revision, 0, &account).unwrap();
+        let (_, selected) = book.freeze_probe(&profile, revision, 1, &account).unwrap();
+        assert_eq!(applied.route(), &config.models[0]);
+        assert_eq!(selected.route(), &fresh_route);
+        assert_ne!(applied.identity(), selected.identity());
+        assert!(
+            book.views(&ConnectionAccounts::from([(
+                account.summary.id.clone(),
+                Ok(account.clone())
+            )]))
+            .iter()
+            .all(|profile| profile
+                .allocations
+                .iter()
+                .all(|row| row.checked_unix_ms.is_none()))
+        );
+        let mut disabled = account.clone();
+        disabled.preferences.enabled = false;
+        assert!(matches!(
+            book.freeze_probe(&profile, revision, 0, &disabled),
+            Err(SelectionError::Disabled)
+        ));
+        assert!(matches!(
+            book.freeze_probe(&profile, revision - 1, 1, &account),
+            Err(SelectionError::DraftChanged)
+        ));
+        let mut invalid = book
+            .views(&ConnectionAccounts::new())
+            .into_iter()
+            .find(|row| row.id == profile)
+            .unwrap()
+            .input;
+        invalid.allocations[1].alias = invalid.allocations[0].alias.clone();
+        let revision = book.edit_input(&profile, revision, invalid).unwrap();
+        assert!(matches!(
+            book.freeze_probe(&profile, revision, 0, &account),
+            Err(SelectionError::InvalidDraft)
+        ));
+    }
+
+    #[test]
+    fn cs03_permit_cannot_be_readmitted_or_revived_after_a_real_candidate_is_cancelled() {
+        let account = account('a', None);
+        let config = cs02_applied_fixture();
+        let book = DraftBook::from_applied(&config).unwrap();
+        let revision = book.revision(DEFAULT_PROFILE).unwrap();
+        let (_, candidate) = book
+            .freeze_probe(DEFAULT_PROFILE, revision, 0, &account)
+            .unwrap();
+        assert!(candidate.matches_current(&account));
+        let permit = ProbePermit::new();
+        assert!(permit.try_admit());
+        assert!(!permit.try_admit());
+        permit.invalidate();
+        assert!(!permit.is_admitted());
+        assert!(!permit.try_admit());
+        let mut changed = account.clone();
+        changed.organization.epoch = "e".repeat(32);
+        assert!(!candidate.matches_current(&changed));
+    }
+
     use super::*;
     use crate::provider_accounts::{AccountPreferences, AccountState, AccountSummary};
 

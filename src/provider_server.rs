@@ -2092,8 +2092,413 @@ fn supplied_key(head: &RequestHead) -> Option<&str> {
     }
 }
 
+/// Only the successful real candidate transport path can construct this token.
+pub(crate) struct ProbeObservation {
+    identity: crate::provider_selection::CandidateIdentity,
+    checked_unix_ms: u64,
+}
+impl std::fmt::Debug for ProbeObservation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ProbeObservation([REDACTED])")
+    }
+}
+impl ProbeObservation {
+    pub(crate) fn into_parts(self) -> (crate::provider_selection::CandidateIdentity, u64) {
+        (self.identity, self.checked_unix_ms)
+    }
+}
+
+impl Gateway {
+    pub(crate) fn probe_candidate(
+        &self,
+        candidate: &crate::provider_selection::FrozenCandidate,
+        permit: &crate::provider_selection::ProbePermit,
+        identity: &str,
+        cancel: &Arc<NetworkHttpCancel>,
+        deadline: Instant,
+    ) -> Result<ProbeObservation, ServerError> {
+        let account = candidate.account();
+        let route = candidate.route();
+        validate_route(route)?;
+        let lease = BorrowedLease::acquire(self, account, cancel, None)?;
+        let initial = self.store.snapshot(account).map_err(credential_error)?;
+        if !candidate.matches_current(&initial)
+            || initial.generation != lease.generation
+            || initial.preferences.service_generation != lease.preferences.service_generation
+            || initial.preferences.service != lease.preferences.service
+        {
+            return Err(ServerError::BindingChanged);
+        }
+        let mut budget = CatalogueBudget {
+            deadline: deadline.min(Instant::now() + Duration::from_secs(60)),
+            response_bytes: 0,
+        };
+        let network = &lease.preferences.service;
+        self.grant_budgeted(
+            account,
+            cancel,
+            network,
+            &lease.generation,
+            Some(&mut budget),
+        )?;
+        // A same-generation refresh may change organization. Never attach its
+        // new scope to the old exact candidate or send a paid request for it.
+        let refreshed = self.store.snapshot(account).map_err(credential_error)?;
+        if !candidate.matches_current(&refreshed) {
+            return Err(ServerError::BindingChanged);
+        }
+        let grant = self
+            .store
+            .load_grant_for_authority(account, &refreshed.generation, &refreshed.organization)
+            .map_err(credential_error)?;
+        if grant.provider != route.provider {
+            return Err(ServerError::BindingChanged);
+        }
+        let body = match route.protocol {
+            WireProtocol::Chat => {
+                json!({"model":route.model_id,"messages":[{"role":"user","content":"Reply OK."}],"max_tokens":8,"stream":false})
+            }
+            WireProtocol::Messages => {
+                json!({"model":route.model_id,"messages":[{"role":"user","content":"Reply OK."}],"max_tokens":8,"stream":false,"thinking":{"type":"disabled"}})
+            }
+        };
+        let mut request = route_request(route, &grant, identity, &random_id()?);
+        request.body = serde_json::to_vec(&body).map_err(|_| ServerError::InvalidConfig)?;
+        {
+            // Admission is a linearization point, not a promise that a later
+            // UI edit can retract a byte already handed to the native engine.
+            let state = self.state.lock().map_err(|_| ServerError::Storage)?;
+            self.store
+                .with_snapshot(account, |current| {
+                    if state.disabled.contains(account) || !candidate.matches_current(&current) {
+                        return Err(ServerError::BindingChanged);
+                    }
+                    if cancel.is_cancelled() || !permit.try_admit() {
+                        return Err(ServerError::Cancelled);
+                    }
+                    Ok(())
+                })
+                .map_err(credential_error)??;
+        }
+        let response = budget.collect(self, request, cancel, CATALOG_BYTES, network)?;
+        let _ = budget.remaining()?;
+        check_status(response.status)?;
+        protocol::convert_response(
+            route.protocol.protocol(),
+            route.protocol.protocol(),
+            &response.body,
+            &route.model_id,
+        )
+        .map_err(ServerError::Protocol)?;
+        if cancel.is_cancelled() || !permit.is_admitted() {
+            return Err(ServerError::Cancelled);
+        }
+        let current = self.store.snapshot(account).map_err(credential_error)?;
+        if !candidate.matches_current(&current) {
+            return Err(ServerError::BindingChanged);
+        }
+        let checked_unix_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| ServerError::Storage)?
+            .as_millis()
+            .try_into()
+            .map_err(|_| ServerError::Storage)?;
+        if checked_unix_ms == 0 {
+            return Err(ServerError::Storage);
+        }
+        Ok(ProbeObservation {
+            identity: candidate.identity().clone(),
+            checked_unix_ms,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    fn cs03_candidate(
+        fixture: &Fixture,
+    ) -> (
+        crate::provider_selection::DraftBook,
+        crate::provider_selection::ProbeTicket,
+        crate::provider_selection::FrozenCandidate,
+    ) {
+        let config = fixture
+            .gateway
+            .state
+            .lock()
+            .unwrap()
+            .config
+            .clone()
+            .upgrade_applied()
+            .unwrap();
+        let book = crate::provider_selection::DraftBook::from_applied(&config).unwrap();
+        let snapshot = fixture.gateway.store.snapshot(&fixture.account).unwrap();
+        let (ticket, candidate) = book
+            .freeze_probe("default", book.revision("default").unwrap(), 0, &snapshot)
+            .unwrap();
+        (book, ticket, candidate)
+    }
+    fn cs03_completion() -> Value {
+        json!({"id":"synthetic-probe","model":"fixture-wire","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}]})
+    }
+
+    #[test]
+    fn cs03_candidate_transport_uses_one_small_real_request_and_exact_observation() {
+        let fixture = Fixture::new();
+        let (mut book, ticket, candidate) = cs03_candidate(&fixture);
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        fixture.gateway.fixture_catalogue_upstream(format!(
+            "http://{}/candidate",
+            listener.local_addr().unwrap()
+        ));
+        let gateway = fixture.gateway.clone();
+        let permit = crate::provider_selection::ProbePermit::new();
+        let worker_permit = permit.clone();
+        let worker = thread::spawn(move || {
+            gateway.probe_candidate(
+                &candidate,
+                &worker_permit,
+                "synthetic-check",
+                &Arc::new(NetworkHttpCancel::new()),
+                Instant::now() + Duration::from_secs(5),
+            )
+        });
+        let (stream, head, body) = controlled_peer_request(&listener);
+        assert!(head.starts_with("POST /candidate "));
+        assert_eq!(body["model"], "fixture-wire");
+        assert_eq!(body["max_tokens"], 8);
+        assert_eq!(body["stream"], false);
+        reply_controlled_peer(stream, cs03_completion());
+        let observation = worker.join().unwrap().unwrap();
+        let snapshot = fixture.gateway.store.snapshot(&fixture.account).unwrap();
+        book.accept_probe_observation(ticket, observation, &snapshot, &permit)
+            .unwrap();
+        let views = book.views(&crate::provider_selection::ConnectionAccounts::from([(
+            fixture.account.clone(),
+            Ok(snapshot),
+        )]));
+        assert_eq!(
+            views[0].allocations[0].evidence,
+            crate::provider_selection::ConnectionEvidence::Verified
+        );
+        assert!(
+            views[0].allocations[0]
+                .checked_unix_ms
+                .is_some_and(|time| time > 0)
+        );
+        listener.set_nonblocking(true).unwrap();
+        assert!(
+            matches!(listener.accept(),Err(error) if error.kind()==std::io::ErrorKind::WouldBlock)
+        );
+    }
+
+    #[test]
+    fn cs03_refreshed_organization_change_refuses_before_any_paid_inference() {
+        let fixture = Fixture::new();
+        let (_, _, candidate) = cs03_candidate(&fixture);
+        let before = fixture.gateway.store.snapshot(&fixture.account).unwrap();
+        fixture
+            .gateway
+            .store
+            .replace_grant_if_current(
+                &fixture.account,
+                &before.generation,
+                TokenGrant {
+                    provider: Provider::OpenCode,
+                    access_token: Secret::new("synthetic-expired").unwrap(),
+                    lifecycle: TokenLifecycle::ExpiringRefresh {
+                        refresh_token: Secret::new("synthetic-refresh").unwrap(),
+                        expires_at: Instant::now(),
+                    },
+                    organization: None,
+                },
+            )
+            .unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        fixture.gateway.fixture_catalogue_upstream(format!(
+            "http://{}/refresh",
+            listener.local_addr().unwrap()
+        ));
+        let gateway = fixture.gateway.clone();
+        let worker = thread::spawn(move || {
+            gateway.probe_candidate(
+                &candidate,
+                &crate::provider_selection::ProbePermit::new(),
+                "synthetic-check",
+                &Arc::new(NetworkHttpCancel::new()),
+                Instant::now() + Duration::from_secs(5),
+            )
+        });
+        let (stream, _, body) = controlled_peer_request(&listener);
+        assert_eq!(body["grant_type"], "refresh_token");
+        fixture
+            .gateway
+            .store
+            .replace_grant_if_current(
+                &fixture.account,
+                &before.generation,
+                TokenGrant {
+                    provider: Provider::OpenCode,
+                    access_token: Secret::new("synthetic-latest").unwrap(),
+                    lifecycle: TokenLifecycle::ExpiringRefresh {
+                        refresh_token: Secret::new("synthetic-refresh").unwrap(),
+                        expires_at: Instant::now() + Duration::from_secs(3600),
+                    },
+                    organization: Some("changed-org".into()),
+                },
+            )
+            .unwrap();
+        reply_controlled_peer(
+            stream,
+            json!({"access_token":"synthetic-refreshed","refresh_token":"synthetic-new","expires_in":3600}),
+        );
+        listener.set_nonblocking(true).unwrap();
+        let mut paid_requests = 0;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !worker.is_finished() {
+            match listener.accept() {
+                Ok((mut inference, _)) => {
+                    inference.set_nonblocking(false).unwrap();
+                    inference
+                        .set_read_timeout(Some(Duration::from_secs(3)))
+                        .unwrap();
+                    inference
+                        .set_write_timeout(Some(Duration::from_secs(3)))
+                        .unwrap();
+                    let headers = read_headers(&mut inference);
+                    let length: usize = headers
+                        .lines()
+                        .find_map(|line| {
+                            line.split_once(':')
+                                .filter(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                                .map(|(_, value)| value.trim().parse().unwrap())
+                        })
+                        .unwrap();
+                    assert!(length <= 16384);
+                    let mut body = vec![0; length];
+                    inference.read_exact(&mut body).unwrap();
+                    let body: Value = serde_json::from_slice(&body).unwrap();
+                    assert_eq!(body["max_tokens"], 8);
+                    paid_requests += 1;
+                    assert!(paid_requests <= 1, "candidate check retried inference");
+                    reply_controlled_peer(inference, cs03_completion());
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(
+                        Instant::now() < deadline,
+                        "controlled candidate did not reach a terminal result"
+                    );
+                    thread::sleep(Duration::from_millis(2));
+                }
+                Err(error) => panic!("candidate inference observation: {error}"),
+            }
+        }
+        assert!(matches!(
+            worker.join().unwrap(),
+            Err(ServerError::BindingChanged)
+        ));
+        assert_eq!(paid_requests, 0, "authority change emitted paid inference");
+    }
+
+    #[test]
+    fn cs03_candidate_response_rechecks_authority_after_real_success_body() {
+        let fixture = Fixture::new();
+        let (_, _, candidate) = cs03_candidate(&fixture);
+        let before = fixture.gateway.store.snapshot(&fixture.account).unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        fixture.gateway.fixture_catalogue_upstream(format!(
+            "http://{}/candidate",
+            listener.local_addr().unwrap()
+        ));
+        let gateway = fixture.gateway.clone();
+        let worker = thread::spawn(move || {
+            gateway.probe_candidate(
+                &candidate,
+                &crate::provider_selection::ProbePermit::new(),
+                "synthetic-check",
+                &Arc::new(NetworkHttpCancel::new()),
+                Instant::now() + Duration::from_secs(5),
+            )
+        });
+        let (stream, _, body) = controlled_peer_request(&listener);
+        assert_eq!(body["max_tokens"], 8);
+        let mut preferences = before.preferences.clone();
+        preferences.service_generation = "e".repeat(32);
+        fixture
+            .gateway
+            .store
+            .update_preferences(&fixture.account, "Changed service", preferences)
+            .unwrap();
+        reply_controlled_peer(stream, cs03_completion());
+        assert!(matches!(
+            worker.join().unwrap(),
+            Err(ServerError::BindingChanged)
+        ));
+    }
+
+    #[test]
+    fn cs03_refresh_and_inference_share_the_actual_two_mib_response_budget() {
+        let fixture = Fixture::new();
+        let (_, _, candidate) = cs03_candidate(&fixture);
+        let before = fixture.gateway.store.snapshot(&fixture.account).unwrap();
+        fixture
+            .gateway
+            .store
+            .replace_grant_if_current(
+                &fixture.account,
+                &before.generation,
+                TokenGrant {
+                    provider: Provider::OpenCode,
+                    access_token: Secret::new("synthetic-expired").unwrap(),
+                    lifecycle: TokenLifecycle::ExpiringRefresh {
+                        refresh_token: Secret::new("synthetic-refresh").unwrap(),
+                        expires_at: Instant::now(),
+                    },
+                    organization: None,
+                },
+            )
+            .unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        fixture.gateway.fixture_catalogue_upstream(format!(
+            "http://{}/budget",
+            listener.local_addr().unwrap()
+        ));
+        let gateway = fixture.gateway.clone();
+        let worker = thread::spawn(move || {
+            gateway.probe_candidate(
+                &candidate,
+                &crate::provider_selection::ProbePermit::new(),
+                "synthetic-check",
+                &Arc::new(NetworkHttpCancel::new()),
+                Instant::now() + Duration::from_secs(5),
+            )
+        });
+        let (refresh, _, body) = controlled_peer_request(&listener);
+        assert_eq!(body["grant_type"], "refresh_token");
+        reply_controlled_peer(
+            refresh,
+            json!({"access_token":"synthetic-fresh","refresh_token":"synthetic-new","expires_in":3600,"padding":"x".repeat(16*1024)}),
+        );
+        let (mut inference, _, body) = controlled_peer_request(&listener);
+        assert_eq!(body["max_tokens"], 8);
+        let mut response = cs03_completion();
+        response["padding"] = json!("x".repeat(CATALOG_BYTES - 8192));
+        let response = response.to_string();
+        assert!(response.len() < CATALOG_BYTES);
+        // The only expected early close is the real cumulative client cap.
+        let header = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            response.len()
+        );
+        let _ = inference
+            .write_all(header.as_bytes())
+            .and_then(|()| inference.write_all(response.as_bytes()));
+        assert!(
+            matches!(worker.join().unwrap(), Err(ServerError::Upstream)),
+            "individually bounded exchanges bypassed their cumulative response cap"
+        );
+    }
+
     use super::*;
     use crate::provider_auth::{Secret, TokenGrant, TokenLifecycle};
     use std::{

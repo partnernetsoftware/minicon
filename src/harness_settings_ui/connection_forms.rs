@@ -621,6 +621,30 @@ impl ConnectionForms {
                 .or_else(|| self.forms.keys().next().cloned());
         }
     }
+    pub fn verify(&mut self) -> Option<Action> {
+        let id = self.selected.clone()?;
+        let form = self.current_mut()?;
+        if form.waiting()
+            || form.unsent()
+            || form.input() != form.view.input
+            || form.view.error.is_some()
+            || form.model().text.len() > OWNER_MODEL_BYTES
+        {
+            form.local_error =
+                Some("Acknowledge valid staged edits before verifying this exact model.".into());
+            return None;
+        }
+        let slot = form.selected_slot?;
+        let expected_revision = form.revision;
+        let request = self.request()?;
+        Some(Action::VerifyConnectionAllocation {
+            request,
+            profile: id,
+            expected_revision,
+            slot,
+        })
+    }
+
     pub fn next_edit(&mut self) -> Option<Action> {
         let id = self
             .forms
@@ -743,6 +767,55 @@ impl ConnectionForms {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cs03_verify_requires_acknowledged_exact_input_and_uses_global_request_sequence() {
+        let mut view = loaded(vec![profile("default"), profile("custom")]);
+        let mut forms = ConnectionForms::default();
+        forms.sync(&view);
+        let first = forms.verify().unwrap();
+        assert!(
+            matches!(first,Action::VerifyConnectionAllocation {request:1,ref profile,expected_revision:1,slot:0} if profile=="default")
+        );
+        let form = forms.current_mut().unwrap();
+        form.model_mut().text = "x".repeat(201);
+        form.model_mut().caret = 20;
+        form.model_mut().anchor = Some(3);
+        form.edit_model();
+        assert!(forms.verify().is_none());
+        assert_eq!(forms.current().unwrap().model().text.len(), 201);
+        assert_eq!(
+            (
+                forms.current().unwrap().model().caret,
+                forms.current().unwrap().model().anchor
+            ),
+            (20, Some(3))
+        );
+        forms.focus("custom", 7);
+        let next = forms.verify().unwrap();
+        assert!(
+            matches!(next,Action::VerifyConnectionAllocation {request:2,ref profile,..} if profile=="custom")
+        );
+        forms.focus("default", 0);
+        forms.current_mut().unwrap().model_mut().text = "valid".into();
+        forms.current_mut().unwrap().edit_model();
+        let sent = forms.next_edit().unwrap();
+        assert!(forms.verify().is_none());
+        let request = request(&sent);
+        view.connection_profiles[0].input = forms.current().unwrap().input();
+        acknowledge(
+            &mut view,
+            "default",
+            request,
+            ConnectionChange::Edit,
+            Ok(()),
+        );
+        forms.sync(&view);
+        assert!(matches!(
+            forms.verify(),
+            Some(Action::VerifyConnectionAllocation { request: 4, .. })
+        ));
+    }
+
     use super::*;
 
     fn profile(id: &str) -> ConnectionProfileView {

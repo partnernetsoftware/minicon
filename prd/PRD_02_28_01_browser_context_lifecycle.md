@@ -456,3 +456,42 @@ Exact restoration passes all five:
 These are non-GUI consumer results, not an executed browser comparison.
 Independent postcommit verification and matching-source native comparison
 remain open; the original native cookie-persistence verdict remains FAIL.
+
+### Actual fresh-policy comparison
+
+Independent non-GUI verification of exact commit
+`310d14034410ce6495783edd633db4abf9142b91` passes 29 Rust and five Python
+consumers with stable source/blob/clean observations:
+`target-six/v0.2.23-provider/acl-independent-310d140/receipt.json`.
+The verifier did not author this diagnostic slice; shared cache remains
+`isolated=false`. Its exact guarded push precedes the native experiment.
+
+Windows x86_64 run `40190665519` executes both arms using the same dedicated
+image SHA-256
+`5b63e6eb0df0de80401776f09072ff96fbae7593fe6eed6d30b9170c6e8507a6`.
+Both fail the unchanged reopened-A storage oracle: Cookie is missing while
+localStorage matches. Each retains three passing, one failed and four
+unobserved original checks. SDK observations in both arms are zero before A,
+one future-expiring persistent cookie before A releases, zero before B and
+zero before reopened A. Thus this particular inherited-permission control
+does not remove the observed failure; it is not a production repair.
+
+The initial baseline A/B DACL is protected with three ACEs; the control is
+unprotected with seven. After the driver and after owned cleanup, baseline
+profiles remain protected with two ACEs and control profiles remain
+unprotected with seven. This is an actual structural contrast, not proof of
+effective sandbox access. Both arms verify persistent `EBWebView/Default`,
+same A/reopen directory and matching normal exit. The finite verified/fixed
+DB candidates remain not-found, which does not establish that no database
+exists elsewhere. Source, dedicated image and canonical product hashes remain
+unchanged across both observations. Cause remains UNKNOWN.
+
+The canonical browser's 22 checks, five controlled ACL consumers and protocol's
+fifteen restored checks/eleven actual assertion counterexamples pass. The
+diagnostic aggregate and workflow remain FAIL; later ordinary Rust/shutdown
+suites do not execute after that step. Both uploaded archives' API identities,
+sizes, digests, public bytes and private carrier/store exclusions are audited in
+`target-six/v0.2.23-provider/ci-310d140-acl-native/verification-index.json`.
+This native audit is by the diagnostic author, not independent whole-change
+qualification. No fault/restored native qualification or flush/access claim
+is supplied by this comparison.

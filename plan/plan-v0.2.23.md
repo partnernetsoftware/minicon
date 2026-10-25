@@ -295,8 +295,9 @@ The same owner now records the partial
 [version-3 resolver/migration prerequisite](../prd/PRD_02_31_01_02_01_connection_selection.md#version-3-resolver-and-migration-prerequisite-in-progress).
 The [production draft-form join](../prd/PRD_02_31_01_02_01_connection_selection.md#production-draft-form-join-in-progress)
 now integrates independent default/custom forms and real Settings callers under
-qualification. Complete its guard/final/independent gates, then implement exact
-paid candidate verification and atomic Apply; draft editing alone does not
+qualification. Its independent and six-platform developer evidence is now
+recorded in that owner. Join and qualify exact paid candidate verification,
+then implement atomic Apply; draft editing alone does not
 deliver the complete connection flow.
 
 Use focused assertions for each changed guard and the continuous public journey
@@ -382,3 +383,15 @@ leave unresolved obligations with their owners. Diagnostic output belongs in
 ignored build state. Do not use planning cleanup to delete inherited work,
 vendor runtime bytes or caches, or to change the independent Surf/PageSession
 consumer boundary in PRD 28.
+
+
+### Exact-candidate verification checkpoint
+
+The production check now has strict original-assertion failure controls for all
+fifteen new consumers, restored GREEN, and current-source Windows public
+refusal/cancellation observations. Evidence and its controlled-provider/native
+boundaries belong to [the connection-selection owner](../prd/PRD_02_31_01_02_01_connection_selection.md#production-exact-candidate-check-join-in-progress).
+Join the independent postcommit verification before pushing this slice, then
+implement plain atomic Apply through the existing private-publication contract.
+Batch Verify-and-Apply and remaining profile/key/usage experience stay selected
+subsequent work; no Candidate or release is claimed by this checkpoint.

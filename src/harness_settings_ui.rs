@@ -57,6 +57,9 @@ enum Row {
     Model,
     ModelInput,
     ModelActions,
+    VerificationActions,
+    VerificationCancel,
+    VerificationRetry,
     ProbeNotice,
     ModelChoice(usize),
     Profile(usize),
@@ -489,7 +492,14 @@ impl HarnessSettings {
                     rows.extend((0..self.view.accounts.len()).map(Row::AllocationAccountChoice));
                 }
             }
-            rows.extend([Row::ModelInput, Row::ModelActions, Row::ProbeNotice]);
+            rows.extend([
+                Row::ModelInput,
+                Row::ModelActions,
+                Row::VerificationActions,
+                Row::VerificationCancel,
+                Row::VerificationRetry,
+                Row::ProbeNotice,
+            ]);
             if let Some(catalogue) = self.current_catalogue()
                 && catalogue.status == provider_runtime::CatalogueStatus::Fresh
             {
@@ -1058,6 +1068,22 @@ impl HarnessSettings {
                 } else {self.error=Some("Choose an account for this model slot before refreshing its catalogue.".into());}
             }
             Row::ModelActions => {self.forms.retry();self.flush_connection_edits();}
+            Row::VerificationActions => {
+                if let Some(action) = self.forms.verify() { self.act(action); }
+            }
+            Row::VerificationCancel => {
+                if let Some(active) = &self.view.connection_check_active {
+                    let request = active.request;
+                    self.act(Action::CancelConnectionVerification {request});
+                }
+            }
+            Row::VerificationRetry => {
+                if let Some(terminal) = &self.view.connection_check_last_terminal
+                    && terminal.warning == Some(provider_runtime::ConnectionCheckWarning::ReadinessStorage) {
+                    let request = terminal.request;
+                    self.act(Action::RetryConnectionReadiness {request});
+                }
+            }
             Row::ModelChoice(index) => {
                 if let Some(catalogue)=self.current_catalogue()
                     && catalogue.status==provider_runtime::CatalogueStatus::Fresh
@@ -1073,7 +1099,7 @@ impl HarnessSettings {
                     self.connection_command(ConnectionChange::Discard,None);
                 } else {self.error=Some("There is no applied default connection to revert. Remove its model entry to clear this draft.".into());}
             }
-            Row::ProfileCommands => self.error=Some("Draft verification and atomic Apply are not available yet. The applied connection is unchanged.".into()),
+            Row::ProfileCommands => self.error=Some("Atomic Apply is not available yet. Verify selected model does not change the applied connection.".into()),
             Row::KeyActions => self.act(match column {
                 0 => Action::CreateClientKey,
                 1 => Action::CopyClientKey,
@@ -1148,6 +1174,9 @@ fn row_id(row: Row) -> String {
         Row::Model => "model",
         Row::ModelInput => "model_input",
         Row::ModelActions => "model_actions",
+        Row::VerificationActions => "model_verification",
+        Row::VerificationCancel => "model_verification_cancel",
+        Row::VerificationRetry => "model_readiness_retry",
         Row::ProbeNotice => "probe_notice",
         Row::Connect => "connect",
         Row::KeyState => "key_state",
@@ -1257,12 +1286,29 @@ impl ConApp {
                     heading = true;
                 }
                 Row::Model => {
-                    label = tr("Connection drafts / applied connection unchanged","连接草稿 / 当前连接保持不变","連線草稿 / 目前連線保持不變").to_owned();
-                    if settings.focused==Some(Field::ProfileChooser){stroke_rect(surface,rect,scale.max(1.0)as u32,theme.accent);label.push_str(tr(" / ↑↓ choose, Enter open"," / ↑↓选择，回车打开"," / ↑↓選擇，Enter開啟"));}
+                    label = tr(
+                        "Connection drafts / applied connection unchanged",
+                        "连接草稿 / 当前连接保持不变",
+                        "連線草稿 / 目前連線保持不變",
+                    )
+                    .to_owned();
+                    if settings.focused == Some(Field::ProfileChooser) {
+                        stroke_rect(surface, rect, scale.max(1.0) as u32, theme.accent);
+                        label.push_str(tr(
+                            " / ↑↓ choose, Enter open",
+                            " / ↑↓选择，回车打开",
+                            " / ↑↓選擇，Enter開啟",
+                        ));
+                    }
                     heading = true;
                 }
                 Row::Connect => {
-                    label = tr("Connect a client to the applied default","将客户端连接到当前默认连接","將用戶端連接到目前預設連線").to_owned();
+                    label = tr(
+                        "Connect a client to the applied default",
+                        "将客户端连接到当前默认连接",
+                        "將用戶端連接到目前預設連線",
+                    )
+                    .to_owned();
                     heading = true;
                 }
                 Row::Listener => {
@@ -1414,7 +1460,7 @@ impl ConApp {
                     button(
                         surface,
                         cell(0, 2),
-                        tr("Open connection drafts","打开连接草稿","開啟連線草稿"),
+                        tr("Open connection drafts", "打开连接草稿", "開啟連線草稿"),
                         settings.account_focus == settings.view.selected_account,
                     );
                     button(
@@ -1486,86 +1532,467 @@ impl ConApp {
                 }
                 Row::NoAccounts => label = "No account. Add a provider to continue.".to_owned(),
                 Row::Profile(index) => {
-                    let profile=&settings.view.connection_profiles[index];
-                    let local=settings.forms.forms.get(&profile.id);
-                    let name=local.map_or(profile.input.label.as_str(),|form|form.label.text.as_str());
-                    button(surface,rect,&format!("{}{} [{}]{}",if settings.focused==Some(Field::ProfileChooser)&&settings.profile_navigation==Some(index){"› "}else{""},name,if profile.id=="default"{"default"}else{profile.id.get(..8).unwrap_or(&profile.id)},if profile.dirty{" / staged"}else{""}),settings.forms.selected.as_deref()==Some(profile.id.as_str()));
+                    let profile = &settings.view.connection_profiles[index];
+                    let local = settings.forms.forms.get(&profile.id);
+                    let name = local.map_or(profile.input.label.as_str(), |form| {
+                        form.label.text.as_str()
+                    });
+                    button(
+                        surface,
+                        rect,
+                        &format!(
+                            "{}{} [{}]{}",
+                            if settings.focused == Some(Field::ProfileChooser)
+                                && settings.profile_navigation == Some(index)
+                            {
+                                "› "
+                            } else {
+                                ""
+                            },
+                            name,
+                            if profile.id == "default" {
+                                "default"
+                            } else {
+                                profile.id.get(..8).unwrap_or(&profile.id)
+                            },
+                            if profile.dirty { " / staged" } else { "" }
+                        ),
+                        settings.forms.selected.as_deref() == Some(profile.id.as_str()),
+                    );
                 }
-                Row::ProfileCreate => button(surface,rect,if settings.forms.create_request.is_some(){tr("Creating profile...","正在创建连接…","正在建立連線…")}else{tr("New connection profile (up to 8 total)","新建连接（最多 8 个）","建立連線（最多 8 個）")},false),
+                Row::ProfileCreate => button(
+                    surface,
+                    rect,
+                    if settings.forms.create_request.is_some() {
+                        tr("Creating profile...", "正在创建连接…", "正在建立連線…")
+                    } else {
+                        tr(
+                            "New connection profile (up to 8 total)",
+                            "新建连接（最多 8 个）",
+                            "建立連線（最多 8 個）",
+                        )
+                    },
+                    false,
+                ),
                 Row::ProfileState => {
-                    label=settings.forms.current().map_or_else(||format!("Connection drafts: {:?}",settings.view.load_state),|form|format!("Draft / {} / {}",if form.waiting(){"saving changes"}else if form.unsent(){"local edits"}else{"staged"},form.local_error.clone().unwrap_or_else(||form.view.error.map_or_else(||"not applied".into(),|error|format!("{error:?}")))));
+                    label = settings.forms.current().map_or_else(
+                        || format!("Connection drafts: {:?}", settings.view.load_state),
+                        |form| {
+                            format!(
+                                "Draft / {} / {}",
+                                if form.waiting() {
+                                    "saving changes"
+                                } else if form.unsent() {
+                                    "local edits"
+                                } else {
+                                    "staged"
+                                },
+                                form.local_error.clone().unwrap_or_else(|| form
+                                    .view
+                                    .error
+                                    .map_or_else(
+                                        || "not applied".into(),
+                                        |error| format!("{error:?}")
+                                    ))
+                            )
+                        },
+                    );
                 }
                 Row::ProfileInput(field) => {
-                    let name=match field {ProfileField::Label=>tr("Connection label","连接名称","連線名稱"),ProfileField::DefaultAlias=>tr("Default public alias","默认公开别名","預設公開別名"),ProfileField::Alias(_)=>tr("Public model alias","公开模型别名","公開模型別名")};
-                    host_ui::paint_single_line_host_editor(surface,cell(0,2),settings.editor(Field::Profile(field)),settings.focused==Some(Field::Profile(field)),name,theme,size,scale);
-                    paint_host_ui_text(surface,cell(1,2).x+(8.0*scale)as u32,rect.y+rect.height.saturating_sub(font::cell_metrics(size).height)/2,name,theme.text,size,cell(1,2).width.saturating_sub((16.0*scale)as u32));
+                    let name = match field {
+                        ProfileField::Label => tr("Connection label", "连接名称", "連線名稱"),
+                        ProfileField::DefaultAlias => {
+                            tr("Default public alias", "默认公开别名", "預設公開別名")
+                        }
+                        ProfileField::Alias(_) => {
+                            tr("Public model alias", "公开模型别名", "公開模型別名")
+                        }
+                    };
+                    host_ui::paint_single_line_host_editor(
+                        surface,
+                        cell(0, 2),
+                        settings.editor(Field::Profile(field)),
+                        settings.focused == Some(Field::Profile(field)),
+                        name,
+                        theme,
+                        size,
+                        scale,
+                    );
+                    paint_host_ui_text(
+                        surface,
+                        cell(1, 2).x + (8.0 * scale) as u32,
+                        rect.y + rect.height.saturating_sub(font::cell_metrics(size).height) / 2,
+                        name,
+                        theme.text,
+                        size,
+                        cell(1, 2).width.saturating_sub((16.0 * scale) as u32),
+                    );
                 }
-                Row::ProfileToggle => button(surface,rect,if settings.forms.current().is_some_and(|form|form.enabled){tr("Enabled in draft (click to disable)","草稿已启用（点击停用）","草稿已啟用（點擊停用）")}else{tr("Disabled in draft (click to enable)","草稿已停用（点击启用）","草稿已停用（點擊啟用）")},false),
+                Row::ProfileToggle => button(
+                    surface,
+                    rect,
+                    if settings.forms.current().is_some_and(|form| form.enabled) {
+                        tr(
+                            "Enabled in draft (click to disable)",
+                            "草稿已启用（点击停用）",
+                            "草稿已啟用（點擊停用）",
+                        )
+                    } else {
+                        tr(
+                            "Disabled in draft (click to enable)",
+                            "草稿已停用（点击启用）",
+                            "草稿已停用（點擊啟用）",
+                        )
+                    },
+                    false,
+                ),
                 Row::ProfileApplied => {
-                    label=settings.forms.current().map_or_else(String::new,|form|form.view.applied.as_ref().map_or_else(||"Applied: none / this is an unsaved profile".into(),|applied|format!("Applied: {} / {} model allocation(s); edits are separate",applied.label,applied.allocations.len())));
+                    label = settings.forms.current().map_or_else(String::new, |form| {
+                        form.view.applied.as_ref().map_or_else(
+                            || "Applied: none / this is an unsaved profile".into(),
+                            |applied| {
+                                format!(
+                                    "Applied: {} / {} model allocation(s); edits are separate",
+                                    applied.label,
+                                    applied.allocations.len()
+                                )
+                            },
+                        )
+                    });
                 }
-                Row::AppliedAlias(index)|Row::AppliedAccount(index)|Row::AppliedModel(index) => {
-                    if let Some(allocation)=settings.applied_allocations().get(index) {
-                        let account=allocation.account.as_deref().map_or_else(||tr("No account","未选择账号","未選擇帳號").into(),|id|settings.view.accounts.iter().find(|account|account.id==id).map_or_else(||format!("{} [{}]",tr("Unavailable account","账号不可用","帳號不可用"),id.get(..8).unwrap_or(id)),|account|format!("{} [{}]",account.label,id.get(..8).unwrap_or(id))));
-                        label=match row {
-                            Row::AppliedAlias(_)=>format!("{}: {}",tr("Applied alias","生效别名","生效別名"),allocation.alias),
-                            Row::AppliedAccount(_)=>format!("{}: {}",tr("Applied account","生效账号","生效帳號"),account),
-                            _=>format!("{}: {}",tr("Applied model","生效模型","生效模型"),allocation.model),
+                Row::AppliedAlias(index)
+                | Row::AppliedAccount(index)
+                | Row::AppliedModel(index) => {
+                    if let Some(allocation) = settings.applied_allocations().get(index) {
+                        let account = allocation.account.as_deref().map_or_else(
+                            || tr("No account", "未选择账号", "未選擇帳號").into(),
+                            |id| {
+                                settings
+                                    .view
+                                    .accounts
+                                    .iter()
+                                    .find(|account| account.id == id)
+                                    .map_or_else(
+                                        || {
+                                            format!(
+                                                "{} [{}]",
+                                                tr(
+                                                    "Unavailable account",
+                                                    "账号不可用",
+                                                    "帳號不可用"
+                                                ),
+                                                id.get(..8).unwrap_or(id)
+                                            )
+                                        },
+                                        |account| {
+                                            format!(
+                                                "{} [{}]",
+                                                account.label,
+                                                id.get(..8).unwrap_or(id)
+                                            )
+                                        },
+                                    )
+                            },
+                        );
+                        label = match row {
+                            Row::AppliedAlias(_) => format!(
+                                "{}: {}",
+                                tr("Applied alias", "生效别名", "生效別名"),
+                                allocation.alias
+                            ),
+                            Row::AppliedAccount(_) => format!(
+                                "{}: {}",
+                                tr("Applied account", "生效账号", "生效帳號"),
+                                account
+                            ),
+                            _ => format!(
+                                "{}: {}",
+                                tr("Applied model", "生效模型", "生效模型"),
+                                allocation.model
+                            ),
                         };
                     }
                 }
                 Row::Allocation(slot) => {
-                    if let Some(form)=settings.forms.current()
-                        && let Some(allocation)=form.allocations.get(&slot) {
-                        let same_input=form.view.input.allocations.iter().any(|old|old.slot==slot&&old.alias==allocation.alias.text&&old.account==allocation.account&&old.model==allocation.model.text);
-                        let state=form.view.allocations.iter().find(|entry|same_input&&entry.slot==slot).map_or_else(||tr("Choose a model","请选择模型","請選擇模型").into(),|entry|{
-                            use provider_runtime::{ConnectionAvailability as A,ConnectionEvidence as E};
-                            let availability=match entry.availability {
-                                A::Available=>tr("Account available","账号可用","帳號可用"),
-                                A::MissingAccount=>tr("Account removed","账号已移除","帳號已移除"),
-                                A::DisabledAccount=>tr("Account disabled","账号已停用","帳號已停用"),
-                                A::CredentialUnavailable=>tr("Sign in required","需要登录","需要登入"),
-                                A::AuthorityChanged=>tr("Account changed; choose again","账号已变更，请重新选择","帳號已變更，請重新選擇"),
-                                A::NotSelected=>tr("Choose a model","请选择模型","請選擇模型"),
-                            };
-                            let evidence=match entry.evidence {
-                                E::Unverified=>tr("Not verified","尚未验证","尚未驗證"),
-                                E::LegacyApplied=>tr("Previously applied","已应用旧连接","已套用舊連線"),
-                                E::Verified=>tr("Verified","已验证","已驗證"),
-                                E::StaleAuthority=>tr("Verification out of date","验证已过期","驗證已過期"),
-                            };format!("{availability} / {evidence}")
+                    if let Some(form) = settings.forms.current()
+                        && let Some(allocation) = form.allocations.get(&slot)
+                    {
+                        let same_input = form.view.input.allocations.iter().any(|old| {
+                            old.slot == slot
+                                && old.alias == allocation.alias.text
+                                && old.account == allocation.account
+                                && old.model == allocation.model.text
                         });
-                        button(surface,rect,&format!("{} / {} / {}",allocation.alias.text,allocation.model.text,state),form.selected_slot==Some(slot));
+                        let state = form
+                            .view
+                            .allocations
+                            .iter()
+                            .find(|entry| same_input && entry.slot == slot)
+                            .map_or_else(
+                                || tr("Choose a model", "请选择模型", "請選擇模型").into(),
+                                |entry| {
+                                    use provider_runtime::{
+                                        ConnectionAvailability as A, ConnectionEvidence as E,
+                                    };
+                                    let availability = match entry.availability {
+                                        A::Available => {
+                                            tr("Account available", "账号可用", "帳號可用")
+                                        }
+                                        A::MissingAccount => {
+                                            tr("Account removed", "账号已移除", "帳號已移除")
+                                        }
+                                        A::DisabledAccount => {
+                                            tr("Account disabled", "账号已停用", "帳號已停用")
+                                        }
+                                        A::CredentialUnavailable => {
+                                            tr("Sign in required", "需要登录", "需要登入")
+                                        }
+                                        A::AuthorityChanged => tr(
+                                            "Account changed; choose again",
+                                            "账号已变更，请重新选择",
+                                            "帳號已變更，請重新選擇",
+                                        ),
+                                        A::NotSelected => {
+                                            tr("Choose a model", "请选择模型", "請選擇模型")
+                                        }
+                                    };
+                                    let evidence = match entry.evidence {
+                                        E::Unverified => tr("Not verified", "尚未验证", "尚未驗證"),
+                                        E::LegacyApplied => {
+                                            tr("Previously applied", "已应用旧连接", "已套用舊連線")
+                                        }
+                                        E::Verified => tr("Verified", "已验证", "已驗證"),
+                                        E::StaleAuthority => tr(
+                                            "Verification out of date",
+                                            "验证已过期",
+                                            "驗證已過期",
+                                        ),
+                                    };
+                                    format!("{availability} / {evidence}")
+                                },
+                            );
+                        button(
+                            surface,
+                            rect,
+                            &format!(
+                                "{} / {} / {}",
+                                allocation.alias.text, allocation.model.text, state
+                            ),
+                            form.selected_slot == Some(slot),
+                        );
                     }
                 }
                 Row::AllocationActions => {
-                    button(surface,cell(0,2),tr("Add model entry","添加模型","新增模型"),false);button(surface,cell(1,2),tr("Remove selected entry","移除选中模型","移除所選模型"),false);
+                    button(
+                        surface,
+                        cell(0, 2),
+                        tr("Add model entry", "添加模型", "新增模型"),
+                        false,
+                    );
+                    button(
+                        surface,
+                        cell(1, 2),
+                        tr("Remove selected entry", "移除选中模型", "移除所選模型"),
+                        false,
+                    );
                 }
                 Row::AllocationAccount => {
-                    let account=settings.forms.current().and_then(|form|form.selected_account());
-                    let name=account.map_or_else(||"Not selected".into(),|id|settings.view.accounts.iter().find(|entry|entry.id==id).map_or_else(||format!("Unavailable [{}]",id.get(..8).unwrap_or(id)),|entry|format!("{} [{}]",entry.label,id.get(..8).unwrap_or(id))));
-                    button(surface,rect,&format!("Model account: {name} / choose"),false);
+                    let account = settings
+                        .forms
+                        .current()
+                        .and_then(|form| form.selected_account());
+                    let name = account.map_or_else(
+                        || "Not selected".into(),
+                        |id| {
+                            settings
+                                .view
+                                .accounts
+                                .iter()
+                                .find(|entry| entry.id == id)
+                                .map_or_else(
+                                    || format!("Unavailable [{}]", id.get(..8).unwrap_or(id)),
+                                    |entry| {
+                                        format!("{} [{}]", entry.label, id.get(..8).unwrap_or(id))
+                                    },
+                                )
+                        },
+                    );
+                    button(
+                        surface,
+                        rect,
+                        &format!("Model account: {name} / choose"),
+                        false,
+                    );
                 }
                 Row::AllocationAccountChoice(index) => {
-                    let account=&settings.view.accounts[index];
-                    button(surface,rect,&format!("Choose {} [{}]",account.label,account.id.get(..8).unwrap_or(&account.id)),settings.forms.current().and_then(|form|form.selected_account())==Some(account.id.as_str()));
+                    let account = &settings.view.accounts[index];
+                    button(
+                        surface,
+                        rect,
+                        &format!(
+                            "Choose {} [{}]",
+                            account.label,
+                            account.id.get(..8).unwrap_or(&account.id)
+                        ),
+                        settings
+                            .forms
+                            .current()
+                            .and_then(|form| form.selected_account())
+                            == Some(account.id.as_str()),
+                    );
                 }
                 Row::ModelInput => {
-                    host_ui::paint_single_line_host_editor(surface,cell(0,2),settings.editor(Field::Model),settings.focused==Some(Field::Model),tr("Model selector (choose a catalogue row)","模型（从目录中选择）","模型（從目錄中選擇）"),theme,size,scale);
-                    button(surface,cell(1,2),tr("Stage / retry edits","暂存 / 重试编辑","暫存 / 重試編輯"),false);
+                    host_ui::paint_single_line_host_editor(
+                        surface,
+                        cell(0, 2),
+                        settings.editor(Field::Model),
+                        settings.focused == Some(Field::Model),
+                        tr(
+                            "Model selector (choose a catalogue row)",
+                            "模型（从目录中选择）",
+                            "模型（從目錄中選擇）",
+                        ),
+                        theme,
+                        size,
+                        scale,
+                    );
+                    button(
+                        surface,
+                        cell(1, 2),
+                        tr("Stage / retry edits", "暂存 / 重试编辑", "暫存 / 重試編輯"),
+                        false,
+                    );
                 }
                 Row::ModelActions => {
-                    button(surface,cell(0,2),tr("Refresh this account catalogue","刷新此账号模型目录","重新整理此帳號模型目錄"),false);button(surface,cell(1,2),tr("Retry staged edits","重试暂存编辑","重試暫存編輯"),false);
+                    button(
+                        surface,
+                        cell(0, 2),
+                        tr(
+                            "Refresh this account catalogue",
+                            "刷新此账号模型目录",
+                            "重新整理此帳號模型目錄",
+                        ),
+                        false,
+                    );
+                    button(
+                        surface,
+                        cell(1, 2),
+                        tr("Retry staged edits", "重试暂存编辑", "重試暫存編輯"),
+                        false,
+                    );
                 }
-                Row::ProbeNotice => label=settings.forms.current().and_then(|form|form.local_error.clone()).unwrap_or_else(||"Choose from this account's fresh catalogue. Verify / Apply are not yet available; no paid probe is sent.".into()),
+                Row::VerificationActions => {
+                    paint_verification_button(
+                        surface,
+                        cell(0, 1),
+                        self.ui_language,
+                        &theme,
+                        size,
+                        scale,
+                    );
+                }
+                Row::VerificationCancel => {
+                    button(
+                        surface,
+                        cell(0, 1),
+                        &settings.view.connection_check_active.as_ref().map_or_else(
+                            || "No active model check".into(),
+                            |active| format!("Cancel check #{}", active.request),
+                        ),
+                        false,
+                    );
+                }
+                Row::VerificationRetry => {
+                    if settings
+                        .view
+                        .connection_check_last_terminal
+                        .as_ref()
+                        .is_some_and(|check| {
+                            check.warning
+                                == Some(provider_runtime::ConnectionCheckWarning::ReadinessStorage)
+                        })
+                    {
+                        button(
+                            surface,
+                            rect,
+                            "Retry readiness storage (no upstream request)",
+                            false,
+                        );
+                    } else {
+                        label = settings
+                            .view
+                            .connection_check_active
+                            .as_ref()
+                            .or(settings.view.connection_check_last_terminal.as_ref())
+                            .map_or_else(
+                                || "No model check requested.".into(),
+                                |check| {
+                                    format!(
+                                        "Check #{} / {} / slot {}: {:?}{}",
+                                        check.request,
+                                        check.profile,
+                                        check.slot,
+                                        check.phase,
+                                        check.error.map_or_else(String::new, |error| format!(
+                                            " / {error}"
+                                        ))
+                                    )
+                                },
+                            );
+                    }
+                }
+                Row::ProbeNotice => label = settings
+                    .forms
+                    .current()
+                    .and_then(|form| form.local_error.clone())
+                    .unwrap_or_else(|| {
+                        "Output ≤8 tokens; input may also be billed. No automatic retry or Apply."
+                            .into()
+                    }),
                 Row::ModelChoice(index) => {
-                    if let Some(model)=settings.current_catalogue().and_then(|entry|entry.models.get(index)) {
-                        button(surface,rect,&format!("Choose {} / {:?}",model.id,model.protocol),false);
+                    if let Some(model) = settings
+                        .current_catalogue()
+                        .and_then(|entry| entry.models.get(index))
+                    {
+                        button(
+                            surface,
+                            rect,
+                            &format!("Choose {} / {:?}", model.id, model.protocol),
+                            false,
+                        );
                     }
                 }
                 Row::ProfileCommands => {
-                    button(surface,cell(0,2),if settings.forms.current().is_some_and(|form|form.view.applied.is_some()){tr("Revert this profile","还原此连接","還原此連線")}else if settings.forms.selected.as_deref()==Some("default"){tr("No applied connection to revert","尚无已应用连接可还原","尚無已套用連線可還原")}else{tr("Discard unapplied profile","放弃未应用连接","捨棄未套用連線")},false);
-                    button(surface,cell(1,2),tr("Verify / Apply unavailable","验证 / 应用暂不可用","驗證 / 套用暫不可用"),false);
+                    button(
+                        surface,
+                        cell(0, 2),
+                        if settings
+                            .forms
+                            .current()
+                            .is_some_and(|form| form.view.applied.is_some())
+                        {
+                            tr("Revert this profile", "还原此连接", "還原此連線")
+                        } else if settings.forms.selected.as_deref() == Some("default") {
+                            tr(
+                                "No applied connection to revert",
+                                "尚无已应用连接可还原",
+                                "尚無已套用連線可還原",
+                            )
+                        } else {
+                            tr(
+                                "Discard unapplied profile",
+                                "放弃未应用连接",
+                                "捨棄未套用連線",
+                            )
+                        },
+                        false,
+                    );
+                    button(
+                        surface,
+                        cell(1, 2),
+                        tr("Apply unavailable", "应用暂不可用", "套用暫不可用"),
+                        false,
+                    );
                 }
                 Row::KeyState => {
                     label = if settings.view.local_key_exists {
@@ -1787,6 +2214,8 @@ impl ConApp {
             ("connection_profile",settings.forms.selected.as_deref().map_or(json::JsonValue::Null,Into::into)),
             ("connection_profile_navigation",settings.profile_navigation.map_or(json::JsonValue::Null,Into::into)),
             ("connection_picker_focused",(active&&settings.focused==Some(Field::ProfileChooser)).into()),
+            ("connection_check_active",check_observation(settings.view.connection_check_active.as_ref())),
+            ("connection_check_last_terminal",check_observation(settings.view.connection_check_last_terminal.as_ref())),
             ("connection_profiles",json::JsonValue::Array(settings.view.connection_profiles.iter().map(|profile|{
                 let form=settings.forms.forms.get(&profile.id);
                 let input=form.map_or_else(||profile.input.clone(),|form|form.input());
@@ -2236,7 +2665,19 @@ impl ConApp {
                             window.focus();
                         } else {
                             settings.blur();
-                            open_url = settings.activate(row, column);
+                            if matches!(row, Row::VerificationActions)
+                                && verification_button_font(
+                                    geometry.cell(index, column, columns, scale),
+                                    self.ui_language,
+                                    size,
+                                    scale,
+                                )
+                                .is_none()
+                            {
+                                settings.error=Some("Enlarge the window to read the complete model-check cost notice before verifying.".into());
+                            } else {
+                                open_url = settings.activate(row, column);
+                            }
                         }
                     }
                 } else if !geometry.panel.contains(x, y) {
@@ -2421,8 +2862,252 @@ impl ConApp {
     }
 }
 
+fn check_observation(
+    check: Option<&provider_runtime::ConnectionCheckView>,
+) -> minicon_core::json::JsonValue {
+    use minicon_core::json::{self, JsonValue};
+    check.map_or(JsonValue::Null, |check| {
+        json::object(vec![
+            ("request", check.request.into()),
+            ("profile", check.profile.as_str().into()),
+            ("revision", check.revision.into()),
+            ("slot", u32::from(check.slot).into()),
+            ("phase", format!("{:?}", check.phase).into()),
+            (
+                "error",
+                check
+                    .error
+                    .map_or(JsonValue::Null, |error| format!("{error:?}").into()),
+            ),
+            (
+                "checked_unix_ms",
+                check.checked_unix_ms.map_or(JsonValue::Null, Into::into),
+            ),
+            (
+                "warning",
+                check
+                    .warning
+                    .map_or(JsonValue::Null, |warning| format!("{warning:?}").into()),
+            ),
+        ])
+    })
+}
+
+fn verification_button_label(language: ui::UiLanguage) -> &'static str {
+    match language {
+        ui::UiLanguage::English => "Verify (may charge; output ≤8 tokens)",
+        ui::UiLanguage::ChineseSimplified => "验证（可能收费；输出≤8 tokens）",
+        ui::UiLanguage::ChineseTraditional => "驗證（可能收費；輸出≤8 tokens）",
+    }
+}
+
+// One action's full cost caption must fit before it can accept a pointer.
+// This is shared by its actual painter and the event route, not a snapshot hint.
+fn verification_button_font(
+    rect: ui::Rect,
+    language: ui::UiLanguage,
+    size: u16,
+    scale: f64,
+) -> Option<u16> {
+    let inset = (16.0 * scale) as u32;
+    let minimum = (7.0 * scale).ceil().clamp(1.0, f64::from(u16::MAX)) as u16;
+    (minimum..=size.max(minimum)).rev().find(|&font_size| {
+        host_ui::host_ui_text_width(verification_button_label(language), font_size)
+            <= rect.width.saturating_sub(inset)
+            && font::cell_metrics(font_size).height <= rect.height
+    })
+}
+
+fn paint_verification_button(
+    surface: &mut Surface<'_>,
+    rect: ui::Rect,
+    language: ui::UiLanguage,
+    theme: &theme::Theme,
+    size: u16,
+    scale: f64,
+) {
+    surface.fill_rect(
+        rect.x,
+        rect.y,
+        rect.width,
+        rect.height,
+        theme.surface.to_xrgb(),
+    );
+    let (label, size) = verification_button_font(rect, language, size, scale)
+        .map_or(("Enlarge to verify", size), |size| {
+            (verification_button_label(language), size)
+        });
+    paint_host_ui_text(
+        surface,
+        rect.x + (8.0 * scale) as u32,
+        rect.y + rect.height.saturating_sub(font::cell_metrics(size).height) / 2,
+        label,
+        theme.text,
+        size,
+        rect.width.saturating_sub((16.0 * scale) as u32),
+    );
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cs03_actual_verify_button_paints_visible_localized_cost_and_output_limit_with_a_local_error()
+    {
+        let mut settings = HarnessSettings::default();
+        settings.view.load_state = provider_runtime::LoadState::Loaded;
+        settings.view.connection_profile = "default".into();
+        settings.view.connection_profiles = vec![connection_profile("default", "account-a")];
+        settings.forms.sync(&settings.view);
+        settings.forms.current_mut().unwrap().local_error =
+            Some("Retained unrelated field error".into());
+        let rows = settings.rows();
+        let index = rows
+            .iter()
+            .position(|row| matches!(row, Row::VerificationActions))
+            .unwrap();
+        let notice = rows
+            .iter()
+            .position(|row| matches!(row, Row::ProbeNotice))
+            .unwrap();
+        for (width, height) in [(420u32, 300u32), (760, 420)] {
+            let layout = ui::Layout::new(width, height, 1.0);
+            let initial = layout.harness_settings(1.0, rows.len(), 0);
+            let geometry = layout.harness_settings(1.0, rows.len(), initial.rows.reveal(index));
+            assert!(
+                notice >= geometry.rows.start + geometry.rows.visible_rows,
+                "paid button test must cover an offscreen detailed notice"
+            );
+            let rect = geometry.cell(index, 0, row_columns(rows[index]), 1.0);
+            assert_eq!(
+                geometry
+                    .rows
+                    .hit(rect.x + rect.width / 2, rect.y + rect.height / 2),
+                Some(index)
+            );
+            let theme = theme::Theme::for_choice(theme::ThemeChoice::Neutral);
+            for (language, expected) in [
+                (
+                    ui::UiLanguage::English,
+                    "Verify (may charge; output ≤8 tokens)",
+                ),
+                (
+                    ui::UiLanguage::ChineseSimplified,
+                    "验证（可能收费；输出≤8 tokens）",
+                ),
+                (
+                    ui::UiLanguage::ChineseTraditional,
+                    "驗證（可能收費；輸出≤8 tokens）",
+                ),
+            ] {
+                let text_size = verification_button_font(rect, language, 14, 1.0)
+                    .expect("supported narrow frame must display the full paid action caption");
+                assert!(
+                    host_ui::host_ui_text_width(expected, text_size)
+                        <= rect.width.saturating_sub(16)
+                );
+                let mut actual = vec![theme.canvas_bg.to_xrgb(); (width * height) as usize];
+                let mut reference = actual.clone();
+                let mut blank = actual.clone();
+                Surface::new(&mut blank, width, height).fill_rect(
+                    rect.x,
+                    rect.y,
+                    rect.width,
+                    rect.height,
+                    theme.surface.to_xrgb(),
+                );
+                paint_verification_button(
+                    &mut Surface::new(&mut actual, width, height),
+                    rect,
+                    language,
+                    &theme,
+                    14,
+                    1.0,
+                );
+                let mut surface = Surface::new(&mut reference, width, height);
+                surface.fill_rect(
+                    rect.x,
+                    rect.y,
+                    rect.width,
+                    rect.height,
+                    theme.surface.to_xrgb(),
+                );
+                paint_host_ui_text(
+                    &mut surface,
+                    rect.x + 8,
+                    rect.y
+                        + rect
+                            .height
+                            .saturating_sub(font::cell_metrics(text_size).height)
+                            / 2,
+                    expected,
+                    theme.text,
+                    text_size,
+                    rect.width.saturating_sub(16),
+                );
+                assert!(
+                    actual == reference,
+                    "actual Verify paint omitted the visible cost or output limit: {expected}"
+                );
+                assert!(
+                    actual != blank,
+                    "Verify label produced no visible text pixels"
+                );
+            }
+        }
+        assert!(
+            verification_button_font(
+                ui::Rect {
+                    width: 1,
+                    height: 1,
+                    ..Default::default()
+                },
+                ui::UiLanguage::English,
+                14,
+                1.0
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn cs03_verification_controls_reveal_and_hit_in_the_actual_short_settings_viewport() {
+        let mut settings = HarnessSettings::default();
+        settings.view.load_state = provider_runtime::LoadState::Loaded;
+        settings.view.connection_profile = "default".into();
+        settings.view.connection_profiles = vec![connection_profile("default", "account-a")];
+        settings.forms.sync(&settings.view);
+        let rows = settings.rows();
+        for target in [Row::VerificationActions, Row::VerificationCancel] {
+            let index = rows
+                .iter()
+                .position(|row| std::mem::discriminant(row) == std::mem::discriminant(&target));
+            assert!(
+                index.is_some(),
+                "both explicit model-check actions must remain reachable in supported short viewports"
+            );
+            let index = index.unwrap();
+            for (width, height) in [(420, 300), (760, 420)] {
+                let layout = ui::Layout::new(width, height, 1.0);
+                let initial = layout.harness_settings(1.0, rows.len(), 0);
+                let geometry = layout.harness_settings(1.0, rows.len(), initial.rows.reveal(index));
+                for column in 0..row_columns(rows[index]) {
+                    let cell = geometry.cell(index, column, row_columns(rows[index]), 1.0);
+                    assert!(
+                        cell.width > 0 && cell.height > 0,
+                        "{width}x{height} verification control {} column {column}",
+                        row_id(target)
+                    );
+                    assert_eq!(
+                        geometry
+                            .rows
+                            .hit(cell.x + cell.width / 2, cell.y + cell.height / 2),
+                        Some(index)
+                    );
+                }
+            }
+        }
+    }
+
     use super::*;
 
     fn connection_profile(id: &str, account: &str) -> provider_runtime::ConnectionProfileView {
