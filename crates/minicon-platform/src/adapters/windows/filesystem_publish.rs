@@ -259,6 +259,15 @@ fn full_path(path: &Path) -> std::io::Result<PathBuf> {
     }
 }
 
+/// Removal has a distinct barrier contract from replacement.
+#[cfg(feature = "filesystem")]
+pub fn sync_removed_parent(_parent: &Path) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "Windows private removal durability barrier unavailable",
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -306,13 +315,4 @@ mod tests {
         )
         .expect("cleanup");
     }
-}
-
-/// Removal has a distinct barrier contract from replacement.
-#[cfg(feature = "filesystem")]
-pub fn sync_removed_parent(_parent: &Path) -> std::io::Result<()> {
-    Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "Windows private removal durability barrier unavailable",
-    ))
 }

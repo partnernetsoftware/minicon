@@ -805,10 +805,12 @@ it adds no shared OS/ISA API or accounting policy to the platform. RawValue is
 an existing serde_json feature, not a new SSE/transport engine. Execution status is owned by that module; this reuse map does not confer
 provider or native qualification.
 
-### Usage report projection join (design only)
+### Usage report projection join
 
 [Report presentation](PRD_02_31_01_03_03_usage_reports.md) reuses existing host
 paragraph/font/button geometry, editor, focus/return and event-loop deadlines.
 The accounting owner retains cached UTC rollover; metadata retains policy and
-provider HTTP. Proposed crate-private typed re-exports serve actual UI consumers
+provider HTTP. Crate-private typed re-exports serve actual UI consumers
 only; no new shared OS/ISA, statistics, writer or timer framework is introduced.
+Explicit report Clear reuses the product-owned Actor/history queue and private
+publisher; its semantics and evidence belong to the accounting/report owners.

@@ -206,8 +206,10 @@ The integrated [account metadata backend](../prd/PRD_02_31_01_03_02_account_moni
 and [Monitoring/report consumers](../prd/PRD_02_31_01_03_03_usage_reports.md)
 now record matching-source local consumer, guard and synthetic public evidence.
 Their initial compiler, fixture and navigation failures remain retained.
-Finish explicit local-history clearing and qualify the continuous
-Settings/report/Stop/restart journey and the selected
+Explicit local-history clearing now has local writer/Runtime/UI consumers,
+guard evidence and a 17-check synthetic public confirmation/file journey in
+the accounting/report owners. Finish the continuous Settings/report/Stop/restart
+journey and the selected
 two DeepSeek plus OpenCode Go account reads. Keep the current K3 helper cleanup,
 Intel resolver failure and Windows Cookie persistence requirement open under
 their owners. Only after these selected joins proceed to source freeze and

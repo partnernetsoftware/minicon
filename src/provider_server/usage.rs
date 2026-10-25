@@ -11,8 +11,9 @@ use std::{
 };
 mod history;
 pub(crate) use history::{
-    BillingTotals, DecimalTotal, GroupKey, GroupSummary, Metrics, UsageClose, UsageHistory,
-    UsageState, UsageSummary,
+    BillingTotals, DecimalTotal, GroupKey, GroupSummary, Metrics, UsageClearError,
+    UsageClearHandle, UsageClearPublication, UsageClearReceipt, UsageClearView, UsageClose,
+    UsageHistory, UsageState, UsageSummary,
 };
 
 pub(super) const RECEIPT_BYTES: usize = 4096;

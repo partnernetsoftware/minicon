@@ -615,11 +615,35 @@ fn rust_console_native_read_retirement_waits_for_fallback_publication() {
         let mut input_object = 0;
         let mut completed_input = false;
         let mut released = false;
+        let mut last_calls = std::collections::VecDeque::with_capacity(16);
         let deadline = Instant::now() + Duration::from_secs(18);
         while child.wait(Duration::ZERO).unwrap().is_none()
             || host.connected_clients() != 0
             || host.open_handles() != 0
         {
+            if Instant::now() >= deadline {
+                let phases = [
+                    "go",
+                    "retire-ready",
+                    "retired",
+                    "disconnect-before",
+                    "disconnect-after",
+                    "reader-returned",
+                    "read-error",
+                    "opened",
+                ]
+                .map(|phase| (phase, report.path.with_extension(phase).exists()));
+                eprintln!(
+                    "native-input-timeout court=retirement kind={kind} child_exited={} clients={} handles={} reads={} queued={} output_pending={} flags(admitted,input_completed,released,input_known)={:?} phases={phases:?} calls(function,api,ready,pending,reads,queued,clients,handles)={last_calls:?}",
+                    child.wait(Duration::ZERO).unwrap().is_some(),
+                    host.connected_clients(),
+                    host.open_handles(),
+                    host.pending_reads(),
+                    host.pending_output_requests(),
+                    host.has_pending_output(),
+                    (admitted, completed_input, released, input_object != 0),
+                );
+            }
             assert!(Instant::now() < deadline, "retirement {kind} stalled");
             match session.receive(Duration::from_millis(20)) {
                 Ok(request) => {
@@ -638,6 +662,19 @@ fn rust_console_native_read_retirement_waits_for_fallback_publication() {
                         host.dispatch_with_output_ready(request, true, &mut output)
                             .unwrap()
                     };
+                    if last_calls.len() == 16 {
+                        let _ = last_calls.pop_front();
+                    }
+                    last_calls.push_back((
+                        function,
+                        call.api,
+                        !pressure,
+                        call.pending,
+                        host.pending_reads(),
+                        host.pending_output_requests(),
+                        host.connected_clients(),
+                        host.open_handles(),
+                    ));
                     assert_eq!(call.status, 0, "{kind}: {call:?}");
                     if call.api == Some(0x0100_0005) {
                         assert!(call.pending);
@@ -1060,11 +1097,36 @@ fn rust_console_native_queued_reads_keep_reply_shapes_causes_and_other_callers()
         let mut root = 0;
         let mut retired = false;
         let mut released = false;
+        let mut last_calls = std::collections::VecDeque::with_capacity(16);
         let deadline = Instant::now() + Duration::from_secs(20);
         while child.wait(Duration::ZERO).unwrap().is_none()
             || host.connected_clients() != 0
             || host.open_handles() != 0
         {
+            if Instant::now() >= deadline {
+                let phases = [
+                    "go",
+                    "ready",
+                    "signal",
+                    "records",
+                    "disconnect-before",
+                    "disconnect-after",
+                    "reader-returned",
+                    "read-error",
+                    "opened",
+                ]
+                .map(|phase| (phase, report.path.with_extension(phase).exists()));
+                eprintln!(
+                    "native-input-timeout court=queued kind={kind} child_exited={} clients={} handles={} reads={} queued={} output_pending={} flags(reads_received,retired,released)={:?} phases={phases:?} calls(function,api,ready,pending,reads,queued,clients,handles)={last_calls:?}",
+                    child.wait(Duration::ZERO).unwrap().is_some(),
+                    host.connected_clients(),
+                    host.open_handles(),
+                    host.pending_reads(),
+                    host.pending_output_requests(),
+                    host.has_pending_output(),
+                    (reads, retired, released),
+                );
+            }
             assert!(Instant::now() < deadline, "queued {kind} stalled");
             match session.receive(Duration::from_millis(20)) {
                 Ok(request) => {
@@ -1079,6 +1141,7 @@ fn rust_console_native_queued_reads_keep_reply_shapes_causes_and_other_callers()
                     };
                     let reading = function == 6 || matches!(api, Some(0x0100_0004 | 0x0100_0005));
                     let before = output.clone();
+                    let output_ready = !(reading || reads != 0 && !retired);
                     let call = if reading || reads != 0 && !retired {
                         host.dispatch_with_output_ready(request, false, &mut Reject)
                             .unwrap()
@@ -1086,6 +1149,19 @@ fn rust_console_native_queued_reads_keep_reply_shapes_causes_and_other_callers()
                         host.dispatch_with_output_ready(request, true, &mut output)
                             .unwrap()
                     };
+                    if last_calls.len() == 16 {
+                        let _ = last_calls.pop_front();
+                    }
+                    last_calls.push_back((
+                        function,
+                        call.api,
+                        output_ready,
+                        call.pending,
+                        host.pending_reads(),
+                        host.pending_output_requests(),
+                        host.connected_clients(),
+                        host.open_handles(),
+                    ));
                     assert_eq!(call.status, 0, "{kind}: {call:?}");
                     if reading {
                         if kind.ends_with("file") {

@@ -214,6 +214,9 @@ impl Default for View {
 
 #[derive(Clone, Debug)]
 pub enum Action {
+    ClearUsageHistory {
+        request: u64,
+    },
     RefreshAccountMetadata {
         request: u64,
         account: String,
@@ -367,6 +370,7 @@ impl std::error::Error for RuntimeError {}
 
 #[derive(Default)]
 struct Pending {
+    usage_clear: Option<crate::provider_server::usage::UsageClearHandle>,
     batch_gate: BatchGate,
     keys: profile_keys::KeyPending,
     monitor: crate::provider_monitoring::MonitorGate,
@@ -431,6 +435,9 @@ impl Runtime {
     }
 
     pub fn act(&mut self, action: Action) -> Result<(), RuntimeError> {
+        if let Action::ClearUsageHistory { request } = &action {
+            return self.clear_usage_history(*request);
+        }
         if matches!(
             &action,
             Action::RefreshAccountMetadata { .. }
@@ -658,6 +665,45 @@ impl Runtime {
         Ok(())
     }
 
+    pub fn next_usage_clear_request(&self) -> Result<u64, RuntimeError> {
+        let handle = self
+            .pending
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .usage_clear
+            .clone()
+            .ok_or(RuntimeError::WorkerUnavailable)?;
+        handle.next_request().map_err(map_usage_clear)
+    }
+    fn clear_usage_history(&mut self, request: u64) -> Result<(), RuntimeError> {
+        let handle = self
+            .pending
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .usage_clear
+            .clone()
+            .ok_or(RuntimeError::WorkerUnavailable)?;
+        handle.reserve(request).map_err(map_usage_clear)?;
+        let delivered = self
+            .view
+            .connection_receipts
+            .iter()
+            .map(|r| r.request)
+            .collect();
+        if let Err(error) = self.commands.try_send((
+            self.stop_requested.load(Ordering::Acquire),
+            delivered,
+            Action::ClearUsageHistory { request },
+        )) {
+            handle.withdraw(request);
+            return Err(match error {
+                TrySendError::Full(_) => RuntimeError::Busy,
+                TrySendError::Disconnected(_) => RuntimeError::WorkerUnavailable,
+            });
+        }
+        Ok(())
+    }
+
     pub fn next_account_monitoring_request(&self) -> Result<u64, RuntimeError> {
         self.pending
             .lock()
@@ -720,6 +766,13 @@ impl Runtime {
                 pending
                     .monitor
                     .acknowledge(&view.account_monitoring.receipts);
+                // Only this actually delivered immutable summary may release
+                // a Clear slot. Never read a receipt independently from its data.
+                if let Some(receipt) = &view.usage.clear.receipt
+                    && let Some(handle) = &pending.usage_clear
+                {
+                    handle.acknowledge(receipt.request);
+                }
                 self.view = view;
             }
             let effects = pending.effects.drain(..).collect();
@@ -1869,6 +1922,18 @@ impl Owner {
             return Ok(None);
         };
         match action {
+            Action::ClearUsageHistory { request } => {
+                // Local retained history is independent of live model/listener
+                // work and of the network Stop epoch.
+                let queued = self
+                    .gateway
+                    .enqueue_reserved_usage_clear(request)
+                    .map_err(map_usage_clear);
+                if let Some(summary) = self.gateway.usage_summary() {
+                    self.view.usage = summary;
+                }
+                queued?;
+            }
             Action::RefreshAccountMetadata { .. }
             | Action::SetAccountMonitoring { .. }
             | Action::ResumeAccountMonitoring { .. } => return Err(RuntimeError::InvalidAction),
@@ -2123,6 +2188,10 @@ fn run_loaded_owner(
     // Start the accounting lifetime only for the actual background Owner loop,
     // not while constructing a non-running Owner value.
     owner.gateway.install_usage(owner.root.join("usage"));
+    pending
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .usage_clear = owner.gateway.usage_clear_handle();
     owner.batch_gate = pending
         .lock()
         .unwrap_or_else(|error| error.into_inner())
@@ -2405,6 +2474,15 @@ fn prepare_root(root: &Path) -> Result<(), RuntimeError> {
     std::fs::create_dir_all(root).map_err(|_| RuntimeError::Storage)?;
     filesystem::protect_private_directory(root).map_err(|_| RuntimeError::Storage)
 }
+fn map_usage_clear(error: crate::provider_server::usage::UsageClearError) -> RuntimeError {
+    use crate::provider_server::usage::UsageClearError;
+    match error {
+        UsageClearError::Busy => RuntimeError::Busy,
+        UsageClearError::Storage => RuntimeError::Storage,
+        UsageClearError::InvalidRequest => RuntimeError::InvalidAction,
+        UsageClearError::Unavailable => RuntimeError::WorkerUnavailable,
+    }
+}
 fn map_monitor(error: MonitorError) -> RuntimeError {
     match error {
         MonitorError::Busy => RuntimeError::Busy,
@@ -2469,6 +2547,165 @@ fn map_server(error: ServerError) -> RuntimeError {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn um_clear_actual_runtime_actor_writer_delivers_two_exact_receipts_with_listener_alive() {
+        use std::io::{Read, Write};
+        let root = Root::new();
+        let (owner, _) = seed_ready(&root);
+        drop(owner);
+        let mut runtime = root.runtime();
+        until(&mut runtime, |v| {
+            v.load_state == LoadState::Loaded
+                && v.usage.state == crate::provider_server::usage::UsageState::Ready
+        });
+        runtime.act(Action::Start).unwrap();
+        until(&mut runtime, |v| {
+            matches!(v.listener, ListenerState::Listening | ListenerState::Error)
+        });
+        assert_eq!(runtime.view().listener, ListenerState::Listening);
+        let port = runtime.view().actual_port.unwrap();
+        let config_before = filesystem::read_private_bounded(
+            &root.0.join("gateway.json"),
+            crate::provider_server::CONFIG_BYTES,
+        )
+        .unwrap();
+        let key_before = filesystem::read_private_bounded(&root.0.join("client-key"), 128).unwrap();
+        let request = runtime.next_usage_clear_request().unwrap();
+        runtime.act(Action::ClearUsageHistory { request }).unwrap();
+        until(&mut runtime, |v| {
+            v.usage
+                .clear
+                .receipt
+                .as_ref()
+                .is_some_and(|r| r.request == request)
+        });
+        assert!(matches!(runtime.view().usage.clear.receipt.as_ref().unwrap().result,Ok(crate::provider_server::usage::UsageClearPublication::Durable|crate::provider_server::usage::UsageClearPublication::PublishedDurabilityUnconfirmed)));
+        let next = runtime.next_usage_clear_request().unwrap();
+        assert_eq!(next, request + 1);
+        assert_eq!(
+            runtime.act(Action::ClearUsageHistory { request: next }),
+            Ok(()),
+            "poll did not acknowledge the actually delivered first Clear receipt"
+        );
+        until(&mut runtime, |v| {
+            v.usage
+                .clear
+                .receipt
+                .as_ref()
+                .is_some_and(|r| r.request == next)
+        });
+        assert!(matches!(runtime.view().usage.clear.receipt.as_ref().unwrap().result,Ok(crate::provider_server::usage::UsageClearPublication::Durable|crate::provider_server::usage::UsageClearPublication::PublishedDurabilityUnconfirmed)));
+        assert_eq!(
+            runtime.view().listener,
+            ListenerState::Listening,
+            "Clear stopped the live listener"
+        );
+        assert_eq!(runtime.view().actual_port, Some(port));
+        // This endpoint is a local static projection; no provider inference or
+        // account metadata network request is issued by this consumer.
+        let mut connection = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        connection
+            .set_read_timeout(Some(Duration::from_secs(4)))
+            .unwrap();
+        write!(connection,"GET /v1/models HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer synthetic-client\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+        let mut response = String::new();
+        connection.read_to_string(&mut response).unwrap();
+        drop(connection);
+        assert!(
+            response.starts_with("HTTP/1.1 200"),
+            "Clear interrupted the actual local listener"
+        );
+        assert_eq!(
+            filesystem::read_private_bounded(
+                &root.0.join("gateway.json"),
+                crate::provider_server::CONFIG_BYTES
+            )
+            .unwrap(),
+            config_before
+        );
+        assert_eq!(
+            filesystem::read_private_bounded(&root.0.join("client-key"), 128).unwrap(),
+            key_before
+        );
+        drop(runtime);
+        let disk: serde_json::Value = serde_json::from_slice(
+            &filesystem::read_private_bounded(
+                &root.0.join("usage/history.json"),
+                24 * 1024 * 1024 + 65536,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            disk["open_run"], false,
+            "Pending Clear handle kept the final writer open"
+        );
+    }
+    #[test]
+    fn um_clear_actual_full_actor_queue_withdraws_only_failed_intent_without_replay() {
+        let root = Root::new();
+        let owner = Owner::load(root.0.clone()).unwrap();
+        owner.gateway.install_usage(root.0.join("usage"));
+        let clear = owner.gateway.usage_clear_handle().unwrap();
+        let pending = Arc::new(Mutex::new(Pending::default()));
+        pending.lock().unwrap().usage_clear = Some(clear.clone());
+        let (commands, incoming) = mpsc::sync_channel(16);
+        let mut runtime = Runtime {
+            commands,
+            connection_inflight: Default::default(),
+            last_connection_request: 0,
+            pending,
+            view: View::default(),
+            exit: Arc::new(AtomicBool::new(false)),
+            stop_requested: Arc::new(AtomicU64::new(0)),
+            worker: None,
+        };
+        for _ in 0..16 {
+            runtime
+                .commands
+                .try_send((0, Vec::new(), Action::RefreshAccounts))
+                .ok()
+                .unwrap();
+        }
+        let request = runtime.next_usage_clear_request().unwrap();
+        let rejected = runtime.act(Action::ClearUsageHistory { request });
+        let release = clear.reserve(request + 1);
+        if release.is_ok() {
+            clear.withdraw(request + 1);
+        }
+        let delivered = incoming.try_iter().collect::<Vec<_>>();
+        let queued_clears = delivered
+            .iter()
+            .filter(|(_, _, a)| matches!(a, Action::ClearUsageHistory { .. }))
+            .count();
+        let terminal = clear.view().unwrap().receipt;
+        // Complete the real existing writer BEFORE guarded assertions so a RED
+        // cannot detach it or remove its fixture root beneath filesystem I/O.
+        let close = owner.gateway.usage_close_handle().unwrap();
+        drop(runtime);
+        drop(owner);
+        let closed = close.wait_owner();
+        assert_eq!(rejected, Err(RuntimeError::Busy));
+        assert_eq!(
+            release,
+            Ok(()),
+            "full Actor enqueue retained its failed exact Clear reservation"
+        );
+        assert_eq!(delivered.len(), 16);
+        assert_eq!(
+            queued_clears, 0,
+            "failed Actor Clear was queued or replayed"
+        );
+        assert!(
+            terminal.is_none(),
+            "Actor rejection manufactured a saved Clear terminal"
+        );
+        assert!(
+            closed,
+            "non-producing Clear handle extended the writer lifetime"
+        );
+    }
     #[test]
     fn provider_monitor_actual_poll_act_actor_rejection_keeps_second_terminal() {
         let root = Root::new();

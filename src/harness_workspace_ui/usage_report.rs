@@ -1,8 +1,9 @@
-//! Read-only report projection; source semantics remain with the accounting owner.
+//! Usage projection and explicit local-history Clear; source semantics stay with the accounting owner.
 use super::*;
 use crate::provider_monitoring as monitoring;
 use crate::provider_server::usage::{
-    BillingTotals, DecimalTotal, GroupKey, GroupSummary, Metrics, UsageState, UsageSummary,
+    BillingTotals, DecimalTotal, GroupKey, GroupSummary, Metrics, UsageClearError,
+    UsageClearPublication, UsageClearReceipt, UsageClearView, UsageState, UsageSummary,
 };
 use std::sync::Arc;
 
@@ -108,6 +109,9 @@ enum Action {
     Choose(Choice),
     Monitoring,
     MetadataAccount,
+    ClearOpen,
+    ClearConfirm,
+    ClearCancel,
 }
 #[derive(Default)]
 pub(super) struct Report {
@@ -123,10 +127,16 @@ pub(super) struct Report {
     pending: Option<Arc<UsageSummary>>,
     next_metric: Option<Instant>,
     due: Option<Instant>,
+    clear_confirming: bool,
+    clear_return_scroll: Option<usize>,
+    clear_pending: Option<u64>,
+    clear_last: Option<UsageClearReceipt>,
+    clear_error: Option<UsageClearError>,
 }
 pub(super) enum Intent {
     None,
     Monitoring(Option<String>),
+    ClearHistory,
     Leave(bool),
 }
 struct Row {
@@ -186,20 +196,153 @@ impl Projection {
 }
 
 impl Report {
+    fn clear_busy(&self, view: Option<&View>) -> bool {
+        self.clear_pending.is_some()
+            || view.is_some_and(|view| view.usage.clear.pending_request.is_some())
+    }
+    fn close_clear_confirmation(&mut self) {
+        self.clear_confirming = false;
+        if let Some(scroll) = self.clear_return_scroll.take() {
+            self.scroll = scroll;
+        }
+    }
+    pub(super) fn clear_submitted(&mut self, result: Result<u64, UsageClearError>) {
+        if self.clear_pending.is_some() {
+            return;
+        }
+        self.close_clear_confirmation();
+        match result {
+            Ok(request) if request != 0 => {
+                self.clear_pending = Some(request);
+                self.clear_last = None;
+                self.clear_error = None;
+            }
+            Ok(_) => self.clear_error = Some(UsageClearError::InvalidRequest),
+            Err(error) => self.clear_error = Some(error),
+        }
+    }
+    fn observe_clear(&mut self, clear: &UsageClearView) -> bool {
+        let Some(receipt) = clear
+            .receipt
+            .as_ref()
+            .filter(|receipt| self.clear_pending == Some(receipt.request))
+        else {
+            return false;
+        };
+        self.clear_pending = None;
+        self.clear_last = Some(receipt.clone());
+        self.clear_error = None;
+        true
+    }
+    fn clear_rows(&self, view: Option<&View>, l: ui::UiLanguage) -> Vec<Row> {
+        if self.clear_confirming {
+            return vec![
+                line("clear_scope", text(l,
+                    "Clear request details and daily totals for ALL accounts, client profiles and periods, regardless of the current filters.",
+                    "清除所有账号、客户端连接和时段的请求详情与每日汇总，不受当前筛选影响。",
+                    "清除所有帳號、用戶端連線和時段的請求詳情與每日彙總，不受目前篩選影響。").into()),
+                line("clear_unchanged", text(l,
+                    "Provider balances, metadata, policies and keys are unchanged. Active models keep running; this does not cancel requests.",
+                    "提供方余额、元数据、策略和密钥不变。正在运行的模型继续工作；此操作不会取消请求。",
+                    "提供方餘額、中繼資料、原則和金鑰不變。執行中的模型繼續工作；此操作不會取消請求。").into()),
+                button("clear_confirm", text(l,
+                    "Clear all local history; later completions will be recorded",
+                    "清除全部本地历史；后续完成的请求仍会记录",
+                    "清除全部本機歷史；後續完成的請求仍會記錄").into(), Action::ClearConfirm),
+                button("clear_cancel", text(l, "Cancel (keep history)", "取消（保留历史）", "取消（保留歷史）").into(), Action::ClearCancel),
+            ];
+        }
+        let mut rows = if self.clear_busy(view) {
+            vec![line(
+                "clear_pending",
+                text(
+                    l,
+                    "Clearing local history (pending, not yet saved).",
+                    "正在清除本地历史（处理中，尚未保存）。",
+                    "正在清除本機歷史（處理中，尚未儲存）。",
+                )
+                .into(),
+            )]
+        } else {
+            vec![button(
+                "clear_history",
+                text(
+                    l,
+                    "Clear all local history",
+                    "清除全部本地历史",
+                    "清除全部本機歷史",
+                )
+                .into(),
+                Action::ClearOpen,
+            )]
+        };
+        let result = self
+            .clear_error
+            .map(Err)
+            .or_else(|| self.clear_last.as_ref().map(|receipt| receipt.result));
+        if let Some(result) = result {
+            let label = match result {
+                Ok(UsageClearPublication::Durable) => text(
+                    l,
+                    "All local history cleared and saved. New completions can appear.",
+                    "全部本地历史已清除并保存；新的完成记录仍会出现。",
+                    "全部本機歷史已清除並儲存；新的完成記錄仍會出現。",
+                ),
+                Ok(UsageClearPublication::PublishedDurabilityUnconfirmed) => text(
+                    l,
+                    "All local history cleared; durability unconfirmed. New completions can appear.",
+                    "全部本地历史已清除；持久性尚未确认。新的完成记录仍会出现。",
+                    "全部本機歷史已清除；持久性尚未確認。新的完成記錄仍會出現。",
+                ),
+                Err(UsageClearError::Storage) => text(
+                    l,
+                    "Clear storage failed; old history may return after restart.",
+                    "清除操作写入失败；重启后旧历史可能再次出现。",
+                    "清除操作寫入失敗；重新啟動後舊歷史可能再次出現。",
+                ),
+                Err(UsageClearError::Busy) => text(
+                    l,
+                    "Clear not accepted (busy). Confirm a new request explicitly.",
+                    "未接受清除操作（忙碌）；请重新显式确认。",
+                    "未接受清除操作（忙碌）；請重新明確確認。",
+                ),
+                Err(UsageClearError::Unavailable) => text(
+                    l,
+                    "Local history unavailable; Clear was not submitted.",
+                    "本地历史不可用，未提交清除操作。",
+                    "本機歷史無法使用，未提交清除操作。",
+                ),
+                Err(UsageClearError::InvalidRequest) => text(
+                    l,
+                    "Clear request rejected. Confirm a new request explicitly.",
+                    "清除请求被拒绝；请重新显式确认。",
+                    "清除請求遭拒；請重新明確確認。",
+                ),
+            };
+            rows.push(line("clear_result", label.into()));
+        }
+        rows
+    }
     pub(super) fn presented<'a>(&'a self, view: Option<&'a View>) -> Option<&'a UsageSummary> {
         self.displayed
             .as_deref()
             .or_else(|| view.map(|v| v.usage.as_ref()))
     }
     pub(super) fn observe(&mut self, next: Arc<UsageSummary>, visible: bool, now: Instant) -> bool {
-        if self.displayed.as_ref().is_some_and(|old| **old == *next) && self.pending.is_none() {
+        let clear_changed = self.observe_clear(&next.clear);
+        if !clear_changed
+            && self.displayed.as_ref().is_some_and(|old| **old == *next)
+            && self.pending.is_none()
+        {
             return false;
         }
-        let urgent = self.displayed.as_ref().is_none_or(|old| {
-            old.state != next.state
-                || old.gaps != next.gaps
-                || old.today_utc_day != next.today_utc_day
-        });
+        let urgent = clear_changed
+            || self.displayed.as_ref().is_none_or(|old| {
+                old.state != next.state
+                    || old.gaps != next.gaps
+                    || old.today_utc_day != next.today_utc_day
+                    || old.clear != next.clear
+            });
         if !visible {
             self.pending = Some(next);
             self.due = None;
@@ -288,6 +431,9 @@ impl Report {
         view.account_monitoring.accounts.first()
     }
     fn rows(&self, view: Option<&View>, l: ui::UiLanguage) -> Vec<Row> {
+        if self.clear_confirming {
+            return self.clear_rows(view, l);
+        }
         let mut rows = vec![
             button(
                 "period",
@@ -340,6 +486,7 @@ impl Report {
                 Action::Monitoring,
             ),
         ];
+        rows.extend(self.clear_rows(view, l));
         let Some(view) = view else {
             rows.push(line(
                 "source",
@@ -659,6 +806,39 @@ impl Report {
     }
     fn activate(&mut self, action: Action, view: Option<&View>) -> Intent {
         match action {
+            Action::ClearOpen => {
+                if self.clear_busy(view) {
+                    self.clear_error = Some(UsageClearError::Busy);
+                    return Intent::None;
+                }
+                if view.is_none() {
+                    self.clear_error = Some(UsageClearError::Unavailable);
+                    return Intent::None;
+                }
+                self.clear_error = None;
+                self.clear_return_scroll = Some(self.scroll);
+                self.clear_confirming = true;
+                self.scroll = 0;
+                self.focus = Some(Action::ClearCancel);
+                return Intent::None;
+            }
+            Action::ClearConfirm => {
+                if !self.clear_confirming {
+                    return Intent::None;
+                }
+                self.close_clear_confirmation();
+                self.focus = Some(Action::ClearOpen);
+                if self.clear_busy(view) {
+                    self.clear_error = Some(UsageClearError::Busy);
+                    return Intent::None;
+                }
+                return Intent::ClearHistory;
+            }
+            Action::ClearCancel => {
+                self.close_clear_confirmation();
+                self.focus = Some(Action::ClearOpen);
+                return Intent::None;
+            }
             Action::Period => self.period = self.period.next(),
             Action::Traffic => {
                 self.traffic = match self.traffic {
@@ -758,6 +938,7 @@ impl Report {
                             self.focus = actions.get(i).cloned();
                             self.reveal(p);
                         } else {
+                            self.close_clear_confirmation();
                             self.focus = None;
                             return Some(Intent::Leave(key.modifiers.shift));
                         }
@@ -803,6 +984,9 @@ impl Report {
                             return Some(self.activate(action, view));
                         }
                         self.reveal(p);
+                    }
+                    LogicalKey::Named(NamedKey::Escape) if self.clear_confirming => {
+                        return Some(self.activate(Action::ClearCancel, view));
                     }
                     LogicalKey::Named(NamedKey::Escape) if self.picker => {
                         self.picker = false;
@@ -856,6 +1040,7 @@ impl Report {
         self.focus.is_some()
     }
     pub(super) fn leave_focus(&mut self) {
+        self.close_clear_confirmation();
         self.focus = None;
     }
     pub(super) fn paint(
@@ -1943,5 +2128,288 @@ mod tests {
                 && !encoded.contains("organization_digest")
                 && !encoded.contains("headers")
         );
+    }
+    #[test]
+    fn report_clear_actual_narrow_buttons_require_confirmation_and_escape_cancels() {
+        fn click(
+            report: &mut Report,
+            view: &View,
+            language: ui::UiLanguage,
+            action: Action,
+        ) -> Option<Intent> {
+            let body = ui::Rect {
+                x: 0,
+                y: 0,
+                width: 280,
+                height: 140,
+            };
+            report.focus = Some(action.clone());
+            let before = report.project(Some(view), language, body, 14);
+            report.reveal(&before);
+            let projection = report.project(Some(view), language, body, 14);
+            let entry = projection
+                .entries
+                .iter()
+                .find(|entry| entry.action.as_ref() == Some(&action))
+                .expect("fixture action exists");
+            assert!(
+                projection.complete(entry),
+                "actual clear caption must fit the revealed narrow cell: {}",
+                entry.label
+            );
+            let rect = projection.rect(entry);
+            let mut pixels = vec![0; 280 * 140];
+            let theme = theme::Theme::for_choice(theme::ThemeChoice::default());
+            report.paint(
+                &mut Surface::with_clip(
+                    &mut pixels,
+                    280,
+                    140,
+                    PixelRect::from_xywh(0, 0, 280, 140),
+                ),
+                &projection,
+                14,
+                theme,
+            );
+            assert!(
+                pixels.contains(&theme.accent.to_xrgb()),
+                "actual action glyphs must be painted"
+            );
+            report.route(
+                &PixelWindowEvent::PointerButton {
+                    button: PointerButton::Left,
+                    state: PointerButtonState::Pressed,
+                    position: Some(LogicalPoint {
+                        x: f64::from(rect.x + rect.width / 2),
+                        y: f64::from(rect.y + rect.height / 2),
+                    }),
+                    modifiers: ModifierState::empty(),
+                },
+                Some(view),
+                &projection,
+                1.0,
+            )
+        }
+        let view = View::default();
+        for language in [
+            ui::UiLanguage::English,
+            ui::UiLanguage::ChineseSimplified,
+            ui::UiLanguage::ChineseTraditional,
+        ] {
+            let mut report = Report {
+                period: Period::Days30,
+                traffic: Traffic::Probes,
+                ..Default::default()
+            };
+            assert!(
+                matches!(
+                    click(&mut report, &view, language, Action::ClearOpen),
+                    Some(Intent::None)
+                ),
+                "opening confirmation must not dispatch Clear"
+            );
+            assert!(report.clear_confirming && report.clear_pending.is_none());
+            let projection = report.project(
+                Some(&view),
+                language,
+                ui::Rect {
+                    x: 0,
+                    y: 0,
+                    width: 280,
+                    height: 140,
+                },
+                14,
+            );
+            let escape = PixelWindowEvent::Keyboard(NormalizedKeyEvent {
+                logical: LogicalKey::Named(NamedKey::Escape),
+                physical: PhysicalKeyCode::Other,
+                text: None,
+                state: KeyPressState::Pressed,
+                repeat: false,
+                modifiers: ModifierState::empty(),
+            });
+            assert!(matches!(
+                report.route(&escape, Some(&view), &projection, 1.0),
+                Some(Intent::None)
+            ));
+            assert!(!report.clear_confirming && report.clear_pending.is_none());
+            assert!(matches!(
+                click(&mut report, &view, language, Action::ClearOpen),
+                Some(Intent::None)
+            ));
+            assert!(
+                matches!(
+                    click(&mut report, &view, language, Action::ClearConfirm),
+                    Some(Intent::ClearHistory)
+                ),
+                "only the explicit complete confirmation dispatches Clear"
+            );
+            report.clear_submitted(Ok(11));
+            report.leave_focus();
+            assert_eq!(
+                report.clear_pending,
+                Some(11),
+                "hiding the report must retain the exact pending operation"
+            );
+            assert_eq!(
+                (report.period, report.traffic),
+                (Period::Days30, Traffic::Probes)
+            );
+        }
+    }
+
+    #[test]
+    fn report_clear_exact_receipt_bypasses_metric_delay_and_survives_ack() {
+        for result in [
+            Ok(UsageClearPublication::Durable),
+            Ok(UsageClearPublication::PublishedDurabilityUnconfirmed),
+            Err(UsageClearError::Storage),
+        ] {
+            let now = Instant::now();
+            let mut report = Report::default();
+            let mut initial = UsageSummary::default();
+            initial.windows[0].client.requests = 9;
+            let initial = Arc::new(initial);
+            assert!(report.observe(initial.clone(), true, now));
+            report.clear_submitted(Ok(31));
+            let mut wrong = (*initial).clone();
+            wrong.clear.receipt = Some(UsageClearReceipt {
+                request: 30,
+                result,
+            });
+            let _ = report.observe(
+                Arc::new(wrong.clone()),
+                true,
+                now + Duration::from_millis(5),
+            );
+            assert_eq!(
+                report.clear_pending,
+                Some(31),
+                "another request must not consume this Clear"
+            );
+            assert!(report.clear_last.is_none());
+            wrong.clear.receipt = Some(UsageClearReceipt {
+                request: 31,
+                result,
+            });
+            wrong.windows[0].client.requests = 0;
+            let completed = Arc::new(wrong);
+            assert!(
+                report.observe(completed.clone(), true, now + Duration::from_millis(6)),
+                "Clear receipt and matching history must be urgent before the one-second metric deadline"
+            );
+            assert_eq!(
+                report
+                    .presented(None)
+                    .map(|summary| summary.windows[0].client.requests),
+                Some(0)
+            );
+            assert_eq!(report.clear_pending, None);
+            assert_eq!(
+                report.clear_last.as_ref().map(|receipt| receipt.result),
+                Some(result)
+            );
+            let view = View {
+                usage: completed.clone(),
+                ..View::default()
+            };
+            let label = report
+                .rows(Some(&view), ui::UiLanguage::English)
+                .into_iter()
+                .find(|row| row.id == "clear_result")
+                .expect("terminal feedback exists")
+                .label;
+            match result {
+                Ok(UsageClearPublication::Durable) => assert!(label.contains("cleared and saved")),
+                Ok(UsageClearPublication::PublishedDurabilityUnconfirmed) => assert!(
+                    label.contains("durability unconfirmed")
+                        && !label.contains("cleared and saved")
+                ),
+                Err(UsageClearError::Storage) => assert!(
+                    label.contains("storage failed") && !label.contains("cleared and saved")
+                ),
+                _ => unreachable!("finite fixture outcomes"),
+            }
+            let mut acknowledged = (*completed).clone();
+            acknowledged.clear = UsageClearView::default();
+            let acknowledged = Arc::new(acknowledged);
+            report.leave_focus();
+            let _ = report.observe(acknowledged.clone(), false, now + Duration::from_millis(7));
+            report.reveal_latest(Some(acknowledged.clone()), now + Duration::from_millis(8));
+            let after = View {
+                usage: acknowledged,
+                ..View::default()
+            };
+            assert_eq!(
+                report
+                    .rows(Some(&after), ui::UiLanguage::English)
+                    .into_iter()
+                    .find(|row| row.id == "clear_result")
+                    .map(|row| row.label),
+                Some(label),
+                "Runtime ACK and a hidden frame must not erase the last exact terminal"
+            );
+            assert_eq!(initial.windows[0].client.requests, 9);
+        }
+    }
+
+    #[test]
+    fn report_clear_rejected_submission_retains_query_without_pending_or_retry() {
+        let mut report = Report {
+            period: Period::Days30,
+            traffic: Traffic::Probes,
+            scroll: 13,
+            ..Default::default()
+        };
+        report.choices[0] = Choice::Other;
+        let view = View::default();
+        assert!(
+            matches!(
+                report.activate(Action::ClearConfirm, Some(&view)),
+                Intent::None
+            ),
+            "confirmation action cannot bypass its opened confirmation state"
+        );
+        assert!(matches!(
+            report.activate(Action::ClearOpen, Some(&view)),
+            Intent::None
+        ));
+        assert!(matches!(
+            report.activate(Action::ClearConfirm, Some(&view)),
+            Intent::ClearHistory
+        ));
+        report.clear_submitted(Err(UsageClearError::Busy));
+        assert_eq!(
+            report.clear_error,
+            Some(UsageClearError::Busy),
+            "rejected enqueue must remain explicit and must not look saved"
+        );
+        assert!(report.clear_pending.is_none() && !report.clear_confirming);
+        assert_eq!(report.scroll, 13);
+        assert_eq!(
+            (report.period, report.traffic),
+            (Period::Days30, Traffic::Probes)
+        );
+        assert!(matches!(report.choices[0], Choice::Other));
+        let now = Instant::now();
+        let mut stale = UsageSummary::default();
+        stale.clear.receipt = Some(UsageClearReceipt {
+            request: 999,
+            result: Ok(UsageClearPublication::Durable),
+        });
+        let _ = report.observe(Arc::new(stale), true, now);
+        let _ = report.service(now + Duration::from_secs(2), true);
+        assert_eq!(report.clear_error, Some(UsageClearError::Busy));
+        assert!(report.clear_pending.is_none() && report.clear_last.is_none());
+        for _ in 0..3 {
+            assert!(
+                report
+                    .rows(Some(&view), ui::UiLanguage::English)
+                    .iter()
+                    .any(
+                        |row| row.id == "clear_result" && row.label.contains("not accepted (busy)")
+                    )
+            );
+        }
     }
 }

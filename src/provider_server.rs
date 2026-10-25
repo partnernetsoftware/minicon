@@ -579,6 +579,20 @@ impl Gateway {
     pub(crate) fn install_usage(&self, root: PathBuf) {
         let _ = self.usage.get_or_init(|| usage::UsageHistory::open(root));
     }
+
+    pub(crate) fn usage_clear_handle(&self) -> Option<usage::UsageClearHandle> {
+        self.usage.get().map(usage::UsageHistory::clear_handle)
+    }
+    pub(crate) fn enqueue_reserved_usage_clear(
+        &self,
+        request: u64,
+    ) -> Result<(), usage::UsageClearError> {
+        self.usage
+            .get()
+            .ok_or(usage::UsageClearError::Unavailable)?
+            .enqueue_reserved_clear(request)
+    }
+
     pub(crate) fn usage_close_handle(&self) -> Option<usage::UsageClose> {
         self.usage.get().map(usage::UsageHistory::close_handle)
     }

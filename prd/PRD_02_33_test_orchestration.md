@@ -322,6 +322,9 @@ the dispatch has no Rust filter and is not a dedicated lifetime/ACL diagnostic.
 Its standard-workspace log and receipt record the checked-out source and actual
 counts; ignored opt-ins remain unqualified. No local desktop emulation or
 assertion skipping substitutes for that execution.
+Independent browser/K3 courts may continue after that standard step fails;
+the final job explicitly retains its failure. Their passing evidence cannot
+override the failed standard gate or qualify an unexecuted later suite.
 
 A moved checkout may leave cached source-bound test programs with their old
 `CARGO_MANIFEST_DIR`. Refresh the local source compilation before trusting its

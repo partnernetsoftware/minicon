@@ -914,6 +914,13 @@ impl ConApp {
                             settings.select_monitoring_account(account.as_deref());
                         }
                     }
+                    usage_report::Intent::ClearHistory => {
+                        let result = self.harness_settings.as_mut().map_or(
+                            Err(provider_server::usage::UsageClearError::Unavailable),
+                            |settings| settings.request_usage_clear(),
+                        );
+                        self.harness_workspace.report.clear_submitted(result);
+                    }
                     usage_report::Intent::Leave(backwards) => {
                         self.harness_workspace.focus = if backwards { 6 } else { 0 }
                     }

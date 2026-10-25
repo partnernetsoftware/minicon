@@ -672,6 +672,24 @@ impl HarnessSettings {
         self.clicks = Default::default();
     }
 
+    pub(super) fn request_usage_clear(
+        &mut self,
+    ) -> Result<u64, crate::provider_server::usage::UsageClearError> {
+        use crate::provider_server::usage::UsageClearError;
+        let map_error = |error| match error {
+            provider_runtime::RuntimeError::Busy => UsageClearError::Busy,
+            provider_runtime::RuntimeError::Storage => UsageClearError::Storage,
+            provider_runtime::RuntimeError::InvalidAction => UsageClearError::InvalidRequest,
+            _ => UsageClearError::Unavailable,
+        };
+        let runtime = self.runtime.as_mut().ok_or(UsageClearError::Unavailable)?;
+        let request = runtime.next_usage_clear_request().map_err(map_error)?;
+        runtime
+            .act(Action::ClearUsageHistory { request })
+            .map_err(map_error)?;
+        Ok(request)
+    }
+
     fn act(&mut self, action: Action) {
         if matches!(action, Action::Stop) {
             self.keys.invalidate_copy();

@@ -636,12 +636,12 @@ Behavior/evidence belongs only to the
 [key lifecycle owner](PRD_02_31_01_02_02_profile_keys.md#k2-selected-applied-profile-consumer-candidate).
 
 
-## Usage report observations (implementation preview, not qualified)
+## Usage report observations
 
 The report contract belongs to [PRD31.01.03.03](PRD_02_31_01_03_03_usage_reports.md).
 `geometry.harness_workspace.usage` is null outside the retained Usage destination;
 the existing workspace `active` bit still identifies the actual input surface.
-Its proposed real consumer whitelist is: `period` (today/days7/days30),
+Its finite consumer whitelist is: `period` (today/days7/days30),
 `timezone_basis` (utc), `traffic` (client/probe), `group_by`
 (account/client_profile/model), `selected`, `picker`, `scroll`, `total_lines`,
 `visible_lines`, `revision`, `source`, `computed_at_unix_ms`, `today_utc_day`,
@@ -654,6 +654,14 @@ presented `text`, `action`, `complete`, and shared physical `rect`. Only visible
 rows are returned; a wrapping row may contain its full finite label even when
 partially visible, and complete marks full readable action geometry. Monetary
 lexemes remain strings, with their channel/unit and missing/overflow coverage.
+
+Explicit local-history Clear reuses this same `rows` whitelist with fixed IDs
+`clear_history`, `clear_scope`, `clear_unchanged`, `clear_confirm`, `clear_cancel`,
+`clear_pending`, and `clear_result`. Their bounded localized text, action bit,
+complete bit and physical rectangle follow the same visibility rule. No new
+top-level field, request ID, history snapshot or backend receipt is serialized.
+Clear behavior belongs to the [report owner](PRD_02_31_01_03_03_usage_reports.md);
+its storage/cutoff authority belongs to the accounting owner.
 The source revision is accounting publication identity, not a monotonic
 presentation epoch or provider freshness. UTC day and computed time are nullable;
 unknown time must not be observed as a genuine zero-day/zero-usage window.
@@ -665,4 +673,5 @@ used by the compact row. It does not expose threshold drafts, full metadata
 snapshots, raw grants, organization/proxy authority, keys/hashes, URLs/headers,
 or model content. Existing request/reply limits still apply. Computed rows and
 rectangles are not proof of visible native pixels or real provider reads.
-All new report observations remain unqualified until actual source-bound courts.
+Source-bound developer evidence and remaining native qualification belong to
+the report owner; this whitelist alone does not certify a target or artifact.

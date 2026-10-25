@@ -2207,6 +2207,32 @@ foreign-request races, other native API/geometry/editor behavior, OS/ISA runtime
 and performance courts, portable sessions and packaging/default promotion remain
 open. This changes no product default or library-merger decision.
 
+#### Windows 2025 standard-gate frontier, 2026-10-26
+
+The isolated Windows x64 standard workspace run at exact
+`294332aef55639f6ce75da6de7c0236183dc1fc5`, CI `40227151671`, passed the
+main 853-test binary but failed two native-input consumers:
+`rust_console_native_queued_reads_keep_reply_shapes_causes_and_other_callers`
+(queued disconnect-file stalled) and
+`rust_console_native_read_retirement_waits_for_fallback_publication`
+(retirement disconnect stalled). The other 22 native-input subjects passed.
+That full standard gate remains FAIL; later suites and K3 were not reached.
+The raw job log is retained under
+`target-six/v0.2.23-provider/ci-294332a-native/windows-job.log`.
+
+The tested runner reports build 26100; the local host is build 20348. This
+limits evidence scope and does not identify a cause. A possible necessary
+FreeConsole-before-disconnect request held by the deliberate output pressure
+is a hypothesis, not an observed deadlock or product defect. A narrow test-only
+diagnostic retains the last 16 actual call classifications, queue/state counts
+and fixed phase-file presence at the original deadline. It preserves all old
+assertions, 18/20-second deadlines and service logic. Both exact subjects pass
+through the canonical selected-suite entry on local build 20348; receipt:
+`target-six/v0.2.23-provider/console-disconnect-diagnostic-local-receipt.json`.
+The new diagnostic's Windows 2025 CI replay is still UNRUN. These local passes
+and added observations do not resolve the actual build-26100 failures or claim
+a persistence/retirement fix.
+
 ### Queued-read retirement and keyboard waiters
 
 Invariant: queued reads and admitted reads use the same process/object selector,

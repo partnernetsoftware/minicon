@@ -28,12 +28,17 @@ Outcome: understand retained local use and actual provider resources without cha
 │   evidence: public routes with drafts/scroll/focus/live-page preserved
 │   safe failure: cached NotLoaded/Unavailable and reachable Settings/Back
 │   dependency: PRD36 return authority and existing host editor; non-goal: duplicated forms
-└── [-] PRESENT — bounded shared geometry and truthful cached updates
+├── [-] PRESENT — bounded shared geometry and truthful cached updates
     invariant: paint/hit/snapshot share one visible projection; idle UTC windows stay current
     evidence: cache-rollover prerequisite + deadline/coalescing + actual viewport consumers
     safe failure: recorded-as-of/unknown period, bounded visible rows and diagnostics
     dependency: accounting-owned clock/cache prerequisite and PRD26 whitelist
     non-goal: new timer/layout/writer engine or synthetic native qualification
+└── [-] CLEAR — explicit all-history confirmation and exact operation feedback
+    invariant: current filters never narrow Clear; only explicit confirmation dispatches it
+    evidence: three guarded consumers and 17 public Clear checks; named receipts below
+    safe failure: typed Busy/Unavailable/Storage, never false saved or implicit retry
+    dependency: accounting-owned Clear writer/Runtime contract; non-goal: provider reset or model cancellation
 ```
 
 ## Memory palace
@@ -54,11 +59,15 @@ flowchart LR
     SET -->|cached read only until explicit action| REPORT
     SET --> ACTION[Explicit refresh / opt-in policy / resume]
     ACTION --> META
+    REPORT --> CONFIRM[Explicit global Clear / confirm or cancel]
+    CONFIRM --> LOCALCLEAR[Accounting-owned Clear queue and publication]
+    LOCALCLEAR --> RESULT[Urgent same-Arc history / exact receipt retained after ACK]
+    RESULT --> REPORT
     REPORT --> BACK[Same query / scroll then original tab and draft]
     REPORT --> OBS[PRD26 finite visible whitelist + actual native screenshots]
 ```
 
-## Read-only report authority
+## Report projection authority
 
 Read immutable View.usage and the independently owned View.account_monitoring.
 Never read history/account/key files on UI input, recompute statistical totals,
@@ -142,13 +151,60 @@ keys/hashes, URLs/headers or model content. Computed geometry is not native pixe
 acceptance. Public/native evidence names actual source/binary/features/OS/ISA/
 viewport/scale and preserves failures; old accounting/H0 evidence is not H1 proof.
 
+## Explicit local-history Clear presentation
+
+Clear is an exception to read-only projection, not another statistics or writer
+engine. The [accounting owner](PRD_02_31_01_03_01_request_accounting.md) owns the
+cutoff, retention and typed publication result. The report offers one explicit
+all-history action, inline confirmation and keyboard/pointer cancellation.
+Confirmation states that all accounts, client profiles and periods are included,
+provider resources/policies/keys are unchanged, and running work continues.
+The actual complete confirmation button itself states that subsequent request
+completions are recorded, including already-running work.
+
+Pending remains an unresolved operation across hide/navigation. Match the exact
+submitted request from View.usage.clear; the result and its corresponding history
+Arc bypass metric coalescing together. Retain that terminal after Runtime ACK.
+Render Durable, durability-unconfirmed and Storage as distinct outcomes; only
+Durable may say saved. A rejected enqueue requires a fresh explicit confirmation,
+never retry on paint/poll. Preserve period/group/query and return scroll.
+
+The integrated three UI consumers pass the strict test entry on the overlay
+above `294332a`. Removing confirmation admission, Clear urgency and rejection
+feedback each fails its intended original assertion; exact restoration passes.
+Named evidence is `target-six/v0.2.23-provider/usage-clear-origin-fixture-gates/receipt.json`
+and `usage-clear-serial-controls-attempt-1/receipt.json` under that root.
+No removed guard remains in product source.
+
+`target-six/v0.2.23-provider/usage-clear-public-attempt-2/receipt.json` records
+17 passing public checks through two fresh owned Windows x86_64 GUI processes
+on the matching dirty-source developer image (SHA-256
+`f8fd174813311c08757b2ad5e3ce99e83bf9a96042b206cb3c5aa730dd67bceb`).
+Known and bounded-corrupt synthetic histories both retain file bytes on Cancel
+and Escape, then explicit confirmation produces the actual Durable UI result,
+Ready history and empty persisted details/days. The known selected account
+stays selected and unavailable until an explicit All choice; Console draft/focus
+survive return. All 266 public commands complete, both processes exit 0 and
+owned cleanup has no errors; private gateway/key fixture bytes remain unchanged.
+Root visually reviewed the English 1000x700, scale-1 confirmation and resulting
+report PNGs: the all-accounts/all-periods scope, later-completion warning and
+saved result are visible. The first attempt's fixture-bound setup failure is
+retained in `usage-clear-public-attempt-1/`; it started no GUI. The corrected
+runner uses the existing product aggregate byte ceiling, without changing a
+product guard. This is synthetic public CLI/pixel evidence, not physical input,
+real accounts, other locales/targets, storage-fault completeness or release
+qualification. Those remaining parent obligations stay open.
+No new View fact or top-level public schema is introduced: seven finite Clear
+row IDs reuse the existing report rows/text/action/complete/rect observation.
+
 ## Delivery frontier
 
 The integrated report, metadata/Settings join, existing deadline glue and
 PRD26 observation registration have local developer evidence below. Advertised
-native targets and remaining parent product obligations stay open. Parent
-clear-history scope has no current writer action; do not fabricate
-UI or claim it complete. Provider readings remain with the metadata owner;
+native targets and remaining parent product obligations stay open. Explicit
+Clear has local guarded developer and synthetic public confirmation/file evidence
+against the accounting-owned writer/Runtime contract, as scoped above.
+Provider readings stay with the metadata owner;
 full exact-artifact release qualification stays separately open.
 
 ### Initial implementation preview boundary

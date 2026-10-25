@@ -166,6 +166,8 @@ jobs:
         run: cargo build --locked --workspace --all-targets --target "${{ matrix.triple }}"
 
       - name: Run the standard workspace and owned-fork gate on the isolated desktop
+        id: standard_workspace
+        continue-on-error: true
         if: matrix.cell == 'win-x86_64' && inputs.test_filter == '' && !inputs.windows_cookie_lifetime_contrast && !inputs.windows_profile_acl_contrast
         timeout-minutes: 20
         shell: bash
@@ -584,6 +586,13 @@ jobs:
             echo "CROSSCHECK failed suites:$failed" | tee -a "$LOG_DIR/summary.log"
             exit 1
           fi
+
+      - name: Retain a failed standard gate after independent courts finish
+        if: always() && steps.standard_workspace.outcome == 'failure'
+        shell: bash
+        run: |
+          echo 'Standard workspace/owned-fork gate failed; independent court results do not override it.' >&2
+          exit 1
 
       - name: Preserve owned Windows console lifecycle traces
         if: always() && startsWith(matrix.cell, 'win-')

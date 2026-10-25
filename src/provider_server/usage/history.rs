@@ -18,6 +18,139 @@ const AGGREGATE_BYTES: usize = 8 * 1024 * 1024;
 const SNAPSHOT_BYTES: usize = DETAIL_BYTES + AGGREGATE_BYTES + 65536;
 const DAY_MS: u64 = 86_400_000;
 
+/// Explicit local retained-history operation; no provider or model side effect.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum UsageClearError {
+    Busy,
+    Unavailable,
+    InvalidRequest,
+    Storage,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum UsageClearPublication {
+    Durable,
+    PublishedDurabilityUnconfirmed,
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct UsageClearReceipt {
+    pub request: u64,
+    pub result: Result<UsageClearPublication, UsageClearError>,
+}
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct UsageClearView {
+    pub pending_request: Option<u64>,
+    pub receipt: Option<UsageClearReceipt>,
+}
+#[derive(Default)]
+struct ClearSlot {
+    last_request: u64,
+    reserved: Option<u64>,
+    queued: bool,
+    receipt: Option<UsageClearReceipt>,
+}
+/// Non-producing capability: never retains a Sender, UsageHistory or Gateway.
+#[derive(Clone, Default)]
+pub(crate) struct UsageClearHandle(Arc<Mutex<ClearSlot>>);
+fn clear_lock_error<T>(error: std::sync::TryLockError<T>) -> UsageClearError {
+    match error {
+        std::sync::TryLockError::WouldBlock => UsageClearError::Busy,
+        std::sync::TryLockError::Poisoned(_) => UsageClearError::Unavailable,
+    }
+}
+impl UsageClearHandle {
+    pub fn next_request(&self) -> Result<u64, UsageClearError> {
+        self.0
+            .try_lock()
+            .map_err(clear_lock_error)?
+            .last_request
+            .checked_add(1)
+            .ok_or(UsageClearError::InvalidRequest)
+    }
+    pub fn reserve(&self, request: u64) -> Result<(), UsageClearError> {
+        let mut slot = self.0.try_lock().map_err(clear_lock_error)?;
+        if request == 0 || request <= slot.last_request {
+            return Err(UsageClearError::InvalidRequest);
+        }
+        if slot.reserved.is_some() {
+            return Err(UsageClearError::Busy);
+        }
+        slot.last_request = request;
+        slot.reserved = Some(request);
+        slot.queued = false;
+        Ok(())
+    }
+    /// Only a failed original Actor enqueue may withdraw this unsubmitted intent.
+    pub fn withdraw(&self, request: u64) {
+        if let Ok(mut slot) = self.0.lock()
+            && slot.reserved == Some(request)
+            && !slot.queued
+            && slot.receipt.is_none()
+        {
+            slot.reserved = None;
+        }
+    }
+    pub fn acknowledge(&self, request: u64) {
+        if let Ok(mut slot) = self.0.lock()
+            && slot.receipt.as_ref().is_some_and(|r| r.request == request)
+        {
+            slot.reserved = None;
+            slot.queued = false;
+            slot.receipt = None;
+        }
+    }
+    pub fn view(&self) -> Option<UsageClearView> {
+        let slot = self.0.try_lock().ok()?;
+        Some(UsageClearView {
+            pending_request: if slot.receipt.is_none() {
+                slot.reserved
+            } else {
+                None
+            },
+            receipt: slot.receipt.clone(),
+        })
+    }
+    /// Only unqueued admission/errors/ACK state may overlay a cached history.
+    /// A queued publication terminal must come from the writer's matching Arc.
+    fn unpublished_view(&self) -> Option<UsageClearView> {
+        let slot = self.0.try_lock().ok()?;
+        if slot.queued {
+            return None;
+        }
+        Some(UsageClearView {
+            pending_request: if slot.receipt.is_none() {
+                slot.reserved
+            } else {
+                None
+            },
+            receipt: slot.receipt.clone(),
+        })
+    }
+    fn finish(&self, request: u64, result: Result<UsageClearPublication, UsageClearError>) {
+        if let Ok(mut slot) = self.0.lock()
+            && slot.reserved == Some(request)
+            && slot.receipt.is_none()
+        {
+            slot.receipt = Some(UsageClearReceipt { request, result });
+        }
+    }
+}
+// Keep receipts inline in their existing finite channel; Clear must not add a
+// separate allocation to every model terminal producer.
+#[allow(clippy::large_enum_variant)]
+enum HistoryEvent {
+    Record(Receipt),
+    Clear(u64),
+}
+fn clear_publication(state: UsageState) -> Result<UsageClearPublication, UsageClearError> {
+    match state {
+        UsageState::Ready | UsageState::Closed => Ok(UsageClearPublication::Durable),
+        UsageState::DurabilityUnconfirmed => {
+            Ok(UsageClearPublication::PublishedDurabilityUnconfirmed)
+        }
+        _ => Err(UsageClearError::Storage),
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) enum UsageState {
     #[default]
@@ -412,6 +545,7 @@ pub(crate) struct GroupSummary {
 }
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct UsageSummary {
+    pub clear: UsageClearView,
     pub revision: u64,
     pub state: UsageState,
     pub timezone_basis: TimezoneBasis,
@@ -619,9 +753,12 @@ struct Shared {
     counters: SharedCounters,
     cache: Mutex<Arc<UsageSummary>>,
     monitor: crate::provider_monitoring::DiskSlot,
+    clear: UsageClearHandle,
+    cleared_dropped: AtomicU64,
+    cleared_oversized: AtomicU64,
 }
 pub(super) struct TerminalSink {
-    sender: SyncSender<Receipt>,
+    sender: SyncSender<HistoryEvent>,
     shared: Arc<Shared>,
 }
 impl TerminalSink {
@@ -638,7 +775,7 @@ impl TerminalSink {
             return;
         }
         if let Err(TrySendError::Full(_) | TrySendError::Disconnected(_)) =
-            self.sender.try_send(record)
+            self.sender.try_send(HistoryEvent::Record(record))
         {
             count(
                 &self.shared.counters.dropped,
@@ -648,7 +785,7 @@ impl TerminalSink {
     }
 }
 pub(crate) struct UsageHistory {
-    sender: SyncSender<Receipt>,
+    sender: SyncSender<HistoryEvent>,
     shared: Arc<Shared>,
     run_id: String,
     worker: Arc<Mutex<Option<JoinHandle<()>>>>,
@@ -661,6 +798,9 @@ impl UsageHistory {
             counters: Default::default(),
             cache: Mutex::new(Arc::new(UsageSummary::default())),
             monitor: Default::default(),
+            clear: Default::default(),
+            cleared_dropped: AtomicU64::new(0),
+            cleared_oversized: AtomicU64::new(0),
         });
         let run_id = super::super::random_id().unwrap_or_default();
         let done = Arc::new((Mutex::new(false), Condvar::new()));
@@ -693,6 +833,39 @@ impl UsageHistory {
             done,
         }
     }
+
+    pub(crate) fn clear_handle(&self) -> UsageClearHandle {
+        self.shared.clear.clone()
+    }
+    /// Called by the existing background Owner after GUI reservation/Actor enqueue.
+    pub(crate) fn enqueue_reserved_clear(&self, request: u64) -> Result<(), UsageClearError> {
+        // Existing background Owner only. A transient contention must not leave
+        // an already admitted Actor command without a terminal receipt.
+        let mut slot = self
+            .shared
+            .clear
+            .0
+            .lock()
+            .map_err(|_| UsageClearError::Unavailable)?;
+        if slot.reserved != Some(request) || slot.queued || slot.receipt.is_some() {
+            return Err(UsageClearError::InvalidRequest);
+        }
+        let result = match self.sender.try_send(HistoryEvent::Clear(request)) {
+            Ok(()) => {
+                slot.queued = true;
+                return Ok(());
+            }
+            Err(TrySendError::Full(_)) => UsageClearError::Busy,
+            Err(TrySendError::Disconnected(_)) => UsageClearError::Unavailable,
+        };
+        // This is not a dropped model receipt. Retain its exact operation result.
+        slot.receipt = Some(UsageClearReceipt {
+            request,
+            result: Err(result),
+        });
+        Err(result)
+    }
+
     pub(crate) fn monitor_view(&self) -> Option<crate::provider_monitoring::DiskView> {
         self.shared.monitor.view()
     }
@@ -754,7 +927,15 @@ impl UsageHistory {
             || cache.run_oversized != c.oversized.load(Ordering::Relaxed)
             || (!cache.gaps.counter_overflow && c.overflow.load(Ordering::Relaxed))
         {
-            overlay_run(Arc::make_mut(&mut cache), c);
+            overlay_run(Arc::make_mut(&mut cache), &self.shared);
+        }
+        // A Full/Disconnected writer queue did not consume a cutoff and may
+        // have no future writer wake. Publish its exact error with unchanged
+        // history through this same bounded, nonblocking cache read seam.
+        if let Some(clear) = self.shared.clear.unpublished_view()
+            && clear != cache.clear
+        {
+            Arc::make_mut(&mut cache).clear = clear;
         }
         Some(cache.clone())
     }
@@ -810,7 +991,10 @@ impl UsageClose {
         }
     }
 }
-fn overlay_run(summary: &mut UsageSummary, counters: &SharedCounters) {
+fn overlay_run(summary: &mut UsageSummary, shared: &Shared) {
+    let counters = &shared.counters;
+    let dropped_baseline = shared.cleared_dropped.load(Ordering::Acquire);
+    let oversized_baseline = shared.cleared_oversized.load(Ordering::Acquire);
     summary.run_admitted = counters.admitted.load(Ordering::Relaxed);
     summary.run_terminals = counters.terminal.load(Ordering::Relaxed);
     summary.active_requests = summary.run_admitted.saturating_sub(summary.run_terminals);
@@ -819,15 +1003,15 @@ fn overlay_run(summary: &mut UsageSummary, counters: &SharedCounters) {
     summary.gaps.queue_dropped = summary
         .gaps
         .queue_dropped
-        .saturating_sub(summary.run_queue_dropped)
-        .saturating_add(dropped);
+        .saturating_sub(summary.run_queue_dropped.saturating_sub(dropped_baseline))
+        .saturating_add(dropped.saturating_sub(dropped_baseline));
     summary.run_queue_dropped = dropped;
     let oversized = counters.oversized.load(Ordering::Relaxed);
     summary.gaps.oversized = summary
         .gaps
         .oversized
-        .saturating_sub(summary.run_oversized)
-        .saturating_add(oversized);
+        .saturating_sub(summary.run_oversized.saturating_sub(oversized_baseline))
+        .saturating_add(oversized.saturating_sub(oversized_baseline));
     summary.run_oversized = oversized;
     summary.gaps.counter_overflow |= counters.overflow.load(Ordering::Relaxed);
 }
@@ -852,9 +1036,12 @@ fn publish_summary(
         || cache.run_oversized != counters.oversized.load(Ordering::Relaxed)
         || (!cache.gaps.counter_overflow && counters.overflow.load(Ordering::Relaxed));
     let day_changed = cache.today_utc_day != computed_at_unix_ms.map(|time| time / DAY_MS);
-    if changed || counters_changed || day_changed || cache.state != state {
+    let clear = shared.clear.view().unwrap_or_else(|| cache.clear.clone());
+    let clear_changed = cache.clear != clear;
+    if changed || counters_changed || day_changed || clear_changed || cache.state != state {
         let mut summary = snapshot.summary(revision, state, computed_at_unix_ms);
-        overlay_run(&mut summary, counters);
+        summary.clear = clear;
+        overlay_run(&mut summary, shared);
         *cache = Arc::new(summary);
     }
 }
@@ -878,7 +1065,7 @@ impl Drop for WriterCompletion {
         }
     }
 }
-fn writer(root: PathBuf, incoming: mpsc::Receiver<Receipt>, shared: Arc<Shared>) {
+fn writer(root: PathBuf, incoming: mpsc::Receiver<HistoryEvent>, shared: Arc<Shared>) {
     let path = root.join("history.json");
     let prepared = prepare_directory(&root);
     let loaded = if prepared {
@@ -886,7 +1073,7 @@ fn writer(root: PathBuf, incoming: mpsc::Receiver<Receipt>, shared: Arc<Shared>)
     } else {
         Err(())
     };
-    let writable = loaded.is_ok();
+    let mut writable = loaded.is_ok();
     let monitor_writable = shared.monitor.open(&root, prepared);
     let mut snapshot = loaded.unwrap_or_else(|_| Snapshot {
         gaps: Gaps {
@@ -903,17 +1090,34 @@ fn writer(root: PathBuf, incoming: mpsc::Receiver<Receipt>, shared: Arc<Shared>)
     let mut state = UsageState::Opening;
     let mut dirty = true;
     let mut next_flush = Instant::now();
+    let mut clear_waiting = None;
     loop {
         let received = incoming.recv_timeout(Duration::from_millis(100));
         let disconnected = matches!(&received, Err(mpsc::RecvTimeoutError::Disconnected));
         let mut changed = received.is_ok();
-        if let Ok(record) = received {
-            snapshot.add(record);
+        if let Ok(event) = received {
+            apply_history_event(
+                event,
+                &mut snapshot,
+                &mut writable,
+                prepared,
+                &path,
+                &shared,
+                &mut clear_waiting,
+            );
             dirty = true;
         }
         for _ in 0..QUEUE - 1 {
-            if let Ok(record) = incoming.try_recv() {
-                snapshot.add(record);
+            if let Ok(event) = incoming.try_recv() {
+                apply_history_event(
+                    event,
+                    &mut snapshot,
+                    &mut writable,
+                    prepared,
+                    &path,
+                    &shared,
+                    &mut clear_waiting,
+                );
                 dirty = true;
                 changed = true;
             } else {
@@ -926,7 +1130,15 @@ fn writer(root: PathBuf, incoming: mpsc::Receiver<Receipt>, shared: Arc<Shared>)
         if closing {
             for _ in 0..QUEUE {
                 match incoming.try_recv() {
-                    Ok(record) => snapshot.add(record),
+                    Ok(event) => apply_history_event(
+                        event,
+                        &mut snapshot,
+                        &mut writable,
+                        prepared,
+                        &path,
+                        &shared,
+                        &mut clear_waiting,
+                    ),
                     Err(_) => break,
                 }
             }
@@ -935,7 +1147,7 @@ fn writer(root: PathBuf, incoming: mpsc::Receiver<Receipt>, shared: Arc<Shared>)
             snapshot.gaps.shutdown_unconfirmed = snapshot.open_run;
             dirty = true;
         }
-        if dirty && (Instant::now() >= next_flush || closing) {
+        if dirty && (Instant::now() >= next_flush || closing || clear_waiting.is_some()) {
             changed = true;
             snapshot.cap_aggregates();
             let mut stored = Snapshot {
@@ -946,15 +1158,21 @@ fn writer(root: PathBuf, incoming: mpsc::Receiver<Receipt>, shared: Arc<Shared>)
                 gaps: snapshot.gaps.clone(),
                 detail_bytes: snapshot.detail_bytes,
             };
-            stored.gaps.queue_dropped = stored
-                .gaps
-                .queue_dropped
-                .saturating_add(shared.counters.dropped.load(Ordering::Relaxed));
+            stored.gaps.queue_dropped = stored.gaps.queue_dropped.saturating_add(
+                shared
+                    .counters
+                    .dropped
+                    .load(Ordering::Relaxed)
+                    .saturating_sub(shared.cleared_dropped.load(Ordering::Acquire)),
+            );
             stored.gaps.counter_overflow |= shared.counters.overflow.load(Ordering::Relaxed);
-            stored.gaps.oversized = stored
-                .gaps
-                .oversized
-                .saturating_add(shared.counters.oversized.load(Ordering::Relaxed));
+            stored.gaps.oversized = stored.gaps.oversized.saturating_add(
+                shared
+                    .counters
+                    .oversized
+                    .load(Ordering::Relaxed)
+                    .saturating_sub(shared.cleared_oversized.load(Ordering::Acquire)),
+            );
             let publication = if writable {
                 serde_json::to_vec(&stored)
                     .ok()
@@ -981,6 +1199,9 @@ fn writer(root: PathBuf, incoming: mpsc::Receiver<Receipt>, shared: Arc<Shared>)
                     UsageState::Unavailable
                 }
             };
+            if let Some(request) = clear_waiting.take() {
+                shared.clear.finish(request, clear_publication(state));
+            }
             revision = revision.saturating_add(1);
             next_flush = Instant::now() + Duration::from_secs(1);
         }
@@ -998,6 +1219,54 @@ fn writer(root: PathBuf, incoming: mpsc::Receiver<Receipt>, shared: Arc<Shared>)
         }
     }
 }
+
+/// Existing private-read trust boundary only: unsafe/oversize/unknown reads fail
+/// closed, not a new SID/UID ownership assertion. Recheck at explicit cutoff.
+fn clear_target_is_private(path: &Path) -> bool {
+    match filesystem::read_private_bounded(path, SNAPSHOT_BYTES) {
+        Ok(_) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
+        Err(_) => false,
+    }
+}
+fn apply_history_event(
+    event: HistoryEvent,
+    snapshot: &mut Snapshot,
+    writable: &mut bool,
+    prepared: bool,
+    path: &Path,
+    shared: &Shared,
+    clear_waiting: &mut Option<u64>,
+) {
+    match event {
+        HistoryEvent::Record(record) => snapshot.add(record),
+        HistoryEvent::Clear(request) => {
+            let accepted = shared.clear.0.lock().is_ok_and(|slot| {
+                slot.reserved == Some(request) && slot.queued && slot.receipt.is_none()
+            });
+            if !accepted {
+                return;
+            }
+            *clear_waiting = Some(request);
+            *writable = prepared && clear_target_is_private(path);
+            if !*writable {
+                return;
+            }
+            // This is the queue cutoff. Earlier queued records cannot return;
+            // later completions retain their existing live capture attribution.
+            *snapshot = Snapshot::default();
+            shared.cleared_dropped.store(
+                shared.counters.dropped.load(Ordering::Acquire),
+                Ordering::Release,
+            );
+            shared.cleared_oversized.store(
+                shared.counters.oversized.load(Ordering::Acquire),
+                Ordering::Release,
+            );
+        }
+    }
+}
+
 fn prepare_directory(root: &Path) -> bool {
     if !root.is_absolute() {
         return false;
@@ -1329,6 +1598,331 @@ fn decimal_add(left: &str, right: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Present the actual queued receipt envelope to the unchanged old consumers.
+    // No replacement data or expected value is generated by this projection.
+    struct ReceiptEvents(mpsc::Receiver<HistoryEvent>);
+    impl ReceiptEvents {
+        fn try_iter(&self) -> impl Iterator<Item = Receipt> + '_ {
+            self.0.try_iter().map(|event| match event {
+                HistoryEvent::Record(record) => record,
+                HistoryEvent::Clear(_) => panic!("unexpected Clear in original receipt fixture"),
+            })
+        }
+    }
+    fn await_clear_snapshot(history: &UsageHistory, request: u64) -> Arc<UsageSummary> {
+        let deadline = Instant::now() + Duration::from_secs(4);
+        loop {
+            if let Some(summary) = history.summary()
+                && summary
+                    .clear
+                    .receipt
+                    .as_ref()
+                    .is_some_and(|r| r.request == request)
+            {
+                return summary;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "actual clear publication receipt did not reach its matching summary"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn um_clear_actual_disconnected_receiver_terminal_joins_existing_history_arc() {
+        // Real receiver disconnection, not a fake response or product View.
+        let (sender, incoming) = mpsc::sync_channel(1);
+        drop(incoming);
+        let mut retained = Snapshot::default();
+        retained.add(record(1));
+        let original = Arc::new(retained.summary(7, UsageState::Ready, now_ms()));
+        let shared = Arc::new(Shared {
+            counters: Default::default(),
+            cache: Mutex::new(original.clone()),
+            monitor: Default::default(),
+            clear: Default::default(),
+            cleared_dropped: AtomicU64::new(0),
+            cleared_oversized: AtomicU64::new(0),
+        });
+        let history = UsageHistory {
+            sender,
+            shared,
+            run_id: "a".repeat(32),
+            worker: Arc::new(Mutex::new(None)),
+            done: Arc::new((Mutex::new(true), Condvar::new())),
+        };
+        let clear = history.clear_handle();
+        clear.reserve(1).unwrap();
+        assert_eq!(
+            history.enqueue_reserved_clear(1),
+            Err(UsageClearError::Unavailable)
+        );
+        // No writer exists that could call publish_summary again. Read the
+        // real cached-summary consumer, not the control handle as a fake View.
+        let summary = history.summary().unwrap();
+        assert_eq!(
+            summary
+                .clear
+                .receipt
+                .as_ref()
+                .map(|r| (r.request, r.result)),
+            Some((1, Err(UsageClearError::Unavailable))),
+            "disconnected Clear terminal was permanently hidden from summary"
+        );
+        assert_eq!(
+            summary.windows[2].client.requests, 1,
+            "failed enqueue erased retained history"
+        );
+        assert_eq!(
+            summary.revision, 7,
+            "queue rejection manufactured a disk revision"
+        );
+        assert!(
+            original.clear.receipt.is_none(),
+            "new terminal mutated an older immutable Arc"
+        );
+        assert!(!Arc::ptr_eq(&original, &summary));
+        assert_eq!(clear.reserve(2), Err(UsageClearError::Busy));
+        clear.acknowledge(2);
+        assert_eq!(clear.reserve(2), Err(UsageClearError::Busy));
+        clear.acknowledge(1);
+        assert!(history.summary().unwrap().clear.receipt.is_none());
+        assert_eq!(
+            clear.reserve(2),
+            Ok(()),
+            "delivered disconnected terminal could not release its exact slot"
+        );
+        clear.withdraw(2);
+        let close = history.close_handle();
+        drop(history);
+        assert!(
+            close.wait_owner(),
+            "non-producing receipt handle extended the writer lifetime"
+        );
+    }
+
+    #[test]
+    fn um_clear_actual_queue_cutoff_keeps_late_capture_and_nonproducing_ack_handle() {
+        let directory = Directory::new();
+        assert!(prepare_directory(&directory.0));
+        let monitor_path = directory.0.join("account-monitoring.json");
+        let monitor_bytes =
+            serde_json::to_vec(&crate::provider_monitoring::MonitorSnapshot::default()).unwrap();
+        filesystem_publish::write_private_atomic(&monitor_path, &monitor_bytes).unwrap();
+        let history = UsageHistory::open(directory.0.clone());
+        let (before, before_sequence, before_run) = history.begin().unwrap();
+        let mut old = record(before_sequence);
+        old.run_id = before_run;
+        before.submit(old);
+        drop(before);
+        let (late, late_sequence, late_run) = history.begin().unwrap();
+        history.shared.counters.dropped.store(7, Ordering::Release);
+        history
+            .shared
+            .counters
+            .oversized
+            .store(3, Ordering::Release);
+        let clear = history.clear_handle();
+        clear.reserve(1).unwrap();
+        history.enqueue_reserved_clear(1).unwrap();
+        let summary = await_clear_snapshot(&history, 1);
+        assert!(matches!(
+            summary.clear.receipt.as_ref().unwrap().result,
+            Ok(UsageClearPublication::Durable
+                | UsageClearPublication::PublishedDurabilityUnconfirmed)
+        ));
+        assert_eq!(
+            summary.windows[2].client.requests, 0,
+            "queued records before Clear survived the cutoff"
+        );
+        assert_eq!(
+            summary.active_requests, 1,
+            "Clear reset the live request diagnostic"
+        );
+        assert_eq!((summary.run_admitted, summary.run_terminals), (2, 1));
+        assert_eq!(
+            (summary.gaps.queue_dropped, summary.gaps.oversized),
+            (0, 0),
+            "pre-clear counter gaps reappeared in cleared history"
+        );
+        assert_eq!((summary.run_queue_dropped, summary.run_oversized), (7, 3));
+        assert_eq!(
+            filesystem::read_private_bounded(&monitor_path, monitor_bytes.len()).unwrap(),
+            monitor_bytes,
+            "Clear touched provider monitoring state"
+        );
+        // A capture admitted before the cutoff finishes AFTER it and is new use.
+        history
+            .shared
+            .counters
+            .dropped
+            .fetch_add(1, Ordering::AcqRel);
+        let mut new = record(late_sequence);
+        new.run_id = late_run;
+        late.submit(new);
+        drop(late);
+        let close = history.close_handle();
+        drop(history);
+        assert!(
+            close.wait_owner(),
+            "receipt handle retained a Sender and prevented writer closure"
+        );
+        let disk = load_snapshot(&directory.0.join("history.json")).unwrap();
+        assert_eq!(
+            disk.details.iter().map(|r| r.sequence).collect::<Vec<_>>(),
+            vec![late_sequence],
+            "old queued/disk records returned after Clear"
+        );
+        assert_eq!(disk.days[0].global.client.requests, 1);
+        assert_eq!(
+            disk.gaps.queue_dropped, 1,
+            "new post-cutoff gap was silently erased"
+        );
+        clear.acknowledge(1);
+        assert_eq!(clear.reserve(2), Ok(()));
+        clear.withdraw(2);
+    }
+    #[test]
+    fn um_clear_actual_corrupt_private_history_requires_explicit_request() {
+        let directory = Directory::new();
+        assert!(prepare_directory(&directory.0));
+        let path = directory.0.join("history.json");
+        filesystem_publish::write_private_atomic(&path, b"{bounded-malformed").unwrap();
+        let history = UsageHistory::open(directory.0.clone());
+        let deadline = Instant::now() + Duration::from_secs(4);
+        loop {
+            if history
+                .summary()
+                .is_some_and(|s| s.state == UsageState::Unavailable)
+            {
+                break;
+            }
+            assert!(Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(
+            filesystem::read_private_bounded(&path, 128).unwrap(),
+            b"{bounded-malformed",
+            "startup silently reset corrupt history"
+        );
+        let clear = history.clear_handle();
+        clear.reserve(1).unwrap();
+        history.enqueue_reserved_clear(1).unwrap();
+        let summary = await_clear_snapshot(&history, 1);
+        assert!(
+            matches!(
+                summary.clear.receipt.as_ref().unwrap().result,
+                Ok(UsageClearPublication::Durable
+                    | UsageClearPublication::PublishedDurabilityUnconfirmed)
+            ),
+            "explicit Clear did not recover privately readable corrupt history"
+        );
+        let disk = load_snapshot(&path).unwrap();
+        assert!(disk.details.is_empty() && disk.days.is_empty() && !disk.gaps.invalid_history);
+        let close = history.close_handle();
+        drop(history);
+        assert!(close.wait_owner());
+    }
+    #[test]
+    fn um_clear_actual_full_queue_reports_busy_without_model_loss_and_acks_exact() {
+        let (sender, incoming) = mpsc::sync_channel(1);
+        let shared = Arc::new(Shared {
+            counters: Default::default(),
+            cache: Mutex::new(Arc::new(UsageSummary::default())),
+            monitor: Default::default(),
+            clear: Default::default(),
+            cleared_dropped: AtomicU64::new(0),
+            cleared_oversized: AtomicU64::new(0),
+        });
+        let history = UsageHistory {
+            sender,
+            shared,
+            run_id: "a".repeat(32),
+            worker: Arc::new(Mutex::new(None)),
+            done: Arc::new((Mutex::new(true), Condvar::new())),
+        };
+        history
+            .sender
+            .try_send(HistoryEvent::Record(record(1)))
+            .ok()
+            .unwrap();
+        let clear = history.clear_handle();
+        clear.reserve(1).unwrap();
+        assert_eq!(
+            history.enqueue_reserved_clear(1),
+            Err(UsageClearError::Busy),
+            "full statistics queue claimed Clear was accepted"
+        );
+        assert_eq!(
+            clear.view().unwrap().receipt.unwrap().result,
+            Err(UsageClearError::Busy)
+        );
+        assert_eq!(
+            history.shared.counters.dropped.load(Ordering::Acquire),
+            0,
+            "Clear rejection was counted as dropped model work"
+        );
+        assert!(matches!(incoming.try_recv(), Ok(HistoryEvent::Record(_))));
+        assert!(
+            matches!(incoming.try_recv(), Err(mpsc::TryRecvError::Empty)),
+            "full Clear was automatically replayed"
+        );
+        clear.acknowledge(2);
+        assert_eq!(
+            clear.reserve(2),
+            Err(UsageClearError::Busy),
+            "wrong Clear acknowledgement released another request"
+        );
+        clear.acknowledge(1);
+        assert_eq!(clear.reserve(2), Ok(()));
+        clear.withdraw(2);
+    }
+    #[test]
+    fn um_clear_actual_unsafe_target_keeps_bytes_and_reports_unpublished_failure() {
+        // Same production mapping used after real publisher result below. This
+        // checks typed published-but-unconfirmed semantics, not a native fs fault.
+        assert_eq!(
+            clear_publication(UsageState::DurabilityUnconfirmed),
+            Ok(UsageClearPublication::PublishedDurabilityUnconfirmed)
+        );
+        let directory = Directory::new();
+        let history = UsageHistory::open(directory.0.clone());
+        let deadline = Instant::now() + Duration::from_secs(4);
+        loop {
+            if history
+                .summary()
+                .is_some_and(|s| s.state == UsageState::Ready)
+            {
+                break;
+            }
+            assert!(Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(5));
+        }
+        let path = directory.0.join("history.json");
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        let canary = path.join("canary");
+        std::fs::write(&canary, b"synthetic-preserve").unwrap();
+        let clear = history.clear_handle();
+        clear.reserve(1).unwrap();
+        history.enqueue_reserved_clear(1).unwrap();
+        let summary = await_clear_snapshot(&history, 1);
+        assert_eq!(
+            summary.clear.receipt.as_ref().unwrap().result,
+            Err(UsageClearError::Storage),
+            "unpublished Clear failure was reported as durable erasure"
+        );
+        assert_eq!(
+            std::fs::read(&canary).unwrap(),
+            b"synthetic-preserve",
+            "Clear replaced an unsafe target"
+        );
+        let close = history.close_handle();
+        drop(history);
+        assert!(close.wait_owner());
+    }
+
     fn record(sequence: u64) -> Receipt {
         Receipt {
             run_id: "a".repeat(32),
@@ -1418,6 +2012,9 @@ mod tests {
             counters: Default::default(),
             cache: Mutex::new(Arc::new(UsageSummary::default())),
             monitor: Default::default(),
+            clear: Default::default(),
+            cleared_dropped: AtomicU64::new(0),
+            cleared_oversized: AtomicU64::new(0),
         };
         let before_midnight = 101 * DAY_MS - 1;
         publish_summary(
@@ -1479,6 +2076,9 @@ mod tests {
             counters: Default::default(),
             cache: Mutex::new(Arc::new(UsageSummary::default())),
             monitor: Default::default(),
+            clear: Default::default(),
+            cleared_dropped: AtomicU64::new(0),
+            cleared_oversized: AtomicU64::new(0),
         };
         publish_summary(&snapshot, &shared, 3, UsageState::Ready, true, Some(2));
         assert_eq!(shared.cache.lock().unwrap().windows[0].client.requests, 1);
@@ -1533,6 +2133,9 @@ mod tests {
             counters: Default::default(),
             cache: Mutex::new(Arc::new(UsageSummary::default())),
             monitor: Default::default(),
+            clear: Default::default(),
+            cleared_dropped: AtomicU64::new(0),
+            cleared_oversized: AtomicU64::new(0),
         });
         let history = UsageHistory {
             sender,
@@ -1552,6 +2155,7 @@ mod tests {
             capture.finish(Ok(()), Delivery::LocalWritesAccepted);
             capture.finish(Err(ServerError::Cancelled), Delivery::Failed);
         }
+        let incoming = ReceiptEvents(incoming);
         let records = incoming.try_iter().collect::<Vec<_>>();
         assert_eq!(
             records.len(),
@@ -1586,6 +2190,9 @@ mod tests {
             counters: Default::default(),
             cache: Mutex::new(Arc::new(UsageSummary::default())),
             monitor: Default::default(),
+            clear: Default::default(),
+            cleared_dropped: AtomicU64::new(0),
+            cleared_oversized: AtomicU64::new(0),
         });
         let history = UsageHistory {
             sender,
@@ -1610,6 +2217,7 @@ mod tests {
             }
             capture.finish(Ok(()), Delivery::LocalWritesAccepted);
         }
+        let incoming = ReceiptEvents(incoming);
         assert_eq!(
             incoming
                 .try_iter()

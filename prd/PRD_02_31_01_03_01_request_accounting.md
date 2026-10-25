@@ -21,6 +21,11 @@ Outcome: retain actual local model work once and reveal measurement coverage
 │   invariant: no I/O or wait on model/render producer and no discarded detail masquerades as erased use
 │   evidence: overflow/write failure/retention/restart/unclean shutdown
 │   safe failure: coverage gaps; dependency: shared typed private publisher; non-goal: a database/daemon
+│   └── [-] CLEAR — explicit deletion at the existing writer's ordered cutoff
+│       invariant: erase retained prefix; later completions remain measurable
+│       evidence: actual writer/Runtime/queue-failure/private-restart consumers and guard failures (pending)
+│       safe failure: exact Busy/Unavailable/Storage or published durability-unconfirmed result
+│       dependency: original Actor/receipt queue and private publisher; non-goal: resetting provider resources or live work
 └── [-] SUMMARY — cached UTC windows and separate account/profile/model dimensions
     invariant: final/partial/missing/probe and charge/list-price/allowance are not conflated
     evidence: known dimensional totals/Other buckets, idle UTC rollover and unavailable-clock cache consumers
@@ -43,6 +48,10 @@ flowchart TD
     CANCEL[Cancel/Stop/error/unwind] --> END
     END -->|bounded try_send outside locks| WRITER[Private history writer]
     WRITER --> RETAIN[Parent-owned detail/daily byte and age ceilings]
+    CONFIRM[Report-owned explicit global Clear confirmation] --> CQ[Original Actor / receipt queue]
+    CQ --> WRITER
+    WRITER --> CR[One history Arc / exact Clear publication receipt]
+    CR --> VIEW
     WRITER --> CACHE[Finite summary cache]
     IDLE[Existing bounded writer wake / UTC day or clock-validity change] --> CACHE
     GAP[Queue drop/write fault/interrupted run/capped detail] --> CACHE
@@ -156,6 +165,45 @@ fields as measured zero. Clock recovery republishes from retained observations.
 This uses the existing writer and cache, without a new timer, network call or
 public clock override. Matching-source cache evidence is recorded below.
 
+
+## Explicit local-history Clear
+
+The selected parent scope includes explicit history clearing. Its single
+non-producing request handle reserves one unresolved operation; the original
+Runtime Actor then submits to the existing bounded receipt queue. The same
+writer consumes the cutoff, resets retained details/daily aggregates and
+historical gaps, and forces the existing typed private publication. Later
+terminal receipts, including previously running requests, become new history.
+Process admitted/terminal/active and lifetime-drop counters remain truthful;
+sampled drop/oversize baselines prevent erased gaps from reappearing.
+
+The exact request result and corresponding history share one immutable summary
+Arc. Only unqueued admission/error/ACK state may update through the cached read
+seam without the writer; an enqueued publication result belongs to the writer's
+matching snapshot. A Full/Disconnected queue cannot strand a terminal or count
+the Clear request as a dropped model receipt. ACK releases only a delivered
+exact receipt. The handle retains no Sender and cannot prolong writer lifetime.
+
+Durable, published-but-durability-unconfirmed and unpublished Storage failure
+remain distinct. Explicit clearing may replace bounded private-readable corrupt
+JSON, using the existing no-follow/private-file validation boundary; unsafe,
+oversized or unreadable input is refused without overwrite. This adds no UID/SID
+trust claim, secure-erasure guarantee, database, thread or queue. Model work,
+listener, provider balances/metadata/policies, accounts and keys are independent.
+Confirmation, cancellation and visible feedback belong to
+[the report owner](PRD_02_31_01_03_03_usage_reports.md#explicit-local-history-clear-presentation).
+Developer evidence on the integrated overlay above `294332a`: the five actual
+writer/history consumers and two Runtime/Actor consumers pass through the
+strict test entry, with seven intended original-assertion failures and exact
+restoration/passing replays. Receipts are
+`target-six/v0.2.23-provider/usage-clear-origin-fixture-gates/receipt.json` and
+`usage-clear-serial-controls-attempt-1/receipt.json` under that evidence root.
+The first integrated lint failure and subsequent malformed-Host fixture failure
+remain in `usage-clear-integrated-gates/` and `usage-clear-inline-channel-gates/`.
+The existing strict origin guard was preserved; only the synthetic GET header
+was corrected. UI controls and the matching-image public confirmation/file
+journey belong to the report owner. Actual native storage-failure paths,
+real-account work and final release stay open.
 
 ## Evidence frontier
 
