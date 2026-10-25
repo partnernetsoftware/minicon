@@ -189,6 +189,15 @@ BLOCKED. Direct native-host Unsupported is typed by the driver; some browser
 creation refusals remain undiagnosed failures until their actual cause is
 established, and cannot be labeled an isolation defect by inference.
 
+The always-upload receipt artifact explicitly includes each native run's bounded
+`windows-cookie-diagnostics.json`, when produced, alongside its native driver
+receipt. Diagnostics are useful on success as well as failure; retaining them
+must not depend on the failure-only broad-log artifact. An older workflow
+without that include may retain the file only in failure logs. The file's
+value-free observation contract and limits remain with
+[the lifecycle owner](PRD_02_28_01_browser_context_lifecycle.md); a missing file
+never supplies a persistence result by inference.
+
 The first opt-in run (`40166792139`, source `b47799d`) exposed macOS Bash 3.2's
 empty-array expansion under `set -u`: neither macOS auth court started. The
 invocation now appends the optional Linux helper through positional parameters;

@@ -204,6 +204,10 @@ keeps catalogue ownership, per-profile drafts, verification identities and
 applied-route migration in product-owned `provider_*` modules. Reuse shared
 private atomic publication, bounded HTTP and cancellation mechanisms; do not
 move provider organization or allocation policy into shared native adapters.
+The product-private `provider_selection.rs` mechanism currently joins only the
+test build; its production consumer and scoped evidence remain with that owner.
+Production binding updates compare effective model transport, independently of
+private registry keys, through the existing gateway's request-header mechanism.
 The [commit-aware private-publication owner](PRD_02_28_02_private_publication.md)
 owns the shared result, privacy, compatibility and consumer-alignment contracts.
 Its development join is a prerequisite; it does not complete catalogue/draft/

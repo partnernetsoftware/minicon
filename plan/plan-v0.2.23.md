@@ -285,6 +285,11 @@ repair does not close HU-03/04 or PP-06. Catalogue loading and paid verification
 remain separate operations. Agree runtime/server/store APIs before assigning
 their hot files to different writers.
 
+The [mechanism checkpoint](../prd/PRD_02_31_01_02_01_connection_selection.md#catalogue-and-draft-mechanism-checkpoint)
+qualifies the initial test-build catalogue/draft core. The same owner records
+the production registry-metadata binding repair. Continue through the complete
+runtime, migration and UI transaction; these prerequisites do not close slice 2.
+
 Use focused assertions for each changed guard and the continuous public journey
 for product acceptance. Native IME/clipboard/scale and real provider grants keep
 their actual prerequisites; missing access stays BLOCKED. Reorganizing the UI

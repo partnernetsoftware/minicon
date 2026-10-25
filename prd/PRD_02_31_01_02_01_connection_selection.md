@@ -203,3 +203,90 @@ Two rejected control-fixture attempts (a changed formatting anchor and a
 non-compiling mutant) remain retained and do not count as product counterexamples.
 Independent postcommit, native/final-source and release qualification remain
 open. This is a prerequisite checkpoint; CS-01..07 are not completed by it.
+
+### Catalogue and draft mechanism checkpoint
+
+`src/provider_selection.rs` is connected through `#[cfg(test)]` in the product
+binary while its production runtime/UI consumer is being integrated. It is
+product-private; this checkpoint adds no management endpoint or public crate.
+The strict test wrapper executed 17 named tests, increasing the main binary's
+inventory from 631 to 648 before the separate migration regression below.
+The module owns bounded account-local cache tickets, fresh/stale/error states,
+frozen wire candidates, independent default-plus-seven-client drafts and exact
+candidate proofs. No test-only module is presented as a working Settings flow.
+
+The local cache enforces 16 accounts, 512 routes and a 2 MiB raw/encoded response
+limit per account, plus 8 MiB retained route/authority storage in aggregate.
+Draft edit storage is bounded to 4 MiB with 32 allocations per profile. Proof
+records have separate bounded alias/profile counts; the storage calculation is
+not a total allocator or process-RSS measurement. Catalogue and proof identities
+exclude registry IDs and labels and retain the actual credential, service and
+organization authority. Effective wire identity follows the existing transport:
+an OpenCode organization hint must agree with the account grant; a DeepSeek
+hint discarded by the request builder cannot change transport identity.
+
+`target-six/v0.2.23-provider/connection-selection-controls-clippy-fixed/receipt.json`
+retains 17 initial passes, seven actual runtime assertion failures and 17
+restored passes. The controls cover actual returned authority, superseded
+tickets, stale catalogue selection, draft edit/revert ABA, effective model
+identity, profile capacity and response bounds. The original source bytes were
+restored exactly; Cargo-reported PE/x86_64 test images and original stdout/stderr
+are identified. A further ten runtime controls qualify each remaining named
+test, followed by another 17 restored passes:
+`target-six/v0.2.23-provider/connection-selection-remaining-controls/receipt.json`.
+They cover metadata eviction, requested generation, aggregate memory,
+allocation capacity, registry-independent proof reuse, credential scope,
+private Debug output, unloaded state, real store-digest compatibility and
+discarded DeepSeek header hints. Each of the 17 new tests has an observed
+runtime failure when its guarded mechanism is changed. The first strict Clippy
+gate's collapsible condition was corrected before these current-source controls;
+the earlier failed gate and older-hash controls remain retained as history.
+
+This is Windows x86_64 shared-cache mechanism evidence. Production catalogue
+transport authority, independent UI drafts, actual pre/post-paid-request
+verification, config-v3 migration/provenance and transactional Apply remain
+open under CS-01..07. No actual provider, native GUI or release artifact is
+qualified by this checkpoint.
+
+### Preserve conversations through registry metadata changes
+
+The production gateway compares the selected route's effective transport when
+preparing default and custom-alias binding generations. Registry keys, client
+labels and header hints that `route_request` discards do not rotate generations.
+Header emission and the generation comparison share `emitted_route_headers`;
+actual account organization remains governed by the account epoch/digest.
+Model, provider, protocol, URL and emitted headers remain transport identity.
+
+The new loopback regression
+`provider_server::tests::registry_metadata_migration_preserves_default_and_custom_conversations`
+first failed against the former full-record comparison: a registry-only change
+turned the default client's existing binding into HTTP 409. With the corrected
+comparison, both clients retain their original binding responses; changing only
+the custom client's effective URL then refuses its old conversation with 409
+while the default client continues. Initial failing/passing logs are
+`target-six/v0.2.23-provider/registry-migration-before.log` and
+`registry-migration-after.log`. The regression adds one main-binary test.
+The default comparison additionally includes the selected account, while the
+custom comparison includes each allocation's account. Equal model transport
+cannot make an account A -> B -> A switch revive an earlier conversation.
+The loopback regression
+`provider_server::tests::default_account_aba_cannot_revive_an_old_conversation`
+first failed against the route-only default comparison
+(`target-six/v0.2.23-provider/default-account-aba-before.log`). It adds a second
+main-binary test; the mechanism-plus-regression inventory is now 650.
+
+Four actual runtime controls independently restore the default full-record
+comparison, restore the custom full-record comparison, or omit effective URL
+identity, or omit the selected account. Each makes its corresponding regression
+fail, followed by exact restoration and a passing migration rerun:
+`target-six/v0.2.23-provider/registry-binding-controls/receipt.json`.
+The earlier control attempt rejected the third test's custom `assert!` panic
+text in its log classifier; its failed receipt is retained separately and does
+not replace the corrected court. The actual source guard and assertion were
+unchanged when the classifier was corrected.
+This repairs a migration prerequisite; it does not implement config-v3 loading,
+legacy accepted wire-ID preservation or verified atomic Apply.
+In particular, preserving a GET binding after an internal key change alone does
+not preserve POST requests using the former route ID as their model name.
+Migration must explicitly retain those accepted legacy names before registry
+retagging is exposed as a complete product operation.

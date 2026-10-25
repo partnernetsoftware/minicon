@@ -113,7 +113,8 @@ retention. Their exact restored hashes are recorded in
 `target-six/v0.2.23-provider/private-publication-guards/receipt.json`.
 The Windows ACL control fails against the real staged file when the parent's
 native inheritance is disabled. It does not substitute for the prepared Unix
-0600 mode control, which still requires a native Unix court with explicit umask.
+0600 mode control, which at that checkpoint still required a native Unix court
+with explicit umask.
 Restored regression gates are recorded in `private-publication-final-gate-receipt.json`
 beside those logs. Native Unix mode and Windows ACL evidence
 retain their actual source/feature/OS/ISA scope. This mechanism does not simulate
@@ -129,3 +130,21 @@ This is HEAD plus the declared development overlay with shared cache. The first
 bare-Bash launcher failure is retained separately and is not a runtime control;
 the selection/operating correction is owned by
 [PRD 32](PRD_02_32_dev_loop_crosscheck.md#opt-in-private-publication-source-court).
+
+Run `40172199308` at `d3ba0dccf6724d9233173fa54ae339c924f93dae` subsequently
+completed this opt-in source court on all six native OS/ISA cells. Each cell
+executed three initial passes, three actual assertion RED controls and three
+restored passes: 36 positive execution instances and 18 independent negative
+instances in total. Unix mode controls ran with explicit child-shell umask 022;
+both Windows cells exercised the native private inheritance guard. Each cell's
+five Cargo-reported test images have matching native format/ISA, source and
+mutant hashes are independently recalculated, and exact source restoration,
+owned-process cleanup, raw streams and artifact ZIP digests are verified.
+
+The ordinary selected native suites separately report 744 Rust passes and six
+unselected Pi opt-in tests ignored. Their canonical browser and bounded
+shutdown checks retain their own source and scope. Dedicated authorization
+context execution was disabled in this run. Independent evidence is
+`target-six/v0.2.23-provider/ci-d3ba0dc-private-publication/verification-index.json`.
+These are native source/privacy/publication observations; they do not simulate
+power loss, qualify subsequent changed product source or certify release bytes.

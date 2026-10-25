@@ -29,11 +29,11 @@ use std::{
 
 pub const MODEL_ALIAS: &str = "minicon-selected";
 const NON_STREAM_BYTES: usize = 8 * 1024 * 1024;
-const CATALOG_BYTES: usize = 2 * 1024 * 1024;
-const MAX_MODELS: usize = 512;
+pub(crate) const CATALOG_BYTES: usize = 2 * 1024 * 1024;
+pub(crate) const MAX_MODELS: usize = 512;
 const MAX_SESSIONS: usize = 256;
-const MAX_CLIENT_PROFILES: usize = 8;
-const MAX_CLIENT_ALLOCATIONS: usize = 32;
+pub(crate) const MAX_CLIENT_PROFILES: usize = 8;
+pub(crate) const MAX_CLIENT_ALLOCATIONS: usize = 32;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ServerError {
@@ -325,7 +325,7 @@ impl Gateway {
                 .models
                 .iter()
                 .find(|route| route.id == config.model)
-                .cloned()
+                .map(|route| (config.selected_account.clone(), model_transport(route)))
         };
         let generation = if selected(&state.config) != selected(&config) {
             random_id()?
@@ -344,7 +344,7 @@ impl Gateway {
                 .models
                 .iter()
                 .find(|route| route.id == allocation.route)?;
-            Some((allocation.account.clone(), route.clone()))
+            Some((allocation.account.clone(), model_transport(route)))
         };
         let mut generations = HashMap::new();
         for profile in &config.profiles {
@@ -1358,6 +1358,36 @@ fn account_request(
     request
 }
 
+#[derive(Eq, PartialEq)]
+struct ModelTransport {
+    provider: Provider,
+    protocol: WireProtocol,
+    model_id: String,
+    url: String,
+    headers: Vec<(String, String)>,
+}
+
+fn emitted_route_headers(route: &ModelRoute) -> impl Iterator<Item = (&str, &str)> {
+    route.headers.iter().filter_map(|(name, value)| {
+        (!name.eq_ignore_ascii_case("x-org-id") && !name.eq_ignore_ascii_case("anthropic-version"))
+            .then_some((name.as_str(), value.as_str()))
+    })
+}
+
+fn model_transport(route: &ModelRoute) -> ModelTransport {
+    let mut headers: Vec<_> = emitted_route_headers(route)
+        .map(|(name, value)| (name.to_ascii_lowercase(), value.to_owned()))
+        .collect();
+    headers.sort();
+    ModelTransport {
+        provider: route.provider,
+        protocol: route.protocol,
+        model_id: route.model_id.clone(),
+        url: route.url.clone(),
+        headers,
+    }
+}
+
 fn route_request(
     route: &ModelRoute,
     grant: &TokenGrant,
@@ -1375,11 +1405,8 @@ fn route_request(
     if route.protocol == WireProtocol::Messages {
         request = request.header("anthropic-version", "2023-06-01");
     }
-    for (name, value) in &route.headers {
-        if !name.eq_ignore_ascii_case("x-org-id") && !name.eq_ignore_ascii_case("anthropic-version")
-        {
-            request = request.header(name, value);
-        }
+    for (name, value) in emitted_route_headers(route) {
+        request = request.header(name, value);
     }
     request
 }
@@ -1548,7 +1575,7 @@ fn select_organization(body: &[u8], expected: Option<&str>) -> Result<Option<Str
     Ok(organizations.first().map(|(_, id)| id.clone()))
 }
 
-fn validate_route(route: &ModelRoute) -> Result<(), ServerError> {
+pub(crate) fn validate_route(route: &ModelRoute) -> Result<(), ServerError> {
     if !safe_model(&route.id, false)
         || !safe_model(&route.model_id, false)
         || route.headers.len() > 8
@@ -1609,10 +1636,10 @@ fn same_key(expected: &str, supplied: &str) -> bool {
     }
     difference == 0
 }
-fn opaque_id(value: &str) -> bool {
+pub(crate) fn opaque_id(value: &str) -> bool {
     value.len() == 32 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
-fn safe_model(value: &str, empty: bool) -> bool {
+pub(crate) fn safe_model(value: &str, empty: bool) -> bool {
     (empty || !value.is_empty()) && value.len() <= 200 && !value.chars().any(char::is_control)
 }
 pub fn random_id() -> Result<String, ServerError> {
@@ -1919,6 +1946,116 @@ mod tests {
         for field in ["profile", "provider", "account", "model"] {
             assert_eq!(before[field], after[field]);
         }
+    }
+
+    #[test]
+    fn default_account_aba_cannot_revive_an_old_conversation() {
+        let fixture = Fixture::new();
+        add_profile(&fixture, &fixture.account);
+        let other = fixture
+            .gateway
+            .store
+            .insert(
+                "Second synthetic account",
+                TokenGrant {
+                    provider: Provider::OpenCode,
+                    access_token: Secret::new("synthetic-other-access").unwrap(),
+                    lifecycle: TokenLifecycle::ExpiringRefresh {
+                        refresh_token: Secret::new("synthetic-other-refresh").unwrap(),
+                        expires_at: Instant::now() + Duration::from_secs(3600),
+                    },
+                    organization: None,
+                },
+            )
+            .unwrap();
+        fixture.gateway.store.mark_ready(&other.id).unwrap();
+        let server = fixture.server();
+        let session = "x-minicon-session: account-aba\r\n";
+        assert!(
+            server
+                .get("/v1/minicon/binding", session)
+                .starts_with("HTTP/1.1 200")
+        );
+        let custom = server.get_key("/v1/minicon/binding", "synthetic-other", session);
+        assert!(custom.starts_with("HTTP/1.1 200"));
+        let mut config = fixture.gateway.state.lock().unwrap().config.clone();
+        for account in [&other.id, &fixture.account] {
+            config.selected_account = Some(account.clone());
+            fixture.gateway.update(config.clone()).unwrap();
+            assert_eq!(
+                server
+                    .get("/v1/minicon/binding", session)
+                    .split_whitespace()
+                    .nth(1),
+                Some("409"),
+                "returning to an earlier account must not revive its old conversation"
+            );
+            assert_eq!(
+                server.get_key("/v1/minicon/binding", "synthetic-other", session),
+                custom
+            );
+        }
+        assert!(
+            server
+                .get(
+                    "/v1/minicon/binding",
+                    "x-minicon-session: account-aba-fresh\r\n"
+                )
+                .starts_with("HTTP/1.1 200")
+        );
+    }
+
+    #[test]
+    fn registry_metadata_migration_preserves_default_and_custom_conversations() {
+        let fixture = Fixture::new();
+        add_profile(&fixture, &fixture.account);
+        let server = fixture.server();
+        let session = "x-minicon-session: registry-migration\r\n";
+        let default_before = server.get("/v1/minicon/binding", session);
+        let custom_before = server.get_key("/v1/minicon/binding", "synthetic-other", session);
+        assert!(default_before.starts_with("HTTP/1.1 200"));
+        assert!(custom_before.starts_with("HTTP/1.1 200"));
+        let mut config = fixture.gateway.state.lock().unwrap().config.clone();
+        // Private registry identity and an ignored header hint are metadata.
+        // route_request obtains the actual organization from the account grant.
+        config.models[0].id = "snapshot/private-registry-key".into();
+        config.models[0].headers = vec![("X-Org-ID".into(), "ignored-synthetic-hint".into())];
+        config.model = config.models[0].id.clone();
+        config.profiles[0].allocations[0].route = config.models[0].id.clone();
+        config.profiles[0].label = "Renamed client".into();
+        fixture.gateway.update(config.clone()).unwrap();
+        assert_eq!(
+            server.get("/v1/minicon/binding", session),
+            default_before,
+            "registry-only migration must preserve the default conversation"
+        );
+        assert_eq!(
+            server.get_key("/v1/minicon/binding", "synthetic-other", session),
+            custom_before,
+            "registry-only migration must preserve the custom conversation"
+        );
+        let mut changed = config.models[0].clone();
+        changed.id = "snapshot/changed-wire".into();
+        changed.url = "https://opencode.ai/inference/go/openai/v1/chat/completions".into();
+        config.profiles[0].allocations[0].route = changed.id.clone();
+        config.models.push(changed);
+        fixture.gateway.update(config).unwrap();
+        assert!(
+            server
+                .get_key("/v1/minicon/binding", "synthetic-other", session)
+                .starts_with("HTTP/1.1 409"),
+            "changed effective custom wire must reject the old conversation"
+        );
+        assert_eq!(server.get("/v1/minicon/binding", session), default_before);
+        assert!(
+            server
+                .get_key(
+                    "/v1/minicon/binding",
+                    "synthetic-other",
+                    "x-minicon-session: after-migration\r\n"
+                )
+                .starts_with("HTTP/1.1 200")
+        );
     }
 
     #[test]

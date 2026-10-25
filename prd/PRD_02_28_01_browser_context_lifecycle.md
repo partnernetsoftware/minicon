@@ -164,3 +164,31 @@ hardlink refusal and immutable/no-WAL-write diagnosis; exact restored checks
 and hashes are in `cookie-diagnostics-integrated-controls-optional/receipt.json`.
 These do not execute a local native view or qualify a cookie fix. Actual SDK
 profile/release observations and diagnosis require the next native run.
+
+Run `40172206150` at `d3ba0dccf6724d9233173fa54ae339c924f93dae` supplies
+that next Windows x86_64 observation and still fails the initial storage oracle.
+Its actual A, B and reopened-A hosts all pass persistent-profile verification.
+Before A reopens, the bounded trace records `matching-normal-exit` for that
+owned profile. The first three fixture checks pass, but reopened A still reports
+cookie `missing` and localStorage `matches`. Thus normal-exit delivery and
+persistent profile mode have now been observed on that court without repairing
+cookie retention. The native fault variants and restored run do not execute
+after this initial failure.
+
+Both before and after owned-Job cleanup, all four fixed Cookies candidates and
+their WAL/SHM candidates report `not-found` for A and B. Their `EBWebView/Local
+State` files are readable: the encryption object and encrypted-key configuration
+are present, the app-bound-key configuration is absent, and the measured wall
+clock is stable relative to monotonic time within two seconds. No database row
+or expiry count is available. The checked native ProfilePath is a proper
+descendant of the exact UDF, but its relative layout was not recorded. Missing
+fixed candidates therefore do not establish absence of a cookie database or an
+encryption/flush failure. Inspect that actual layout or bounded fixture-origin
+cookie metadata before choosing a repair; keep the storage oracle unchanged.
+
+Independent source, native trace, fixture, binary, protocol and artifact-digest
+verification is retained in
+`target-six/v0.2.23-provider/ci-d3ba0dc-auth-diagnosis/verification-index.json`.
+The DB diagnostic is in the failure-log artifact for this source; the
+[development workflow owner](PRD_02_32_dev_loop_crosscheck.md#opt-in-native-authorization-context-court)
+owns its subsequent always-upload retention change.

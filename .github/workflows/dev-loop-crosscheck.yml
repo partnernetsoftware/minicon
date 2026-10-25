@@ -530,6 +530,7 @@ jobs:
             probe-logs/native-auth-context/*/receipt.json
             probe-logs/native-auth-context/*/fixture-receipt.json
             probe-logs/native-auth-context/*/native-driver-receipt.json
+            probe-logs/native-auth-context/*/windows-cookie-diagnostics.json
             probe-logs/native-auth-context/*/driver.*.log
           if-no-files-found: ignore
           retention-days: 14
