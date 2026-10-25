@@ -238,6 +238,13 @@ impl NativePageHost {
         release
     }
 
+    /// Recheck the actual persistent profile without exposing native paths or
+    /// reading cookies. Creation applies the same mandatory verification.
+    #[cfg(windows)]
+    pub fn context_profile_matches(&self, profile: &PageProfile) -> bool {
+        verify_windows_profile(&self.webview, profile).is_ok()
+    }
+
     /// Create the visible, bounded first-party home surface.
     pub fn new(
         slot: PanelSlot,
@@ -667,7 +674,9 @@ fn verify_windows_profile(
     webview: &WebView,
     profile: &PageProfile,
 ) -> Result<(), PageContextError> {
-    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment7;
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2_13, ICoreWebView2Environment7,
+    };
     use windows_core::Interface;
     use wry::WebViewExtWindows;
     let environment = webview
@@ -687,10 +696,39 @@ fn verify_windows_profile(
         .data_directory
         .canonicalize()
         .map_err(|_| PageContextError::ProfileUnavailable)?;
-    if actual != expected {
-        return Err(PageContextError::ProfileUnavailable);
+    let native_profile = unsafe {
+        webview
+            .webview()
+            .cast::<ICoreWebView2_13>()
+            .and_then(|view| view.Profile())
     }
-    Ok(())
+    .map_err(|_| {
+        PageContextError::Unsupported("browser-context-profile-verification-unsupported")
+    })?;
+    let mut in_private = windows_core::BOOL::default();
+    let mut path = Default::default();
+    unsafe { native_profile.IsInPrivateModeEnabled(&mut in_private) }
+        .map_err(|_| PageContextError::ProfileUnavailable)?;
+    unsafe { native_profile.ProfilePath(&mut path) }
+        .map_err(|_| PageContextError::ProfileUnavailable)?;
+    let path = std::path::PathBuf::from(webview2_com::take_pwstr(path))
+        .canonicalize()
+        .map_err(|_| PageContextError::ProfileUnavailable)?;
+    windows_profile_facts(&expected, &actual, &path, in_private.as_bool())
+}
+
+#[cfg(windows)]
+fn windows_profile_facts(
+    expected: &std::path::Path,
+    actual: &std::path::Path,
+    profile: &std::path::Path,
+    in_private: bool,
+) -> Result<(), PageContextError> {
+    if in_private || expected != actual || profile == actual || !profile.starts_with(actual) {
+        Err(PageContextError::ProfileUnavailable)
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -871,6 +909,27 @@ fn bounds(slot: PanelSlot) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn explicit_windows_profile_requires_the_exact_persistent_store() {
+        use std::path::Path;
+        let root = Path::new(r"C:\court\a");
+        let other = Path::new(r"C:\court\b");
+        let profile = root.join("Default");
+        assert!(windows_profile_facts(root, root, &profile, false).is_ok());
+        for (actual, path, private) in [
+            (root, profile.as_path(), true),
+            (other, profile.as_path(), false),
+            (root, other, false),
+            (root, root, false),
+        ] {
+            assert_eq!(
+                windows_profile_facts(root, actual, path, private),
+                Err(PageContextError::ProfileUnavailable)
+            );
+        }
+    }
 
     #[cfg(windows)]
     #[test]

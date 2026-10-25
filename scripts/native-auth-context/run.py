@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import contextlib
 import hashlib
 import json
 import os
@@ -15,11 +16,18 @@ from pathlib import Path
 import platform
 import re
 import signal
+import stat
 import subprocess
 import sys
 import time
 
 import fixture
+
+try:
+    import sqlite3
+except ImportError:
+    # Optional diagnostic support cannot prevent the independent native court.
+    sqlite3 = None
 
 CHECKS = (
     "ordinary-initial-storage", "a-initial-storage", "b-initial-storage",
@@ -89,6 +97,176 @@ def metadata(path, binary_hash, helper_hash):
         "build_metadata_verified_byte_identity": True,
         "source_authority": "external-build-declaration-bound-to-measured-bytes",
     }
+
+
+
+# Diagnostic authority is this run's fresh A/B manifest only. Never enumerate a
+# user's profiles, decrypt, select cookie values, or change the court verdict.
+_COOKIE_DB_SLOTS = (
+    ("webview2-network", "EBWebView/Default/Network/Cookies"),
+    ("webview2-legacy", "EBWebView/Default/Cookies"),
+    ("chromium-network", "Default/Network/Cookies"),
+    ("chromium-legacy", "Default/Cookies"),
+)
+_LOCAL_STATE_SLOTS = (("webview2", "EBWebView/Local State"), ("chromium", "Local State"))
+_DIAGNOSTIC_FILE_LIMIT = 8 * 1024 * 1024
+_DIAGNOSTIC_ROW_LIMIT = 4096
+
+
+def _diagnostic_error(error):
+    if isinstance(error, PermissionError):
+        return "permission-denied"
+    if isinstance(error, FileNotFoundError):
+        return "not-found"
+    if sqlite3 is not None and isinstance(error, sqlite3.Error):
+        # Never persist exception text, SQL error text or native path strings.
+        name = getattr(error, "sqlite_errorname", "")
+        return {"SQLITE_BUSY": "sqlite-busy", "SQLITE_LOCKED": "sqlite-locked",
+                "SQLITE_CORRUPT": "sqlite-corrupt", "SQLITE_NOTADB": "sqlite-not-database",
+                "SQLITE_CANTOPEN": "sqlite-open-failed", "SQLITE_INTERRUPT": "sqlite-work-bound",
+                "SQLITE_ERROR": "sqlite-schema-or-query-unavailable"}.get(name, "sqlite-other-error")
+    return "diagnostic-read-unavailable"
+
+
+def _diagnostic_entry(root, relative):
+    path = root
+    for component in Path(relative).parts:
+        path = path / component
+        metadata = path.lstat()
+        if (stat.S_ISLNK(metadata.st_mode)
+                or getattr(metadata, "st_file_attributes", 0) & 0x400):
+            raise ValueError("link-like-entry")
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+        raise ValueError("non-private-regular-entry")
+    return path, metadata
+
+
+def _cookie_database_observation(root, relative, now):
+    result = {"status": "unavailable", "read_open": False}
+    if sqlite3 is None:
+        result["status"] = "sqlite-module-unavailable"
+        return result
+    try:
+        path, metadata = _diagnostic_entry(root, relative)
+        result["bytes"] = metadata.st_size
+        if metadata.st_size > _DIAGNOSTIC_FILE_LIMIT:
+            result["status"] = "file-size-bound"
+            return result
+        with path.open("rb") as stream:
+            result["read_open"] = True
+            if stream.read(16) != b"SQLite format 3\0":
+                result["status"] = "sqlite-header-unavailable"
+                return result
+        # immutable guarantees no DB/SHM writes but deliberately ignores WAL.
+        # A missing table or zero rows is INCONCLUSIVE when WAL exists.
+        uri = path.as_uri() + "?mode=ro&immutable=1"
+        with contextlib.closing(sqlite3.connect(uri, uri=True, timeout=0)) as connection:
+            connection.execute("PRAGMA query_only=ON")
+            ticks = [0]
+            def bounded_sqlite_work():
+                ticks[0] += 1
+                return ticks[0] > 100
+            connection.set_progress_handler(bounded_sqlite_work, 1000)
+            rows = connection.execute(
+                "SELECT is_persistent, has_expires, expires_utc FROM cookies LIMIT 4097"
+            ).fetchall()
+        if len(rows) > _DIAGNOSTIC_ROW_LIMIT:
+            result["status"] = "row-count-bound"
+            return result
+        counts = dict(rows=len(rows), persistent=0, session=0, invalid_flags=0,
+                      expires_after_now=0, expired_or_zero=0, invalid_expiry=0,
+                      expiry_within_15_minutes=0)
+        chromium_now = int((now + 11644473600) * 1000000)
+        for persistent, has_expires, expires in rows:
+            if type(persistent) is not int or persistent not in (0, 1) or type(has_expires) is not int or has_expires not in (0, 1):
+                counts["invalid_flags"] += 1
+            elif persistent == 1:
+                counts["persistent"] += 1
+            else:
+                counts["session"] += 1
+            if type(expires) is not int:
+                counts["invalid_expiry"] += 1
+            elif expires > chromium_now:
+                counts["expires_after_now"] += 1
+                if expires <= chromium_now + 900000000:
+                    counts["expiry_within_15_minutes"] += 1
+            else:
+                counts["expired_or_zero"] += 1
+        result.update(status="read-only-main-db-observed", counts=counts)
+    except ValueError:
+        result["status"] = "entry-authority-refused"
+    except (OSError, sqlite3.Error, OverflowError) as error:
+        result["status"] = _diagnostic_error(error)
+    for suffix, label in (("-wal", "wal"), ("-shm", "shm")):
+        try:
+            _, metadata = _diagnostic_entry(root, relative + suffix)
+            result[label] = {"status": "present", "bytes": metadata.st_size}
+        except ValueError:
+            result[label] = {"status": "entry-authority-refused"}
+        except OSError as error:
+            result[label] = {"status": _diagnostic_error(error)}
+    return result
+
+
+def _local_state_observation(root, relative):
+    result = {"status": "unavailable", "read_open": False}
+    try:
+        path, metadata = _diagnostic_entry(root, relative)
+        if metadata.st_size > LIMIT:
+            result["status"] = "file-size-bound"
+            return result
+        with path.open("rb") as stream:
+            raw = stream.read(LIMIT + 1)
+        result["read_open"] = True
+        if len(raw) > LIMIT:
+            result["status"] = "file-size-bound"
+            return result
+        parsed = fixture.object_json(raw)
+        crypt = parsed.get("os_crypt")
+        result.update(status="configuration-observed", os_crypt_object=isinstance(crypt, dict),
+                      encrypted_key_configured=isinstance(crypt, dict) and isinstance(crypt.get("encrypted_key"), str) and bool(crypt["encrypted_key"]),
+                      app_bound_key_configured=isinstance(crypt, dict) and isinstance(crypt.get("app_bound_encrypted_key"), str) and bool(crypt["app_bound_encrypted_key"]))
+    except ValueError:
+        result["status"] = "entry-or-json-unavailable"
+    except (OSError, UnicodeError, RecursionError) as error:
+        result["status"] = _diagnostic_error(error)
+    return result
+
+
+def windows_cookie_snapshot(manifest, output, stage, clock):
+    result = {"stage": stage, "profiles": {}, "status": "diagnostics-only"}
+    try:
+        # output was create-new before manifest creation. Bind BOTH profiles
+        # before reading any file; refuse links/reparse points and unexpected paths.
+        if manifest.get("schema") != 1 or manifest.get("test_only") is not True:
+            raise ValueError("not-owned-test-manifest")
+        roots = {}
+        for label in ("a", "b"):
+            root = output
+            for component in ("profiles", label):
+                root = root / component
+                metadata = root.lstat()
+                if (not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode)
+                        or getattr(metadata, "st_file_attributes", 0) & 0x400):
+                    raise ValueError("profile-authority-refused")
+            if Path(manifest["profiles"][label]["directory"]) != root or root.resolve(strict=True) != root:
+                raise ValueError("profile-authority-refused")
+            roots[label] = root
+        wall = time.time()
+        drift = (wall - clock[0]) - (time.monotonic() - clock[1])
+        result["clock"] = {"wall_vs_monotonic": "stable-within-two-seconds" if abs(drift) <= 2 else "wall-clock-step-observed",
+                           "fixture_cookie_max_age_seconds": 600}
+        for label, root in roots.items():
+            result["profiles"][label] = {
+                "manifest_identity_verified": True,
+                "cookie_databases": {name: _cookie_database_observation(root, relative, wall) for name, relative in _COOKIE_DB_SLOTS},
+                "local_state": {name: _local_state_observation(root, relative) for name, relative in _LOCAL_STATE_SLOTS}}
+    except (OSError, ValueError, KeyError, TypeError):
+        result["status"] = "fresh-profile-authority-unavailable"
+    except Exception:
+        # Diagnostics never alter the court's already measured verdict.
+        result = {"stage": stage, "status": "diagnostic-internal-error"}
+    return result
 
 
 class OwnedProcess:
@@ -282,6 +460,9 @@ def main():
                   script_sha256={name:sha(ROOT / name) for name in ("run.py", "fixture.py", "page.js")})
     owned = None
     court = None
+    manifest = None
+    diagnostic_clock = (time.time(), time.monotonic())
+    cookie_diagnostics = []
     try:
         binary = executable(args.binary)
         helper = executable(args.helper) if args.helper else None
@@ -320,6 +501,8 @@ def main():
                 time.sleep(0.05)
             # Preserve the measured normal exit code before Windows job cleanup.
             result["actual_exit_code"] = owned.process.wait(timeout=1)
+            if host_os() == "windows":
+                cookie_diagnostics.append(windows_cookie_snapshot(manifest, output, "driver-exited-before-job-cleanup", diagnostic_clock))
             observed = court.state.receipt()
             fixture.private_json(output / "fixture-receipt.json", observed)
             result["checks"] = observed["checks"]
@@ -352,7 +535,22 @@ def main():
             result["checks"] = observed["checks"]
             result["fixture_failure_code"] = observed["failure"]
             fixture.private_json(output / "fixture-receipt.json", observed)
-        artifacts = [output / name for name in ("driver.stdout.log", "driver.stderr.log", "native-driver-receipt.json", "fixture-receipt.json")]
+        if host_os() == "windows" and manifest is not None:
+            cookie_diagnostics.append(windows_cookie_snapshot(manifest, output, "after-owned-job-cleanup", diagnostic_clock))
+            diagnostic = dict(kind="owned-fresh-windows-cookie-diagnostics", schema=1,
+                              status="diagnostics-only", changes_court_verdict=False,
+                              snapshots=cookie_diagnostics,
+                              limitations=["Only this fresh run's exact manifest A/B directories and fixed relative candidates; no profile search.",
+                                           "SQLite immutable main DB only; WAL contents are NOT read or checkpointed. Missing rows/schema with WAL are inconclusive.",
+                                           "A-reopen page writes its cookie again before reporting failure; post-exit observations cannot reconstruct the first A close.",
+                                           "Normal driver exit precedes owned Job descendant cleanup; cleanup may interrupt browser persistence. Compare both stages.",
+                                           "Read-open/permission categories are not a DACL audit, DPAPI decryption, SDK InPrivate observation or flush proof.",
+                                           "Fresh private test authority is prechecked; no concurrent adversarial filesystem mutation court is claimed."])
+            try:
+                fixture.private_json(output / "windows-cookie-diagnostics.json", diagnostic)
+            except (OSError, ValueError):
+                result["cookie_diagnostic_write"] = "unavailable"
+        artifacts = [output / name for name in ("driver.stdout.log", "driver.stderr.log", "native-driver-receipt.json", "fixture-receipt.json", "windows-cookie-diagnostics.json")]
         result["artifacts"] = {path.name:{"bytes":path.stat().st_size, "sha256":sha(path)}
                                for path in artifacts if path.is_file()}
         fixture.private_json(output / "receipt.json", result)

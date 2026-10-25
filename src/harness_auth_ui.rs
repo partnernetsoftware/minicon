@@ -91,6 +91,8 @@ pub(super) struct AuthContextLifecycle {
     releases: Vec<AuthReleaseRecord>,
     pending: Option<PendingAuthNavigation>,
     overflowed: bool,
+    #[cfg(feature = "native-auth-court")]
+    completed: std::collections::VecDeque<minicon_web::PageProfile>,
 }
 
 #[cfg(windows)]
@@ -116,9 +118,40 @@ impl AuthContextLifecycle {
     }
 
     fn retire_released(&mut self) {
+        #[cfg(feature = "native-auth-court")]
+        let completed = &mut self.completed;
         self.releases.retain(|record| {
-            record.observation.status() != minicon_web::NativePageReleaseStatus::Released
+            let released =
+                record.observation.status() == minicon_web::NativePageReleaseStatus::Released;
+            #[cfg(feature = "native-auth-court")]
+            if released {
+                if completed.len() == 18 {
+                    completed.pop_front();
+                }
+                completed.push_back(record.profile.clone());
+            }
+            !released
         });
+    }
+
+    /// Finite test-build trace only: absence is not a successful native event.
+    #[cfg(feature = "native-auth-court")]
+    pub(super) fn release_observation(&self, profile: &minicon_web::PageProfile) -> &'static str {
+        if let Some(record) = self
+            .releases
+            .iter()
+            .find(|record| &record.profile == profile)
+        {
+            match record.observation.status() {
+                minicon_web::NativePageReleaseStatus::Pending => "pending",
+                minicon_web::NativePageReleaseStatus::Released => "matching-normal-exit",
+                minicon_web::NativePageReleaseStatus::Failed(reason) => reason,
+            }
+        } else if self.completed.iter().any(|completed| completed == profile) {
+            "matching-normal-exit"
+        } else {
+            "not-observed"
+        }
     }
 
     fn status(&self, profile: &minicon_web::PageProfile) -> minicon_web::NativePageReleaseStatus {

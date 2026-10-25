@@ -409,9 +409,39 @@ struct CourtApplication {
     deadline: Instant,
     outcome: Arc<Mutex<Option<Result<(), &'static str>>>>,
     fixture_receipt: Arc<Mutex<Option<serde_json::Value>>>,
+    #[cfg(windows)]
+    diagnostics: Arc<Mutex<Vec<serde_json::Value>>>,
 }
 
 impl CourtApplication {
+    #[cfg(windows)]
+    fn record_context_observation(&self) {
+        let Some(auth) = &self.app.browser_auth else {
+            return;
+        };
+        let phase = match auth.attempt.0 {
+            101 => "a",
+            102 => "b",
+            103 => "a-reopen",
+            _ => "unrecognized-attempt",
+        };
+        let observation = serde_json::json!({
+            "phase": phase,
+            "native_host_present": self.app.native_browser_page.is_some(),
+            "persistent_profile_verified": self.app.native_browser_page.as_ref()
+                .map(|page| page.context_profile_matches(&auth.context.profile)),
+            "owned_profile_release": self.app.auth_context_lifecycle.release_observation(&auth.context.profile),
+        });
+        if let Ok(mut observations) = self.diagnostics.lock()
+            && observations.last() != Some(&observation)
+        {
+            if observations.len() == 16 {
+                observations.remove(0);
+            }
+            observations.push(observation);
+        }
+    }
+
     fn fail(&self, code: &'static str) -> PixelWindowError {
         if let Ok(mut result) = self.outcome.lock() {
             *result = Some(Err(code));
@@ -606,6 +636,8 @@ impl PixelWindowApplication for CourtApplication {
         now: Instant,
     ) -> Result<PixelWindowDirective, PixelWindowError> {
         let directive = self.app.about_to_wait(window, now)?;
+        #[cfg(windows)]
+        self.record_context_observation();
         self.turn(window)?;
         if self.app.exit {
             return Ok(PixelWindowDirective::Exit);
@@ -644,6 +676,8 @@ pub(super) fn run_application(manifest: &Path) -> Result<(), &'static str> {
     let deadline = Instant::now() + recipe.timeout;
     let outcome = Arc::new(Mutex::new(None));
     let receipt = Arc::new(Mutex::new(None));
+    #[cfg(windows)]
+    let diagnostics = Arc::new(Mutex::new(Vec::new()));
     let mut app = ConApp::new(None, None);
     app.no_activate = true;
     let native = CourtApplication {
@@ -655,6 +689,8 @@ pub(super) fn run_application(manifest: &Path) -> Result<(), &'static str> {
         deadline,
         outcome: outcome.clone(),
         fixture_receipt: receipt.clone(),
+        #[cfg(windows)]
+        diagnostics: diagnostics.clone(),
     };
     let result = run_pixel_window(
         PixelWindowOptions::new("MiniCon native auth court", LogicalSize::new(960.0, 600.0))
@@ -701,6 +737,17 @@ pub(super) fn run_application(manifest: &Path) -> Result<(), &'static str> {
         "fixture":receipt.lock().map_err(|_| "native-court-outcome-lock")?.take(),
         "unclaimed":["proxy/no-direct", "delayed embedded_ready", "native map/focus/pixels", "physical input/IME/clipboard", "toolbar-driven history"],
     });
+    #[cfg(windows)]
+    let data = {
+        let mut data = data;
+        data["windows_context_observations"] = serde_json::json!(
+            diagnostics
+                .lock()
+                .ok()
+                .map(|observations| observations.clone())
+        );
+        data
+    };
     std::fs::write(
         output.join("native-driver-receipt.json"),
         serde_json::to_vec_pretty(&data).map_err(|_| "native-court-receipt-serialize")?,

@@ -133,3 +133,34 @@ NR-01..03 remain open until their actual native checks and event evidence pass. 
 injected pending/cancel tests cannot certify SDK callback delivery or cookie
 persistence. Linux helper release and macOS identified-store deletion require
 their own native mechanisms; Windows success cannot qualify them.
+
+### Value-free failure diagnosis
+
+The next dedicated test join records fixed profile-verification/release-state
+observations at each action, including the actual same-profile observation
+before A reopens. The trace is bounded and test-feature-only; it exposes no PID,
+directory, cookie, grant or raw SDK error. A missing release observation stays
+distinct from a matching normal exit. Creation verification remains product
+behavior; test tracing does not add production navigation or credential APIs.
+
+The runner may inspect only the fresh A/B directories in its own manifest, at
+fixed relative database/configuration paths. It reports file/read/error classes,
+bounded persistent/expiry counts and configured-key booleans, without cookie
+values, encrypted blobs, decryption or recursive profile discovery. Read-only
+immutable SQLite inspection ignores WAL; missing rows/schema with WAL are
+inconclusive. The reopened fixture rewrites its cookie before reporting, and
+owned Job cleanup can interrupt descendants. These post-exit observations do
+not reconstruct the first close or certify a flush. Diagnostic failure cannot
+change the independently measured court verdict or weaken its storage oracle.
+
+Local Windows x86_64 development passes the thirteen native-page mechanism
+tests (including the new exact/persistent profile-facts regression), five
+dedicated-feature auth tests, and four synthetic diagnosis checks. Removing
+the profile validation produces an actual Rust assertion RED and byte-exact
+restoration (`native-profile-facts-control/receipt.json` under the existing
+`target-six/v0.2.23-provider/` output). Four actual Python assertion REDs cover
+configuration-value redaction, binding both manifest roots before reads,
+hardlink refusal and immutable/no-WAL-write diagnosis; exact restored checks
+and hashes are in `cookie-diagnostics-integrated-controls-optional/receipt.json`.
+These do not execute a local native view or qualify a cookie fix. Actual SDK
+profile/release observations and diagnosis require the next native run.

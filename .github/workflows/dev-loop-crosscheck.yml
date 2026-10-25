@@ -30,6 +30,11 @@ on:
         description: "Optional Rust test-name substring filter, applied to every suite"
         required: false
         default: ""
+      private_publication:
+        description: "Run native private-publication source tests and actual guard counterexamples"
+        type: boolean
+        required: false
+        default: false
       native_auth_context:
         description: "Run dedicated native auth storage/live-DOM bytes and actual counterexamples"
         type: boolean
@@ -317,6 +322,12 @@ jobs:
           if [ -z "$filter" ] || [[ "$filter" == *network* ]]; then
             run_suite minicon-network bash scripts/build.sh test-suite --target "$triple" -p minicon-platform --features network-http-stream,network-loopback --lib network_ -- --test-threads 2
           fi
+          # Opt-in source mechanism court, independent of the ordinary filter.
+          # It requires 3 baseline passes, 3 actual assertion REDs and 3 restored
+          # passes; partial/compile/timeout results cannot certify the controls.
+          if [[ '${{ inputs.private_publication }}' == 'true' ]]; then
+            run_suite private-publication python3 scripts/private-publication-native-court.py --target "$triple" --output "$LOG_DIR/private-publication"
+          fi
           case "$CELL" in
             osx-*)
               if [ -z "$filter" ] || [[ "$filter" == *harness* ]] || [[ "$filter" == *provider* ]] || [[ "$filter" == *retained_group* ]]; then
@@ -507,6 +518,7 @@ jobs:
             probe-logs/minicon-browser-process.log
             probe-logs/minicon-web-process-native.log
             probe-logs/retained-group/
+            probe-logs/private-publication/
             probe-logs/console-lifecycle/
             probe-logs/browser-workspace/
             probe-logs/native-auth-context/qualification-receipt.json

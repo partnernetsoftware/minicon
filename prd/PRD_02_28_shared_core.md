@@ -527,7 +527,13 @@ context entry points.
 
 `NativePageHost::new_with_context` is behind `native-page-host` on Windows/macOS.
 Windows uses a persistent WebView2 environment, verifies its actual data folder
-and refuses a conflicting user-data environment override. Its optional
+and refuses a conflicting user-data environment override. Creation verification
+also requires the actual native profile's InPrivate flag
+to be false and its canonical profile directory to be a proper descendant of
+that exact UDF. The native getter contract is documented by
+[ICoreWebView2Profile](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2profile?view=webview2-1.0.3537.50).
+Failure refuses the explicit context; it never substitutes a default store.
+The existing optional
 `windows-core` dependency uses the existing 0.61 ABI family. macOS requires
 14+ for the persistent identified store and explicit proxy handling; Direct
 clears old proxy settings on that store. General bypass lists and distinct
@@ -649,8 +655,17 @@ declared source mutations, byte-exact source restoration and unchanged canonical
 product hash in
 `target-six/v0.2.23-provider/ci-e55613a-macos-auth/verification-index.json`.
 This qualifies only the named macOS ARM dedicated test bytes. Windows persistence,
-macOS Intel, physical input, provider OAuth and final product artifacts retain
+physical input, provider OAuth and final product artifacts retain
 their independent obligations; protocol startup evidence is owned by PRD 32.
+
+The subsequent `51a3894c0d7263ab179ddc07f3f3385f96b77683` run `40169994716`
+also qualifies the macOS Intel dedicated test scope: initial/restored eight
+checks, both precise native fault failures, protocol controls and exact source/
+canonical restoration pass in that job. The independent mixed-outcome audit is
+`target-six/v0.2.23-provider/ci-51a3894-native-release/verification-index.json`.
+The overall run still fails because both Windows jobs retain the reopened-A
+cookie loss. [The lifecycle owner](PRD_02_28_01_browser_context_lifecycle.md)
+owns that unresolved result and next diagnosis; macOS success cannot close it.
 
 The local scaffold checkpoint is recorded in
 `target-six/v0.2.23-provider/native-auth-court-final-gate-receipt.json`:

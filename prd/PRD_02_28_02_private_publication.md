@@ -118,3 +118,14 @@ Restored regression gates are recorded in `private-publication-final-gate-receip
 beside those logs. Native Unix mode and Windows ACL evidence
 retain their actual source/feature/OS/ISA scope. This mechanism does not simulate
 power loss or certify a final release artifact.
+
+The opt-in native source court subsequently executed on Windows x86_64 with
+three initial passes, three actual assertion RED controls and three restored
+passes. All five Cargo-reported test images are measured as the requested PE
+ISA, their digests and original streams are retained, and the mutated sources
+are restored byte-exactly. Receipt:
+`target-six/v0.2.23-provider/private-publication-native-local-fixed/receipt.json`.
+This is HEAD plus the declared development overlay with shared cache. The first
+bare-Bash launcher failure is retained separately and is not a runtime control;
+the selection/operating correction is owned by
+[PRD 32](PRD_02_32_dev_loop_crosscheck.md#opt-in-private-publication-source-court).

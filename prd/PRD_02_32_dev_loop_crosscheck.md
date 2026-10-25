@@ -15,7 +15,7 @@ dev-loop-crosscheck — agent cross-arch dev/test loop
 ├── Problem: a cloud session can reach only its own host's architecture
 ├── Non-goal: never a release-evidence path, never publishes, never needs write
 ├── Mechanism: GitHub-hosted native per-cell build + test on request
-│   ├── inputs: ref, cells, test_filter, native_auth_context
+│   ├── inputs: ref, cells, test_filter, native_auth_context, private_publication
 │   ├── core and UI library tests, including each native ISA kernel
 │   ├── isolated minimal consumer; no workspace feature leakage
 │   ├── [-] provider / worker / HTTP mechanism and real CLI gateway courts (0.2.23)
@@ -30,6 +30,11 @@ dev-loop-crosscheck — agent cross-arch dev/test loop
 │   │   evidence: qualification receipt, eight engine observations and two actual counterexamples
 │   │   safe failure: preserve BLOCKED/failed result; do not count compilation or timeout as RED
 │   │   dependency: canonical browser/helper and isolated desktop; non-goal: release/provider/visibility proof
+│   ├── [-] explicit private_publication source court → PRD 28.02
+│   │   invariant: private native files and actual guard failures retain exact restored source
+│   │   evidence: three named baseline tests, three runtime REDs and three restored passes
+│   │   safe failure: compilation/timeout/zero tests are failed evidence, never RED
+│   │   dependency: private writer and owned build process; non-goal: GUI/provider/crash or release-artifact proof
 │   └── permissions: contents: read only
 ├── Permission walls, disambiguated from the release / GHCR / local-artifact paths
 └── Validation record (real hosted runners, run 36313213803)
@@ -47,6 +52,8 @@ flowchart LR
     G --> L
     W -->|explicit native_auth_context| T[Separate test bytes / native context and live-DOM court]
     T -->|actual observations + RED controls + exact restore| L
+    W -->|explicit private_publication| PP[Private native files / publication / errno / platform access controls]
+    PP -->|actual tests + RED controls + exact restore| L
     W -. never .-> R["release / GHCR / tag / version"]
 ```
 
@@ -86,6 +93,8 @@ a macOS-specific question needs it), `test_filter` (a Rust test-name
 substring, applied to ordinary suites; the mandatory courts below stay active).
 `native_auth_context` explicitly selects the dedicated native test-build court
 below and defaults to false, so its extra build/mutation cost is deliberate.
+`private_publication` independently opts into the source court below; it also
+defaults to false and does not follow the ordinary Rust test-name filter.
 
 Per cell: `cargo build --locked --workspace --all-targets --target <triple>`,
 then each suite is run with `cargo test --locked --target <triple> --test
@@ -125,6 +134,33 @@ grant or hosted inference entitlement. Those delivery claims remain with
 native receipts and their filtered scope are linked from
 [the pool owner](PRD_02_31_01_02_provider_pool.md); earlier six-cell receipts
 cannot qualify subsequent source.
+
+### Opt-in private-publication source court
+
+Set `private_publication=true` to run `scripts/private-publication-native-court.py`
+serially through the strict test wrapper for the requested native target. It
+requires the three named new private-publication tests to pass, then one actual
+assertion failure per removed publication flag, legacy errno and native access
+guard, and finally the three restored passes. Unix launches use explicit child
+shell umask 022; Windows removes native private-directory inheritance for its
+access control. [PRD 28.02](PRD_02_28_02_private_publication.md) owns the mechanism
+and consumer behavior.
+
+The runner retains original stdout/stderr, source hashes, actual result counts,
+Cargo-reported test-image digest/ISA and cleanup/restoration outcomes. It reuses
+the existing owned-process boundary, so a timed-out Cargo tree is closed before
+source restoration; it never launches a GUI or provider. Its receipt binds HEAD
+plus the listed working-tree bytes and declares shared cache and any initial
+dirty state. Native source mechanisms do not certify release artifact behavior
+or survival of a power loss. A hard host/process loss cannot fabricate terminal
+PASS; an interrupted or incomplete receipt remains unavailable evidence.
+
+The first local launch retained a failed preflight: passing bare `bash` through
+the native Windows process launcher selected WSL before Git Bash and ran zero
+tests. The corrected court reuses `scripts/test-plan.py::choose_bash` and passes
+the resolved executable to the launcher. A PATH prefix alone did not select
+the intended native executable in that failed attempt. Its raw failure remains
+in `target-six/v0.2.23-provider/private-publication-native-local/receipt.json`.
 
 ### Opt-in native authorization-context court
 
