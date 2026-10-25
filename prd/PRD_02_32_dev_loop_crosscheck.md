@@ -1014,3 +1014,17 @@ hosted-only guard breaks the original refusal assertion (the attempted DLL
 call is trapped before execution), and exact restoration passes again. No
 window, process or clipboard operation occurs in this local control. Hosted
 physical execution and human PNG review remain open until actual receipts.
+
+First physical execution at exact `c420449951d4b597748d63cbc3440ac22228600f`,
+[run40238894373](https://github.com/partnernetsoftware/minicon/actions/runs/40238894373),
+is terminal FAIL. x86_64 reaches actual native page-key echo and Ctrl+L, then
+fails the original `Tab cycles to New trigger` assertion after proxy-menu
+dismissal. aarch64 is BLOCKED before input because Windows denies foreground
+activation. Both gracefully close their own GUI (exit0), join their page thread,
+remove synthetic profiles and restore original language profiles. x86_64 also
+verifies exact original empty clipboard restoration; aarch64 never changes it.
+The retained receipts are under
+`target-six/v0.2.23-provider/native-controls-ci-c420449/`. Preserve both original
+outcomes. Capture a bounded synthetic public snapshot at failure before cleanup
+to locate the actual focus/trigger state; do not weaken the original assertion
+or interpret missing diagnostic state as a product pass.

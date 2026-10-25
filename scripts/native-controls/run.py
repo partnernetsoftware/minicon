@@ -764,6 +764,22 @@ def main():
         # Exceptions are fixed labels/OS errors; never dump credentials or full child output.
         receipt.update(status="failed", phase=phase, reason=f"{type(error).__name__}: {error}")
     finally:
+        if receipt["status"] != "passed" and child is not None and child.poll() is None:
+            # Synthetic isolated GUI only. Preserve the actual failed state
+            # before cleanup; never change a predicate from an absent snapshot.
+            try:
+                failed_state = snapshot()
+                (output / "failure.json").write_text(json.dumps(failed_state, ensure_ascii=False, indent=2), encoding="utf-8")
+                receipt["failure_snapshot"] = "failure.json"
+                if native is not None:
+                    receipt["owned_window_foreground_at_failure"] = native.u.GetForegroundWindow() == native.hwnd
+                    foreground_pid = w.DWORD()
+                    native.u.GetWindowThreadProcessId(native.u.GetForegroundWindow(), c.byref(foreground_pid))
+                    receipt["foreground_is_owned_gui_at_failure"] = foreground_pid.value == child.pid
+                    if receipt["owned_window_foreground_at_failure"]:
+                        receipt["screenshots"].append(native.capture(output / "failure.png"))
+            except (OSError, RuntimeError, AssertionError, subprocess.SubprocessError, json.JSONDecodeError):
+                receipt["failure_snapshot_unavailable"] = True
         cleanup = {}
         if native is not None:
             try:

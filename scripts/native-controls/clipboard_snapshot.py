@@ -165,4 +165,3 @@ class ClipboardSnapshot:
             }
             raise ClipboardError("restored clipboard format set or exact bytes differ")
         self.diagnostics["restoration"] = "all-original-formats-exact-bytes-verified"
-
