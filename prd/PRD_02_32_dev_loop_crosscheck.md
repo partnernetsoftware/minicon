@@ -45,7 +45,7 @@ dev-loop-crosscheck — agent cross-arch dev/test loop
 │   │   evidence: current default product image, public editor/page observations and bounded owned-client PNGs on each selected target
 │   │   safe failure: missing IME, lost foreground, failed restoration or forced cleanup is BLOCKED/failure
 │   │   dependency: observed hosted desktop, isolated synthetic profile and existing native fixture; non-goal: owner-desktop input, provider login, other scales or release qualification
-│   │   └── [_] ARM64 allocated interactive desktop
+│   │   └── [-] ARM64 allocated interactive desktop
 │   │       invariant: hosted-only allocation, exact desktop-bound contained controller and original input desktop restoration
 │   │       evidence: actual native rows plus desktop create/switch/readback/restore and owned process cleanup
 │   │       safe failure: refuse unavailable desktop/permission; no input to onboarding; restoration failure cannot pass

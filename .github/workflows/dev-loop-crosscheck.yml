@@ -689,6 +689,8 @@ jobs:
             probe-logs/console-lifecycle/
             probe-logs/browser-workspace/
             probe-logs/native-auth-context/qualification-receipt.json
+            probe-logs/native-auth-context/helper-release-controls.json
+            probe-logs/native-auth-context/helper-release-*.log
             probe-logs/native-auth-context/acl-contrast-receipt.json
             probe-logs/native-auth-context/protocol.log
             probe-logs/native-auth-context/protocol/

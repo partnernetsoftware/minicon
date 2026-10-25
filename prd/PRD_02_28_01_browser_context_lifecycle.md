@@ -1030,7 +1030,8 @@ and profile, distinguish normal/forced/unknown closure, and retain all eight
 storage predicates plus intended negative/restored runtime controls.
 Shared prerequisites/hot files are `minicon-web`'s native helper close path,
 MiniCon's existing browser transport and auth/page teardown consumers, and this
-qualifier; one integrator owns the join. No Linux repair is implemented here.
+qualifier; one integrator owns the join. This investigation precedes the
+implementation and replay checkpoints below.
 
 The selected repair uses the existing bounded helper command channel for native
 `try_close`, handles its close signal, returns from the event loop so Rust-owned
@@ -1046,8 +1047,8 @@ This is a native lifetime boundary, not a declared storage flush. The original
 native storage and counterexample gates must still establish actual persistence.
 The shared status enum keeps its existing Windows meaning and gains this actual
 Linux consumer; macOS receives no new native-release implementation claim.
-The current development join implements this path but has no Linux runtime
-qualification yet. Its feature-only driver also retains finite per-phase
+At this checkpoint the development join implements the path without Linux
+runtime qualification. Its feature-only driver also retains finite per-phase
 `linux_context_observations`; a positive qualifier requires an actually present
 reopened host and the matching normal close observation for A. Storage checks
 remain mandatory independently. Fake-child/pipe controls exercise normal/abnormal
@@ -1102,3 +1103,32 @@ it does not itself prove finalization or saved state. The finite stage is
 therefore renamed `native-view-destroyed`, not a storage-flush acknowledgement.
 This addresses an observed callback boundary and remains a candidate repair
 until the original native initial/negative/restored court passes.
+
+### Integrated Linux development replay: both native runtimes pass
+
+[Run40245416867](https://github.com/partnernetsoftware/minicon/actions/runs/40245416867)
+at exact `652586ba5b1f1025efc16e714fc7d2851a1c7048` completes successfully on
+Linux x86_64 and aarch64. On each target, the initial and restored test images
+pass all eight original predicates, including A's persistent Cookie and
+localStorage reopen, isolated account stores, ordinary live DOM/storage and
+history. Actual A-reopen observations include a present native helper and the
+matching normal release. Reusing the previous account fails exactly with
+`context-b-inherited-storage`; reloading the ordinary page fails exactly with
+`ordinary-document-reloaded`. Neither negative is a deadline or build failure.
+
+The local byte/receipt audit is
+`target-six/v0.2.23-provider/linux-release-ci-652586b/verification-index.json`.
+It verifies every native run receipt and every listed public artifact's hash
+and length, intended failures, eight positive predicates, source restoration,
+canonical-byte preservation and identical initial/restored test images. Unix
+cleanup retains its actual normal-detach observation; it does not independently
+attest absence of every descendant. No real provider or signed-artifact claim
+follows from this development replay.
+
+The overall archive audit is **PARTIAL**: qualification receipts declare the
+seven helper subjects/five mutation controls pass, but their top-level receipt
+and logs were omitted from the success upload allowlist. Independent integrity
+verification of those missing bytes is **BLOCKED**. The workflow now explicitly
+retains `helper-release-controls.json` and `helper-release-*.log`; the next
+matching-source native replay must close that archive gap. The native runtime
+proof above remains valid for its named source and scope.
