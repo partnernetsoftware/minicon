@@ -10,6 +10,7 @@ use std::{
 
 pub(super) struct BrowserProcess {
     pid: u32,
+    parent: u64,
     commands: mpsc::SyncSender<String>,
     state: Arc<Mutex<ProcessState>>,
 }
@@ -49,7 +50,11 @@ impl ProcessState {
 }
 
 impl BrowserProcess {
-    pub(super) fn attach(child: &mut Child, wake: impl Fn() + Send + 'static) -> Option<Self> {
+    pub(super) fn attach(
+        child: &mut Child,
+        parent: u64,
+        wake: impl Fn() + Send + 'static,
+    ) -> Option<Self> {
         let mut input = child.stdin.take()?;
         let output = child.stdout.take()?;
         let pid = child.id();
@@ -96,6 +101,7 @@ impl BrowserProcess {
         });
         Some(Self {
             pid,
+            parent,
             commands,
             state,
         })
@@ -117,6 +123,13 @@ impl BrowserProcess {
         self.state
             .lock()
             .is_ok_and(|state| state.embedding == Some((pid, parent)))
+    }
+
+    pub(super) fn hide_for_release(&self, pid: u32) -> bool {
+        self.parent != 0
+            && self.pid == pid
+            && self.embedded_ready(self.parent, pid)
+            && crate::browser::set_embedded_page_visible_for_process(self.parent, pid, false)
     }
 
     pub(super) fn take_state(&self) -> Option<serde_json::Value> {
@@ -272,7 +285,7 @@ mod tests {
             .stderr(std::process::Stdio::null())
             .spawn()
             .unwrap();
-        let transport = BrowserProcess::attach(&mut child, || {}).unwrap();
+        let transport = BrowserProcess::attach(&mut child, 0, || {}).unwrap();
         BrowserRelease::begin(child, Some(transport), None, None)
     }
 
@@ -355,6 +368,7 @@ mod tests {
         let (commands, _receiver) = mpsc::sync_channel(1);
         let process = BrowserProcess {
             pid: 17,
+            parent: 42,
             commands,
             state: Arc::new(Mutex::new(state)),
         };

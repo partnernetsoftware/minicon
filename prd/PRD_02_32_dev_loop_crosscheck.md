@@ -1109,3 +1109,12 @@ context positive/negative/restored qualifier itself passes. Keep its control
 failure as a separate product obligation; a healthy auth qualifier does not
 override the failed Settings recovery journey. Local retained artifacts are
 under `target-six/v0.2.23-provider/ci-360222f-native/`.
+
+The initial Linux release join at `f6b0478`, run40242520109, fails compilation
+on both native Linux targets: the existing restore entry has no window argument.
+It executes no new helper subjects or native persistence court, so this is not
+a RED control or a runtime result. The correction retains the exact parent
+handle captured at helper spawn inside the existing transport and uses that
+same parent/PID/ready contract for hide-before-release. It does not infer a
+parent from an untrusted incoming frame. Local compiler logs are retained in
+`target-six/v0.2.23-provider/linux-release-f6b0478-ci-failed.log`.

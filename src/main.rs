@@ -2706,10 +2706,13 @@ impl ConApp {
                     #[cfg(target_os = "linux")]
                     {
                         let waker = window.waker();
-                        self.browser_process =
-                            browser_process::BrowserProcess::attach(&mut child, move || {
+                        self.browser_process = browser_process::BrowserProcess::attach(
+                            &mut child,
+                            slot.parent,
+                            move || {
                                 let _ = waker.wake();
-                            });
+                            },
+                        );
                     }
                     self.browser_page = Some(child);
                     self.note_page_load(browser::PageLoad::Loading {

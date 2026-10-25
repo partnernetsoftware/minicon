@@ -475,16 +475,9 @@ impl ConApp {
         #[cfg(target_os = "linux")]
         if let Some(child) = self.browser_page.take() {
             let process = self.browser_process.take();
-            let hidden = self.content_panel_slot(window).is_some_and(|slot| {
-                process
-                    .as_ref()
-                    .is_some_and(|process| process.embedded_ready(slot.parent, child.id()))
-                    && browser::set_embedded_page_visible_for_process(
-                        slot.parent,
-                        child.id(),
-                        false,
-                    )
-            });
+            let hidden = process
+                .as_ref()
+                .is_some_and(|process| process.hide_for_release(child.id()));
             let observation = browser_process::BrowserRelease::begin(
                 child,
                 process,
