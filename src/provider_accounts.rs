@@ -81,6 +81,22 @@ pub struct AccountPreferences {
     pub service: NetworkPolicy,
 }
 impl AccountPreferences {
+    pub fn pending(login: NetworkPolicy, service: NetworkPolicy) -> Result<Self, StoreError> {
+        login.validate()?;
+        service.validate()?;
+        let bytes = minicon_platform::entropy::secure_random_array::<16>()
+            .map_err(|_| StoreError::Storage)?;
+        let context_id: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+        let preferences = Self {
+            service_generation: context_id.clone(),
+            context_id,
+            enabled: true,
+            login,
+            service,
+        };
+        preferences.validate()?;
+        Ok(preferences)
+    }
     pub fn legacy(account: &str) -> Self {
         Self {
             context_id: account.to_owned(),
@@ -91,6 +107,9 @@ impl AccountPreferences {
         }
     }
     pub fn validate(&self) -> Result<(), StoreError> {
+        if self.context_id.bytes().all(|byte| byte == b'0') {
+            return Err(StoreError::InvalidAccount);
+        }
         for id in [&self.context_id, &self.service_generation] {
             if id.len() != 32
                 || !id
@@ -280,7 +299,15 @@ impl AccountStore {
 
     /// Local removal happens before the coordinator attempts remote revocation.
     /// Return only the removed grant to that worker, never to GUI events.
+    #[cfg(test)]
     pub fn remove(&self, id: &str) -> Result<Option<TokenGrant>, StoreError> {
+        self.remove_with_policy(id).map(|(grant, _)| grant)
+    }
+
+    pub fn remove_with_policy(
+        &self,
+        id: &str,
+    ) -> Result<(Option<TokenGrant>, AccountPreferences), StoreError> {
         let _guard = self.mutation.lock().map_err(|_| StoreError::Storage)?;
         let mut accounts = self.read_registry()?;
         let index = accounts
@@ -290,6 +317,10 @@ impl AccountStore {
         // A missing/corrupt token must not trap the user in an account they
         // cannot disconnect. Remote revocation is unavailable in that case.
         let grant = self.read_grant(id, accounts[index].summary.provider).ok();
+        let preferences = accounts[index]
+            .preferences
+            .clone()
+            .unwrap_or_else(|| AccountPreferences::legacy(id));
         self.prepare()?;
         accounts.remove(index);
         self.write_registry(accounts)?;
@@ -298,7 +329,52 @@ impl AccountStore {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(_) => return Err(StoreError::Storage),
         }
-        Ok(grant)
+        Ok((grant, preferences))
+    }
+
+    /// Called on the login worker before publishing a browser challenge.
+    /// Context identity is allocated before the account and retained on commit.
+    pub fn browser_context(
+        &self,
+        preferences: &AccountPreferences,
+    ) -> Result<minicon_web::PageContext, StoreError> {
+        preferences.validate()?;
+        self.prepare()?;
+        let base = self.root.join("browser-contexts");
+        let directory = base.join(&preferences.context_id);
+        for path in [&base, &directory] {
+            match std::fs::symlink_metadata(path) {
+                Ok(metadata)
+                    if filesystem::metadata_is_link_like(&metadata) || !metadata.is_dir() =>
+                {
+                    return Err(StoreError::InvalidRoot);
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    std::fs::create_dir(path).map_err(|_| StoreError::Storage)?
+                }
+                Err(_) => return Err(StoreError::Storage),
+            }
+            filesystem::protect_private_directory(path).map_err(|_| StoreError::Storage)?;
+        }
+        let mut identifier = [0u8; 16];
+        for (index, byte) in identifier.iter_mut().enumerate() {
+            *byte = u8::from_str_radix(&preferences.context_id[index * 2..index * 2 + 2], 16)
+                .map_err(|_| StoreError::InvalidAccount)?;
+        }
+        let context = minicon_web::PageContext {
+            profile: minicon_web::PageProfile {
+                data_directory: directory.canonicalize().map_err(|_| StoreError::Storage)?,
+                store_identifier: identifier,
+            },
+            proxy: minicon_web::BrowserProxy {
+                http: preferences.login.proxy().map(str::to_owned),
+                https: preferences.login.proxy().map(str::to_owned),
+                no_proxy: None,
+            },
+        };
+        context.validate().map_err(|_| StoreError::InvalidRoot)?;
+        Ok(context)
     }
 
     pub fn preferences(&self, id: &str) -> Result<AccountPreferences, StoreError> {
@@ -687,6 +763,57 @@ mod tests {
             Err(StoreError::Missing)
         );
         assert_eq!(reopened.list().unwrap(), vec![second]);
+    }
+
+    #[test]
+    fn pending_browser_contexts_reopen_privately_without_sharing_another_accounts_store_or_proxy() {
+        let fixture = Fixture::new();
+        let store = AccountStore::new(fixture.0.clone()).unwrap();
+        let first =
+            AccountPreferences::pending(NetworkPolicy::Direct, NetworkPolicy::Direct).unwrap();
+        let second = AccountPreferences::pending(
+            NetworkPolicy::from_input("http://login.invalid:8080").unwrap(),
+            NetworkPolicy::Direct,
+        )
+        .unwrap();
+        assert_ne!(first.context_id, second.context_id);
+        let a = store.browser_context(&first).unwrap();
+        let b = store.browser_context(&second).unwrap();
+        assert_ne!(a.profile.data_directory, b.profile.data_directory);
+        assert_ne!(a.profile.store_identifier, b.profile.store_identifier);
+        assert_eq!(a.proxy, minicon_web::BrowserProxy::default());
+        assert_eq!(b.proxy.http.as_deref(), Some("http://login.invalid:8080"));
+        assert_eq!(b.proxy.https, b.proxy.http);
+        assert!(store.list().unwrap().is_empty());
+        let account = store
+            .insert_with_preferences(
+                "Configured",
+                grant("synthetic-context-grant"),
+                Some(first.clone()),
+            )
+            .unwrap();
+        let reopened = AccountStore::new(fixture.0.clone()).unwrap();
+        assert_eq!(
+            reopened
+                .browser_context(&reopened.preferences(&account.id).unwrap())
+                .unwrap(),
+            a
+        );
+        let mut zero = first.clone();
+        zero.context_id = "0".repeat(32);
+        assert!(reopened.browser_context(&zero).is_err());
+        let third =
+            AccountPreferences::pending(NetworkPolicy::Direct, NetworkPolicy::Direct).unwrap();
+        std::fs::write(
+            fixture.0.join("browser-contexts").join(&third.context_id),
+            b"not a private directory",
+        )
+        .unwrap();
+        assert_eq!(
+            reopened.browser_context(&third),
+            Err(StoreError::InvalidRoot)
+        );
+        assert_eq!(reopened.browser_context(&first).unwrap(), a);
     }
 
     #[test]

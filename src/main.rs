@@ -55,6 +55,7 @@ mod control_dispatch;
 mod control_pending;
 mod font;
 mod harness;
+mod harness_auth_ui;
 mod harness_gateway;
 mod harness_opencode;
 mod harness_settings_ui;
@@ -869,6 +870,8 @@ struct ConApp {
     /// Browser tabs have no PTY. Keyed by the same [`workspace::TabId`] as
     /// terminal sessions, and only present when the node kind is Browser.
     browsers: SessionStore<browser::BrowserTab>,
+    browser_auth: Option<harness_auth_ui::AuthPresentation>,
+    dismissed_auth_attempt: Option<provider_runtime::AttemptId>,
     browser_proxy_input: composer::ComposerState,
     browser_proxy_focused: bool,
     browser_proxy_applied: String,
@@ -1393,6 +1396,8 @@ impl ConApp {
             workspace,
             sessions,
             browsers: SessionStore::default(),
+            browser_auth: None,
+            dismissed_auth_attempt: None,
             browser_proxy_input: Default::default(),
             browser_proxy_focused: false,
             browser_proxy_applied: String::new(),
@@ -1561,6 +1566,16 @@ impl ConApp {
     /// what an empty window paints and titles, and a test can drive the state
     /// transition without a pixel window.
     fn detach_session(&mut self, id: workspace::TabId) -> bool {
+        if self.workspace.browser_tab() == Some(id)
+            && let Some(attempt) = self.browser_auth.as_ref().map(|auth| auth.attempt)
+        {
+            self.dismissed_auth_attempt = Some(attempt);
+            if let Some(settings) = &mut self.harness_settings {
+                settings.cancel_login();
+            }
+            self.restore_harness_auth(attempt);
+            return self.workspace.active().is_none();
+        }
         if let Some(session) = self.sessions.remove(&id) {
             self.session_seed = SessionSeed::from_session(&session);
             drop(session);
@@ -1579,6 +1594,14 @@ impl ConApp {
     }
 
     fn stop_page_host(&mut self) {
+        if self.workspace.browser_tab().is_none()
+            && let Some(auth) = self.browser_auth.take()
+        {
+            self.dismissed_auth_attempt = Some(auth.attempt);
+            if let Some(settings) = &mut self.harness_settings {
+                settings.cancel_login();
+            }
+        }
         self.browser_proxy_menu_open = false;
         self.menu_return_focus = None;
         self.browser_chrome_trigger = None;
@@ -1659,8 +1682,19 @@ impl ConApp {
         }
         #[cfg(all(unix, not(target_os = "macos")))]
         {
-            browser::resize_embedded_page(slot);
-            browser::set_embedded_page_visible(slot.parent, self.browser_page_visible());
+            if let Some(child) = &self.browser_page {
+                browser::resize_embedded_page_for_process(slot, child.id());
+                browser::set_embedded_page_visible_for_process(
+                    slot.parent,
+                    child.id(),
+                    self.browser_page_visible(),
+                );
+            }
+            if let Some(auth) = &self.browser_auth
+                && let Some(child) = &auth.ordinary.page
+            {
+                browser::set_embedded_page_visible_for_process(slot.parent, child.id(), false);
+            }
         }
     }
 
@@ -1707,11 +1741,12 @@ impl ConApp {
                 .browser_tab()
                 .and_then(|id| self.browsers.get(&id))
                 .map(|tab| {
-                    if tab
-                        .panel()
-                        .url
-                        .as_deref()
-                        .is_some_and(browser_ui::is_authorization_page)
+                    if self.browser_auth.is_some()
+                        || tab
+                            .panel()
+                            .url
+                            .as_deref()
+                            .is_some_and(browser_ui::is_authorization_page)
                     {
                         "Authorization page"
                     } else {
@@ -2358,19 +2393,17 @@ impl ConApp {
             return;
         };
         let waker = window.waker();
-        let proxy = match self.effective_browser_proxy() {
-            Ok(proxy) => proxy,
-            Err(reason) => {
-                self.note_page_load(browser::PageLoad::Unavailable {
-                    url: String::new(),
-                    reason,
-                });
-                return;
-            }
-        };
-        match browser::NativePageHost::new(slot, &proxy, move || {
+        let wake = move || {
             let _ = waker.wake();
-        }) {
+        };
+        let result = if let Some(auth) = &self.browser_auth {
+            browser::NativePageHost::new_with_context(slot, &auth.context, wake)
+                .map_err(|error| error.to_string())
+        } else {
+            self.effective_browser_proxy()
+                .and_then(|proxy| browser::NativePageHost::new(slot, &proxy, wake))
+        };
+        match result {
             Ok(page) => {
                 let _ = page.set_visible(self.active_is_browser());
                 self.native_browser_page = Some(page);
@@ -2385,7 +2418,9 @@ impl ConApp {
     /// Ask the wry page host to load `url` into the active browser content panel.
     #[cfg(any(target_os = "macos", windows))]
     fn launch_page_host(&mut self, window: &PixelWindow, url: &str) {
-        if let Err(reason) = self.effective_browser_proxy() {
+        if self.browser_auth.is_none()
+            && let Err(reason) = self.effective_browser_proxy()
+        {
             self.note_page_load(browser::PageLoad::Unavailable {
                 url: url.to_owned(),
                 reason,
@@ -2422,7 +2457,9 @@ impl ConApp {
     /// Ask the wry page host to load `url` into the active browser content panel.
     #[cfg(all(unix, not(target_os = "macos")))]
     fn launch_page_host(&mut self, window: &PixelWindow, url: &str) {
-        if let Err(reason) = self.effective_browser_proxy() {
+        if self.browser_auth.is_none()
+            && let Err(reason) = self.effective_browser_proxy()
+        {
             self.note_page_load(browser::PageLoad::Unavailable {
                 url: url.to_owned(),
                 reason,
@@ -2477,10 +2514,6 @@ impl ConApp {
             });
             return;
         };
-        let proxy = match self.effective_browser_proxy() {
-            Ok(proxy) => proxy,
-            Err(_) => return, // Validated before selecting the helper.
-        };
         let Some(slot) = self.content_panel_slot(window) else {
             self.note_page_load(browser::PageLoad::Unavailable {
                 url: url.to_owned(),
@@ -2488,12 +2521,25 @@ impl ConApp {
             });
             return;
         };
-        match browser::spawn_page_host_in_panel(
-            std::path::Path::new(&program),
-            url,
-            Some(&proxy),
-            Some(slot),
-        ) {
+        let spawned = if let Some(auth) = &self.browser_auth {
+            browser::spawn_page_host_in_context(
+                std::path::Path::new(&program),
+                url,
+                &auth.context,
+                Some(slot),
+            )
+            .map_err(|error| error.to_string())
+        } else {
+            self.effective_browser_proxy().and_then(|proxy| {
+                browser::spawn_page_host_in_panel(
+                    std::path::Path::new(&program),
+                    url,
+                    Some(&proxy),
+                    Some(slot),
+                )
+            })
+        };
+        match spawned {
             Ok(mut child) => match child.try_wait() {
                 Ok(Some(status)) => {
                     self.note_page_load(browser::page_load_from_exit(url, status.code()));

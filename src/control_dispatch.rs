@@ -35,16 +35,17 @@ impl ConApp {
         use control::CliCommand;
         self.apply_session_titles();
         match command {
-            CliCommand::ListTabs => Some({
-                let active = self.workspace.active();
-                let tabs: Vec<_> = self
+            CliCommand::ListTabs => {
+                Some({
+                    let active = self.workspace.active();
+                    let tabs: Vec<_> = self
                     .workspace
                     .nodes()
                     .iter()
                     .map(|node| {
                         let session = self.session_for(node.id);
                         let authorization_page = self.browsers.get(&node.id).is_some_and(|tab| {
-                            tab.panel()
+                            self.browser_auth.is_some() || tab.panel()
                                 .url
                                 .as_deref()
                                 .is_some_and(browser_ui::is_authorization_page)
@@ -92,7 +93,7 @@ impl ConApp {
                                                 panel
                                                     .url
                                                     .as_deref()
-                                                    .map(browser_ui::public_browser_url)
+                                                    .map(|url| if self.browser_auth.is_some() { "authorization://private" } else { browser_ui::public_browser_url(url) })
                                                     .map_or(json::JsonValue::Null, Into::into),
                                             ),
                                             ("url_redacted", authorization_page.into()),
@@ -145,8 +146,9 @@ impl ConApp {
                         ])
                     })
                     .collect();
-                Ok(single_field_json("tabs", json::JsonValue::Array(tabs)))
-            }),
+                    Ok(single_field_json("tabs", json::JsonValue::Array(tabs)))
+                })
+            }
             CliCommand::CapturePane {
                 target, max_bytes, ..
             } => Some(self.control_session_mut(*target).map(|session| {
@@ -269,7 +271,14 @@ impl ConApp {
                 self.activate_session(window, target);
                 self.close_active_session(window)
                     .map_err(|error| error.to_string())?;
-                Ok(single_field_json("closed", tab_id_json(Some(target))))
+                if self.workspace.node(target).is_some() {
+                    Ok(single_field_json(
+                        "authorization_dismissed",
+                        tab_id_json(Some(target)),
+                    ))
+                } else {
+                    Ok(single_field_json("closed", tab_id_json(Some(target))))
+                }
             })(),
 
             CliCommand::SendPaste { target, text } => {

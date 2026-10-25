@@ -309,10 +309,10 @@ the submitted form while retaining later text/caret/selection. New authorization
 completion must publish both summaries and policy projections immediately.
 Receipts are retained per account across coalesced runtime views; a failed save
 remains visible on that account even when another account subsequently succeeds.
-Native form acceptance, login-policy consumption and the shared explicit browser
-context's product integration remain open. A persisted login proxy alone is not
-proof that authorization uses it. Remote sign-out and later balance readers
-still need to consume the service policy explicitly.
+Native form acceptance and native browser-context qualification remain open.
+The following development join consumes login policy and remote sign-out policy;
+a persisted proxy alone remains insufficient evidence of authorization routing.
+Later balance readers still need to consume service policy explicitly.
 
 ### Browser-context integration frontier
 
@@ -323,14 +323,80 @@ to authorization, device verification and completion effects. Reuse is decided
 from the actual host context, never just an existing Browser root or matching URL.
 Preserve unrelated terminal and ordinary Web drafts across the serial auth view.
 
-The current Linux embedding helpers address all same-class children below the
-parent. Parking an ordinary helper and an authorization helper together is not
-safe until an owned child-window identity is available. A serial host replacement
-may restore the ordinary URL and drafts, but cannot claim retained DOM/history.
-The product must make that lifecycle choice explicit before native qualification.
+Keep the ordinary live page parked while the serial authorization presentation
+is visible, preserving page form input and history as well as chrome drafts.
+Only the current presentation can receive input or expose page observations.
+The shared process-owned Linux selectors and explicit helper readiness are
+owned by PRD 28. Only a ready ordinary helper with a successful checked hide can
+be parked; a starting/unidentifiable helper keeps its ordinary page and requires
+retry. Do not start a second presentation on an unconfirmed hide. Replacing the
+ordinary host and reloading its URL cannot certify preservation of page drafts.
 Authorization observation also needs an explicit presentation role: URL-domain
 redaction alone misses Google SSO and other provider redirects. All authorization
 context URLs, titles and editor observations use the role's redaction boundary.
+
+### Development join: authorization transport and serial presentation
+
+`[-]` The connection draft accepts a label and independent login/service
+networks before either provider starts. A fresh private context identity travels
+with the attempt; successful grant publication stores that policy atomically
+with the account. DeepSeek initialization, exchange and cancellation and OpenCode
+device initialization/polls use the frozen login policy. The local callback
+listener stays literal loopback. DeepSeek remote sign-out uses the removed
+account's service-policy snapshot; no OpenCode remote-revocation endpoint is
+invented. These are development mechanisms, not new real-provider evidence.
+
+The serial auth view parks the live ordinary host and its model/address/proxy
+drafts. Completion is acknowledged by MiniCon rather than a provider landing
+page. Closing auth cancels/dismisses that attempt and restores the ordinary
+browser without closing its tree node; a subsequent ordinary close has the
+usual behavior. A shortcut that changes the presenting role discards the old
+batch's remaining URL/title/error/navigation fields and shortcuts. The two
+native adapters consume that shared product boundary.
+
+Device challenges retain the worker's absolute deadline. The GUI refuses queued
+challenges for a finished, locally cancelled, dismissed or different attempt;
+matching completion clears the challenge. A committed account result wins over
+that attempt's earlier browser/cancellation error while preserving unrelated
+form errors. This prevents a successfully saved grant from being relabeled as
+a browser landing-page timeout. Account readiness still requires model testing.
+
+Named development regressions:
+
+- `provider_login::tests::configured_deepseek_login_pins_its_network_and_logout_uses_service_policy`
+- `provider_login::tests::configured_opencode_device_polls_keep_login_policy_and_save_distinct_service_policy`
+- `provider_accounts::tests::pending_browser_contexts_reopen_privately_without_sharing_another_accounts_store_or_proxy`
+- `harness_auth_ui::tests::closing_authorization_restores_ordinary_page_and_consumes_only_the_first_close`
+- `harness_auth_ui::tests::authorization_close_shortcut_discards_the_old_hosts_remaining_observations_and_keys`
+- `harness_settings_ui::tests::queued_device_challenge_cannot_return_after_cancel_or_replace_another_attempt`
+- `harness_settings_ui::tests::committed_login_clears_only_its_own_browser_failure_after_cancel_loses_the_race`
+
+Transport spies verify configured request policy and synthetic grant persistence;
+the DeepSeek journey also uses an actual loopback callback socket. Park/restore
+unit journeys exercise the production detach and observation consumers without
+native handles. Neither establishes native DOM/history/cookie preservation,
+actual provider entitlement or a completed product connection journey. Context
+cleanup after host release, same-account reconnect, per-account catalogues,
+client-allocation UI and monitoring retain their open obligations.
+
+The Windows x86_64 local restored-source receipt is
+`target-six/v0.2.23-provider/auth-integration-final-gate-receipt.json`: provider
+79 passes and one unselected opt-in Pi test; auth presentation 2, auth settings
+3, browser chrome 6, private-context rules 4, process-property rules 2, public
+gateway workers 2 and alignment 17 passes. Formatting and strict all-target
+Clippy pass. Main's test inventory is 606, up from 599. Six executed guard
+removals fail at runtime with byte-exact restoration
+(`auth-integration-guard-receipt.json`). Initial fixture compilation mistakes
+and the first Clippy rejection are retained separately and are not runtime
+counterexample evidence. No GUI, clipboard or human input is claimed by this
+local join. Linux readiness/X11 and real WebView isolation remain unqualified
+until the named native courts execute on this source.
+
+The preceding checkpoint `e6f9f38` has completed successful native development
+feedback in all six cells, run `40161247565`, retained in
+`target-six/v0.2.23-provider/ci-e6f9f38-native/verification-index.json`.
+Its 506 Rust passes are execution instances, not unique tests. That historical
+filtered run does not qualify the new auth presentation or checked-XCB source.
 
 ### Native feedback retained from the profile checkpoint
 

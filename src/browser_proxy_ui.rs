@@ -8,6 +8,9 @@ impl ConApp {
     }
 
     pub(super) fn apply_browser_proxy(&mut self, window: &PixelWindow) {
+        if self.browser_auth.is_some() {
+            return;
+        }
         self.browser_proxy_applied = self.browser_proxy_input.text.trim().to_owned();
         self.browser_proxy_input.text = self.browser_proxy_applied.clone();
         self.browser_proxy_input.caret = self.browser_proxy_input.text.len();
@@ -50,6 +53,9 @@ impl ConApp {
     }
 
     pub(super) fn focus_browser_proxy(&mut self, window: &PixelWindow) {
+        if self.browser_auth.is_some() {
+            return;
+        }
         self.browser_chrome_trigger = None;
         self.browser_proxy_focused = true;
         self.browser_address_focused = false;

@@ -271,6 +271,19 @@ fn load_inner(
             use gtk::prelude::WidgetExt;
             use tao::platform::unix::WindowExtUnix;
             window.gtk_window().show_all();
+            // Complete the initial GTK mapping before acknowledging ownership.
+            // The selectors read back direct-parent, class and CARDINAL/32 PID
+            // through the shared checked connection (mechanism owner: PRD 28).
+            window.gtk_window().display().sync();
+            let pid = std::process::id();
+            if !crate::resize_embedded_page_for_process(slot, pid)
+                || !crate::set_embedded_page_visible_for_process(slot.parent, pid, true)
+            {
+                return Err("webkit-embedding-unavailable");
+            }
+            if ipc {
+                emit(serde_json::json!({"embedded_ready":{"pid":pid,"parent":slot.parent}}));
+            }
         }
     }
     #[cfg(target_os = "linux")]
@@ -511,7 +524,7 @@ fn gdk_x11_xid(gdk_window: *mut std::ffi::c_void) -> Option<u64> {
 
 #[cfg(target_os = "linux")]
 unsafe fn x_reparent(child: u64, slot: crate::PanelSlot) -> Result<(), &'static str> {
-    use std::ffi::c_char;
+    use std::ffi::{c_char, c_ulong};
     #[link(name = "X11")]
     unsafe extern "C" {
         fn XOpenDisplay(name: *const c_char) -> *mut std::ffi::c_void;
@@ -538,6 +551,21 @@ unsafe fn x_reparent(child: u64, slot: crate::PanelSlot) -> Result<(), &'static 
             window: u64,
             hints: *const ClassHint,
         ) -> i32;
+        fn XInternAtom(
+            display: *mut std::ffi::c_void,
+            name: *const c_char,
+            only_if_exists: i32,
+        ) -> c_ulong;
+        fn XChangeProperty(
+            display: *mut std::ffi::c_void,
+            window: u64,
+            property: c_ulong,
+            kind: c_ulong,
+            format: i32,
+            mode: i32,
+            data: *const u8,
+            count: i32,
+        ) -> i32;
     }
     #[repr(C)]
     struct ClassHint {
@@ -549,6 +577,24 @@ unsafe fn x_reparent(child: u64, slot: crate::PanelSlot) -> Result<(), &'static 
         return Err("webkit-embedding-unavailable");
     }
     unsafe {
+        let pid_atom = XInternAtom(display, c"_NET_WM_PID".as_ptr(), 0);
+        if pid_atom == 0 {
+            XCloseDisplay(display);
+            return Err("webkit-embedding-unavailable");
+        }
+        // Xlib format-32 input uses native unsigned longs, including LP64.
+        // This is this helper's process, not WebKit's renderer process.
+        let pid = c_ulong::from(std::process::id());
+        XChangeProperty(
+            display,
+            child,
+            pid_atom,
+            6, // XA_CARDINAL
+            32,
+            0, // PropModeReplace
+            (&pid as *const c_ulong).cast(),
+            1,
+        );
         let hint = ClassHint {
             name: c"minicon-web-host".as_ptr(),
             class: c"minicon-web-host".as_ptr(),

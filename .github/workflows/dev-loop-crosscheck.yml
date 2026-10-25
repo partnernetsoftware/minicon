@@ -268,6 +268,27 @@ jobs:
           if [ -z "$filter" ] || [[ "$filter" == *provider* ]]; then
             run_suite minicon-provider bash scripts/build.sh test-suite --target "$triple" --bin minicon provider_ -- --test-threads 2
           fi
+          if [ -z "$filter" ] || [[ "$filter" == *provider* ]] || [[ "$filter" == *harness* ]] || [[ "$filter" == *auth* ]]; then
+            run_suite minicon-auth-presentation bash scripts/build.sh test-suite --target "$triple" --bin minicon harness_auth_ui::tests -- --test-threads 1
+            run_suite minicon-auth-settings bash scripts/build.sh test-suite --target "$triple" --bin minicon harness_settings_ui::tests -- --test-threads 1
+            run_suite minicon-web-context bash scripts/build.sh test-suite --target "$triple" -p minicon-web --lib profile::tests -- --test-threads 1
+            run_suite minicon-web-process-selector bash scripts/build.sh test-suite --target "$triple" -p minicon-web --lib embedded_process_ -- --test-threads 1
+            if [[ "$CELL" == lnx-* ]]; then
+              run_suite minicon-browser-process bash scripts/build.sh test-suite --target "$triple" --bin minicon browser_process::tests -- --test-threads 1
+              run_suite minicon-web-process-native bash scripts/build.sh test-suite --target "$triple" -p minicon-web --lib tests::embedded_page_process_selector_maps_and_resizes_only_its_direct_owned_child -- --exact --ignored --test-threads 1
+            fi
+            auth_suites="minicon-auth-presentation minicon-auth-settings minicon-web-context minicon-web-process-selector"
+            if [[ "$CELL" == lnx-* ]]; then auth_suites="$auth_suites minicon-browser-process minicon-web-process-native"; fi
+            for suite in $auth_suites; do
+              if ! grep -Eq '^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored;' "$LOG_DIR/$suite.log"; then
+                echo "SUITE $suite requires executed passing tests with zero failed/ignored" | tee -a "$LOG_DIR/summary.log"
+                case " $failed " in
+                  *" $suite "*) ;;
+                  *) failed="$failed $suite" ;;
+                esac
+              fi
+            done
+          fi
           if [ -z "$filter" ] || [[ "$filter" == *harness* ]]; then
             run_suite minicon-worker bash scripts/build.sh test-suite --target "$triple" --bin minicon harness:: -- --test-threads 2
           fi
@@ -452,6 +473,12 @@ jobs:
             probe-logs/test-receipt.json
             probe-logs/browser-workspace-test.log
             probe-logs/control-shutdown-response.log
+            probe-logs/minicon-auth-presentation.log
+            probe-logs/minicon-auth-settings.log
+            probe-logs/minicon-web-context.log
+            probe-logs/minicon-web-process-selector.log
+            probe-logs/minicon-browser-process.log
+            probe-logs/minicon-web-process-native.log
             probe-logs/retained-group/
             probe-logs/console-lifecycle/
             probe-logs/browser-workspace/

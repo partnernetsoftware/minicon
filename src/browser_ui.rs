@@ -2,6 +2,19 @@
 use super::*;
 use minicon_core::field_editor::{self, Command, Intent, Limits, Outcome};
 
+/// One native/helper batch. Shortcuts can replace the presenting host before
+/// its remaining fields are consumed, so both adapters share this boundary.
+#[derive(Default)]
+pub(super) struct BrowserObservation {
+    pub title: Option<String>,
+    pub url: Option<String>,
+    pub error: Option<String>,
+    pub loading: Option<bool>,
+    pub can_back: Option<bool>,
+    pub can_forward: Option<bool>,
+    pub shortcuts: Vec<char>,
+}
+
 /// Authorization addresses remain usable in the real address bar, while
 /// automation and diagnostics expose only their origin/path.
 pub(super) fn is_authorization_page(url: &str) -> bool {
@@ -575,6 +588,82 @@ impl ConApp {
         self.mark_host_ui_full_and_repaint(window);
     }
 
+    fn browser_host_shortcut(&mut self, window: &PixelWindow, shortcut: char) {
+        if shortcut == 'L' {
+            self.focus_browser_address(window);
+        } else if let Some(control) = match shortcut {
+            '<' => Some(0),
+            '>' => Some(1),
+            'R' => Some(2),
+            _ => None,
+        } {
+            self.browser_navigation(window, control);
+        } else {
+            let key = injected_key_event(
+                InjectedKey::Char(shortcut.to_ascii_lowercase()),
+                true,
+                false,
+                true,
+            );
+            let _ = self.handle_workspace_shortcut(window, &key);
+        }
+    }
+
+    pub(super) fn consume_browser_observation(
+        &mut self,
+        state: BrowserObservation,
+        mut shortcut: impl FnMut(&mut Self, char),
+    ) -> bool {
+        let owner = (
+            self.workspace.browser_tab(),
+            self.browser_auth.as_ref().map(|auth| auth.attempt),
+        );
+        for key in state.shortcuts {
+            shortcut(self, key);
+            if owner
+                != (
+                    self.workspace.browser_tab(),
+                    self.browser_auth.as_ref().map(|auth| auth.attempt),
+                )
+            {
+                return false;
+            }
+        }
+        if let Some(back) = state.can_back {
+            self.browser_can_back = back;
+        }
+        if let Some(forward) = state.can_forward {
+            self.browser_can_forward = forward;
+        }
+        if let Some(loading) = state.loading {
+            self.browser_load_deadline = if loading {
+                self.browser_load_deadline
+                    .or(Some(Instant::now() + Duration::from_secs(30)))
+            } else {
+                None
+            };
+        }
+        if let Some(id) = self.workspace.browser_tab()
+            && let Some(tab) = self.browsers.get_mut(&id)
+        {
+            if let Some(title) = state.title {
+                tab.note_title(&title);
+            }
+            let url = state.url.unwrap_or_default();
+            if let Some(reason) = state.error {
+                let url = tab.panel().url.clone().unwrap_or(url);
+                tab.note_load(browser::PageLoad::Unavailable { url, reason });
+            } else if browser::http_url_at(&url, 0).as_deref() == Some(url.as_str()) {
+                tab.note_load(if state.loading.unwrap_or(false) {
+                    browser::PageLoad::Loading { url }
+                } else {
+                    browser::PageLoad::Ready { url }
+                });
+            }
+        }
+        true
+    }
+
     #[cfg(any(target_os = "macos", windows))]
     pub(super) fn drain_browser_state(&mut self, window: &PixelWindow) {
         let Some(state) = self
@@ -584,48 +673,19 @@ impl ConApp {
         else {
             return;
         };
-        self.browser_can_back = state.can_back;
-        self.browser_can_forward = state.can_forward;
-        self.browser_load_deadline = if state.loading {
-            self.browser_load_deadline
-                .or(Some(Instant::now() + Duration::from_secs(30)))
-        } else {
-            None
+        let observation = BrowserObservation {
+            title: Some(state.title),
+            url: Some(state.url),
+            error: state.error,
+            loading: Some(state.loading),
+            can_back: Some(state.can_back),
+            can_forward: Some(state.can_forward),
+            shortcuts: state.shortcuts,
         };
-        for shortcut in state.shortcuts {
-            if shortcut == 'L' {
-                self.focus_browser_address(window);
-            } else if let Some(control) = match shortcut {
-                '<' => Some(0),
-                '>' => Some(1),
-                'R' => Some(2),
-                _ => None,
-            } {
-                self.browser_navigation(window, control);
-            } else {
-                let key = injected_key_event(
-                    InjectedKey::Char(shortcut.to_ascii_lowercase()),
-                    true,
-                    false,
-                    true,
-                );
-                let _ = self.handle_workspace_shortcut(window, &key);
-            }
-        }
-        if let Some(id) = self.workspace.browser_tab()
-            && let Some(tab) = self.browsers.get_mut(&id)
-        {
-            tab.note_title(&state.title);
-            if let Some(reason) = state.error {
-                let url = tab.panel().url.clone().unwrap_or(state.url);
-                tab.note_load(browser::PageLoad::Unavailable { url, reason });
-            } else if browser::http_url_at(&state.url, 0).as_deref() == Some(state.url.as_str()) {
-                tab.note_load(if state.loading {
-                    browser::PageLoad::Loading { url: state.url }
-                } else {
-                    browser::PageLoad::Ready { url: state.url }
-                });
-            }
+        if !self.consume_browser_observation(observation, |app, key| {
+            app.browser_host_shortcut(window, key)
+        }) {
+            return;
         }
         if let Some(page) = &self.native_browser_page {
             let _ = page.set_visible(self.browser_page_visible());
@@ -643,62 +703,24 @@ impl ConApp {
             .as_ref()
             .and_then(|process| process.take_state());
         if let Some(state) = state {
-            if let Some(keys) = state["shortcuts"].as_array() {
-                for key in keys
-                    .iter()
+            let observation = BrowserObservation {
+                title: state["title"].as_str().map(str::to_owned),
+                url: state["url"].as_str().map(str::to_owned),
+                error: state["error"].as_str().map(str::to_owned),
+                loading: state["loading"].as_bool(),
+                can_back: state["can_back"].as_bool(),
+                can_forward: state["can_forward"].as_bool(),
+                shortcuts: state["shortcuts"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
                     .filter_map(|key| key.as_str().and_then(|s| s.chars().next()))
-                {
-                    if key == 'L' {
-                        self.focus_browser_address(window);
-                    } else {
-                        let key = injected_key_event(
-                            InjectedKey::Char(key.to_ascii_lowercase()),
-                            true,
-                            false,
-                            true,
-                        );
-                        let _ = self.handle_workspace_shortcut(window, &key);
-                    }
-                }
-            }
-            if let Some(back) = state["can_back"].as_bool() {
-                self.browser_can_back = back;
-            }
-            if let Some(forward) = state["can_forward"].as_bool() {
-                self.browser_can_forward = forward;
-            }
-            let loading = state["loading"].as_bool().unwrap_or(false);
-            if state.get("loading").is_some() {
-                self.browser_load_deadline = if loading {
-                    self.browser_load_deadline
-                        .or(Some(Instant::now() + Duration::from_secs(30)))
-                } else {
-                    None
-                };
-            }
-            if let Some(id) = self.workspace.browser_tab()
-                && let Some(tab) = self.browsers.get_mut(&id)
-            {
-                if let Some(title) = state["title"].as_str() {
-                    tab.note_title(title);
-                }
-                let url = state["url"].as_str().unwrap_or("");
-                if let Some(reason) = state["error"].as_str() {
-                    tab.note_load(browser::PageLoad::Unavailable {
-                        url: tab.panel().url.clone().unwrap_or_default(),
-                        reason: reason.to_owned(),
-                    });
-                } else if browser::http_url_at(url, 0).as_deref() == Some(url) {
-                    tab.note_load(if loading {
-                        browser::PageLoad::Loading {
-                            url: url.to_owned(),
-                        }
-                    } else {
-                        browser::PageLoad::Ready {
-                            url: url.to_owned(),
-                        }
-                    });
-                }
+                    .collect(),
+            };
+            if !self.consume_browser_observation(observation, |app, key| {
+                app.browser_host_shortcut(window, key)
+            }) {
+                return;
             }
             if self.active_is_browser() {
                 let _ = self.refresh_title(window);

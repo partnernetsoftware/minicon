@@ -14,12 +14,35 @@ pub(super) struct BrowserProcess {
 struct ProcessState {
     latest: Option<serde_json::Value>,
     shortcuts: Vec<char>,
+    embedding: Option<(u32, u64)>,
+}
+
+impl ProcessState {
+    fn receive(&mut self, value: serde_json::Value, pid: u32) -> bool {
+        // Ready frames are not page snapshots; retain the last URL/title batch.
+        let empty = self.latest.is_none() && self.shortcuts.is_empty();
+        if let Some(ready) = value.get("embedded_ready") {
+            if ready["pid"].as_u64() == Some(u64::from(pid))
+                && let Some(parent) = ready["parent"].as_u64().filter(|p| *p != 0)
+            {
+                self.embedding = Some((pid, parent));
+            }
+        } else if let Some(shortcut) = value["shortcut"].as_str().and_then(|s| s.chars().next()) {
+            if self.shortcuts.len() < 16 {
+                self.shortcuts.push(shortcut);
+            }
+        } else {
+            self.latest = Some(value);
+        }
+        empty
+    }
 }
 
 impl BrowserProcess {
     pub(super) fn attach(child: &mut Child, wake: impl Fn() + Send + 'static) -> Option<Self> {
         let mut input = child.stdin.take()?;
         let output = child.stdout.take()?;
+        let pid = child.id();
         let (commands, receive) = mpsc::sync_channel::<String>(8);
         std::thread::spawn(move || {
             for command in receive {
@@ -47,20 +70,7 @@ impl BrowserProcess {
                         continue;
                     }
                     let notify = if let Ok(mut state) = observed.lock() {
-                        // One pending snapshot/shortcut batch needs one wake.
-                        // Coalescing prevents a noisy page from filling the
-                        // GUI's event queue while it is busy painting.
-                        let empty = state.latest.is_none() && state.shortcuts.is_empty();
-                        if let Some(shortcut) =
-                            value["shortcut"].as_str().and_then(|s| s.chars().next())
-                        {
-                            if state.shortcuts.len() < 16 {
-                                state.shortcuts.push(shortcut);
-                            }
-                        } else {
-                            state.latest = Some(value);
-                        }
-                        empty
+                        state.receive(value, pid)
                     } else {
                         false
                     };
@@ -83,6 +93,14 @@ impl BrowserProcess {
             .map_err(|_| "browser-host-busy-or-closed".to_owned())
     }
 
+    /// A frame emitted after the helper's last initial map and checked native
+    /// ownership publication. A starting helper must never be parked early.
+    pub(super) fn embedded_ready(&self, parent: u64, pid: u32) -> bool {
+        self.state
+            .lock()
+            .is_ok_and(|state| state.embedding == Some((pid, parent)))
+    }
+
     pub(super) fn take_state(&self) -> Option<serde_json::Value> {
         let mut state = self.state.lock().ok()?;
         if state.latest.is_none() && state.shortcuts.is_empty() {
@@ -91,5 +109,41 @@ impl BrowserProcess {
         let mut value = state.latest.take().unwrap_or(serde_json::json!({}));
         value["shortcuts"] = serde_json::json!(std::mem::take(&mut state.shortcuts));
         Some(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ready_frame_requires_the_spawned_pid_and_never_replaces_the_page_snapshot() {
+        let mut state = ProcessState::default();
+        let page = serde_json::json!({"url":"https://ordinary.invalid/live", "title":"Ordinary"});
+        assert!(state.receive(page.clone(), 17));
+        state.receive(
+            serde_json::json!({"embedded_ready":{"pid":29,"parent":42}}),
+            17,
+        );
+        assert_eq!(state.embedding, None);
+        state.receive(
+            serde_json::json!({"embedded_ready":{"pid":17,"parent":0}}),
+            17,
+        );
+        assert_eq!(state.embedding, None);
+        state.receive(
+            serde_json::json!({"embedded_ready":{"pid":17,"parent":42}}),
+            17,
+        );
+        assert_eq!(state.embedding, Some((17, 42)));
+        assert_eq!(state.latest, Some(page));
+        let (commands, _receiver) = mpsc::sync_channel(1);
+        let process = BrowserProcess {
+            commands,
+            state: Arc::new(Mutex::new(state)),
+        };
+        assert!(process.embedded_ready(42, 17));
+        assert!(!process.embedded_ready(43, 17));
+        assert!(!process.embedded_ready(42, 29));
     }
 }

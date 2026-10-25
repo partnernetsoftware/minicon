@@ -260,10 +260,14 @@ host control snapshots and browser/input fixtures. The shared boundaries are
 private storage/native HTTP and minicon-web login-context isolation.
 The [pool development join](../prd/PRD_02_31_01_02_provider_pool.md#development-join-private-account-policy-and-service-transport)
 records private policy persistence, service routing and save-receipt work;
-its browser integration frontier owns the still-open authorization context,
-Linux embedding and role-redaction joins. Keep the failed macOS ARM legacy
-worker continuation from run `40159013816` open until new-source evidence
-explains and closes it. The earlier five successful cells do not waive it.
+the [authorization development join](../prd/PRD_02_31_01_02_provider_pool.md#development-join-authorization-transport-and-serial-presentation)
+records pinned auth transport, serial presentation, stale-event refusal and
+remaining real-context/native qualification. The earlier failed macOS ARM
+continuation from run `40159013816` remains retained with unknown root cause;
+all six cells passed the subsequent `e6f9f38` development run. That historical
+pass does not qualify the subsequent auth/XCB source. Finish actual-helper
+readiness/parking and native same-origin context evidence before calling slice 1
+accepted; profile/catalogue/apply UI, monitoring and H0 still follow the table.
 The H0 header/host-view join also owns `src/main.rs`, `host_ui.rs` and
 `host_paint.rs`; agree their shared ownership before concurrent source work.
 Agree ownership and freeze the state/action seam before parallelizing. Bounded metrics/presentation work and client

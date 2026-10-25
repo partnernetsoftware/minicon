@@ -5,6 +5,7 @@ pub use crate::provider_accounts::{
     AccountEdit, AccountPreferences, AccountSummary, NetworkPolicy,
 };
 pub use crate::provider_auth::Provider;
+pub use crate::provider_login::AttemptId;
 use crate::{
     provider_accounts::AccountStore,
     provider_auth::Secret,
@@ -19,7 +20,7 @@ use std::{
         mpsc::{self, SyncSender, TrySendError},
     },
     thread::JoinHandle,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -38,6 +39,13 @@ pub struct AccountSaveReceipt {
     pub result: Result<(), RuntimeError>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AuthOutcome {
+    CredentialStored,
+    Cancelled,
+    Failed,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct View {
     pub port: u16,
@@ -51,6 +59,8 @@ pub struct View {
     pub listener: ListenerState,
     pub busy: bool,
     pub login_active: bool,
+    pub auth_attempt: Option<AttemptId>,
+    pub auth_result: Option<(AttemptId, AuthOutcome)>,
     pub local_key_exists: bool,
     pub status: Option<String>,
 }
@@ -69,6 +79,8 @@ impl Default for View {
             listener: ListenerState::Stopped,
             busy: true,
             login_active: false,
+            auth_attempt: None,
+            auth_result: None,
             local_key_exists: false,
             status: None,
         }
@@ -77,7 +89,12 @@ impl Default for View {
 
 #[derive(Clone, Debug)]
 pub enum Action {
-    Login(Provider),
+    Connect {
+        provider: Provider,
+        label: String,
+        login: NetworkPolicy,
+        service: NetworkPolicy,
+    },
     CancelLogin,
     RefreshAccounts,
     RefreshModels,
@@ -99,12 +116,19 @@ pub enum Action {
 
 #[derive(Debug)]
 pub enum Effect {
-    OpenBrowser(Secret),
+    OpenAuth {
+        attempt: AttemptId,
+        context: minicon_web::PageContext,
+        url: Secret,
+    },
+    AuthFinished(AttemptId),
     CopyClientKey(Secret),
     DeviceChallenge {
+        attempt: AttemptId,
+        context: minicon_web::PageContext,
         verification_url: Secret,
         user_code: Secret,
-        expires_in: Duration,
+        deadline: Instant,
     },
 }
 
@@ -261,38 +285,58 @@ fn publish(
 }
 
 fn login_event(event: LoginEvent, view: &mut View, store: &AccountStore) -> Option<Effect> {
+    let attempt = event.attempt();
     match event {
         LoginEvent::Challenge {
             challenge: LoginChallenge::BrowserUrl { url },
+            context: Some(context),
             ..
-        } => return Some(Effect::OpenBrowser(url)),
+        } => {
+            return Some(Effect::OpenAuth {
+                attempt,
+                context,
+                url,
+            });
+        }
         LoginEvent::Challenge {
             challenge:
                 LoginChallenge::Device {
                     verification_url,
                     user_code,
-                    expires_in,
+                    deadline,
                 },
+            context: Some(context),
             ..
         } => {
             return Some(Effect::DeviceChallenge {
+                attempt,
+                context,
                 verification_url,
                 user_code,
-                expires_in,
+                deadline,
             });
+        }
+        LoginEvent::Challenge { context: None, .. } => {
+            view.status = Some(RuntimeError::ProviderUnavailable.to_string());
+            view.auth_result = Some((attempt, AuthOutcome::Failed));
         }
         LoginEvent::CredentialStored {
             account,
             completion_url,
             ..
         } => {
+            // Completion is acknowledged by the host. A provider landing page
+            // cannot overwrite the already committed account result.
+            drop(completion_url);
             view.accounts.retain(|entry| entry.id != account.id);
             view.accounts.push(account);
             view.status =
                 Some("Credential stored; Test model is required before readiness.".into());
             view.login_active = false;
+            view.auth_attempt = None;
+            view.auth_result = Some((attempt, AuthOutcome::CredentialStored));
             view.busy = false;
-            return completion_url.map(Effect::OpenBrowser);
+            return Some(Effect::AuthFinished(attempt));
         }
         #[cfg(test)]
         LoginEvent::Accounts { accounts, .. } => view.accounts = accounts,
@@ -306,15 +350,22 @@ fn login_event(event: LoginEvent, view: &mut View, store: &AccountStore) -> Opti
                 .into(),
             )
         }
-        LoginEvent::Cancelled { .. } => view.status = Some("Login cancelled.".into()),
-        LoginEvent::Failed { error, .. } => view.status = Some(error.to_string()),
+        LoginEvent::Cancelled { .. } => {
+            view.status = Some("Login cancelled.".into());
+            view.auth_result = Some((attempt, AuthOutcome::Cancelled));
+        }
+        LoginEvent::Failed { error, .. } => {
+            view.status = Some(error.to_string());
+            view.auth_result = Some((attempt, AuthOutcome::Failed));
+        }
     }
     view.login_active = false;
+    view.auth_attempt = None;
     view.busy = false;
     if let Ok(accounts) = store.list() {
         view.accounts = accounts;
     }
-    None
+    Some(Effect::AuthFinished(attempt))
 }
 
 use crate::provider_server::{Config, Gateway, ModelRoute, ServerError};
@@ -633,21 +684,35 @@ impl Owner {
             Action::CancelLogin => {
                 let _ = login.cancel();
             }
-            Action::Login(provider) => {
+            Action::Connect {
+                provider,
+                label,
+                login: login_network,
+                service,
+            } => {
                 if self.operation.is_some() {
                     return Err(RuntimeError::Busy);
                 }
-                login
-                    .start(
+                let preferences = AccountPreferences::pending(login_network, service)
+                    .map_err(|_| RuntimeError::InvalidAction)?;
+                let attempt = login
+                    .start_configured(
                         provider,
-                        match provider {
-                            Provider::DeepSeek => "DeepSeek",
-                            Provider::OpenCode => "OpenCode",
-                        }
-                        .into(),
+                        if label.trim().is_empty() {
+                            match provider {
+                                Provider::DeepSeek => "DeepSeek",
+                                Provider::OpenCode => "OpenCode",
+                            }
+                            .into()
+                        } else {
+                            label
+                        },
+                        preferences,
                     )
                     .map_err(|_| RuntimeError::Busy)?;
                 self.view.login_active = true;
+                self.view.auth_attempt = Some(attempt);
+                self.view.auth_result = None;
             }
             Action::RefreshAccounts => self.refresh_view()?,
             Action::SaveAccount { request, edit } => {
@@ -993,7 +1058,11 @@ mod tests {
                 Secret::new("https://platform.deepseek.com/synthetic-complete").unwrap(),
             ),
         });
-        assert!(matches!(effect, Some(Effect::OpenBrowser(_))));
+        assert!(matches!(effect, Some(Effect::AuthFinished(AttemptId(1)))));
+        assert_eq!(
+            owner.view.auth_result,
+            Some((AttemptId(1), AuthOutcome::CredentialStored))
+        );
         assert_eq!(owner.view.accounts, vec![account.clone()]);
         assert_eq!(
             owner.view.account_preferences,

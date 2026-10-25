@@ -1,7 +1,7 @@
 //! Background account login for PRD 02.31.01; no UI or CLI dependency.
 //! `start`, `poll`, `cancel` and `logout` never wait on disk/network.
 
-use crate::provider_accounts::{AccountStore, AccountSummary, StoreError};
+use crate::provider_accounts::{AccountPreferences, AccountStore, AccountSummary, StoreError};
 use crate::provider_auth::{
     self as auth, Attempt, AuthClient, AuthError, DevicePoll, Pkce, Provider, Secret, TokenGrant,
 };
@@ -84,7 +84,7 @@ pub enum LoginChallenge {
     Device {
         verification_url: Secret,
         user_code: Secret,
-        expires_in: Duration,
+        deadline: Instant,
     },
 }
 
@@ -93,6 +93,7 @@ pub enum LoginEvent {
     Challenge {
         attempt: AttemptId,
         challenge: LoginChallenge,
+        context: Option<minicon_web::PageContext>,
     },
     /// A real token was persisted, but inference has not yet established readiness.
     CredentialStored {
@@ -122,7 +123,7 @@ pub enum LoginEvent {
 }
 
 impl LoginEvent {
-    fn attempt(&self) -> AttemptId {
+    pub fn attempt(&self) -> AttemptId {
         match self {
             Self::Challenge { attempt, .. }
             | Self::CredentialStored { attempt, .. }
@@ -241,11 +242,33 @@ impl LoginCoordinator {
         }
     }
 
+    #[cfg(test)]
     pub fn start(&mut self, provider: Provider, label: String) -> Result<AttemptId, LoginError> {
         if label.trim().is_empty() || label.len() > 128 || label.chars().any(char::is_control) {
             return Err(AuthError::InvalidInput.into());
         }
-        self.spawn(Operation::Login { provider, label })
+        self.spawn(Operation::Login {
+            provider,
+            label,
+            preferences: None,
+        })
+    }
+
+    pub fn start_configured(
+        &mut self,
+        provider: Provider,
+        label: String,
+        preferences: AccountPreferences,
+    ) -> Result<AttemptId, LoginError> {
+        preferences.validate()?;
+        if label.trim().is_empty() || label.len() > 128 || label.chars().any(char::is_control) {
+            return Err(AuthError::InvalidInput.into());
+        }
+        self.spawn(Operation::Login {
+            provider,
+            label,
+            preferences: Some(preferences),
+        })
     }
 
     #[cfg(test)]
@@ -326,6 +349,10 @@ impl LoginCoordinator {
         let phase = Arc::new(AtomicU8::new(ACTIVE));
         let cancel = NetworkHttpCancel::new();
         let (outgoing, incoming) = mpsc::sync_channel(4);
+        let preferences = match &operation {
+            Operation::Login { preferences, .. } => preferences.clone(),
+            _ => None,
+        };
         let job = Job {
             id,
             generation: self.generation.clone(),
@@ -333,6 +360,7 @@ impl LoginCoordinator {
             store: self.store.clone(),
             transport: self.transport.clone(),
             metadata: self.metadata.clone(),
+            preferences,
             outgoing,
             cancel: cancel.clone(),
         };
@@ -418,6 +446,7 @@ enum Operation {
     Login {
         provider: Provider,
         label: String,
+        preferences: Option<AccountPreferences>,
     },
     #[cfg(test)]
     List,
@@ -433,6 +462,7 @@ struct Job {
     store: Arc<AccountStore>,
     transport: Arc<dyn AuthTransport>,
     metadata: LoginMetadata,
+    preferences: Option<AccountPreferences>,
     outgoing: SyncSender<LoginEvent>,
     cancel: NetworkHttpCancel,
 }
@@ -451,7 +481,9 @@ impl Job {
                     accounts,
                 })
             }
-            Operation::Login { provider, label } => {
+            Operation::Login {
+                provider, label, ..
+            } => {
                 let (grant, completion_url) = match provider {
                     Provider::DeepSeek => {
                         let result = self.deepseek(&mut attempt)?;
@@ -463,15 +495,16 @@ impl Job {
             }
             Operation::Logout { account_id } => {
                 self.begin_commit(&mut attempt)?;
-                let grant = self.store.remove(&account_id)?;
+                let (grant, preferences) = self.store.remove_with_policy(&account_id)?;
                 let remote_revoked = if let Some(grant) =
                     grant.filter(|grant| grant.provider == Provider::DeepSeek)
                 {
-                    let request = auth::deepseek_logout(
+                    let mut request = auth::deepseek_logout(
                         &AuthClient::available(Provider::DeepSeek),
                         &grant,
                         &self.deepseek_metadata(),
                     )?;
+                    request.proxy = preferences.service.proxy().map(str::to_owned);
                     self.transport
                         .request(&request, &self.cancel)
                         .is_ok_and(|response| auth::parse_deepseek_logout(&response).is_ok())
@@ -513,7 +546,12 @@ impl Job {
         completion_url: Option<Secret>,
     ) -> Result<LoginEvent, LoginError> {
         self.begin_commit(attempt)?;
-        let account = self.store.insert(label, grant)?;
+        let account = if let Some(preferences) = &self.preferences {
+            self.store
+                .insert_with_preferences(label, grant, Some(preferences.clone()))?
+        } else {
+            self.store.insert(label, grant)?
+        };
         Ok(LoginEvent::CredentialStored {
             attempt: self.id,
             account,
@@ -527,6 +565,11 @@ impl Job {
         mut request: NetworkHttpRequest,
     ) -> Result<NetworkHttpResponse, LoginError> {
         request.timeout = request.timeout.min(self.check(attempt)?);
+        request.proxy = self
+            .preferences
+            .as_ref()
+            .and_then(|preferences| preferences.login.proxy())
+            .map(str::to_owned);
         request.headers.push((
             "User-Agent".into(),
             format!("MiniCon/{}", self.metadata.version),
@@ -538,10 +581,16 @@ impl Job {
     }
 
     fn challenge(&self, challenge: LoginChallenge) -> Result<(), LoginError> {
+        let context = self
+            .preferences
+            .as_ref()
+            .map(|preferences| self.store.browser_context(preferences))
+            .transpose()?;
         self.outgoing
             .send(LoginEvent::Challenge {
                 attempt: self.id,
                 challenge,
+                context,
             })
             .map_err(|_| AuthError::Cancelled.into())
     }
@@ -622,6 +671,11 @@ impl Job {
             )
         {
             request.timeout = Duration::from_secs(1);
+            request.proxy = self
+                .preferences
+                .as_ref()
+                .and_then(|preferences| preferences.login.proxy())
+                .map(str::to_owned);
             let _ = self.transport.request(&request, &self.cancel);
         }
         result
@@ -709,10 +763,12 @@ impl Job {
         let response = self.request(attempt, auth::opencode_initialize(&client)?)?;
         let challenge = auth::parse_opencode_initialize(&response)?;
         attempt.limit_by_provider(self.id.0, Instant::now(), challenge.expires_in)?;
+        let now = Instant::now();
+        let remaining = self.check(attempt)?;
         self.challenge(LoginChallenge::Device {
             verification_url: challenge.verification_url,
             user_code: challenge.user_code,
-            expires_in: self.check(attempt)?,
+            deadline: now.checked_add(remaining).ok_or(AuthError::InvalidState)?,
         })?;
         let mut interval = challenge.poll_interval;
         loop {
@@ -1111,6 +1167,220 @@ mod tests {
     }
 
     struct SequenceTransport(Mutex<std::collections::VecDeque<NetworkHttpResponse>>);
+
+    struct ConfiguredAuthTransport {
+        requests: Mutex<Vec<(String, Option<String>)>>,
+        callback: Mutex<Option<(String, String)>>,
+        expected_login: Option<String>,
+        expected_service: Option<String>,
+    }
+    impl AuthTransport for ConfiguredAuthTransport {
+        fn request(
+            &self,
+            request: &NetworkHttpRequest,
+            cancel: &NetworkHttpCancel,
+        ) -> Result<NetworkHttpResponse, AuthError> {
+            assert!(!cancel.is_cancelled());
+            let logout = request.url.ends_with("/users/logout");
+            assert_eq!(
+                request.proxy,
+                if logout {
+                    self.expected_service.clone()
+                } else {
+                    self.expected_login.clone()
+                }
+            );
+            self.requests
+                .lock()
+                .unwrap()
+                .push((request.url.clone(), request.proxy.clone()));
+            if request.url.starts_with("https://opencode.ai/") {
+                let count = self.requests.lock().unwrap().len();
+                let payload = if request.url.ends_with("/device/code") {
+                    serde_json::json!({"device_code":"synthetic-device","user_code":"SYNTHETIC","verification_uri_complete":"/console/device","expires_in":60,"interval":1})
+                } else {
+                    assert!(request.url.ends_with("/device/token"));
+                    if count == 2 {
+                        serde_json::json!({"error":"authorization_pending"})
+                    } else {
+                        serde_json::json!({"access_token":"synthetic-configured-opencode","refresh_token":"synthetic-refresh","expires_in":600})
+                    }
+                };
+                return Ok(NetworkHttpResponse {
+                    status: if count == 2 { 400 } else { 200 },
+                    headers: vec![],
+                    truncated: false,
+                    body: serde_json::to_vec(&payload).unwrap(),
+                });
+            }
+            let payload = if request.url.ends_with("/auth_init") {
+                let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+                *self.callback.lock().unwrap() = Some((
+                    body["redirect_uri"].as_str().unwrap().into(),
+                    body["state"].as_str().unwrap().into(),
+                ));
+                serde_json::json!({"authorize_url":"https://platform.deepseek.com/dsh/authorize?attempt=synthetic","authorize_id":"synthetic-id","expires_in":60})
+            } else if request.url.ends_with("/auth_exchange") {
+                serde_json::json!({"token":"synthetic-configured-grant","authorized_url":"https://platform.deepseek.com/dsh/authorized?attempt=synthetic"})
+            } else {
+                assert!(logout);
+                serde_json::json!({})
+            };
+            Ok(NetworkHttpResponse {
+                status: 200,
+                headers: vec![],
+                truncated: false,
+                body: serde_json::to_vec(
+                    &serde_json::json!({"code":0,"data":{"biz_code":0,"biz_data":payload}}),
+                )
+                .unwrap(),
+            })
+        }
+    }
+
+    #[test]
+    fn configured_deepseek_login_pins_its_network_and_logout_uses_service_policy() {
+        struct Cleanup(std::path::PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let root = Cleanup(
+            temporary_parent().join(format!("minicon-login-configured-{}", device_id().unwrap())),
+        );
+        let store = Arc::new(AccountStore::new(root.0.clone()).unwrap());
+        let mut preferences = AccountPreferences::legacy(&"d".repeat(32));
+        preferences.login =
+            crate::provider_accounts::NetworkPolicy::from_input("http://login-proxy.invalid:8080")
+                .unwrap();
+        let transport = Arc::new(ConfiguredAuthTransport {
+            requests: Mutex::new(Vec::new()),
+            callback: Mutex::new(None),
+            expected_login: preferences.login.proxy().map(str::to_owned),
+            expected_service: None,
+        });
+        let mut login = LoginCoordinator::with_transport(
+            store.clone(),
+            LoginMetadata {
+                version: "0.2.23".into(),
+                locale: "en-US".into(),
+                timezone_offset_seconds: 0,
+            },
+            transport.clone(),
+        );
+        let id = login
+            .start_configured(
+                Provider::DeepSeek,
+                "Synthetic configured account".into(),
+                preferences.clone(),
+            )
+            .unwrap();
+        assert!(
+            matches!(next_event(&mut login), LoginEvent::Challenge { attempt, .. } if attempt == id)
+        );
+        let (redirect, state) = transport.callback.lock().unwrap().clone().unwrap();
+        let address = redirect
+            .strip_prefix("http://")
+            .unwrap()
+            .split('/')
+            .next()
+            .unwrap();
+        assert!(address.starts_with("127.0.0.1:"));
+        let mut callback = TcpStream::connect(address).unwrap();
+        callback
+            .set_read_timeout(Some(Duration::from_secs(4)))
+            .unwrap();
+        callback
+            .set_write_timeout(Some(Duration::from_secs(4)))
+            .unwrap();
+        write!(callback, "GET /oauth/callback?state={state}&code=synthetic-code HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n").unwrap();
+        let mut reply = String::new();
+        callback.read_to_string(&mut reply).unwrap();
+        assert!(reply.starts_with("HTTP/1.1 200"));
+        let LoginEvent::CredentialStored { account, .. } = next_event(&mut login) else {
+            panic!("configured account expected");
+        };
+        assert_eq!(store.preferences(&account.id).unwrap(), preferences);
+        assert_eq!(
+            store.load_grant(&account.id).unwrap().access_token.expose(),
+            "synthetic-configured-grant"
+        );
+        let logout = login.logout(account.id.clone()).unwrap();
+        assert!(
+            matches!(next_event(&mut login), LoginEvent::LoggedOut { attempt, remote_revoked: true, .. } if attempt == logout)
+        );
+        let requests = transport.requests.lock().unwrap();
+        assert_eq!(requests.len(), 3);
+        assert!(requests[0].0.ends_with("/auth_init"));
+        assert!(requests[1].0.ends_with("/auth_exchange"));
+        assert!(requests[2].0.ends_with("/users/logout"));
+        assert!(store.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn configured_opencode_device_polls_keep_login_policy_and_save_distinct_service_policy() {
+        let root = temporary_parent().join(format!(
+            "minicon-opencode-configured-{}",
+            device_id().unwrap()
+        ));
+        let store = Arc::new(AccountStore::new(root.clone()).unwrap());
+        let preferences = AccountPreferences::pending(
+            crate::provider_accounts::NetworkPolicy::from_input("http://device-login.invalid:8080")
+                .unwrap(),
+            crate::provider_accounts::NetworkPolicy::from_input("http://inference.invalid:8081")
+                .unwrap(),
+        )
+        .unwrap();
+        let transport = Arc::new(ConfiguredAuthTransport {
+            requests: Mutex::new(Vec::new()),
+            callback: Mutex::new(None),
+            expected_login: preferences.login.proxy().map(str::to_owned),
+            expected_service: preferences.service.proxy().map(str::to_owned),
+        });
+        let mut login = LoginCoordinator::with_transport(
+            store.clone(),
+            LoginMetadata {
+                version: "0.2.23".into(),
+                locale: "en-US".into(),
+                timezone_offset_seconds: 0,
+            },
+            transport.clone(),
+        );
+        let attempt = login
+            .start_configured(
+                Provider::OpenCode,
+                "Configured OpenCode".into(),
+                preferences.clone(),
+            )
+            .unwrap();
+        let LoginEvent::Challenge {
+            attempt: received,
+            context: Some(context),
+            challenge: LoginChallenge::Device { deadline, .. },
+        } = next_event(&mut login)
+        else {
+            panic!("configured device challenge expected")
+        };
+        assert_eq!(received, attempt);
+        assert_eq!(context, store.browser_context(&preferences).unwrap());
+        assert_eq!(context.proxy.http.as_deref(), preferences.login.proxy());
+        assert!(deadline > Instant::now());
+        assert!(deadline <= Instant::now() + Duration::from_secs(60));
+        let LoginEvent::CredentialStored { account, .. } = next_event(&mut login) else {
+            panic!("configured device grant expected")
+        };
+        assert_eq!(store.preferences(&account.id).unwrap(), preferences);
+        assert_eq!(
+            store.load_grant(&account.id).unwrap().access_token.expose(),
+            "synthetic-configured-opencode"
+        );
+        assert_eq!(transport.requests.lock().unwrap().len(), 3);
+        login.shutdown(Duration::from_secs(2)).unwrap();
+        drop(login);
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
     impl AuthTransport for SequenceTransport {
         fn request(
             &self,
@@ -1175,12 +1445,14 @@ mod tests {
             .unwrap();
         let LoginEvent::Challenge {
             attempt,
-            challenge: LoginChallenge::Device { expires_in, .. },
+            challenge: LoginChallenge::Device { deadline, .. },
+            ..
         } = next_event(&mut login)
         else {
             panic!("device challenge expected before polling the provider");
         };
         assert_eq!(attempt, id);
+        let expires_in = deadline.saturating_duration_since(Instant::now());
         assert!(expires_in > Duration::ZERO);
         assert!(expires_in <= auth::AUTH_ATTEMPT_TIMEOUT);
         assert!(expires_in < Duration::from_secs(1200));
@@ -1227,8 +1499,9 @@ mod tests {
                     LoginChallenge::Device {
                         verification_url,
                         user_code,
-                        expires_in,
+                        deadline,
                     },
+                ..
             } => {
                 assert_eq!(attempt, id);
                 assert_eq!(
@@ -1236,6 +1509,7 @@ mod tests {
                     "https://opencode.ai/console/device"
                 );
                 assert_eq!(user_code.expose(), "SYNTHETIC");
+                let expires_in = deadline.saturating_duration_since(Instant::now());
                 assert!(expires_in > Duration::ZERO);
                 assert!(expires_in <= Duration::from_secs(60));
             }
@@ -1327,6 +1601,7 @@ mod tests {
                     locale: "en_US".into(),
                     timezone_offset_seconds: 0,
                 },
+                preferences: None,
                 outgoing,
                 cancel: NetworkHttpCancel::new(),
             };
@@ -1392,6 +1667,7 @@ mod tests {
         sender
             .send(LoginEvent::Challenge {
                 attempt: id,
+                context: None,
                 challenge: LoginChallenge::BrowserUrl {
                     url: Secret::new("https://platform.deepseek.com/dsh/authorize?synthetic")
                         .unwrap(),
@@ -1422,6 +1698,7 @@ mod tests {
                     locale: "en_US".into(),
                     timezone_offset_seconds: 0,
                 },
+                preferences: None,
                 outgoing,
                 cancel: NetworkHttpCancel::new(),
             };

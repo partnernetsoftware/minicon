@@ -535,3 +535,34 @@ These are development adapter mechanisms. Compilation and frame/parser tests do
 not prove same-origin cookies/localStorage isolation between ordinary/A/B/A views,
 persistence after reopen, native proxy routing or loopback callback delivery.
 Those native journeys and the product integration remain open.
+
+### Process-owned Linux embedding development join
+
+`resize_embedded_page_for_process` and
+`set_embedded_page_visible_for_process` select only a direct child of the
+requested parent whose bounded `WM_CLASS` pair matches the helper and whose
+`_NET_WM_PID` is exactly one CARDINAL/32 value matching the caller-owned child.
+Missing, malformed, stale or mismatched identity returns false. PID properties
+are not authentication; the caller must own the actual process handle.
+
+The shared Linux selector uses dynamically loaded libxcb with connection-local
+checked replies and mutations, bounded child/property reads and RAII cleanup.
+Both existing class-only entry points and process-owned entry points share that
+backend. A disappearing window cannot invoke a process-global Xlib error handler
+in the parent. Checked requests still depend on the native display responding;
+this mechanism does not add a wall-clock timeout to an X server round trip.
+
+The optional helper explicitly publishes its own PID, completes initial GTK
+mapping, synchronizes GDK and verifies parent/class/PID through the checked
+selectors before emitting the separate `embedded_ready` frame containing only
+PID and parent. It never presents that acknowledgement as a URL/title snapshot.
+The product owns parking admission and retry meaning in PRD 31.01.02.
+The helper's older startup reparent operations still use Xlib inside the isolated
+child; the new parent selector does not certify those startup failure paths.
+
+Pure property tests and the explicit-display native test
+`embedded_page_process_selector_maps_and_resizes_only_its_direct_owned_child`
+name the selector obligations. The latter must be selected explicitly; missing
+DISPLAY is Unavailable. Its synthetic child properties do not establish the
+actual GTK helper's publication, same-origin storage, delayed startup or live
+DOM preservation. Those actual-helper courts remain open for this new source.

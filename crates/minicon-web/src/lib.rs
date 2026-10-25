@@ -535,7 +535,7 @@ pub fn embedded_page_class(name: &str) -> bool {
 pub fn set_embedded_page_visible(parent: u64, visible: bool) {
     #[cfg(target_os = "linux")]
     unsafe {
-        x_update_embedded_page(parent, Some(visible), None);
+        x_update_embedded_page(parent, None, Some(visible), None);
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -551,7 +551,7 @@ pub fn set_embedded_page_visible(parent: u64, visible: bool) {
 pub fn resize_embedded_page(slot: PanelSlot) {
     #[cfg(target_os = "linux")]
     unsafe {
-        x_update_embedded_page(slot.parent, None, Some(slot));
+        x_update_embedded_page(slot.parent, None, None, Some(slot));
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -559,134 +559,396 @@ pub fn resize_embedded_page(slot: PanelSlot) {
     }
 }
 
+/// Submit visibility only to matching direct children of this parent/PID.
+/// Missing or malformed native identity never falls back to class-only lookup.
+/// `true` means at least one matching child's checked operation succeeded, not
+/// that its page has rendered. Ownership and native evidence: PRD 28.
+pub fn set_embedded_page_visible_for_process(parent: u64, pid: u32, visible: bool) -> bool {
+    if parent == 0 || pid == 0 {
+        return false;
+    }
+    #[cfg(target_os = "linux")]
+    unsafe {
+        x_update_embedded_page(parent, Some(pid), Some(visible), None)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = visible;
+        false
+    }
+}
+
+/// Submit bounds only to matching direct children of the owned process.
+/// This does not authenticate arbitrary clients that forge X11 properties.
+pub fn resize_embedded_page_for_process(slot: PanelSlot, pid: u32) -> bool {
+    if slot.parent == 0 || pid == 0 {
+        return false;
+    }
+    #[cfg(target_os = "linux")]
+    unsafe {
+        x_update_embedded_page(slot.parent, Some(pid), None, Some(slot))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn embedded_process_property_matches(
+    pid: u32,
+    actual_type: u64,
+    format: i32,
+    items: u64,
+    bytes_after: u64,
+    value: Option<u64>,
+) -> bool {
+    // XA_CARDINAL is predefined atom 6. The transport normalizes its format-32
+    // value before this platform-independent identity check.
+    pid != 0
+        && actual_type == 6
+        && format == 32
+        && items == 1
+        && bytes_after == 0
+        && value == Some(u64::from(pid))
+}
+
 #[cfg(target_os = "linux")]
-unsafe fn x_update_embedded_page(parent: u64, visible: Option<bool>, slot: Option<PanelSlot>) {
-    use std::ffi::{CStr, c_char, c_int, c_uint, c_void};
+unsafe fn x_update_embedded_page(
+    parent: u64,
+    pid: Option<u32>,
+    visible: Option<bool>,
+    slot: Option<PanelSlot>,
+) -> bool {
+    embedded_xcb::update(parent, pid, visible, slot)
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn embedded_class_property_matches(kind: u32, format: u8, bytes_after: u32, value: &[u8]) -> bool {
+    if kind != 31 || format != 8 || bytes_after != 0 || value.len() > 512 {
+        return false;
+    }
+    let fields: Vec<_> = value.split(|byte| *byte == 0).collect();
+    fields.len() == 3
+        && fields[2].is_empty()
+        && fields[..2].iter().any(|field| {
+            std::str::from_utf8(field)
+                .ok()
+                .is_some_and(embedded_page_class)
+        })
+}
+
+#[cfg(target_os = "linux")]
+mod embedded_xcb {
+    use super::{PanelSlot, embedded_class_property_matches, embedded_process_property_matches};
+    use std::{
+        ffi::{CStr, c_char, c_int, c_void},
+        ptr,
+    };
+
+    // ABI: public libxcb xcb.h/xproto.h; cookie/core calls also checked against
+    // pinned x11rb 0.13.2 raw_ffi. Mechanism ownership/evidence: PRD 28.
+    #[derive(Clone, Copy)]
+    #[repr(C)]
+    struct Cookie {
+        _sequence: u32,
+    }
+    #[repr(C)]
+    struct AtomReply {
+        _response: u8,
+        _pad: u8,
+        _sequence: u16,
+        _length: u32,
+        atom: u32,
+    }
+    #[repr(C)]
+    struct PropertyReply {
+        _response: u8,
+        format: u8,
+        _sequence: u16,
+        length: u32,
+        kind: u32,
+        bytes_after: u32,
+        value_len: u32,
+        _pad: [u8; 12],
+    }
+    type Connect = unsafe extern "C" fn(*const c_char, *mut c_int) -> *mut c_void;
+    type Disconnect = unsafe extern "C" fn(*mut c_void);
+    type HasError = unsafe extern "C" fn(*mut c_void) -> c_int;
+    type Check = unsafe extern "C" fn(*mut c_void, Cookie) -> *mut c_void;
+    type Query = unsafe extern "C" fn(*mut c_void, u32) -> Cookie;
+    type QueryReply = unsafe extern "C" fn(*mut c_void, Cookie, *mut *mut c_void) -> *mut c_void;
+    type Children = unsafe extern "C" fn(*const c_void) -> *mut u32;
+    type ChildrenLength = unsafe extern "C" fn(*const c_void) -> c_int;
+    type Intern = unsafe extern "C" fn(*mut c_void, u8, u16, *const c_char) -> Cookie;
+    type InternReply =
+        unsafe extern "C" fn(*mut c_void, Cookie, *mut *mut c_void) -> *mut AtomReply;
+    type Property = unsafe extern "C" fn(*mut c_void, u8, u32, u32, u32, u32, u32) -> Cookie;
+    type GetReply =
+        unsafe extern "C" fn(*mut c_void, Cookie, *mut *mut c_void) -> *mut PropertyReply;
+    type Value = unsafe extern "C" fn(*const PropertyReply) -> *mut c_void;
+    type Configure = unsafe extern "C" fn(*mut c_void, u32, u16, *const c_void) -> Cookie;
+    type Map = unsafe extern "C" fn(*mut c_void, u32) -> Cookie;
     unsafe extern "C" {
-        fn dlopen(filename: *const c_char, flags: c_int) -> *mut c_void;
-        fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+        fn dlopen(name: *const c_char, flags: c_int) -> *mut c_void;
+        fn dlsym(handle: *mut c_void, name: *const c_char) -> *mut c_void;
+        fn dlclose(handle: *mut c_void) -> c_int;
+        fn free(pointer: *mut c_void);
     }
-    let lib = c"libX11.so.6";
-    let handle = unsafe { dlopen(lib.as_ptr(), 1) };
-    if handle.is_null() {
-        return;
+    struct Library(*mut c_void);
+    impl Drop for Library {
+        fn drop(&mut self) {
+            unsafe {
+                dlclose(self.0);
+            }
+        }
     }
-    unsafe fn sym<T>(handle: *mut c_void, name: &CStr) -> Option<T> {
-        let ptr = unsafe { dlsym(handle, name.as_ptr()) };
-        if ptr.is_null() {
+    impl Library {
+        unsafe fn symbol<T>(&self, name: &CStr) -> Option<T> {
+            let pointer = unsafe { dlsym(self.0, name.as_ptr()) };
+            if pointer.is_null() {
+                None
+            } else {
+                Some(unsafe { std::mem::transmute_copy(&pointer) })
+            }
+        }
+    }
+    struct Allocation<T>(*mut T);
+    impl<T> Drop for Allocation<T> {
+        fn drop(&mut self) {
+            if !self.0.is_null() {
+                unsafe {
+                    free(self.0.cast());
+                }
+            }
+        }
+    }
+    fn reply<T>(pointer: *mut T, error: *mut c_void) -> Option<Allocation<T>> {
+        let allocation = Allocation(pointer);
+        let error = Allocation(error);
+        if allocation.0.is_null() || !error.0.is_null() {
             None
         } else {
-            Some(unsafe { std::mem::transmute_copy(&ptr) })
+            Some(allocation)
         }
     }
-    type Open = unsafe extern "C" fn(*const c_char) -> *mut c_void;
-    type Query = unsafe extern "C" fn(
-        *mut c_void,
-        u64,
-        *mut u64,
-        *mut u64,
-        *mut *mut u64,
-        *mut c_uint,
-    ) -> c_int;
-    type ClassHint = unsafe extern "C" fn(*mut c_void, u64, *mut *mut c_char) -> c_int;
-    type Map = unsafe extern "C" fn(*mut c_void, u64) -> c_int;
-    type MoveResize = unsafe extern "C" fn(*mut c_void, u64, i32, i32, u32, u32) -> c_int;
-    type Free = unsafe extern "C" fn(*mut c_void) -> c_int;
-    type Flush = unsafe extern "C" fn(*mut c_void) -> c_int;
-    type Close = unsafe extern "C" fn(*mut c_void) -> c_int;
-    let Some(open): Option<Open> = (unsafe { sym(handle, c"XOpenDisplay") }) else {
-        return;
-    };
-    let Some(query): Option<Query> = (unsafe { sym(handle, c"XQueryTree") }) else {
-        return;
-    };
-    let Some(class_hint): Option<ClassHint> = (unsafe { sym(handle, c"XGetClassHint") }) else {
-        return;
-    };
-    let map: Option<Map> = if let Some(visible) = visible {
-        let symbol = if visible {
-            c"XMapWindow"
-        } else {
-            c"XUnmapWindow"
-        };
-        let Some(map) = (unsafe { sym(handle, symbol) }) else {
-            return;
-        };
-        Some(map)
-    } else {
-        None
-    };
-    let move_resize: Option<MoveResize> = if slot.is_some() {
-        let Some(move_resize) = (unsafe { sym(handle, c"XMoveResizeWindow") }) else {
-            return;
-        };
-        Some(move_resize)
-    } else {
-        None
-    };
-    let Some(xfree): Option<Free> = (unsafe { sym(handle, c"XFree") }) else {
-        return;
-    };
-    let Some(flush): Option<Flush> = (unsafe { sym(handle, c"XFlush") }) else {
-        return;
-    };
-    let Some(close): Option<Close> = (unsafe { sym(handle, c"XCloseDisplay") }) else {
-        return;
-    };
-    let display = unsafe { open(std::ptr::null()) };
-    if display.is_null() {
-        return;
+    struct Api {
+        _library: Library,
+        connect: Connect,
+        disconnect: Disconnect,
+        has_error: HasError,
+        check: Check,
+        query: Query,
+        query_reply: QueryReply,
+        children: Children,
+        children_length: ChildrenLength,
+        intern: Intern,
+        intern_reply: InternReply,
+        property: Property,
+        property_reply: GetReply,
+        value: Value,
+        configure: Configure,
+        map: Map,
+        unmap: Map,
     }
-    let mut root = 0u64;
-    let mut parent_ret = 0u64;
-    let mut children: *mut u64 = std::ptr::null_mut();
-    let mut count = 0u32;
-    let ok = unsafe {
-        query(
-            display,
-            parent,
-            &mut root,
-            &mut parent_ret,
-            &mut children,
-            &mut count,
-        )
-    };
-    if ok != 0 && !children.is_null() {
-        for index in 0..count as isize {
-            let child = unsafe { *children.offset(index) };
-            // XClassHint { res_name, res_class }, two pointers.
-            let mut hint = [std::ptr::null_mut::<c_char>(); 2];
-            if unsafe { class_hint(display, child, hint.as_mut_ptr()) } == 0 {
+    impl Api {
+        fn load() -> Option<Self> {
+            let pointer = unsafe { dlopen(c"libxcb.so.1".as_ptr(), 1) };
+            if pointer.is_null() {
+                return None;
+            }
+            let library = Library(pointer);
+            unsafe {
+                Some(Self {
+                    connect: library.symbol(c"xcb_connect")?,
+                    disconnect: library.symbol(c"xcb_disconnect")?,
+                    has_error: library.symbol(c"xcb_connection_has_error")?,
+                    check: library.symbol(c"xcb_request_check")?,
+                    query: library.symbol(c"xcb_query_tree")?,
+                    query_reply: library.symbol(c"xcb_query_tree_reply")?,
+                    children: library.symbol(c"xcb_query_tree_children")?,
+                    children_length: library.symbol(c"xcb_query_tree_children_length")?,
+                    intern: library.symbol(c"xcb_intern_atom")?,
+                    intern_reply: library.symbol(c"xcb_intern_atom_reply")?,
+                    property: library.symbol(c"xcb_get_property")?,
+                    property_reply: library.symbol(c"xcb_get_property_reply")?,
+                    value: library.symbol(c"xcb_get_property_value")?,
+                    configure: library.symbol(c"xcb_configure_window_checked")?,
+                    map: library.symbol(c"xcb_map_window_checked")?,
+                    unmap: library.symbol(c"xcb_unmap_window_checked")?,
+                    _library: library,
+                })
+            }
+        }
+    }
+    struct Connection<'a> {
+        pointer: *mut c_void,
+        api: &'a Api,
+    }
+    impl Drop for Connection<'_> {
+        fn drop(&mut self) {
+            unsafe {
+                (self.api.disconnect)(self.pointer);
+            }
+        }
+    }
+    impl Connection<'_> {
+        fn good(&self) -> bool {
+            unsafe { (self.api.has_error)(self.pointer) == 0 }
+        }
+        fn checked(&self, cookie: Cookie) -> bool {
+            let error = Allocation(unsafe { (self.api.check)(self.pointer, cookie) });
+            error.0.is_null() && self.good()
+        }
+        fn atom(&self, name: &CStr) -> Option<u32> {
+            let len = u16::try_from(name.to_bytes().len()).ok()?;
+            let cookie = unsafe { (self.api.intern)(self.pointer, 1, len, name.as_ptr()) };
+            let mut error = ptr::null_mut();
+            let pointer = unsafe { (self.api.intern_reply)(self.pointer, cookie, &mut error) };
+            let answer = reply(pointer, error)?;
+            let atom = unsafe { (*answer.0).atom };
+            (atom != 0).then_some(atom)
+        }
+        fn property(
+            &self,
+            window: u32,
+            atom: u32,
+            words: u32,
+        ) -> Option<Allocation<PropertyReply>> {
+            let cookie = unsafe { (self.api.property)(self.pointer, 0, window, atom, 0, 0, words) };
+            let mut error = ptr::null_mut();
+            let pointer = unsafe { (self.api.property_reply)(self.pointer, cookie, &mut error) };
+            reply(pointer, error)
+        }
+        fn pid_matches(&self, window: u32, atom: u32, pid: u32) -> bool {
+            let Some(answer) = self.property(window, atom, 1) else {
+                return false;
+            };
+            let header = unsafe { &*answer.0 };
+            let pointer = unsafe { (self.api.value)(answer.0) };
+            let value = if header.format == 32
+                && header.value_len == 1
+                && header.length == 1
+                && !pointer.is_null()
+            {
+                Some(u64::from(unsafe {
+                    ptr::read_unaligned(pointer.cast::<u32>())
+                }))
+            } else {
+                None
+            };
+            embedded_process_property_matches(
+                pid,
+                u64::from(header.kind),
+                i32::from(header.format),
+                u64::from(header.value_len),
+                u64::from(header.bytes_after),
+                value,
+            )
+        }
+        fn class_matches(&self, window: u32) -> bool {
+            // WM_CLASS=67, STRING=31. Refuse truncation/malformed pairs.
+            let Some(answer) = self.property(window, 67, 128) else {
+                return false;
+            };
+            let header = unsafe { &*answer.0 };
+            if header.format != 8
+                || header.value_len > 512
+                || header.value_len == 0
+                || u64::from(header.length) * 4 < u64::from(header.value_len)
+            {
+                return false;
+            }
+            let pointer = unsafe { (self.api.value)(answer.0) };
+            if pointer.is_null() {
+                return false;
+            }
+            let value = unsafe {
+                std::slice::from_raw_parts(pointer.cast::<u8>(), header.value_len as usize)
+            };
+            embedded_class_property_matches(header.kind, header.format, header.bytes_after, value)
+        }
+    }
+    pub(super) fn update(
+        parent: u64,
+        pid: Option<u32>,
+        visible: Option<bool>,
+        slot: Option<PanelSlot>,
+    ) -> bool {
+        let Some(parent) = u32::try_from(parent).ok().filter(|value| *value != 0) else {
+            return false;
+        };
+        if pid == Some(0)
+            || slot.is_some_and(|slot| {
+                slot.width == 0 || slot.height == 0 || slot.width > 65535 || slot.height > 65535
+            })
+        {
+            return false;
+        }
+        let Some(api) = Api::load() else {
+            return false;
+        };
+        let pointer = unsafe { (api.connect)(ptr::null(), ptr::null_mut()) };
+        if pointer.is_null() {
+            return false;
+        }
+        let connection = Connection { pointer, api: &api };
+        if !connection.good() {
+            return false;
+        }
+        let pid_atom = if pid.is_some() {
+            let Some(atom) = connection.atom(c"_NET_WM_PID") else {
+                return false;
+            };
+            atom
+        } else {
+            0
+        };
+        let cookie = unsafe { (api.query)(pointer, parent) };
+        let mut error = ptr::null_mut();
+        let pointer_reply = unsafe { (api.query_reply)(pointer, cookie, &mut error) };
+        let Some(answer) = reply(pointer_reply, error) else {
+            return false;
+        };
+        let count = unsafe { (api.children_length)(answer.0) };
+        if !(0..=4096).contains(&count) {
+            return false;
+        }
+        let children = unsafe { (api.children)(answer.0) };
+        if children.is_null() {
+            return false;
+        }
+        let children = unsafe { std::slice::from_raw_parts(children, count as usize) };
+        let mut operated = false;
+        for &child in children {
+            if pid.is_some_and(|pid| !connection.pid_matches(child, pid_atom, pid))
+                || !connection.class_matches(child)
+            {
                 continue;
             }
-            let matches = hint.iter().any(|ptr| {
-                if ptr.is_null() {
-                    return false;
-                }
-                unsafe { CStr::from_ptr(*ptr) }
-                    .to_str()
-                    .ok()
-                    .is_some_and(embedded_page_class)
-            });
-            for ptr in hint {
-                if !ptr.is_null() {
-                    unsafe { xfree(ptr.cast()) };
-                }
+            if let Some(slot) = slot {
+                let values = [slot.x as u32, slot.y as u32, slot.width, slot.height];
+                let cookie = unsafe { (api.configure)(pointer, child, 15, values.as_ptr().cast()) };
+                operated |= connection.checked(cookie);
             }
-            if matches {
-                if let (Some(move_resize), Some(slot)) = (move_resize, slot) {
-                    unsafe { move_resize(display, child, slot.x, slot.y, slot.width, slot.height) };
-                }
-                if let Some(map) = map {
-                    unsafe { map(display, child) };
-                }
+            if let Some(visible) = visible {
+                let action = if visible { api.map } else { api.unmap };
+                operated |= connection.checked(unsafe { action(pointer, child) });
             }
         }
-        unsafe { xfree(children.cast()) };
+        operated
     }
-    unsafe {
-        flush(display);
-        close(display);
+    #[cfg(test)]
+    pub(super) fn checked_mapping_for_test(window: u32) -> bool {
+        let Some(api) = Api::load() else {
+            return false;
+        };
+        let pointer = unsafe { (api.connect)(ptr::null(), ptr::null_mut()) };
+        if pointer.is_null() {
+            return false;
+        }
+        let connection = Connection { pointer, api: &api };
+        connection.good() && connection.checked(unsafe { (api.map)(pointer, window) })
     }
 }
 
@@ -1488,6 +1750,57 @@ mod tests {
     use super::*;
 
     #[test]
+    fn embedded_process_selector_requires_exact_cardinal_identity_without_fallback() {
+        assert!(embedded_process_property_matches(17, 6, 32, 1, 0, Some(17)));
+        for (pid, kind, format, items, after, value) in [
+            (0, 6, 32, 1, 0, Some(0)),
+            (17, 0, 32, 1, 0, Some(17)),
+            (17, 31, 32, 1, 0, Some(17)),
+            (17, 6, 8, 1, 0, Some(17)),
+            (17, 6, 16, 1, 0, Some(17)),
+            (17, 6, 32, 0, 0, Some(17)),
+            (17, 6, 32, 2, 0, Some(17)),
+            (17, 6, 32, 1, 4, Some(17)),
+            (17, 6, 32, 1, 0, None),
+            (17, 6, 32, 1, 0, Some(18)),
+            (17, 6, 32, 1, 0, Some((1u64 << 32) | 17)),
+        ] {
+            assert!(!embedded_process_property_matches(
+                pid, kind, format, items, after, value
+            ));
+        }
+        assert!(!set_embedded_page_visible_for_process(0, 17, true));
+        assert!(!set_embedded_page_visible_for_process(1, 0, true));
+        assert!(!resize_embedded_page_for_process(
+            PanelSlot {
+                parent: 1,
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1
+            },
+            0
+        ));
+    }
+
+    #[test]
+    fn embedded_process_class_parser_requires_a_complete_bounded_string_pair() {
+        let valid = b"minicon-web-host\0MiniCon-web-host\0";
+        assert!(embedded_class_property_matches(31, 8, 0, valid));
+        for (kind, format, after, value) in [
+            (6, 8, 0, valid.as_slice()),
+            (31, 32, 0, valid.as_slice()),
+            (31, 8, 1, valid.as_slice()),
+            (31, 8, 0, b"other\0other\0".as_slice()),
+            (31, 8, 0, b"minicon-web-host\0".as_slice()),
+            (31, 8, 0, b"minicon-web-host\0other\0extra\0".as_slice()),
+        ] {
+            assert!(!embedded_class_property_matches(kind, format, after, value));
+        }
+        assert!(!embedded_class_property_matches(31, 8, 0, &vec![b'a'; 513]));
+    }
+
+    #[test]
     fn proxy_override_blank_retains_the_complete_config_environment_default() {
         let base = BrowserProxy {
             http: Some("http://config.test:8080".into()),
@@ -2015,9 +2328,25 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn embedded_page_resize_moves_and_sizes_a_classed_x_child() {
-        use std::ffi::{CStr, CString, c_char, c_int, c_uint, c_ulong, c_void};
+        embedded_x11_fixture(false);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "requires an explicitly provisioned DISPLAY (for example Xvfb); missing display is Unavailable"]
+    fn embedded_page_process_selector_maps_and_resizes_only_its_direct_owned_child() {
+        embedded_x11_fixture(true);
+    }
+
+    #[cfg(target_os = "linux")]
+    fn embedded_x11_fixture(owned_selector: bool) {
+        use std::ffi::{CStr, CString, c_char, c_int, c_long, c_uint, c_ulong, c_void};
 
         if std::env::var_os("DISPLAY").is_none() {
+            assert!(
+                !owned_selector,
+                "Unavailable: owned-window selector court requires DISPLAY"
+            );
             assert!(
                 std::env::var_os("MINICON_REQUIRE_DISPLAY").is_none(),
                 "native X resize court requires DISPLAY"
@@ -2027,6 +2356,7 @@ mod tests {
         unsafe extern "C" {
             fn dlopen(filename: *const c_char, flags: c_int) -> *mut c_void;
             fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+            fn dlclose(handle: *mut c_void) -> c_int;
         }
         unsafe fn symbol<T>(handle: *mut c_void, name: &CStr) -> T {
             let pointer = unsafe { dlsym(handle, name.as_ptr()) };
@@ -2062,6 +2392,46 @@ mod tests {
         ) -> c_int;
         type Destroy = unsafe extern "C" fn(*mut c_void, c_ulong) -> c_int;
         type Close = unsafe extern "C" fn(*mut c_void) -> c_int;
+        type Intern = unsafe extern "C" fn(*mut c_void, *const c_char, c_int) -> c_ulong;
+        type Change = unsafe extern "C" fn(
+            *mut c_void,
+            c_ulong,
+            c_ulong,
+            c_ulong,
+            c_int,
+            c_int,
+            *const u8,
+            c_int,
+        ) -> c_int;
+        type Delete = unsafe extern "C" fn(*mut c_void, c_ulong, c_ulong) -> c_int;
+        // XWindowAttributes ABI: pinned x11-dl 2.21.0 src/xlib.rs.
+        #[repr(C)]
+        struct Attributes {
+            x: c_int,
+            y: c_int,
+            width: c_int,
+            height: c_int,
+            _border: c_int,
+            _depth: c_int,
+            _visual: *mut c_void,
+            _root: c_ulong,
+            _class: c_int,
+            _bit_gravity: c_int,
+            _win_gravity: c_int,
+            _backing_store: c_int,
+            _backing_planes: c_ulong,
+            _backing_pixel: c_ulong,
+            _save_under: c_int,
+            _colormap: c_ulong,
+            _map_installed: c_int,
+            map_state: c_int,
+            _all_masks: c_long,
+            _your_mask: c_long,
+            _propagate_mask: c_long,
+            _override_redirect: c_int,
+            _screen: *mut c_void,
+        }
+        type GetAttributes = unsafe extern "C" fn(*mut c_void, c_ulong, *mut Attributes) -> c_int;
 
         let handle = unsafe { dlopen(c"libX11.so.6".as_ptr(), 1) };
         assert!(!handle.is_null(), "open libX11");
@@ -2075,9 +2445,35 @@ mod tests {
         let destroy: Destroy = unsafe { symbol(handle, c"XDestroyWindow") };
         let close: Close = unsafe { symbol(handle, c"XCloseDisplay") };
         let display = unsafe { open(std::ptr::null()) };
-        assert!(!display.is_null(), "open DISPLAY");
+        assert!(!display.is_null(), "Unavailable: cannot open DISPLAY");
+        struct OwnedDisplay {
+            display: *mut c_void,
+            parent: c_ulong,
+            destroy: Destroy,
+            close: Close,
+            library: *mut c_void,
+        }
+        impl Drop for OwnedDisplay {
+            fn drop(&mut self) {
+                unsafe {
+                    if self.parent != 0 {
+                        (self.destroy)(self.display, self.parent);
+                    }
+                    (self.close)(self.display);
+                    dlclose(self.library);
+                }
+            }
+        }
+        let mut owned = OwnedDisplay {
+            display,
+            parent: 0,
+            destroy,
+            close,
+            library: handle,
+        };
         let root = unsafe { root(display) };
         let parent = unsafe { create(display, root, 0, 0, 640, 480, 0, 0, 0) };
+        owned.parent = parent;
         let child = unsafe { create(display, parent, 1, 2, 3, 4, 0, 0, 0) };
         assert_ne!(parent, 0);
         assert_ne!(child, 0);
@@ -2124,10 +2520,161 @@ mod tests {
             0
         );
         assert_eq!((x, y, width, height), (17, 29, 311, 197));
+        if owned_selector {
+            let intern: Intern = unsafe { symbol(handle, c"XInternAtom") };
+            let change: Change = unsafe { symbol(handle, c"XChangeProperty") };
+            let delete: Delete = unsafe { symbol(handle, c"XDeleteProperty") };
+            let get: GetAttributes = unsafe { symbol(handle, c"XGetWindowAttributes") };
+            let pid_atom = unsafe { intern(display, c"_NET_WM_PID".as_ptr(), 0) };
+            assert_ne!(pid_atom, 0);
+            let second = unsafe { create(display, parent, 4, 5, 90, 80, 0, 0, 0) };
+            let nested = unsafe { create(display, child, 6, 7, 30, 40, 0, 0, 0) };
+            let wrong_class = unsafe { create(display, parent, 8, 9, 50, 60, 0, 0, 0) };
+            let other = CString::new("other-client").unwrap();
+            let mut wrong_hint = [other.as_ptr().cast_mut(), other.as_ptr().cast_mut()];
+            let set_pid = |window, kind, format, count| {
+                let values: [c_ulong; 2] = [17, 29];
+                unsafe {
+                    change(
+                        display,
+                        window,
+                        pid_atom,
+                        kind,
+                        format,
+                        0,
+                        values.as_ptr().cast(),
+                        count,
+                    );
+                }
+            };
+            unsafe {
+                set_class(display, second, hint.as_mut_ptr());
+                set_class(display, nested, hint.as_mut_ptr());
+                set_class(display, wrong_class, wrong_hint.as_mut_ptr());
+                map(display, second);
+                map(display, nested);
+                map(display, wrong_class);
+            }
+            set_pid(child, 6, 32, 1);
+            let second_pid: c_ulong = 29;
+            let nested_pid: c_ulong = 31;
+            let wrong_pid: c_ulong = 37;
+            unsafe {
+                change(
+                    display,
+                    second,
+                    pid_atom,
+                    6,
+                    32,
+                    0,
+                    (&second_pid as *const c_ulong).cast(),
+                    1,
+                );
+                change(
+                    display,
+                    nested,
+                    pid_atom,
+                    6,
+                    32,
+                    0,
+                    (&nested_pid as *const c_ulong).cast(),
+                    1,
+                );
+                change(
+                    display,
+                    wrong_class,
+                    pid_atom,
+                    6,
+                    32,
+                    0,
+                    (&wrong_pid as *const c_ulong).cast(),
+                    1,
+                );
+                sync(display, 0);
+            }
+            let attributes = |window| {
+                unsafe {
+                    sync(display, 0);
+                }
+                let mut value: Attributes = unsafe { std::mem::zeroed() };
+                assert_ne!(unsafe { get(display, window, &mut value) }, 0);
+                (value.x, value.y, value.width, value.height, value.map_state)
+            };
+            let desired = PanelSlot {
+                parent,
+                x: 21,
+                y: 34,
+                width: 312,
+                height: 198,
+            };
+            assert!(resize_embedded_page_for_process(desired, 17));
+            assert_eq!(attributes(child), (21, 34, 312, 198, 2));
+            assert_eq!(attributes(second), (4, 5, 90, 80, 2));
+            assert_eq!(attributes(nested), (6, 7, 30, 40, 2));
+            assert_eq!(attributes(wrong_class), (8, 9, 50, 60, 2));
+            assert!(set_embedded_page_visible_for_process(parent, 17, false));
+            assert_eq!(attributes(child).4, 0);
+            assert_eq!(attributes(second).4, 2);
+            assert!(set_embedded_page_visible_for_process(parent, 17, true));
+            assert_eq!(attributes(child).4, 2);
+            assert!(resize_embedded_page_for_process(
+                PanelSlot {
+                    x: 23,
+                    y: 35,
+                    ..desired
+                },
+                29
+            ));
+            assert_eq!(attributes(second), (23, 35, 312, 198, 2));
+            assert_eq!(attributes(child), (21, 34, 312, 198, 2));
+            for pid in [0, 31, 37, 999] {
+                assert!(!set_embedded_page_visible_for_process(parent, pid, false));
+                assert!(!resize_embedded_page_for_process(desired, pid));
+            }
+            for (kind, format, count) in
+                [(31, 32, 1), (6, 8, 1), (6, 16, 1), (6, 32, 0), (6, 32, 2)]
+            {
+                set_pid(child, kind, format, count);
+                unsafe {
+                    sync(display, 0);
+                }
+                assert!(!set_embedded_page_visible_for_process(parent, 17, false));
+                assert!(!resize_embedded_page_for_process(desired, 17));
+                assert_eq!(attributes(child), (21, 34, 312, 198, 2));
+                assert_eq!(attributes(second), (23, 35, 312, 198, 2));
+            }
+            unsafe {
+                delete(display, child, pid_atom);
+                sync(display, 0);
+            }
+            assert!(!set_embedded_page_visible_for_process(parent, 17, false));
+            set_pid(child, 6, 32, 1);
+            unsafe {
+                sync(display, 0);
+            }
+            assert!(set_embedded_page_visible_for_process(parent, 17, false));
+            assert!(set_embedded_page_visible_for_process(parent, 17, true));
+            // A dead window produces a connection-local checked protocol error;
+            // subsequent host operations still work, without a global handler.
+            unsafe {
+                destroy(display, wrong_class);
+                sync(display, 0);
+            }
+            assert!(!embedded_xcb::checked_mapping_for_test(
+                u32::try_from(wrong_class).unwrap()
+            ));
+            assert!(resize_embedded_page_for_process(desired, 17));
+        }
         unsafe {
             destroy(display, parent);
             sync(display, 0);
-            close(display);
+        }
+        owned.parent = 0;
+        if owned_selector {
+            assert!(!set_embedded_page_visible_for_process(parent, 17, true));
+            assert!(!resize_embedded_page_for_process(slot, 17));
+            // The legacy entry shares the same checked implementation.
+            resize_embedded_page(slot);
         }
     }
 

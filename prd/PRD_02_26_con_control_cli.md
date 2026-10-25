@@ -57,6 +57,22 @@ flowchart LR
 - The two CLIs do not share a wire: the workbench uses its documented public
   transport, while con uses the private `ATC1` frame described below.
 
+## Development authorization observations
+
+The serial authorization presentation's behavior is owned by
+[PRD 31.01.02](PRD_02_31_01_02_provider_pool.md#development-join-authorization-transport-and-serial-presentation).
+Its control observations use an explicit auth role in addition to legacy
+known-authorization-URL detection. `list-tabs` and browser field snapshots
+redact the role's URL as `authorization://private`, use a fixed title and omit
+private title/error/editor contents across provider redirects. Pixel screenshots
+remain observations of the actual visible page; they are not sanitized text.
+
+`close-tab` on that presentation consumes the dismissal and leaves its Browser
+node alive with the restored ordinary page. Its development success object is
+`{"authorization_dismissed":"@N"}` instead of falsely returning `closed`.
+An ordinary tab close still returns `{"closed":"@N"}`. This is a result-shape
+extension, not an additional control command or a claim of native auth evidence.
+
 ## Self-description
 
 - [v] `minicon --status` reports what the running machine gave this build:

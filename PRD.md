@@ -208,6 +208,8 @@ flowchart LR
   designs with product implementation and evidence still open. The pool owner
   records a partial private-store/HTTP backend checkpoint for keyed profiles,
   alias allowlists, isolated sessions/revocation and shared account limits;
+  its authorization development join adds explicit account contexts, pinned
+  login networks and ordinary-page restoration with local consumer regressions.
   actual three-account/native UI acceptance remains open.
   [The plan](plan/plan-v0.2.23.md) sequences both branches. Implementation is
   active under the owner's public-0.2.23 goal. Installation remains

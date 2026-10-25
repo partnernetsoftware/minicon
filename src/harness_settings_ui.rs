@@ -20,6 +20,9 @@ enum Field {
     AccountLabel,
     LoginProxy,
     ServiceProxy,
+    ConnectLabel,
+    ConnectLoginProxy,
+    ConnectServiceProxy,
 }
 
 #[derive(Clone, Copy)]
@@ -29,6 +32,8 @@ enum Row {
     Port,
     ListenerActions,
     Accounts,
+    ConnectInput(Field),
+    ConnectNetworkHint,
     Login,
     LoginActions,
     Challenge,
@@ -54,10 +59,29 @@ enum Row {
 }
 
 struct DeviceChallenge {
+    attempt: provider_runtime::AttemptId,
+    context: browser::PageContext,
     verification_url: provider_auth::Secret,
     user_code: provider_auth::Secret,
     deadline: Instant,
     remaining_seconds: u64,
+}
+
+struct ConnectionDraft {
+    label: composer::ComposerState,
+    login: composer::ComposerState,
+    service: composer::ComposerState,
+    provider: Provider,
+}
+impl Default for ConnectionDraft {
+    fn default() -> Self {
+        Self {
+            label: Default::default(),
+            login: Default::default(),
+            service: Default::default(),
+            provider: Provider::DeepSeek,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -130,7 +154,7 @@ fn row_field(row: Row) -> Option<Field> {
     match row {
         Row::Port => Some(Field::Port),
         Row::ModelInput => Some(Field::Model),
-        Row::AccountInput(field) => Some(field),
+        Row::AccountInput(field) | Row::ConnectInput(field) => Some(field),
         _ => None,
     }
 }
@@ -138,17 +162,21 @@ fn field_limits(field: Field) -> Limits {
     match field {
         Field::Port => PORT_LIMITS,
         Field::Model => MODEL_LIMITS,
-        Field::AccountLabel => Limits {
+        Field::AccountLabel | Field::ConnectLabel => Limits {
             max_bytes: 128,
             preedit_chars: 128,
         },
-        Field::LoginProxy | Field::ServiceProxy => Limits {
+        Field::LoginProxy
+        | Field::ServiceProxy
+        | Field::ConnectLoginProxy
+        | Field::ConnectServiceProxy => Limits {
             max_bytes: 2048,
             preedit_chars: 256,
         },
     }
 }
 
+#[derive(Default)]
 pub(super) struct HarnessSettings {
     runtime: Option<provider_runtime::Runtime>,
     view: View,
@@ -159,15 +187,70 @@ pub(super) struct HarnessSettings {
     drag: Option<usize>,
     clicks: minicon_core::click::ClickCounter<usize>,
     error: Option<String>,
+    auth_error: Option<(provider_runtime::AttemptId, String)>,
+    cancelled_attempt: Option<provider_runtime::AttemptId>,
     challenge: Option<DeviceChallenge>,
     challenge_expired: bool,
     account_focus: Option<String>,
     account_draft: AccountDraft,
     account_drafts: std::collections::HashMap<String, AccountDraft>,
     account_save_sequence: u64,
+    connection_draft: ConnectionDraft,
 }
 
 impl HarnessSettings {
+    fn receive_device_challenge(
+        &mut self,
+        challenge: DeviceChallenge,
+        dismissed: Option<provider_runtime::AttemptId>,
+    ) -> bool {
+        if !self.view.login_active
+            || self.auth_attempt() != Some(challenge.attempt)
+            || dismissed == Some(challenge.attempt)
+            || challenge.deadline <= Instant::now()
+        {
+            return false;
+        }
+        self.challenge = Some(challenge);
+        self.challenge_expired = false;
+        true
+    }
+
+    pub(super) fn auth_attempt(&self) -> Option<provider_runtime::AttemptId> {
+        self.view
+            .auth_attempt
+            .filter(|attempt| Some(*attempt) != self.cancelled_attempt)
+    }
+    pub(super) fn cancel_login(&mut self) {
+        self.cancelled_attempt = self.view.auth_attempt;
+        self.challenge = None;
+        self.challenge_expired = false;
+        let prior_error = self.error.take();
+        self.act(Action::CancelLogin);
+        if self.error.is_none() {
+            self.error = prior_error;
+        }
+    }
+    pub(super) fn auth_failed(&mut self, message: &str) {
+        let attempt = self.view.auth_attempt;
+        self.cancel_login();
+        if let Some(attempt) = attempt {
+            self.auth_error = Some((attempt, message.to_owned()));
+        }
+    }
+
+    fn reconcile_auth_result(&mut self) {
+        if let Some((attempt, _)) = &self.auth_error
+            && (self
+                .view
+                .auth_attempt
+                .is_some_and(|active| active != *attempt)
+                || self.view.auth_result
+                    == Some((*attempt, provider_runtime::AuthOutcome::CredentialStored)))
+        {
+            self.auth_error = None;
+        }
+    }
     fn new(window: &PixelWindow, language: ui::UiLanguage) -> Self {
         let root = config_path()
             .and_then(|path| path.parent().map(|p| p.join("harness")))
@@ -223,12 +306,15 @@ impl HarnessSettings {
             drag: None,
             clicks: Default::default(),
             error,
+            auth_error: None,
+            cancelled_attempt: None,
             challenge: None,
             challenge_expired: false,
             account_focus: None,
             account_draft: AccountDraft::default(),
             account_drafts: Default::default(),
             account_save_sequence: 0,
+            connection_draft: Default::default(),
         }
     }
 
@@ -240,6 +326,10 @@ impl HarnessSettings {
             Row::Port,
             Row::ListenerActions,
             Row::Accounts,
+            Row::ConnectInput(Field::ConnectLabel),
+            Row::ConnectInput(Field::ConnectLoginProxy),
+            Row::ConnectInput(Field::ConnectServiceProxy),
+            Row::ConnectNetworkHint,
             Row::Login,
             Row::LoginActions,
         ];
@@ -293,6 +383,9 @@ impl HarnessSettings {
             Field::AccountLabel => &self.account_draft.label,
             Field::LoginProxy => &self.account_draft.login,
             Field::ServiceProxy => &self.account_draft.service,
+            Field::ConnectLabel => &self.connection_draft.label,
+            Field::ConnectLoginProxy => &self.connection_draft.login,
+            Field::ConnectServiceProxy => &self.connection_draft.service,
         }
     }
 
@@ -303,13 +396,23 @@ impl HarnessSettings {
             Field::AccountLabel => &mut self.account_draft.label,
             Field::LoginProxy => &mut self.account_draft.login,
             Field::ServiceProxy => &mut self.account_draft.service,
+            Field::ConnectLabel => &mut self.connection_draft.label,
+            Field::ConnectLoginProxy => &mut self.connection_draft.login,
+            Field::ConnectServiceProxy => &mut self.connection_draft.service,
         }
     }
 
     fn blur(&mut self) {
         field_editor::apply(&mut self.port, Command::Blur, PORT_LIMITS);
         field_editor::apply(&mut self.model, Command::Blur, MODEL_LIMITS);
-        for field in [Field::AccountLabel, Field::LoginProxy, Field::ServiceProxy] {
+        for field in [
+            Field::AccountLabel,
+            Field::LoginProxy,
+            Field::ServiceProxy,
+            Field::ConnectLabel,
+            Field::ConnectLoginProxy,
+            Field::ConnectServiceProxy,
+        ] {
             field_editor::apply(self.editor_mut(field), Command::Blur, field_limits(field));
         }
         self.focused = None;
@@ -365,6 +468,7 @@ impl HarnessSettings {
     fn status(&self) -> Option<String> {
         self.error
             .clone()
+            .or_else(|| self.auth_error.as_ref().map(|(_, message)| message.clone()))
             .or_else(|| self.account_draft.save_error.map(|error| error.to_string()))
             .or_else(|| self.view.status.clone())
     }
@@ -457,6 +561,25 @@ impl HarnessSettings {
         }
     }
 
+    fn connect_account(&mut self, provider: Provider) {
+        let login = NetworkPolicy::from_input(&self.connection_draft.login.text);
+        let service = NetworkPolicy::from_input(&self.connection_draft.service.text);
+        let (Ok(login), Ok(service)) = (login, service) else {
+            self.error = Some(
+                "Choose a supported HTTP proxy, or leave each network field empty for Direct."
+                    .into(),
+            );
+            return;
+        };
+        self.connection_draft.provider = provider;
+        self.act(Action::Connect {
+            provider,
+            label: self.connection_draft.label.text.clone(),
+            login,
+            service,
+        });
+    }
+
     fn submit(&mut self, field: Field) {
         match field {
             Field::Port if self.port_editable() => {
@@ -481,6 +604,9 @@ impl HarnessSettings {
                 }
             }
             Field::AccountLabel | Field::LoginProxy | Field::ServiceProxy => self.save_account(),
+            Field::ConnectLabel | Field::ConnectLoginProxy | Field::ConnectServiceProxy => {
+                self.connect_account(self.connection_draft.provider)
+            }
         }
     }
 
@@ -492,16 +618,18 @@ impl HarnessSettings {
             } else {
                 Action::Stop
             }),
-            Row::Login => self.act(Action::Login(if column == 0 {
+            Row::Login => self.connect_account(if column == 0 {
                 Provider::DeepSeek
             } else {
                 Provider::OpenCode
-            })),
-            Row::LoginActions => self.act(if column == 0 {
-                Action::CancelLogin
-            } else {
-                Action::RefreshAccounts
             }),
+            Row::LoginActions => {
+                if column == 0 {
+                    self.cancel_login();
+                } else {
+                    self.act(Action::RefreshAccounts);
+                }
+            }
             Row::ChallengeActions => {
                 if let Some(challenge) = &self.challenge
                     && Instant::now() < challenge.deadline
@@ -585,6 +713,7 @@ fn row_columns(row: Row) -> usize {
         | Row::ChallengeActions
         | Row::Account(_)
         | Row::AccountInput(_)
+        | Row::ConnectInput(_)
         | Row::AccountActions
         | Row::AccountConnection
         | Row::ModelInput
@@ -600,6 +729,11 @@ fn row_id(row: Row) -> String {
         Row::Port => "port",
         Row::ListenerActions => "listener_actions",
         Row::Accounts => "accounts",
+        Row::ConnectInput(Field::ConnectLabel) => "connect_label",
+        Row::ConnectInput(Field::ConnectLoginProxy) => "connect_login_proxy",
+        Row::ConnectInput(Field::ConnectServiceProxy) => "connect_service_proxy",
+        Row::ConnectInput(_) => "connect_input",
+        Row::ConnectNetworkHint => "connect_network_hint",
         Row::Login => "login",
         Row::LoginActions => "login_actions",
         Row::Challenge => "device_challenge",
@@ -746,8 +880,18 @@ impl ConApp {
                     button(surface, cell(1, 2), "Stop", false);
                 }
                 Row::Login => {
-                    button(surface, cell(0, 2), "Add DeepSeek", false);
-                    button(surface, cell(1, 2), "Add OpenCode", false);
+                    button(
+                        surface,
+                        cell(0, 2),
+                        "Continue with DeepSeek",
+                        settings.connection_draft.provider == Provider::DeepSeek,
+                    );
+                    button(
+                        surface,
+                        cell(1, 2),
+                        "Continue with OpenCode",
+                        settings.connection_draft.provider == Provider::OpenCode,
+                    );
                 }
                 Row::LoginActions => {
                     button(
@@ -799,11 +943,14 @@ impl ConApp {
                     );
                     button(surface, cell(1, 2), "Remove account", false);
                 }
-                Row::AccountInput(field) => {
+                Row::AccountInput(field) | Row::ConnectInput(field) => {
                     let name = match field {
                         Field::AccountLabel => "Account name",
                         Field::LoginProxy => "Login proxy",
                         Field::ServiceProxy => "Service proxy",
+                        Field::ConnectLabel => "New account label (optional)",
+                        Field::ConnectLoginProxy => "Login proxy (blank = Direct)",
+                        Field::ConnectServiceProxy => "Service proxy (blank = Direct)",
                         _ => "Account setting",
                     };
                     host_ui::paint_single_line_host_editor(
@@ -860,6 +1007,11 @@ impl ConApp {
                 Row::AccountNetworkHint => {
                     label = "Empty proxy = Direct. Login and service networks are independent."
                         .to_owned();
+                }
+                Row::ConnectNetworkHint => {
+                    label =
+                        "New account: choose separate login and service networks, then Continue."
+                            .to_owned()
                 }
                 Row::NoAccounts => label = "No account. Add a provider to continue.".to_owned(),
                 Row::ModelInput => {
@@ -1113,7 +1265,8 @@ impl ConApp {
         self.poll_harness_settings(window);
         if let Some(settings) = &mut self.harness_settings {
             settings.blur();
-            settings.act(Action::Login(provider));
+            settings.connection_draft.provider = provider;
+            settings.focused = Some(Field::ConnectLabel);
         }
         self.sync_embedded_page(window);
         self.mark_host_ui_full_and_repaint(window);
@@ -1124,7 +1277,14 @@ impl ConApp {
             settings.drag = None;
             field_editor::apply(&mut settings.port, Command::Blur, PORT_LIMITS);
             field_editor::apply(&mut settings.model, Command::Blur, MODEL_LIMITS);
-            for field in [Field::AccountLabel, Field::LoginProxy, Field::ServiceProxy] {
+            for field in [
+                Field::AccountLabel,
+                Field::LoginProxy,
+                Field::ServiceProxy,
+                Field::ConnectLabel,
+                Field::ConnectLoginProxy,
+                Field::ConnectServiceProxy,
+            ] {
                 field_editor::apply(
                     settings.editor_mut(field),
                     Command::Blur,
@@ -1145,6 +1305,9 @@ impl ConApp {
             Some(Field::AccountLabel) => "harness_account_label",
             Some(Field::LoginProxy) => "harness_login_proxy",
             Some(Field::ServiceProxy) => "harness_service_proxy",
+            Some(Field::ConnectLabel) => "harness_connect_label",
+            Some(Field::ConnectLoginProxy) => "harness_connect_login_proxy",
+            Some(Field::ConnectServiceProxy) => "harness_connect_service_proxy",
             None => "harness_settings",
         }
     }
@@ -1164,7 +1327,14 @@ impl ConApp {
             // Menus suspend a settings field; real route changes explicitly blur.
             field_editor::apply(&mut settings.port, Command::Blur, PORT_LIMITS);
             field_editor::apply(&mut settings.model, Command::Blur, MODEL_LIMITS);
-            for field in [Field::AccountLabel, Field::LoginProxy, Field::ServiceProxy] {
+            for field in [
+                Field::AccountLabel,
+                Field::LoginProxy,
+                Field::ServiceProxy,
+                Field::ConnectLabel,
+                Field::ConnectLoginProxy,
+                Field::ConnectServiceProxy,
+            ] {
                 field_editor::apply(
                     settings.editor_mut(field),
                     Command::Blur,
@@ -1217,6 +1387,7 @@ impl ConApp {
                 settings.challenge_expired = false;
             }
             settings.view = next;
+            settings.reconcile_auth_result();
             settings.sync_account_drafts();
             changed = true;
         }
@@ -1226,23 +1397,47 @@ impl ConApp {
                     let _ = clipboard_status::set_text(secret.expose());
                 }
                 Effect::DeviceChallenge {
+                    attempt,
+                    context,
                     verification_url,
                     user_code,
-                    expires_in,
+                    deadline,
                 } => {
                     if let Some(settings) = &mut self.harness_settings {
                         let now = Instant::now();
-                        settings.challenge = Some(DeviceChallenge {
-                            verification_url,
-                            user_code,
-                            deadline: now.checked_add(expires_in).unwrap_or(now),
-                            remaining_seconds: expires_in.as_secs(),
-                        });
+                        changed |= settings.receive_device_challenge(
+                            DeviceChallenge {
+                                attempt,
+                                context,
+                                verification_url,
+                                user_code,
+                                deadline,
+                                remaining_seconds: deadline
+                                    .saturating_duration_since(now)
+                                    .as_secs()
+                                    .max(1),
+                            },
+                            self.dismissed_auth_attempt,
+                        );
+                    }
+                }
+                Effect::OpenAuth {
+                    attempt,
+                    context,
+                    url,
+                } => self.open_harness_auth(window, attempt, context, url.expose()),
+                Effect::AuthFinished(attempt) => {
+                    if let Some(settings) = &mut self.harness_settings
+                        && settings
+                            .challenge
+                            .as_ref()
+                            .is_some_and(|c| c.attempt == attempt)
+                    {
+                        settings.challenge = None;
                         settings.challenge_expired = false;
                     }
-                    changed = true;
+                    self.finish_harness_auth(window, attempt);
                 }
-                Effect::OpenBrowser(url) => self.open_harness_login(window, url.expose()),
             }
         }
         if changed {
@@ -1251,12 +1446,14 @@ impl ConApp {
     }
 
     fn open_harness_login(&mut self, window: &PixelWindow, url: &str) {
-        self.blur_harness_fields();
-        self.settings_open = false;
-        self.close_browser_menu(window, false, false);
-        self.present_http_link(window, url);
-        self.sync_embedded_page(window);
-        self.mark_host_ui_full_and_repaint(window);
+        let context = self
+            .harness_settings
+            .as_ref()
+            .and_then(|settings| settings.challenge.as_ref())
+            .map(|challenge| (challenge.attempt, challenge.context.clone()));
+        if let Some((attempt, context)) = context {
+            self.open_harness_auth(window, attempt, context, url);
+        }
     }
 
     pub(super) fn route_harness_settings(
@@ -1339,7 +1536,7 @@ impl ConApp {
                         let field = match (row, column) {
                             (Row::Port, 0) if settings.port_editable() => Some(Field::Port),
                             (Row::ModelInput, 0) => Some(Field::Model),
-                            (Row::AccountInput(field), 0) => Some(field),
+                            (Row::AccountInput(field) | Row::ConnectInput(field), 0) => Some(field),
                             _ => None,
                         };
                         if let Some(field) = field {
@@ -1488,6 +1685,76 @@ impl ConApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn queued_device_challenge_cannot_return_after_cancel_or_replace_another_attempt() {
+        let attempt = provider_runtime::AttemptId(42);
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let challenge = || DeviceChallenge {
+            attempt,
+            context: browser::PageContext {
+                profile: minicon_web::PageProfile {
+                    data_directory: std::env::temp_dir().join("unused-device-fixture"),
+                    store_identifier: [2; 16],
+                },
+                proxy: Default::default(),
+            },
+            verification_url: provider_auth::Secret::new("https://opencode.ai/console/device")
+                .unwrap(),
+            user_code: provider_auth::Secret::new("synthetic-code").unwrap(),
+            deadline,
+            remaining_seconds: 20,
+        };
+        let mut settings = HarnessSettings::default();
+        assert!(!settings.receive_device_challenge(challenge(), None));
+        assert!(settings.challenge.is_none());
+        settings.view.login_active = true;
+        settings.view.auth_attempt = Some(provider_runtime::AttemptId(43));
+        assert!(!settings.receive_device_challenge(challenge(), None));
+        assert!(settings.challenge.is_none());
+        settings.view.auth_attempt = Some(attempt);
+        assert!(!settings.receive_device_challenge(challenge(), Some(attempt)));
+        assert!(settings.challenge.is_none());
+        assert!(settings.receive_device_challenge(challenge(), None));
+        assert_eq!(settings.challenge.as_ref().unwrap().deadline, deadline);
+        settings.cancel_login();
+        assert!(settings.challenge.is_none());
+        assert!(!settings.receive_device_challenge(challenge(), None));
+        settings.cancelled_attempt = None;
+        settings.challenge = None;
+        let mut expired = challenge();
+        expired.deadline = Instant::now() - Duration::from_secs(1);
+        assert!(!settings.receive_device_challenge(expired, None));
+        assert!(settings.challenge.is_none());
+    }
+
+    #[test]
+    fn committed_login_clears_only_its_own_browser_failure_after_cancel_loses_the_race() {
+        let attempt = provider_runtime::AttemptId(42);
+        let mut settings = HarnessSettings {
+            auth_error: Some((attempt, "Isolated authorization page unavailable".into())),
+            error: Some("Unrelated invalid port draft".into()),
+            ..Default::default()
+        };
+        settings.view.auth_result = Some((
+            provider_runtime::AttemptId(41),
+            provider_runtime::AuthOutcome::CredentialStored,
+        ));
+        settings.reconcile_auth_result();
+        assert!(settings.auth_error.is_some());
+        settings.view.auth_result =
+            Some((attempt, provider_runtime::AuthOutcome::CredentialStored));
+        settings.reconcile_auth_result();
+        assert!(settings.auth_error.is_none());
+        assert_eq!(
+            settings.status().as_deref(),
+            Some("Unrelated invalid port draft")
+        );
+        settings.auth_error = Some((attempt, "Old failure".into()));
+        settings.view.auth_attempt = Some(provider_runtime::AttemptId(43));
+        settings.reconcile_auth_result();
+        assert!(settings.auth_error.is_none());
+    }
 
     #[test]
     fn save_acknowledgement_rebases_only_its_form_and_keeps_later_draft_and_caret() {
