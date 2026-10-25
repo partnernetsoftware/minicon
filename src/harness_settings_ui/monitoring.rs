@@ -1,5 +1,8 @@
 //! Monitoring form state. Only explicit actions reach the metadata owner.
 use super::*;
+use crate::harness_workspace_ui::usage_report::{
+    attempt_label, freshness_label, pause_label, persistence_label,
+};
 use crate::provider_monitoring as monitor;
 use std::collections::BTreeMap;
 
@@ -64,6 +67,59 @@ mod tests {
             }),
             ..View::default()
         }
+    }
+    #[test]
+    fn monitoring_state_and_action_feedback_are_readable_without_changing_policy() {
+        let mut a = account("a");
+        a.freshness = monitor::Freshness::Stale;
+        a.latest_attempt = Some(monitor::Attempt {
+            request: 1,
+            finished_unix_ms: Some(1),
+            result: Err(monitor::MonitorError::NeedsAuth),
+        });
+        let v = view(vec![a]);
+        let mut ui = MonitoringUi::default();
+        ui.sync(&v);
+        ui.forms.get_mut("a").unwrap().feedback = Some(Err(monitor::MonitorError::NeedsAuth));
+        for (language, off, auth, saved) in [
+            (
+                ui::UiLanguage::English,
+                "Monitoring off",
+                "Sign in again",
+                "Saved",
+            ),
+            (
+                ui::UiLanguage::ChineseSimplified,
+                "监测已关闭",
+                "请重新登录",
+                "已保存",
+            ),
+            (
+                ui::UiLanguage::ChineseTraditional,
+                "監測已關閉",
+                "請重新登入",
+                "已儲存",
+            ),
+        ] {
+            let state = ui.label(Item::State, &v, &v.usage, language);
+            assert!(
+                state.contains(off) && state.contains(auth) && state.contains(saved),
+                "visible state must distinguish off policy, failed read and saved cache: {state}"
+            );
+            let feedback = ui.label(Item::Feedback, &v, &v.usage, language);
+            assert!(
+                feedback.contains(auth),
+                "the action must explain how to recover: {feedback}"
+            );
+            for label in [state, feedback] {
+                assert!(
+                    !label.contains('"') && !label.contains("Some(") && !label.contains("Err("),
+                    "internal debug syntax is not user feedback: {label}"
+                );
+            }
+        }
+        assert!(!v.account_monitoring.accounts[0].policy.enabled);
+        assert!(ui.forms["a"].pending.is_none());
     }
     #[test]
     fn monitoring_policy_receipt_preserves_later_text_caret_and_account_isolation() {
@@ -755,7 +811,7 @@ impl MonitoringUi {
             Item::Summary=>super::super::harness_workspace_ui::usage_report::compact(summary,l),
             Item::OpenReport=>tr("Open usage report","打开用量报告","開啟用量報告").into(),
             Item::Account(i)=>view.account_monitoring.accounts.get(i).map_or_else(String::new,|a|format!("{}{}: {}",if self.selected.as_ref()==Some(&a.account){"> "}else{""},tr("Account","账号","帳號"),view.accounts.iter().find(|r|r.id==a.account).map_or(a.account.as_str(),|r|r.label.as_str()))),
-            Item::State=>self.account(view).map_or_else(||tr("Metadata not loaded / selected account unavailable","元数据未加载／所选账号不可用","中繼資料未載入／所選帳號無法使用").into(),|a|format!("{}: {:?}; {:?}; {:?}; {:?}",tr("Reading / pause / attempt / storage","读数／暂停／尝试／存储","讀數／暫停／嘗試／儲存"),super::super::harness_workspace_ui::usage_report::freshness_label(a.freshness,l),a.paused,a.latest_attempt.as_ref().map(|r|r.result),super::super::harness_workspace_ui::usage_report::persistence_label(view.account_monitoring.persistence,l))),
+            Item::State=>self.account(view).map_or_else(||tr("Metadata not loaded / selected account unavailable","元数据未加载／所选账号不可用","中繼資料未載入／所選帳號無法使用").into(),|a|format!("{}: {}; {}; {}; {}",tr("Reading / pause / attempt / storage","读数／暂停／尝试／存储","讀數／暫停／嘗試／儲存"),freshness_label(a.freshness,l),pause_label(a.paused,l),attempt_label(a.latest_attempt.as_ref().map(|r|r.result),l),persistence_label(view.account_monitoring.persistence,l))),
             Item::Resources(i)=>self.account(view).and_then(|a|a.last_success.as_ref()).map_or_else(String::new,|r|match &r.resources{
                 monitor::Resources::DeepSeekWallets(wallets)=>wallets.get(i).map_or_else(String::new,|w|format!("{:?} {:?}: {}",w.kind,w.currency,w.balance.0)),
                 monitor::Resources::OpenCodeGo(windows)=>windows.get(i).map_or_else(String::new,|w|format!("Go {:?}: {}%; {}: {}",w.window,w.used_percent.0,tr("Limited","有限额","有限額"),w.limited)),
@@ -766,7 +822,7 @@ impl MonitoringUi {
             Item::AddThreshold=>tr("Add a resource threshold","添加资源阈值","新增資源門檻").into(),
             Item::Save=>tr("Save monitoring policy","保存监测策略","儲存監測原則").into(),
             Item::Off=>tr("Turn monitoring off","关闭监测","關閉監測").into(),
-            Item::PreviousRead=>self.selected.as_ref().and_then(|id|self.forms.get(id)).and_then(|f|f.refresh_terminal.as_ref()).map_or_else(String::new,|r|format!("{} #{}: {:?}",tr("Earlier one-off read","先前单次读取","先前單次讀取"),r.request,r.result)),
+            Item::PreviousRead=>self.selected.as_ref().and_then(|id|self.forms.get(id)).and_then(|f|f.refresh_terminal.as_ref()).map_or_else(String::new,|r|format!("{} #{}: {}",tr("Earlier one-off read","先前单次读取","先前單次讀取"),r.request,attempt_label(Some(r.result),l))),
             Item::Refresh=>tr("Read metadata once", "读取一次元数据", "讀取一次中繼資料").into(),
             Item::Resume=>tr("Resume opted-in monitoring","恢复已启用的监测","恢復已啟用的監測").into(),
             Item::Feedback => self.local_error.map(|error| error.label(l).to_owned()).unwrap_or_else(|| {
@@ -779,7 +835,7 @@ impl MonitoringUi {
                         tr("Monitoring is off; threshold edits are not saved.","监测已关闭；阈值修改尚未保存。","監測已關閉；門檻修改尚未儲存。")
                     } else { tr("Monitoring is off.","监测已关闭。","監測已關閉。") }.into();
                 }
-                form.and_then(|form| form.feedback).map_or_else(||tr("Views use cached readings; manual read never resumes automatic monitoring.","界面只读缓存；手动读取不会恢复自动监测。","介面只讀快取；手動讀取不會恢復自動監測。").into(), |result|format!("{}: {result:?}",tr("Latest explicit action","最近显式操作","最近明確操作")))
+                form.and_then(|form| form.feedback).map_or_else(||tr("Views use cached readings; manual read never resumes automatic monitoring.","界面只读缓存；手动读取不会恢复自动监测。","介面只讀快取；手動讀取不會恢復自動監測。").into(), |result|format!("{}: {}",tr("Latest explicit action","最近显式操作","最近明確操作"),attempt_label(Some(result),l)))
             }),
         }
     }

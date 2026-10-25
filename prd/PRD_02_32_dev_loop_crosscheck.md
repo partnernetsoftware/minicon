@@ -40,7 +40,7 @@ dev-loop-crosscheck — agent cross-arch dev/test loop
 │   │   evidence: exact-source input-readiness.json on both hosted Windows targets
 │   │   safe failure: unavailable/absent prerequisites are BLOCKED or SETUP_REQUIRED, never native-input PASS
 │   │   dependency: disposable hosted Windows desktop; non-goal: foreground, keyboard, clipboard, language installation or product qualification
-│   ├── [_] isolated Windows physical browser/Harness controls court
+│   ├── [-] isolated Windows physical browser/Harness controls court
 │   │   invariant: actual foreground-owned SendInput, native Pinyin and exact clipboard restoration retain distinct provenance
 │   │   evidence: current default product image, public editor/page observations and bounded owned-client PNGs on each selected target
 │   │   safe failure: missing IME, lost foreground, failed restoration or forced cleanup is BLOCKED/failure
@@ -1028,3 +1028,26 @@ The retained receipts are under
 outcomes. Capture a bounded synthetic public snapshot at failure before cleanup
 to locate the actual focus/trigger state; do not weaken the original assertion
 or interpret missing diagnostic state as a product pass.
+
+The exact `13cbfed` replay
+[run40239216117](https://github.com/partnernetsoftware/minicon/actions/runs/40239216117)
+retains the same two failures plus their actual public snapshots. The x86_64
+GUI remains foreground, but the robot header has intercepted forward Tab at
+the old proxy/New boundary. PRD36 owns the complete forward/reverse traversal
+join, including the actual forward-exit loop repair; PRD25.02 keeps its editor
+and menu requirements. The native fixture must visit both new header buttons
+and still reach New, not drop that final assertion.
+
+For a refused initial foreground request, the hosted fixture may attempt one
+real activation click only after resolving its own visible client's center,
+verifying WindowFromPoint's PID and root HWND match the direct owned GUI, and
+confirming no overlay covers that point. It then requires actual foreground
+readback before any keyboard input. An obscured target, partial input or lost
+foreground blocks; there is no repeated focus fight, AttachThreadInput or
+foreground-lock bypass. This is disposable-court setup, never owner-desktop
+execution or a CU product capability.
+
+`target-six/v0.2.23-provider/native-input-local-refusal-current.json` verifies
+the current fixture still refuses a local constructor before any native DLL
+call; its initial guard AST is identical to the already counterexample-proven
+guard at `c420449`. No owner clipboard, foreground or input is accessed.

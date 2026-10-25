@@ -119,10 +119,27 @@ second set of form logic into the large screen.
   workspace; **Back to workspace** is also visible inside Harness. Normal keyboard
   focus traversal, Enter and Space activate it. Do not invent an unqualified
   global shortcut that could steal an existing terminal/IME chord.
+  With Browser chrome focus, the complete cycle is New -> address -> active
+  proxy -> proxy-menu trigger -> Robot -> Settings -> New; Shift+Tab reverses
+  those edges. Closing the group with Escape restores its entry owner. A
+  forward exit from Settings must reach New, not return to proxy and trap the
+  user in the header group. Console/zero-tab return keeps its existing owner.
+  The actual native court exposed this join after the robot was introduced;
+  integration hot files are the existing header router and its public native
+  fixture. Browser editing/menu semantics retain PRD25.02 ownership.
 - Opening Harness closes transient menus/settings chrome while preserving
   their unapplied drafts. A composed Escape first cancels/closes the nearest
   transient control; bare Escape alone must not abandon a task or leave the
   full workspace unexpectedly.
+
+The forward/reverse Browser-header join now has an extended public control
+journey, including exact visible `header_focus` observations and no activation
+during traversal. Restoring the old forward exit to proxy breaks its original
+`forward header exit must reach New rather than loop back to proxy` assertion;
+exact restoration passes again. The source-bound receipt is
+`target-six/v0.2.23-provider/presentation-header-controls/receipt.json`.
+This is a no-activate, public injected-input development journey, not physical
+keyboard/IME or final signed-artifact evidence. PRD32 owns its hosted replay.
 - No account login, key creation, network refresh, listener start or task spawn
   occurs merely because the robot is opened. Read cached runtime state. Hidden
   tabs and an explicitly running service continue under their existing lifetime.

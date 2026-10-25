@@ -757,7 +757,11 @@ impl ConApp {
         self.composer.focused = owner == Some(browser_menu::MenuFocus::Composer);
         self.notes_focused = owner == Some(browser_menu::MenuFocus::Notes);
         self.browser_chrome_trigger = if self.active_is_browser() {
-            Some(browser_menu::ChromeTrigger::Proxy)
+            Some(if owner == Some(browser_menu::MenuFocus::NewTrigger) {
+                browser_menu::ChromeTrigger::New
+            } else {
+                browser_menu::ChromeTrigger::Proxy
+            })
         } else {
             None
         };
@@ -797,16 +801,19 @@ impl ConApp {
             let tab = key.logical == LogicalKey::Named(NamedKey::Tab);
             if !active
                 && tab
-                && !key.modifiers.shift
                 && !self.browser_proxy_menu_open
                 && !self.new_tab_menu_open
                 && self.harness_workspace.header_focus.is_none()
-                && (self.workspace.active().is_none()
-                    || self.composer.focused
-                    || self.browser_chrome_trigger == Some(browser_menu::ChromeTrigger::Proxy))
+                && ((!key.modifiers.shift
+                    && (self.workspace.active().is_none()
+                        || self.composer.focused
+                        || self.browser_chrome_trigger
+                            == Some(browser_menu::ChromeTrigger::Proxy)))
+                    || (key.modifiers.shift
+                        && self.browser_chrome_trigger == Some(browser_menu::ChromeTrigger::New)))
             {
                 self.harness_workspace.header_return_focus = Some(self.current_menu_focus());
-                self.harness_workspace.header_focus = Some(0);
+                self.harness_workspace.header_focus = Some(usize::from(key.modifiers.shift));
                 self.composer.focused = false;
                 self.browser_chrome_trigger = None;
                 self.mark_host_ui_full_and_repaint(window);
@@ -818,7 +825,11 @@ impl ConApp {
                         self.harness_workspace.header_focus = None;
                         let owner = self.harness_workspace.header_return_focus.take();
                         if self.active_is_browser() {
-                            self.browser_chrome_trigger = Some(browser_menu::ChromeTrigger::Proxy);
+                            self.browser_chrome_trigger = Some(if key.modifiers.shift {
+                                browser_menu::ChromeTrigger::Proxy
+                            } else {
+                                browser_menu::ChromeTrigger::New
+                            });
                         } else {
                             self.composer.focused =
                                 owner == Some(browser_menu::MenuFocus::Composer);
@@ -1374,6 +1385,14 @@ impl ConApp {
             ),
             ("entry", rect(layout.harness)),
             ("entry_error", self.harness_workspace.entry_error.into()),
+            (
+                "header_focus",
+                match self.harness_workspace.header_focus {
+                    Some(0) => "robot".into(),
+                    Some(1) => "settings".into(),
+                    _ => json::JsonValue::Null,
+                },
+            ),
             (
                 "selected",
                 self.harness_workspace

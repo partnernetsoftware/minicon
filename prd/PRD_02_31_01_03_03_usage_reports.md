@@ -109,6 +109,19 @@ using the existing platform civil-time conversion. Raw Unix milliseconds and
 UTC day indexes remain structured observation fields, not user-facing prose.
 Unavailable/out-of-range time is explained rather than formatted as a date.
 
+Settings and Usage share localized reading, pause, latest-attempt and storage
+labels. User-facing state must distinguish monitoring off, explicit Stop,
+disabled account, expired authorization, changed authority and retry backoff;
+failed reads keep actionable failure text and never look successful. Do not
+present Rust `Some(...)`, `Ok(())`, quoted labels or qualification-process
+jargon as product status. Unknown capability still differs from a supported
+metadata contract, and neither substitutes for a successful account reading.
+This presentation join changes no account, policy, request or persistence state.
+Hot files are the existing report label projection and Settings consumer;
+their shared native layout, metadata backend and public structured identities
+retain their existing owners. Validate both actual consumer projections in
+English/Simplified/Traditional Chinese and prove intended guard failures.
+
 ## Navigation, layout and configuration
 
 Keep five existing workspace destinations and Overview's four cards. Its compact
@@ -251,3 +264,29 @@ assertion failures across19 UI subjects, with exact source restoration and
 canonical GREEN. Frozen earlier packages remain history; no setup, compile or
 passing-mutant result is counted as RED. No aggregate UM05/06 completion or
 public-release claim follows these local, synthetic-history results.
+
+### Readable monitoring status join
+
+Settings and report now share localized pause/attempt labels for the actual
+typed states, preserve the previous resource reading on a failed refresh,
+and explain unknown capability separately from a supported metadata API.
+The reading/storage strings use ordinary display formatting; explicit-action
+feedback also avoids Rust option/result wrappers. The report explanation now
+describes provider resources versus local usage in user terms.
+
+`target-six/v0.2.23-provider/presentation-header-controls/receipt.json` records
+the two added original consumer subjects (English/Hans/Hant), their intended
+assertion failures when debug formatting is restored, and passing exact-source
+restorations. Bin discovery increases from865 to867 subjects. The same receipt
+also contains the independent header-join control owned by PRD36. No metadata
+request, policy change, physical input or clipboard action is used in these
+local controls. Native presentation and real-provider acceptance retain their
+separate scopes.
+
+The frozen local integration receipt is
+`target-six/v0.2.23-provider/presentation-header-gates/receipt.json`: fmt,
+default/native-auth strict all-target Clippy,15 report-filter and12
+monitoring-filter execution instances, the H0 and browser-menu public journeys,
+and18 alignment subjects pass. Filters intentionally overlap and are not a
+unique-subject or full-workspace count. No tracked source changes during those
+gates. Hosted matching-source presentation/input feedback remains open.

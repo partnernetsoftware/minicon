@@ -179,6 +179,8 @@ class Native:
             (self.u, "GetCursorPos", w.BOOL, [c.POINTER(w.POINT)]),
             (self.u, "SetCursorPos", w.BOOL, [c.c_int, c.c_int]),
             (self.u, "GetClientRect", w.BOOL, [w.HWND, c.POINTER(w.RECT)]),
+            (self.u, "WindowFromPoint", w.HWND, [w.POINT]),
+            (self.u, "GetAncestor", w.HWND, [w.HWND, w.UINT]),
             (self.u, "GetDC", w.HDC, [w.HWND]),
             (self.u, "ReleaseDC", c.c_int, [w.HWND, w.HDC]),
             (self.u, "SendMessageTimeoutW", c.c_ssize_t,
@@ -249,6 +251,33 @@ class Native:
         self.thread = self.u.GetWindowThreadProcessId(self.hwnd, None)
         self.original_layout = self.u.GetKeyboardLayout(self.thread)
         requested = bool(self.u.SetForegroundWindow(self.hwnd))
+        self.activation = "SetForegroundWindow-or-initial-activation"
+        if self.u.GetForegroundWindow() != self.hwnd and not requested:
+            # A real user can activate an owned visible window with one click
+            # even when Windows refuses a programmatic foreground request.
+            # This path is confined to the disposable hosted court. Resolve the
+            # actual window under the point immediately before the input;
+            # never click an overlaid/foreign window or fight for focus.
+            rect = w.RECT()
+            if not self.u.GetClientRect(self.hwnd, c.byref(rect)) or rect.right < 2 or rect.bottom < 2:
+                raise Blocked("owned activation client bounds unavailable")
+            point = w.POINT(rect.right // 2, rect.bottom // 2)
+            if not self.u.ClientToScreen(self.hwnd, c.byref(point)):
+                raise Blocked("owned activation point unavailable")
+            if not self.u.SetCursorPos(point.x, point.y):
+                raise Blocked("owned activation pointer move unavailable")
+            hit = self.u.WindowFromPoint(point)
+            owner = w.DWORD()
+            self.u.GetWindowThreadProcessId(hit, c.byref(owner))
+            if owner.value != pid or self.u.GetAncestor(hit, 2) != self.hwnd:
+                raise Blocked("owned activation point is obscured; no input sent")
+            pair = (Input * 2)(Input(kind=0, mouse=MouseInput(flags=2)),
+                               Input(kind=0, mouse=MouseInput(flags=4)))
+            if self.u.SendInput(2, pair, c.sizeof(Input)) != 2:
+                release = Input(kind=0, mouse=MouseInput(flags=4))
+                self.u.SendInput(1, c.byref(release), c.sizeof(Input))
+                raise Blocked("owned activation click was not fully accepted")
+            self.activation = "single-verified-owned-client-click"
         end = time.monotonic() + 3
         while self.u.GetForegroundWindow() != self.hwnd:
             if time.monotonic() >= end:
@@ -663,6 +692,7 @@ def main():
         wait(ready, "owned control endpoint ready", 20, unavailable=True)
         native.attach(child.pid)
         receipt["owned_pid"] = child.pid
+        receipt["native_activation"] = native.activation
         cli("resize-window", "--width", "1100", "--height", "800")
         wait(lambda: geo()["scale_permille"] > 0, "published geometry")
         click("new_root")
@@ -697,13 +727,24 @@ def main():
         native.chord(0x1B)
         wait(lambda: geo()["browser_chrome_trigger"] == "proxy", "Escape restores trigger")
         native.chord(0x09)
+        wait(lambda: geo()["harness_workspace"]["header_focus"] == "robot", "Tab reaches Robot header")
+        native.chord(0x09)
+        wait(lambda: geo()["harness_workspace"]["header_focus"] == "settings", "Tab reaches Settings header")
+        native.chord(0x09)
         wait(lambda: geo()["browser_chrome_trigger"] == "new", "Tab cycles to New trigger")
         native.chord(0x0D)
         wait(lambda: geo()["new_tab_menu_open"], "Enter opens New menu")
         observe("native-keyboard-new-menu")
         native.chord(0x1B)
         assert len(cli("list-tabs")["tabs"]) == 2, "opening menu activated an action"
-        step(phase, native_page_echo=True, ctrl_l=True, tab_menu=True)
+        native.chord(0x10, 0x09)
+        wait(lambda: geo()["harness_workspace"]["header_focus"] == "settings", "Shift+Tab reaches Settings header")
+        native.chord(0x10, 0x09)
+        wait(lambda: geo()["harness_workspace"]["header_focus"] == "robot", "Shift+Tab reaches Robot header")
+        native.chord(0x10, 0x09)
+        wait(lambda: geo()["browser_chrome_trigger"] == "proxy", "Shift+Tab returns to proxy trigger")
+        step(phase, native_page_echo=True, ctrl_l=True, tab_menu=True,
+             robot_settings_join_forward_reverse=True)
         phase = "three-editor-native-ime"
         edit_court("browser_address_editor", "browser_address")
         native.chord(0x1B)

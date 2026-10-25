@@ -1208,6 +1208,49 @@ fn host_browser_menus_keyboard_entry_traversal_and_single_activation() {
         host_editor_state(&host, "browser_address_editor")["focused"],
         true
     );
+    host.cli(&["send-ui-keys", "Shift+Tab"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["browser_chrome_trigger"],
+        "new"
+    );
+    host.cli(&["send-ui-keys", "Shift+Tab"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["harness_workspace"]["header_focus"],
+        "settings",
+        "reverse traversal from New must reach Settings"
+    );
+    host.cli(&["send-ui-keys", "Shift+Tab"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["harness_workspace"]["header_focus"],
+        "robot"
+    );
+    host.cli(&["send-ui-keys", "Shift+Tab"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["browser_chrome_trigger"],
+        "proxy"
+    );
+    host.cli(&["send-ui-keys", "Tab"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["harness_workspace"]["header_focus"],
+        "robot"
+    );
+    host.cli(&["send-ui-keys", "Tab"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["harness_workspace"]["header_focus"],
+        "settings"
+    );
+    host.cli(&["send-ui-keys", "Tab"]);
+    let cycled = host.cli(&["ui-snapshot"]);
+    assert_eq!(
+        cycled["geometry"]["browser_chrome_trigger"], "new",
+        "forward header exit must reach New rather than loop back to proxy"
+    );
+    assert!(cycled["geometry"]["harness_workspace"]["header_focus"].is_null());
+    assert_eq!(
+        host.cli(&["list-tabs"])["tabs"].as_array().unwrap().len(),
+        2,
+        "traversal must not activate a header or menu action"
+    );
     host.close_and_wait();
 }
 

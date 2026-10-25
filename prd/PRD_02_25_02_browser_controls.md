@@ -125,6 +125,10 @@ The minimum Browser chrome traversal is New trigger -> address -> active proxy
 host chrome owns focus. The existing page-to-address shortcut provides entry
 from a focused native page. Page and terminal Tab behavior remains with their
 own input owners. This is not a new global shortcut or whole-host focus rewrite.
+The later robot/Settings header group joins the traversal at the proxy/New
+boundary under [PRD 36](PRD_02_36_harness_workspace.md); both directions must
+reach New as well as that group. Returning from the group to the same proxy
+on forward Tab creates a focus loop and is not an acceptable integration.
 
 Enter or Space on a focused trigger opens its menu. Opening does not activate
 the highlighted action: consume the opening gesture through its release.

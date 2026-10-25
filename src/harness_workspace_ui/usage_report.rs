@@ -1608,6 +1608,121 @@ fn billing_rows(rows: &mut Vec<Row>, b: &BillingTotals, kind: &str, l: ui::UiLan
     ));
 }
 
+pub(crate) fn pause_label(
+    value: Option<monitoring::PauseReason>,
+    l: ui::UiLanguage,
+) -> &'static str {
+    use monitoring::PauseReason;
+    match value {
+        None => text(l, "Not paused", "未暂停", "未暫停"),
+        Some(PauseReason::Off) => text(l, "Monitoring off", "监测已关闭", "監測已關閉"),
+        Some(PauseReason::Stop) => text(
+            l,
+            "Stopped; resume explicitly",
+            "已停止；请手动恢复",
+            "已停止；請手動恢復",
+        ),
+        Some(PauseReason::Disabled) => text(l, "Account disabled", "账号已停用", "帳號已停用"),
+        Some(PauseReason::NeedsAuth) => text(l, "Sign in again", "请重新登录", "請重新登入"),
+        Some(PauseReason::AuthorityChanged) => text(
+            l,
+            "Account or network changed; read again",
+            "账号或网络已变更；请重新读取",
+            "帳號或網路已變更；請重新讀取",
+        ),
+        Some(PauseReason::Backoff) => text(l, "Waiting before retry", "等待重试", "等待重試"),
+    }
+}
+
+pub(crate) fn attempt_label(
+    value: Option<Result<(), monitoring::MonitorError>>,
+    l: ui::UiLanguage,
+) -> &'static str {
+    use monitoring::MonitorError;
+    match value {
+        None => text(l, "No completed read", "尚无已完成读取", "尚無已完成讀取"),
+        Some(Ok(())) => text(l, "Succeeded", "已成功", "已成功"),
+        Some(Err(error)) => match error {
+            MonitorError::Disabled => text(l, "Account disabled", "账号已停用", "帳號已停用"),
+            MonitorError::MissingAccount => {
+                text(l, "Account unavailable", "账号不可用", "帳號無法使用")
+            }
+            MonitorError::NeedsAuth => text(l, "Sign in again", "请重新登录", "請重新登入"),
+            MonitorError::Forbidden => text(
+                l,
+                "Provider denied access",
+                "提供方拒绝访问",
+                "提供方拒絕存取",
+            ),
+            MonitorError::RateLimited => text(
+                l,
+                "Provider rate limit; try later",
+                "提供方限流；请稍后重试",
+                "提供方限流；請稍後重試",
+            ),
+            MonitorError::NeedsOrganization => text(
+                l,
+                "Choose a provider organization",
+                "请选择提供方组织",
+                "請選擇提供方組織",
+            ),
+            MonitorError::Network => text(
+                l,
+                "Network failed; check account proxy",
+                "网络失败；请检查账号代理",
+                "網路失敗；請檢查帳號代理",
+            ),
+            MonitorError::Deadline => text(l, "Read timed out", "读取超时", "讀取逾時"),
+            MonitorError::Malformed => text(
+                l,
+                "Provider response could not be read",
+                "无法解析提供方响应",
+                "無法解析提供方回應",
+            ),
+            MonitorError::Busy => text(
+                l,
+                "Busy; wait for the current action",
+                "忙碌中；请等待当前操作",
+                "忙碌中；請等待目前操作",
+            ),
+            MonitorError::Storage => text(
+                l,
+                "Could not save locally",
+                "无法保存到本地",
+                "無法儲存至本機",
+            ),
+            MonitorError::Cancelled => text(l, "Cancelled", "已取消", "已取消"),
+            MonitorError::StaleAuthority => text(
+                l,
+                "Account or network changed; read again",
+                "账号或网络已变更；请重新读取",
+                "帳號或網路已變更；請重新讀取",
+            ),
+            MonitorError::WorkerUnavailable => {
+                text(l, "Monitoring unavailable", "监测不可用", "監測無法使用")
+            }
+            MonitorError::InvalidAction => text(
+                l,
+                "Action unavailable; review settings",
+                "操作不可用；请检查设置",
+                "操作無法使用；請檢查設定",
+            ),
+        },
+    }
+}
+
+fn capability_label(value: monitoring::Capability, l: ui::UiLanguage) -> &'static str {
+    match value {
+        monitoring::Capability::OfficialContract => text(
+            l,
+            "Supported metadata API",
+            "支持元数据接口",
+            "支援中繼資料介面",
+        ),
+        monitoring::Capability::Unknown => text(l, "Unknown", "未知", "未知"),
+    }
+}
+
 pub(crate) fn freshness_label(value: monitoring::Freshness, l: ui::UiLanguage) -> &'static str {
     match value {
         monitoring::Freshness::Never => text(l, "Never observed", "从未观测", "從未觀測"),
@@ -1675,7 +1790,7 @@ fn metadata_rows(
     rows.push(line(
         "metadata_freshness",
         format!(
-            "{}: {:?}; {}: {:?}",
+            "{}: {}; {}: {}",
             text(
                 l,
                 "Provider reading freshness",
@@ -1684,27 +1799,27 @@ fn metadata_rows(
             ),
             freshness_label(a.freshness, l),
             text(l, "Monitoring pause", "监测暂停", "監測暫停"),
-            a.paused
+            pause_label(a.paused, l)
         ),
     ));
     rows.push(line(
         "metadata_capability",
         format!(
-            "{}: {:?}; {}: {:?}",
+            "{}: {}; {}: {}",
             text(
                 l,
                 "Wallet contract capability",
                 "钱包合约能力",
                 "錢包契約能力"
             ),
-            a.wallet_capability,
+            capability_label(a.wallet_capability, l),
             text(
                 l,
                 "Allowance contract capability",
                 "额度合约能力",
                 "額度契約能力"
             ),
-            a.allowance_capability
+            capability_label(a.allowance_capability, l)
         ),
     ));
     rows.push(line(
@@ -1738,14 +1853,14 @@ fn metadata_rows(
         rows.push(line(
             "metadata_attempt",
             format!(
-                "{}: {:?}; {}: {}",
+                "{}: {}; {}: {}",
                 text(
                     l,
                     "Latest metadata attempt",
                     "最近元数据尝试",
                     "最近中繼資料嘗試"
                 ),
-                attempt.result,
+                attempt_label(Some(attempt.result), l),
                 text(l, "Finished", "结束于", "結束於"),
                 utc_moment(attempt.finished_unix_ms, l)
             ),
@@ -1835,7 +1950,7 @@ fn metadata_rows(
             .into(),
         ));
     }
-    rows.push(line("metadata_disclaimer",text(l,"Current resource snapshot, independent from local UTC report totals. Known contract is not real-account qualification.","当前资源快照与本地UTC报告独立；已知合约不代表实际账号验收。","目前資源快照與本機UTC報告獨立；已知契約不代表實際帳號驗收。").into()));
+    rows.push(line("metadata_disclaimer",text(l,"Provider resources are separate from local UTC usage totals. A supported metadata API does not mean this account has a successful reading.","提供方资源与本地UTC用量分别统计。支持元数据接口不代表此账号已有成功读数。","提供方資源與本機UTC用量分別統計。支援中繼資料介面不代表此帳號已有成功讀數。").into()));
     rows
 }
 
@@ -2033,6 +2148,82 @@ mod tests {
         let rows = r.rows(Some(&view), ui::UiLanguage::English);
         assert!(rows.iter().any(|r| r.id == "history_unknown"));
         assert!(!rows.iter().any(|r| r.id == "requests" || r.id == "empty"));
+    }
+    #[test]
+    fn report_failed_read_keeps_cached_wallet_and_explains_recovery_in_each_language() {
+        let account = monitoring::AccountMonitorView {
+            account: "a".into(),
+            provider: provider_auth::Provider::DeepSeek,
+            policy_revision: 1,
+            policy: monitoring::PolicyInput {
+                enabled: false,
+                thresholds: vec![],
+            },
+            paused: Some(monitoring::PauseReason::NeedsAuth),
+            active_request: None,
+            next_due_unix_ms: None,
+            last_success: Some(monitoring::Reading {
+                source: monitoring::MetadataSource::DeepSeekSummaryV0,
+                observed_unix_ms: 1,
+                provider_as_of: None,
+                resources: monitoring::Resources::DeepSeekWallets(vec![monitoring::Wallet {
+                    kind: monitoring::WalletKind::Normal,
+                    currency: monitoring::Currency::Cny,
+                    balance: monitoring::Decimal("1.25".into()),
+                }]),
+            }),
+            freshness: monitoring::Freshness::Stale,
+            latest_attempt: Some(monitoring::Attempt {
+                request: 2,
+                finished_unix_ms: Some(2),
+                result: Err(monitoring::MonitorError::NeedsAuth),
+            }),
+            attention: true,
+            wallet_capability: monitoring::Capability::OfficialContract,
+            allowance_capability: monitoring::Capability::Unknown,
+        };
+        for (language, auth, unknown) in [
+            (ui::UiLanguage::English, "Sign in again", "Unknown"),
+            (ui::UiLanguage::ChineseSimplified, "请重新登录", "未知"),
+            (ui::UiLanguage::ChineseTraditional, "請重新登入", "未知"),
+        ] {
+            let rows = metadata_rows(Some(&account), monitoring::Persistence::Ready, language);
+            for id in ["metadata_freshness", "metadata_attempt"] {
+                let row = rows.iter().find(|row| row.id == id).unwrap();
+                assert!(
+                    row.label.contains(auth),
+                    "failed read must retain actionable feedback: {}",
+                    row.label
+                );
+                assert!(
+                    !row.label.contains("Some(")
+                        && !row.label.contains("Err(")
+                        && !row.label.contains('"'),
+                    "read status cannot expose Rust debug formatting: {}",
+                    row.label
+                );
+            }
+            assert!(
+                rows.iter()
+                    .any(|row| row.id == "metadata_capability" && row.label.contains(unknown))
+            );
+            assert!(
+                rows.iter()
+                    .any(|row| row.id == "wallet_0" && row.label.ends_with("1.25")),
+                "failed refresh must not erase the previous wallet or invent zero"
+            );
+            let disclaimer = &rows
+                .iter()
+                .find(|row| row.id == "metadata_disclaimer")
+                .unwrap()
+                .label;
+            assert!(
+                !disclaimer.contains("qualification")
+                    && !disclaimer.contains("验收")
+                    && !disclaimer.contains("驗收")
+            );
+        }
+        assert!(!account.policy.enabled && account.active_request.is_none());
     }
     #[test]
     fn report_probe_coverage_and_optional_subsets_are_rendered_without_inclusive_addition() {
