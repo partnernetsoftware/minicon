@@ -288,3 +288,34 @@ completed17 intended original-assertion RED controls, exact restoration and
 canonical GREEN in `monitoring-original17-controls-attempt-1/receipt.json`.
 Together these receipts cover32 selected cutpoints across28 monitoring
 subjects; each claim remains limited to its actual recorded assertion.
+
+### First actual DeepSeek metadata read through the owned product UI
+
+`target-six/v0.2.23-provider/real-account-metadata-once-attempt-1/receipt.json`
+records one explicitly requested manual metadata read against the existing real
+DeepSeek account. It uses the already pinned developer image SHA-256
+`f8fd174813311c08757b2ad5e3ce99e83bf9a96042b206cb3c5aa730dd67bceb`,
+not a release image or a newly qualified current-HEAD build. The separate
+`real-account-metadata-once.py` verifier reuses the frozen handover's exact
+owned-pipe PID, private Job and no-activation guards; the original handover
+helper remains unchanged. The product legitimately loads the original account
+configuration; the verifier never reads credentials/profile contents.
+
+Across 51 public CLI calls, the verifier observes one account, selects its
+Monitoring row, captures the previous public report, clicks Read metadata once
+exactly once, observes a numeric pending request and its completion, then reads
+the public report again. The attempt text changes, its UTC finish time matches
+this invocation, and its result is `Ok(())`. The official source is
+`DeepSeekSummaryV0`; two wallet rows and saved-cache presentation are observed.
+No actual balance, account ID/label, snapshot, screenshot, credential or private
+file is retained. The monitoring opt-in presentation remains unchanged; the
+verifier requests no inference, policy change, login or model check. Previously
+opted-in product monitoring could resume on launch, so this receipt does not
+claim exactly one total provider HTTP request.
+
+The directly owned product closes normally with exit zero; its Job closes,
+the real roots remain intact, and image/helper support hashes are unchanged.
+This establishes one real DeepSeek manual-read/report/cache acknowledgement
+journey. It does not close UM-03/04: the second DeepSeek account and its explicit
+proxy, real OpenCode Go allowance, cross-account isolation, automatic monitoring
+lifecycle and final exact-source release evidence remain required.

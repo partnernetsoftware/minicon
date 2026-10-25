@@ -65,6 +65,11 @@ Outcome: reuse an account's browser context only after its previous native host 
 │   safe failure: retain the original Cookie verdict and original total deadline
 │   dependency: LIFETIME CONTRAST, verified live profile and bounded SDK callback
 │   non-goal: production telemetry, arbitrary CDP, Cookie content, flush or persistence repair
+├── [v] SDK FACTORY CONTRAST — compare default native environment options with the existing wry factory
+│   invariant: original fixture, persistent profile checks, controller and KEEP/EXIT boundaries remain unchanged
+│   evidence: SF-01 cookie-sdk-default-factory-attempt-1/experiment-receipt.json; original EXIT failure retained
+│   safe failure: creation/identity/deadline failures are inconclusive; original persistence failure stays open
+│   dependency: LIFETIME CONTRAST and explicit fresh UDF; non-goal: production flags, controller replacement or a repair claim
 └── [_] LATER DELETE — compose release with an explicitly authorized store deletion
     invariant: observation, deletion and durable completion are separate results
     evidence: future OS-specific deletion/retry courts; currently unavailable
@@ -102,6 +107,7 @@ flowchart TD
     ACL --> STORE
     LIFE[Explicit direct-wry test image / original fixture protocol] --> K[KEEP: same live blank keeper and environment]
     LIFE --> X[EXIT: Close all A controllers / matched NORMAL exit / release old environment]
+    FACTORY[Optional test-only default SDK environment / same wry controller] -. compare factory and options bundle .-> LIFE
     K & X --> STORE
     K & X -. two fixed phases / optional diagnostic .-> HIST[Two bounded numeric Cookie problem histograms]
     HIST --> UNKNOWN[Missing / empty / unsupported / late remains unknown]
@@ -775,3 +781,51 @@ The environments vary in OS/runtime and build bytes, so this is not a controlled
 single-variable experiment. It establishes that the observed loss also occurs
 outside the CI Windows-2025/Runtime-155 combination; it neither identifies a
 cause nor justifies a downgrade, flush workaround or storage-requirement waiver.
+
+### Default SDK environment factory: failure reproduced
+
+A reversible test-only prototype replaces only the fresh environment
+factory/options bundle: call `CreateCoreWebView2EnvironmentWithOptions` with
+the exact explicit fresh UDF and null environment options, then pass its
+environment to the existing wry controller builder. Already-retained KEEP
+environments remain retained; EXIT still requires matching normal exit before
+new construction. The original fixture, eight checks, persistent ProfilePath
+validation, diagnostics and 120-second owned-process deadline remain in force.
+This contrasts environment creation/options as a bundle, not individual flags
+or the native controller factory. A successful observation would only select
+the next investigation; a failed one cannot exclude controller/host issues.
+
+The sole runtime hot file is the existing test example's
+`crates/minicon-web/examples/windows_cookie_lifetime/host.rs`.
+Keep the prototype patch and exact compiled source in ignored evidence, record
+the actual Cargo artifact and input hashes, reuse the unchanged verified fixture
+protocol, and restore this tracked source byte-for-byte after execution. Do not
+add a production mode, new crate, server, feature, security flag, flush, delay
+or a public persistence claim. The existing default-product image must remain
+unchanged. No parallel source edits or owner-desktop input are admitted during
+the actual comparison.
+
+SF-01 executes locally against Windows 20348 / Runtime `152.0.4191.66` from
+HEAD `46cb17594a2e89ef30822813c3061fd04b720348`, with the exact uncommitted
+prototype/input hashes recorded separately. The prototype image SHA-256 is
+`bcba5864437154ca828953a0f7654d8bf76fc2886077acdd96dfe682de74b7c8`.
+All twenty retained strict example subjects pass. KEEP passes all eight
+original checks; EXIT proves matching normal exit/new environment, then fails
+the same original reopened-A Cookie predicate while localStorage matches.
+Its SDK Cookie count changes from one persistent future Cookie before close
+to zero before reopened-A navigation. Later original predicates stay unobserved,
+not passing. Both arms explicitly report the SDK-default factory and changed
+options bundle. The existing owned Jobs are closed after their actual driver
+exits; no real-account profile, owner-desktop input or clipboard is used.
+
+Evidence root:
+`target-six/v0.2.23-provider/cookie-sdk-default-factory-attempt-1/`.
+`experiment-receipt.json` binds actual Cargo commands/artifact, compiled input
+hashes, both original verdicts and exact restoration of all input bytes, HEAD,
+index and canonical product image. `host.sdk-default.rs` and `prototype.patch`
+retain the actual test-only modification; `comparison/` retains each safe
+native/fixture receipt. The runtime source is restored and the prototype is
+not shipped. This is not a same-image comparison with the earlier wry-built
+baseline. It establishes that the observed loss also occurs with null SDK
+environment options; it does not identify a Cookie cause, exclude the shared
+wry controller path, or justify a production environment/flag change.
