@@ -184,6 +184,16 @@ receipt and restored that fixture exactly. Receipt:
 `target-six/v0.2.23-provider/native-auth-timeout-control/receipt.json`.
 Neither local check executes a native browser or qualifies macOS.
 
+Run `40168915277` at `e55613a94e5c49eb780b76ce51a89bacfe90cb73` subsequently
+passed this complete preflight on the macOS ARM court: eleven protocol checks,
+eleven actual assertion RED controls (including no-loopback-DNS), and exact
+restoration. Dedicated native execution then completed; its storage/live-page
+observations are owned by [PRD 28](PRD_02_28_shared_core.md#native-context-and-live-page-court).
+The independent audit is retained in
+`target-six/v0.2.23-provider/ci-e55613a-macos-auth/verification-index.json`.
+This verifies corrected startup for that source and host, without establishing
+the cause of the earlier uninstrumented timeout or qualifying macOS Intel.
+
 **Local Windows x86_64 development gate (2026-10-25).**
 `build.sh test -- --test-threads=1` completed the workspace and both owned lexer
 forks with exit 0; the runner summaries reported 1691 passed and 82 ignored.

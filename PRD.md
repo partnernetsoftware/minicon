@@ -61,6 +61,7 @@ MiniCon — one-file local terminal
 │   ├── [-] minicon-console — independent terminal library and native service
 │   │   └── prd/PRD_02_35_terminal_library.md
 │   └── [-] minicon-web — browser content-panel API; native adapter ownership → PRD 28
+│       ├── [-] Native context release and reuse → prd/PRD_02_28_01_browser_context_lifecycle.md
 │       └── product face: Tab / content panel (PRD_02_25); renderer: PRD_02_31
 │           · plan/plan-browser-tabs.md
 ├── Qualification and delivery

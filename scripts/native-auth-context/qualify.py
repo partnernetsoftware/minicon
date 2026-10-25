@@ -23,6 +23,7 @@ INPUTS = (
     "Cargo.toml", "Cargo.lock", "src/main.rs", "src/harness_auth_court.rs",
     "src/harness_auth_ui.rs", "src/harness_settings_ui.rs",
     "crates/minicon-web/src/lib.rs", "crates/minicon-web/src/native_page.rs",
+    "crates/minicon-web/src/native_page/windows_release.rs",
     "crates/minicon-web/src/profile.rs", "crates/minicon-web/src/wry_host.rs",
     "scripts/native-auth-context/fixture.py", "scripts/native-auth-context/page.js",
     "scripts/native-auth-context/fixture_selfcheck.py", "scripts/native-auth-context/verify_protocol.py",

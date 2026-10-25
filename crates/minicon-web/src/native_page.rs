@@ -71,6 +71,10 @@ fn macos_proxy_available() -> bool {
 
 #[cfg(target_os = "macos")]
 mod macos_shortcuts;
+#[cfg(windows)]
+mod windows_release;
+#[cfg(windows)]
+pub use windows_release::{NativePageRelease, NativePageReleaseStatus};
 
 #[derive(Clone, Debug, Default)]
 pub struct NativePageState {
@@ -222,6 +226,18 @@ impl crate::PageSession for NativePageHost {
 }
 
 impl NativePageHost {
+    /// Subscribe to this host's exact browser-process exit before closing its
+    /// native controller. Poll the returned observation on the owning GUI thread.
+    /// This observes native release; it does not delete or inspect profile data.
+    #[cfg(windows)]
+    pub fn begin_release(self, wake: impl Fn() + 'static) -> NativePageRelease {
+        let release = NativePageRelease::observe(&self.webview, wake);
+        // wry's real controller Close runs here, after subscription. The
+        // observation retains the environment so it can deliver the exit event.
+        drop(self);
+        release
+    }
+
     /// Create the visible, bounded first-party home surface.
     pub fn new(
         slot: PanelSlot,

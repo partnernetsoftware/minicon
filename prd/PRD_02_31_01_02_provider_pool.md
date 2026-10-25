@@ -119,6 +119,11 @@ does not add concurrent Browser roots. An adapter unable to isolate storage
 and apply the requested proxy reports that exact capability as BLOCKED rather
 than using another account's signed-in context.
 
+Before reusing a closing native context, consume the
+[shared release boundary](PRD_02_28_01_browser_context_lifecycle.md). Its product
+wait is attempt-scoped and cancellable; ordinary live-page restoration and the
+provider authorization deadline keep their existing owners and meaning.
+
 Account disable is a reversible allocation/admission change; it does not erase
 credentials or receipts. Remove/sign-out reports local removal and remote
 revocation separately. Show affected profiles before removing an allocated

@@ -38,6 +38,8 @@ pub use embedded_program::EmbeddedPageProgram;
 mod native_page;
 #[cfg(all(feature = "native-page-host", any(target_os = "macos", windows)))]
 pub use native_page::NativePageHost;
+#[cfg(all(feature = "native-page-host", windows))]
+pub use native_page::{NativePageRelease, NativePageReleaseStatus};
 
 /// The single content panel a browser tab hosts today.
 ///

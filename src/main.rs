@@ -904,6 +904,8 @@ struct ConApp {
     /// terminal sessions, and only present when the node kind is Browser.
     browsers: SessionStore<browser::BrowserTab>,
     browser_auth: Option<harness_auth_ui::AuthPresentation>,
+    #[cfg(windows)]
+    auth_context_lifecycle: harness_auth_ui::AuthContextLifecycle,
     dismissed_auth_attempt: Option<provider_runtime::AttemptId>,
     browser_proxy_input: composer::ComposerState,
     browser_proxy_focused: bool,
@@ -1430,6 +1432,8 @@ impl ConApp {
             sessions,
             browsers: SessionStore::default(),
             browser_auth: None,
+            #[cfg(windows)]
+            auth_context_lifecycle: Default::default(),
             dismissed_auth_attempt: None,
             browser_proxy_input: Default::default(),
             browser_proxy_focused: false,
@@ -2418,6 +2422,10 @@ impl ConApp {
         if self.native_browser_page.is_some() {
             return;
         }
+        #[cfg(windows)]
+        if !self.harness_auth_context_released() {
+            return;
+        }
         let Some(slot) = self.content_panel_slot(window) else {
             self.note_page_load(browser::PageLoad::Unavailable {
                 url: String::new(),
@@ -2451,6 +2459,10 @@ impl ConApp {
     /// Ask the wry page host to load `url` into the active browser content panel.
     #[cfg(any(target_os = "macos", windows))]
     fn launch_page_host(&mut self, window: &PixelWindow, url: &str) {
+        #[cfg(windows)]
+        if self.defer_harness_auth_navigation(url) {
+            return;
+        }
         if self.browser_auth.is_none()
             && let Err(reason) = self.effective_browser_proxy()
         {
@@ -4735,6 +4747,8 @@ impl PixelWindowApplication for ConApp {
             return Ok(PixelWindowDirective::Exit);
         }
         self.poll_harness_settings(window);
+        #[cfg(windows)]
+        self.poll_harness_auth_release(window, now);
         #[cfg(any(target_os = "macos", windows))]
         self.drain_browser_state(window);
         #[cfg(target_os = "linux")]
@@ -4784,6 +4798,11 @@ impl PixelWindowApplication for ConApp {
             .into_iter()
             .chain(presentation_deadline)
             .chain(self.browser_load_deadline)
+            .min();
+        #[cfg(windows)]
+        let control_deadline = control_deadline
+            .into_iter()
+            .chain(self.harness_auth_release_deadline())
             .min();
         if self.workspace.active().is_none() || self.active_is_browser() {
             return Ok(control_deadline

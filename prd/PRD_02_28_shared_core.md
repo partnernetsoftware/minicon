@@ -70,6 +70,7 @@ Outcome: maintain one terminal implementation with explicit reusable boundaries
 ├── [-] Browser surface — crates/minicon-web (workspace member; native adapters stay here; PRD_02_25 + PRD_02_31)
 │   ├── library: open/load URL, validated proxy override and creation-time application, staged OAuth/dashboard/preview/wasm
 │   ├── Linux optional helper owns wry/tao; macOS/Windows GUI feature owns native child WebView
+│   ├── [-] native context release/reuse → PRD_02_28_01_browser_context_lifecycle.md
 │   └── product face remains Tab / content panel; no tray; core/headless crates do not link wry
 ├── Owned dependencies — third_party/
 │   ├── vte: authoritative VT/UTF-8 grammar and side-effect-free boundary preview
@@ -552,6 +553,10 @@ Those native journeys and the product integration remain open.
 
 #### Native context and live-page court
 
+[Native context lifecycle](PRD_02_28_01_browser_context_lifecycle.md) owns the
+release observation and same-context reuse boundary. The court below retains
+the independent storage/live-page oracle; a release callback does not replace it.
+
 The next development join exercises the existing product auth presentation and
 shared native hosts through a non-default `native-auth-court` test build. The
 default product neither compiles its driver nor accepts its test-only argument.
@@ -636,6 +641,20 @@ The independent artifact/receipt audit is retained in
 `target-six/v0.2.23-provider/ci-bc25e30-native/verification-index.json`.
 macOS protocol preflight failure is owned by PRD 32 below, not classified as a
 native storage result. The required Windows persistence/native join stays open.
+
+**macOS ARM follow-up, source `e55613a94e5c49eb780b76ce51a89bacfe90cb73`.**
+Run `40168915277` actually executed the dedicated native journey: initial and
+restored variants each pass all eight checks, including reopened A's matching
+cookie/localStorage and the ordinary page's same document, unsaved input and
+native history. Both deliberate native faults produce their exact expected
+failures (`context-b-inherited-storage` and `ordinary-document-reloaded`). The
+independent audit verifies artifact digest, all four binary/receipt identities,
+declared source mutations, byte-exact source restoration and unchanged canonical
+product hash in
+`target-six/v0.2.23-provider/ci-e55613a-macos-auth/verification-index.json`.
+This qualifies only the named macOS ARM dedicated test bytes. Windows persistence,
+macOS Intel, physical input, provider OAuth and final product artifacts retain
+their independent obligations; protocol startup evidence is owned by PRD 32.
 
 The local scaffold checkpoint is recorded in
 `target-six/v0.2.23-provider/native-auth-court-final-gate-receipt.json`:
