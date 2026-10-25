@@ -1991,22 +1991,70 @@ pub(super) fn h0_harness_destination_preserves_console_and_web_drafts_and_observ
     assert_eq!(host.cli(&["ui-snapshot"])["active"], original["active"]);
     host.cli(&["resize-window", "--width", "540", "--height", "300"]);
     host.cli(&["send-ui-keys", "PageDown", "PageDown", "PageDown"]);
-    assert_eq!(
-        host.cli(&["ui-snapshot"])["geometry"]["harness_workspace"]["scroll"],
-        3
-    );
+    let small = host.cli(&["ui-snapshot"]);
+    let requested_scroll = small["geometry"]["harness_workspace"]["scroll"]
+        .as_u64()
+        .unwrap() as usize;
+    assert_eq!(requested_scroll, 3, "small viewport scroll: {small}");
+    let small_height = small["geometry"]["harness_workspace"]["body"]["height"]
+        .as_u64()
+        .unwrap();
     host.cli(&["resize-window", "--width", "1400", "--height", "900"]);
-    let resized = host.cli(&["ui-snapshot"]);
-    assert_eq!(resized["geometry"]["harness_workspace"]["scroll"], 0);
-    host.click_rect(
-        &resized["geometry"]["harness_workspace"]["cards"][0]["rect"],
-        "first_visible_card",
-        &resized["geometry"],
+    // The resize response acknowledges a request; native window bounds may
+    // differ. Wait for an enlarged, settled observed frame before clicking.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut last_frame = Value::Null;
+    let mut stable_since = Instant::now();
+    let resized = loop {
+        let snapshot = host.cli(&["ui-snapshot"]);
+        let frame = &snapshot["geometry"]["frame"];
+        if frame != &last_frame {
+            last_frame = frame.clone();
+            stable_since = Instant::now();
+        }
+        if snapshot["geometry"]["harness_workspace"]["body"]["height"]
+            .as_u64()
+            .unwrap()
+            > small_height
+            && stable_since.elapsed() >= Duration::from_millis(100)
+        {
+            break snapshot;
+        }
+        assert!(Instant::now() < deadline, "resize observation: {snapshot}");
+        thread::sleep(Duration::from_millis(20));
+    };
+    let workspace = &resized["geometry"]["harness_workspace"];
+    let cards = workspace["cards"].as_array().unwrap();
+    let capacity = workspace["visible_capacity"].as_u64().unwrap() as usize;
+    assert!(
+        capacity > 0,
+        "enlarged viewport must show a card: {resized}"
     );
+    let expected_scroll = requested_scroll.min(cards.len().saturating_sub(capacity));
     assert_eq!(
-        host.cli(&["ui-snapshot"])["geometry"]["harness_workspace"]["selected"],
-        "service",
-        "painted first card and hit owner must agree after resize"
+        workspace["scroll"], expected_scroll,
+        "scroll must clamp to actual capacity without an empty tail: {resized}"
+    );
+    let visible: Vec<_> = cards
+        .iter()
+        .enumerate()
+        .filter(|(_, card)| {
+            card["rect"]["width"].as_u64().unwrap() > 0
+                && card["rect"]["height"].as_u64().unwrap() > 0
+        })
+        .map(|(index, _)| index)
+        .collect();
+    assert_eq!(
+        visible,
+        (expected_scroll..(expected_scroll + capacity).min(cards.len())).collect::<Vec<_>>(),
+        "visible card rows must be contiguous and fill the actual capacity: {resized}"
+    );
+    let first = &cards[expected_scroll];
+    host.click_rect(&first["rect"], "first_visible_card", &resized["geometry"]);
+    let selected = host.cli(&["ui-snapshot"]);
+    assert_eq!(
+        selected["geometry"]["harness_workspace"]["selected"], first["id"],
+        "painted first card and hit owner must agree after resize: before={resized}, after={selected}"
     );
     host.cli(&["resize-window", "--width", "1000", "--height", "700"]);
     assert!(

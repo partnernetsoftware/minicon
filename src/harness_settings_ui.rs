@@ -45,6 +45,9 @@ enum Row {
     AccountReconnect,
     AccountReconnectHint,
     AccountNetworkHint,
+    CatalogueStatus,
+    CatalogueRefresh,
+    CatalogueModel(usize),
     NoAccounts,
     Model,
     ModelInput,
@@ -406,7 +409,17 @@ impl HarnessSettings {
                 Row::AccountConnection,
                 Row::AccountReconnect,
                 Row::AccountReconnectHint,
+                Row::CatalogueStatus,
+                Row::CatalogueRefresh,
             ]);
+            if let Some(catalogue) = self
+                .view
+                .catalogues
+                .iter()
+                .find(|entry| Some(&entry.account) == self.account_focus.as_ref())
+            {
+                rows.extend((0..catalogue.models.len()).map(Row::CatalogueModel));
+            }
         }
         rows.extend([
             Row::Model,
@@ -739,12 +752,25 @@ impl HarnessSettings {
                     self.act(Action::Reconnect(account));
                 }
             }
+            Row::CatalogueRefresh => {
+                if let Some(account) = self.account_focus.clone() {
+                    self.act(Action::RefreshAccountModels(account));
+                }
+            }
+            Row::CatalogueStatus | Row::CatalogueModel(_) => {}
             Row::ModelInput if column == 1 => self.submit(Field::Model),
-            Row::ModelActions => self.act(if column == 0 {
-                Action::RefreshModels
-            } else {
-                Action::TestModel
-            }),
+            Row::ModelActions if column == 0 => {
+                if let Some(account) = self.view.selected_account.clone() {
+                    self.focus_account(&account);
+                    self.scroll = self
+                        .rows()
+                        .iter()
+                        .position(|row| matches!(row, Row::CatalogueStatus))
+                        .unwrap_or(0);
+                }
+                self.act(Action::RefreshModels);
+            }
+            Row::ModelActions => self.act(Action::TestModel),
             Row::ModelChoice(index) => {
                 let model = self.view.models[index].clone();
                 self.model.text.clone_from(&model);
@@ -818,6 +844,9 @@ fn row_id(row: Row) -> String {
         Row::AccountReconnect => "account_reconnect",
         Row::AccountReconnectHint => "account_reconnect_hint",
         Row::AccountNetworkHint => "account_network_hint",
+        Row::CatalogueStatus => "account_catalogue_status",
+        Row::CatalogueRefresh => "account_catalogue_refresh",
+        Row::CatalogueModel(index) => return format!("account_catalogue_model_{index}"),
         Row::Model => "model",
         Row::ModelInput => "model_input",
         Row::ModelActions => "model_actions",
@@ -1083,6 +1112,47 @@ impl ConApp {
                 Row::AccountReconnect => {
                     button(surface, cell(0, 1), "Reconnect this account", false);
                 }
+                Row::CatalogueRefresh => {
+                    button(
+                        surface,
+                        cell(0, 1),
+                        "Refresh this account's catalogue",
+                        false,
+                    );
+                }
+                Row::CatalogueStatus => {
+                    let catalogue = settings
+                        .view
+                        .catalogues
+                        .iter()
+                        .find(|entry| Some(&entry.account) == settings.account_focus.as_ref());
+                    label = catalogue.map_or_else(
+                        || "Catalogue: Not loaded".into(),
+                        |entry| {
+                            format!(
+                                "Catalogue: {:?} · {} models · read only{}",
+                                entry.status,
+                                entry.models.len(),
+                                if entry.error.is_some() {
+                                    " · refresh failed"
+                                } else {
+                                    ""
+                                }
+                            )
+                        },
+                    );
+                }
+                Row::CatalogueModel(index) => {
+                    if let Some(model) = settings
+                        .view
+                        .catalogues
+                        .iter()
+                        .find(|entry| Some(&entry.account) == settings.account_focus.as_ref())
+                        .and_then(|entry| entry.models.get(index))
+                    {
+                        label = format!("{} · {:?} · read only", model.id, model.protocol);
+                    }
+                }
                 Row::AccountReconnectHint => {
                     label = "Uses saved login settings. Connections to this account require model verification again after reconnecting.".into();
                 }
@@ -1243,6 +1313,60 @@ impl ConApp {
                     .map_or(json::JsonValue::Null, Into::into),
             ),
             ("model", settings.view.model.as_str().into()),
+            (
+                "catalogue_retained_bytes",
+                settings.view.catalogue_bytes.into(),
+            ),
+            (
+                "catalogues",
+                json::JsonValue::Array(
+                    settings
+                        .view
+                        .catalogues
+                        .iter()
+                        .map(|entry| {
+                            json::object(vec![
+                                ("account", entry.account.as_str().into()),
+                                ("retained_rows", entry.retained_rows.into()),
+                                (
+                                    "state",
+                                    format!("{:?}", entry.status).to_ascii_lowercase().into(),
+                                ),
+                                (
+                                    "error",
+                                    entry.error.map_or(json::JsonValue::Null, |error| {
+                                        error.to_string().into()
+                                    }),
+                                ),
+                                (
+                                    "models",
+                                    json::JsonValue::Array(
+                                        entry
+                                            .models
+                                            .iter()
+                                            .map(|model| {
+                                                json::object(vec![
+                                                    ("id", model.id.as_str().into()),
+                                                    (
+                                                        "upstream_model",
+                                                        model.upstream_model.as_str().into(),
+                                                    ),
+                                                    (
+                                                        "protocol",
+                                                        format!("{:?}", model.protocol)
+                                                            .to_ascii_lowercase()
+                                                            .into(),
+                                                    ),
+                                                ])
+                                            })
+                                            .collect(),
+                                    ),
+                                ),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
             (
                 "accounts",
                 json::JsonValue::Array(
@@ -1763,6 +1887,66 @@ impl ConApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cs01_account_catalogue_rows_are_scoped_read_only_and_do_not_apply_models() {
+        use provider_runtime::{AccountCatalogueView, CatalogueModel, CatalogueStatus};
+        let a = "a".repeat(32);
+        let b = "b".repeat(32);
+        let model = |id: &str| CatalogueModel {
+            id: id.into(),
+            upstream_model: id.into(),
+            protocol: provider_server::WireProtocol::Chat,
+        };
+        let mut settings = HarnessSettings::default();
+        settings.view.selected_account = Some(a.clone());
+        settings.view.model = "applied-legacy".into();
+        settings.model.text = "unchanged draft".into();
+        settings.view.catalogues = vec![
+            AccountCatalogueView {
+                account: a.clone(),
+                status: CatalogueStatus::Fresh,
+                models: vec![model("same")],
+                retained_rows: 1,
+                error: None,
+            },
+            AccountCatalogueView {
+                account: b.clone(),
+                status: CatalogueStatus::Error,
+                models: vec![model("same"), model("stale-b")],
+                retained_rows: 2,
+                error: Some(provider_runtime::RuntimeError::ProviderUnavailable),
+            },
+        ];
+        settings.account_focus = Some(a.clone());
+        assert_eq!(
+            settings
+                .rows()
+                .iter()
+                .filter(|row| matches!(row, Row::CatalogueModel(_)))
+                .count(),
+            1
+        );
+        let applied = settings.view.clone();
+        assert!(settings.activate(Row::CatalogueModel(0), 0).is_none());
+        assert_eq!(settings.view, applied);
+        assert_eq!(settings.model.text, "unchanged draft");
+        assert!(
+            settings.error.is_none(),
+            "read-only row attempted a Runtime action"
+        );
+        settings.account_focus = Some(b);
+        assert_eq!(
+            settings
+                .rows()
+                .iter()
+                .filter(|row| matches!(row, Row::CatalogueModel(_)))
+                .count(),
+            2
+        );
+        assert_eq!(settings.view.selected_account, Some(a));
+        assert_eq!(settings.view.model, "applied-legacy");
+    }
 
     #[test]
     fn reconnect_requires_saved_account_edits_and_never_applies_the_form_implicitly() {

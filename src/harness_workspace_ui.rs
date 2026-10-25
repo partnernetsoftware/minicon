@@ -1233,6 +1233,9 @@ impl ConApp {
                     .into(),
             ),
             ("scroll", start.into()),
+            ("body", rect(g.body)),
+            ("card_pitch", g.row_height.into()),
+            ("visible_capacity", g.visible().into()),
             (
                 "navigation",
                 json::JsonValue::Array(g.nav.into_iter().map(rect).collect()),

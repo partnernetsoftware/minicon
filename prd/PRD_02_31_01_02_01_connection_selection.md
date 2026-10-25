@@ -3,8 +3,8 @@
 Parent: [provider pool](PRD_02_31_01_02_provider_pool.md). User-facing forms and
 actions remain with [Harness experience](PRD_02_31_01_01_harness_experience.md).
 Sequence: [0.2.23 plan](../plan/plan-v0.2.23.md#harness-product-redesign-before-publication).
-Status: `[-]` selected implementation contract with an organization-authority
-prerequisite in development; catalogue/draft/verify/apply delivery remains open.
+Status: `[-]` organization-authority prerequisite and production catalogue join
+in development; draft/verify/apply delivery remains open.
 
 This module owns catalogue identity, connection drafts, verification evidence
 and publication of applied routes. The parent owns account/profile/key lifecycle;
@@ -14,7 +14,7 @@ the gateway owns admission, conversation pinning and protocol conversion.
 
 ```text
 Outcome: safely prepare one client's model connection while other clients keep working
-├── [_] CATALOGUE — query one account without changing applied allocations
+├── [-] CATALOGUE — query one account without changing applied allocations
 │   invariant: account and resolved authority own metadata, never a provider-global model ID
 │   evidence: CS-01 same-provider A/B with equal model IDs and different wire routes
 │   safe failure: retain prior readings as stale; discard results from superseded authority
@@ -155,7 +155,8 @@ in private state and user-visible status.
 
 ## Evidence frontier
 
-CS-01..07 above are implementation obligations, all `[_]`. Each trusted
+CS-01 is `[-]` in development; CS-02..07 remain `[_]` implementation obligations.
+Each trusted
 regression must fail at runtime when its guarded identity/transaction condition
 is removed, then pass after exact restoration. Public Settings journeys must
 show applied versus draft state and the actual failing operation. Controlled
@@ -206,9 +207,11 @@ open. This is a prerequisite checkpoint; CS-01..07 are not completed by it.
 
 ### Catalogue and draft mechanism checkpoint
 
-`src/provider_selection.rs` is connected through `#[cfg(test)]` in the product
-binary while its production runtime/UI consumer is being integrated. It is
-product-private; this checkpoint adds no management endpoint or public crate.
+At the earlier mechanism checkpoint, `src/provider_selection.rs` joined the
+product binary through `#[cfg(test)]`. Its cache now has a production consumer
+under integration; the draft/frozen-candidate/proof mechanisms retain their test
+gate until their own delivery leaves. The module is product-private and adds no
+management endpoint or public crate.
 The strict test wrapper executed 17 named tests, increasing the main binary's
 inventory from 631 to 648 before the separate migration regression below.
 The module owns bounded account-local cache tickets, fresh/stale/error states,
@@ -290,3 +293,78 @@ In particular, preserving a GET binding after an internal key change alone does
 not preserve POST requests using the former route ID as their model name.
 Migration must explicitly retain those accepted legacy names before registry
 retagging is exposed as a complete product operation.
+
+### Production catalogue join (in progress)
+
+The cache now has an actual production consumer: account-detail refresh starts
+an owned background catalogue request, receives the transport's resolved
+authority, then accepts its bounded result under `AccountStore::with_snapshot`.
+That callback holds the store mutation lock only for bounded in-memory
+acceptance; it performs no I/O or gateway-lock acquisition. The existing
+Gateway-to-store lock order remains in force. Cache observations feed read-only
+account-detail rows; neither refresh action nor clicking a catalogue row saves
+`gateway.json`, changes applied selections or starts an inference request.
+
+OpenCode's initial organization resolution uses a store-locked authority CAS.
+It changes only the organization on the latest credential, preserving a newer
+token and unrelated label/login preferences. Credential/service/enablement/
+organization changes reject stale resolution. Establishing a real organization
+does change account authority; metadata-only routing does not exempt an older
+conversation from the existing changed-authority refusal.
+
+Metadata exchanges, including token-refresh waiting and HTTP, share one
+60-second deadline and a cumulative 2 MiB response budget. Existing native HTTP,
+account leases, proxy policy and cancellation remain the transport mechanisms.
+The cache retains the bounds above and is absent after restart; applied route
+snapshots remain available independently. Safe public rows contain model IDs,
+upstream model and protocol, never URLs, request headers or credentials.
+
+The first integrated strict-wrapper run passed 10 `cs01_` regressions, increasing
+the main-binary inventory from 657 to 667. It exercises actual bounded loopback
+HTTP, same-provider A/B catalogue isolation, unchanged applied files and named
+bindings, late credential/service/disable/remove/organization results, final
+store-lock acceptance, cancellation, cumulative response/deadline limits,
+failed-refresh row retention, organization CAS and read-only UI actions.
+Log: `target-six/v0.2.23-provider/cs01-initial-green.log`. Two earlier fixture
+failures remain retained: the binding peer used a port different from the
+configured admission authority, and the metadata peer incorrectly required
+inference-session headers. Neither is counted as a guarded product RED.
+Default and `native-auth-court` all-target strict Clippy passed after the
+reported unnecessary option dereference was corrected. Runtime guard controls,
+broader product/native and independent qualification remain open. CS-02..07
+are unchanged downstream obligations; this join is not a completed connection
+selection or verified Apply flow.
+
+Review then reproduced two production projection failures with actual runtime
+assertions: a missing credential left a failed-start catalogue Fresh, and a
+registry read failure left a completed operation busy. The first attempted
+repro used the wrong isolated account-store subdirectory; its setup failures
+in `cs01-projection-before.log` are not guard evidence. The corrected actual
+REDs are `cs01-projection-runtime-before.log`. A failed snapshot/disabled
+account now invalidates cached authority before begin and publishes a bounded
+account error; Busy alone does not invalidate another operation's readings.
+A failed registry/preferences read retains bounded readings as unavailable,
+revokes Fresh/Loading claims and independently publishes operation completion.
+A later successful read restores Loaded. An unreadable individual credential
+also has an account-specific failure instead of unexplained stale rows.
+Unknown account IDs cannot grow the error map.
+
+The corrected 12 CS-01 tests plus the existing 17 selection mechanisms pass in
+`cs01-projection-after.log`; main-binary inventory is 669. The initial ten guard
+controls and exact restoration are chained through
+`cs01-runtime-controls-final/receipt.json`. Two rejected variants passed because
+another cumulative transport bound remained, or the changed cache error branch
+was not reached by an HTTP parser failure; neither is counted as RED. Six
+runtime-consumer controls pass after the projection repair, with 29 exact-restored
+positive checks in `cs01-postprojection-controls/receipt.json`;
+unchanged store/cache/server/UI source hashes keep their earlier scoped proof.
+
+The restored source passes the joined local development gate:
+`target-six/v0.2.23-provider/cs01-final-gate-receipt.json`. Its selected bin
+union executes 239 tests with one unselected Pi opt-in ignored; default/custom
+workers execute 2, public menu/H0 2, alignment 18, native-page 14 and dedicated
+auth 5, totaling 280 actual passing Rust executions. Formatting and both default
+and dedicated-feature all-target strict Clippy pass. An explicit fresh dev build
+also passes all 22 canonical native-browser checks. The scope remains controlled
+HTTP and isolated Windows development; it does not close actual provider grants,
+physical input/scales, matching-source six-cell or release qualification.

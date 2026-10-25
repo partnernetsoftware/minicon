@@ -248,3 +248,29 @@ is replaced; its guard log is `h0-runtime-controls/finite-profile-layout.log`,
 with exact-restored positive execution in
 `h0-runtime-controls-remaining/restored-profile-layout.log`. These are scoped
 mechanism checks, not new SDK/browser persistence observations.
+
+### Actual verified-directory Windows observation
+
+The exact `5344921a770a373f29dc517aad5a550ca1f6b8ef` Windows x86_64
+development court `40177005858` reaches a new SDK observation but still fails
+the initial storage oracle: reopened A reports cookie `missing`, localStorage
+`matches`. All three A/B/A-reopen presentations verify persistent mode and the
+exact requested UDF, with finite layout `EBWebView/Default`. A-reopen observes
+matching normal exit. The private locator is written and excluded from both
+uploaded archives; its contents are not part of the public evidence.
+
+Before and after owned Job cleanup, the bounded verified-directory comparison
+reports A/reopened-A directory relation `same`. All six phase/directory Cookies
+slots and the older four fixed candidates are `not-found`; counts and expiry
+remain unavailable. This establishes the verified directory and normal-exit
+facts without establishing database absence, a flush failure or a DPAPI cause.
+The original cookie oracle remains unchanged. Native fault variants and
+restored execution do not run after this initial failure.
+
+Both archive digests/sizes, exact-source inputs, native trace and actual driver
+binary hash are independently checked in
+`target-six/v0.2.23-provider/ci-5344921-auth-diagnosis/verification-index.json`.
+No executable was downloaded for an independent PE-header reread. The ordinary
+browser smoke's 22 checks pass; they do not substitute for failed authorization
+cookie persistence. A further feature-only exact-origin, pre-navigation cookie
+metadata observation is under design, not implemented or qualified here.

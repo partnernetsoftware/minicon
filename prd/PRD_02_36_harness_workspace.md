@@ -388,6 +388,39 @@ its receipt, PNGs and fresh before/after document reports are under
 `h0-artifact-local-final/`. The menu/H0 public regressions also pass after
 exact restoration (`h0-runtime-controls-remaining/restored-public.log`).
 
+The subsequent exact-source `5344921a770a373f29dc517aad5a550ca1f6b8ef`
+native development run `40176995112` has five successful cells and one failed
+Mac ARM cell. Every canonical browser smoke passes 22 checks. The Mac ARM H0
+public journey fails after requesting a larger window: observed scroll is 1,
+while the assertion assumes 0. That failure does not retain the actual resized
+viewport; a requested size alone cannot establish native card capacity. Pure
+geometry clamping remains qualified locally. The native journey must observe
+actual viewport capacity and verify the first visible card's paint/hit identity
+before this cross-platform regression closes. Independent raw/API/archive audit:
+`target-six/v0.2.23-provider/ci-5344921-native/verification-index.json`.
+This is a retained failed development run, not a six-cell release pass.
+
+The subsequent local repair exposes actual viewport capacity through the
+[public geometry contract](PRD_02_26_con_control_cli.md). The journey waits for
+an enlarged, settled observed frame, checks the clamped continuous visible
+card range and clicks the actual first visible card by its published identity.
+It still requires zero scroll whenever all overview cards fit; the pure
+1400-by-900 geometry assertion is unchanged. Removing the production clamp
+produces an actual public runtime assertion failure, followed by exact source
+restoration and one pure plus one public passing execution:
+`target-six/v0.2.23-provider/h0-native-resize-controls/receipt.json`.
+This is isolated Windows host-input evidence, not the missing new-source Mac
+native result, physical pointer/IME qualification or a release-artifact pass.
+
+The subsequent restored-source integration again passes both public menu/H0
+journeys and the 22-check native-browser smoke, after the account-catalogue join:
+`target-six/v0.2.23-provider/cs01-final-gate-receipt.json`.
+The actual default dev executable SHA-256 is
+`6ae33ed2b5f1ed045c0dd962d6d0de08671bb5c6df8574a4328f8a19d1fbbe3a`;
+its native host PNGs and fresh live-document reports are retained in
+`cs01-artifact-local-final/` under the same output root. The cross-platform
+failed-source result above remains retained until a new matching-source run.
+
 Sixteen actual runtime assertion failures cover projection, attempt identity,
 geometry, loading, host/pane capture, Browser restoration, scratch-frame discard,
 input/return focus and both menu traversal boundaries. Nine accepted controls

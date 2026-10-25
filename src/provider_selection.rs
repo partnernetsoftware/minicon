@@ -1,11 +1,12 @@
 //! In-memory account catalogues and exact connection candidates. PRD 31.01.02.01.
 //! No network, grants, persistence, admission, or automatic inference lives here.
+#[cfg(test)]
+use crate::provider_server::{MAX_CLIENT_ALLOCATIONS, MAX_CLIENT_PROFILES, safe_model};
 use crate::{
     provider_accounts::{AccountSnapshot, NetworkPolicy, OrganizationAuthority},
     provider_auth::Provider,
     provider_server::{
-        CATALOG_BYTES, MAX_CLIENT_ALLOCATIONS, MAX_CLIENT_PROFILES, MAX_MODELS, ModelRoute,
-        WireProtocol, opaque_id, safe_model, validate_route,
+        CATALOG_BYTES, MAX_MODELS, ModelRoute, WireProtocol, opaque_id, validate_route,
     },
 };
 use sha2::{Digest, Sha256};
@@ -13,7 +14,9 @@ use std::{collections::BTreeMap, fmt, mem::size_of};
 
 pub(crate) const MAX_CATALOGUE_ACCOUNTS: usize = 16;
 pub(crate) const MAX_CACHE_BYTES: usize = 8 * 1024 * 1024;
+#[cfg(test)]
 pub(crate) const MAX_DRAFT_BYTES: usize = 4 * 1024 * 1024;
+#[cfg(test)]
 pub(crate) const DEFAULT_PROFILE: &str = "default";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -30,13 +33,20 @@ pub(crate) enum SelectionError {
     DuplicateCatalogueId,
     DuplicateHeader,
     OrganizationConflict,
+    #[cfg(test)]
     CatalogueUnavailable,
+    #[cfg(test)]
     MissingRoute,
+    #[cfg(test)]
     InvalidDraft,
+    #[cfg(test)]
     ProfileBound,
+    #[cfg(test)]
     MissingProfile,
+    #[cfg(test)]
     MissingAlias,
     RevisionExhausted,
+    #[cfg(test)]
     DraftChanged,
 }
 
@@ -92,7 +102,7 @@ impl ResolvedAuthority {
         &self.account
     }
 
-    fn same_transport_generation(&self, other: &Self) -> bool {
+    pub(crate) fn same_transport_generation(&self, other: &Self) -> bool {
         self.account == other.account
             && self.provider == other.provider
             && self.credential == other.credential
@@ -115,7 +125,7 @@ impl ResolvedAuthority {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum CatalogueStatus {
+pub enum CatalogueStatus {
     NotLoaded,
     Loading,
     Fresh,
@@ -128,6 +138,19 @@ pub(crate) enum CatalogueStatus {
 pub(crate) struct CatalogueRequest {
     serial: u64,
     requested: ResolvedAuthority,
+}
+
+impl CatalogueRequest {
+    pub(crate) fn authority(&self) -> &ResolvedAuthority {
+        &self.requested
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CatalogueModel {
+    pub id: String,
+    pub upstream_model: String,
+    pub protocol: WireProtocol,
 }
 
 struct CatalogueData {
@@ -302,7 +325,7 @@ impl CatalogueCache {
         }
         let mut ids = std::collections::HashSet::new();
         for route in &routes {
-            wire_identity(&resolved, route)?;
+            catalogue_route_headers(&resolved, route)?;
             if !ids.insert(&route.id) {
                 return Err(SelectionError::DuplicateCatalogueId);
             }
@@ -325,6 +348,41 @@ impl CatalogueCache {
         })
     }
 
+    /// Refresh only observed metadata authority, never an applied route.
+    pub(crate) fn observe(&mut self, account: &str, current: Option<&AccountSnapshot>) {
+        let actual = current.and_then(|snapshot| ResolvedAuthority::from_snapshot(snapshot).ok());
+        if self.entries.get(account).is_some_and(|entry| {
+            entry
+                .data
+                .as_ref()
+                .is_some_and(|data| Some(&data.authority) != actual.as_ref())
+        }) || actual.is_none()
+        {
+            self.invalidate(account);
+        }
+    }
+
+    pub(crate) fn accounts(&self) -> Vec<String> {
+        self.entries.keys().cloned().collect()
+    }
+
+    /// Stale/error readings remain visible, but cannot create a candidate.
+    pub(crate) fn models(&self, account: &str) -> Vec<CatalogueModel> {
+        self.entries
+            .get(account)
+            .and_then(|entry| entry.data.as_ref())
+            .map_or_else(Vec::new, |data| {
+                data.routes
+                    .iter()
+                    .map(|route| CatalogueModel {
+                        id: route.id.clone(),
+                        upstream_model: route.model_id.clone(),
+                        protocol: route.protocol,
+                    })
+                    .collect()
+            })
+    }
+
     pub(crate) fn retained_bytes(&self) -> usize {
         self.bytes
     }
@@ -336,6 +394,7 @@ impl CatalogueCache {
             .map_or(0, |data| data.routes.len())
     }
 
+    #[cfg(test)]
     pub(crate) fn select(
         &self,
         current: &AccountSnapshot,
@@ -407,13 +466,14 @@ fn organization_value_digest(value: Option<&str>) -> String {
     hash.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
+#[cfg(test)]
 #[derive(Clone, Eq, PartialEq)]
 struct WireIdentity([u8; 32]);
 
-fn wire_identity(
+fn catalogue_route_headers<'a>(
     authority: &ResolvedAuthority,
-    route: &ModelRoute,
-) -> Result<WireIdentity, SelectionError> {
+    route: &'a ModelRoute,
+) -> Result<BTreeMap<String, &'a str>, SelectionError> {
     validate_route(route).map_err(|_| SelectionError::InvalidRoute)?;
     if route.provider != authority.provider {
         return Err(SelectionError::InvalidRoute);
@@ -437,6 +497,15 @@ fn wire_identity(
     {
         return Err(SelectionError::OrganizationConflict);
     }
+    Ok(headers)
+}
+
+#[cfg(test)]
+fn wire_identity(
+    authority: &ResolvedAuthority,
+    route: &ModelRoute,
+) -> Result<WireIdentity, SelectionError> {
+    let headers = catalogue_route_headers(authority, route)?;
     let mut hash = Sha256::new();
     hash.update(b"minicon.selection.wire.v1\0");
     framed(
@@ -471,17 +540,20 @@ fn wire_identity(
 
 /// Immutable selected wire snapshot, deliberately independent of cache IDs and
 /// of the applied registry. Debug cannot print URLs, headers, or raw org values.
+#[cfg(test)]
 #[derive(Clone)]
 pub(crate) struct FrozenRoute {
     authority: ResolvedAuthority,
     route: ModelRoute,
     wire: WireIdentity,
 }
+#[cfg(test)]
 impl fmt::Debug for FrozenRoute {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("FrozenRoute([REDACTED])")
     }
 }
+#[cfg(test)]
 impl FrozenRoute {
     /// Reconstruct a draft from an already applied private route snapshot after
     /// restart/Revert. This creates no catalogue entry or inference proof.
@@ -514,17 +586,20 @@ impl FrozenRoute {
     }
 }
 
+#[cfg(test)]
 #[derive(Clone)]
 pub(crate) struct AllocationDraft {
     pub alias: String,
     pub selected: FrozenRoute,
 }
+#[cfg(test)]
 impl fmt::Debug for AllocationDraft {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("AllocationDraft([REDACTED])")
     }
 }
 
+#[cfg(test)]
 #[derive(Clone)]
 pub(crate) struct DraftEdit {
     pub label: String,
@@ -532,6 +607,7 @@ pub(crate) struct DraftEdit {
     pub default_alias: String,
     pub allocations: Vec<AllocationDraft>,
 }
+#[cfg(test)]
 impl fmt::Debug for DraftEdit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DraftEdit")
@@ -539,6 +615,7 @@ impl fmt::Debug for DraftEdit {
             .finish_non_exhaustive()
     }
 }
+#[cfg(test)]
 impl DraftEdit {
     fn compact(&self) -> Self {
         Self {
@@ -597,6 +674,7 @@ impl DraftEdit {
     }
 }
 
+#[cfg(test)]
 #[derive(Clone, Eq, PartialEq)]
 pub(crate) struct CandidateIdentity {
     profile: String,
@@ -604,6 +682,7 @@ pub(crate) struct CandidateIdentity {
     authority: ResolvedAuthority,
     wire: WireIdentity,
 }
+#[cfg(test)]
 impl fmt::Debug for CandidateIdentity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("CandidateIdentity([REDACTED])")
@@ -612,27 +691,32 @@ impl fmt::Debug for CandidateIdentity {
 
 /// Successful explicit inference only. No legacy-applied provenance is minted
 /// here; migration/publication need a separate later product transaction.
+#[cfg(test)]
 #[derive(Clone, Debug)]
 pub(crate) struct Verification {
     identity: CandidateIdentity,
     checked_unix_ms: u64,
 }
+#[cfg(test)]
 impl Verification {
     pub(crate) fn checked_unix_ms(&self) -> u64 {
         self.checked_unix_ms
     }
 }
 
+#[cfg(test)]
 pub(crate) struct ProbeTicket {
     identity: CandidateIdentity,
     revision: u64,
 }
+#[cfg(test)]
 pub(crate) struct ConnectionDraft {
     revision: u64,
     edit: DraftEdit,
     proofs: BTreeMap<String, Verification>,
     bytes: usize,
 }
+#[cfg(test)]
 impl ConnectionDraft {
     pub(crate) fn revision(&self) -> u64 {
         self.revision
@@ -642,6 +726,7 @@ impl ConnectionDraft {
     }
 }
 
+#[cfg(test)]
 pub(crate) struct DraftBook {
     drafts: BTreeMap<String, ConnectionDraft>,
     selected: String,
@@ -649,6 +734,7 @@ pub(crate) struct DraftBook {
     bytes: usize,
 }
 
+#[cfg(test)]
 impl Default for DraftBook {
     fn default() -> Self {
         let edit = DraftEdit {
@@ -675,6 +761,7 @@ impl Default for DraftBook {
     }
 }
 
+#[cfg(test)]
 impl DraftBook {
     pub(crate) fn selected(&self) -> &str {
         &self.selected

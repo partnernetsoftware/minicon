@@ -76,7 +76,6 @@ mod provider_cli;
 mod provider_login;
 mod provider_protocol;
 mod provider_runtime;
-#[cfg(test)]
 mod provider_selection;
 mod provider_server;
 mod raster_surface;

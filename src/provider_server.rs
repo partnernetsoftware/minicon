@@ -7,6 +7,7 @@ use crate::{
     },
     provider_auth::{self, AuthClient, Provider, Secret, TokenGrant, TokenLifecycle},
     provider_protocol::{self as protocol, Protocol, SseBridge},
+    provider_selection::ResolvedAuthority,
 };
 use minicon_platform::{
     network_http::{NetworkHttpMethod, NetworkHttpRequest, NetworkHttpResponse},
@@ -34,6 +35,56 @@ pub(crate) const MAX_MODELS: usize = 512;
 const MAX_SESSIONS: usize = 256;
 pub(crate) const MAX_CLIENT_PROFILES: usize = 8;
 pub(crate) const MAX_CLIENT_ALLOCATIONS: usize = 32;
+
+pub(crate) struct CatalogueResult {
+    pub authority: ResolvedAuthority,
+    pub routes: Vec<ModelRoute>,
+    pub response_bytes: usize,
+}
+
+struct CatalogueBudget {
+    deadline: Instant,
+    response_bytes: usize,
+}
+impl CatalogueBudget {
+    fn new() -> Self {
+        Self {
+            deadline: Instant::now() + Duration::from_secs(60),
+            response_bytes: 0,
+        }
+    }
+    fn remaining(&self) -> Result<Duration, ServerError> {
+        let remaining = self.deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            Err(ServerError::Upstream)
+        } else {
+            Ok(remaining)
+        }
+    }
+    fn collect(
+        &mut self,
+        gateway: &Gateway,
+        mut request: NetworkHttpRequest,
+        cancel: &NetworkHttpCancel,
+        limit: usize,
+        network: &NetworkPolicy,
+    ) -> Result<NetworkHttpResponse, ServerError> {
+        request.timeout = request.timeout.min(self.remaining()?);
+        let remaining = CATALOG_BYTES.saturating_sub(self.response_bytes);
+        if remaining == 0 {
+            return Err(ServerError::Upstream);
+        }
+        let response = gateway.collect(request, cancel, limit.min(remaining), network)?;
+        self.response_bytes = self
+            .response_bytes
+            .checked_add(response.body.len())
+            .ok_or(ServerError::Upstream)?;
+        if self.response_bytes > CATALOG_BYTES {
+            return Err(ServerError::Upstream);
+        }
+        Ok(response)
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ServerError {
@@ -730,6 +781,17 @@ impl Gateway {
         network: &NetworkPolicy,
         generation: &str,
     ) -> Result<TokenGrant, ServerError> {
+        self.grant_budgeted(account, cancel, network, generation, None)
+    }
+
+    fn grant_budgeted(
+        &self,
+        account: &str,
+        cancel: &NetworkHttpCancel,
+        network: &NetworkPolicy,
+        generation: &str,
+        budget: Option<&mut CatalogueBudget>,
+    ) -> Result<TokenGrant, ServerError> {
         if cancel.is_cancelled() {
             return Err(ServerError::Cancelled);
         }
@@ -741,6 +803,9 @@ impl Gateway {
             .or_insert_with(|| Arc::new(Mutex::new(())))
             .clone();
         let _guard = loop {
+            if let Some(budget) = budget.as_deref() {
+                let _ = budget.remaining()?;
+            }
             if cancel.is_cancelled() {
                 return Err(ServerError::Cancelled);
             }
@@ -762,12 +827,22 @@ impl Gateway {
             let request =
                 provider_auth::opencode_refresh(&AuthClient::available(Provider::OpenCode), &grant)
                     .map_err(|_| ServerError::NeedsLogin)?;
-            let response = self.collect(
-                request,
-                cancel,
-                provider_auth::AUTH_MAX_RESPONSE_BYTES,
-                network,
-            )?;
+            let response = if let Some(budget) = budget {
+                budget.collect(
+                    self,
+                    request,
+                    cancel,
+                    provider_auth::AUTH_MAX_RESPONSE_BYTES,
+                    network,
+                )?
+            } else {
+                self.collect(
+                    request,
+                    cancel,
+                    provider_auth::AUTH_MAX_RESPONSE_BYTES,
+                    network,
+                )?
+            };
             let fresh = provider_auth::parse_opencode_refresh(&response, Instant::now())
                 .map_err(|_| ServerError::NeedsLogin)?;
             self.store
@@ -830,17 +905,60 @@ impl Gateway {
         })
     }
 
-    pub fn catalog(
+    /// Account-local metadata only. The returned authority is captured before
+    /// the final request and checked again afterward; routes are never applied.
+    pub(crate) fn catalogue(
         &self,
         account: &str,
+        requested: &ResolvedAuthority,
         cancel: &Arc<NetworkHttpCancel>,
-    ) -> Result<Vec<ModelRoute>, ServerError> {
+    ) -> Result<CatalogueResult, ServerError> {
+        self.catalogue_budgeted(account, requested, cancel, CatalogueBudget::new())
+    }
+
+    fn catalogue_budgeted(
+        &self,
+        account: &str,
+        requested: &ResolvedAuthority,
+        cancel: &Arc<NetworkHttpCancel>,
+        mut budget: CatalogueBudget,
+    ) -> Result<CatalogueResult, ServerError> {
         let lease = BorrowedLease::acquire(self, account, cancel, None)?;
+        let initial = self.store.snapshot(account).map_err(credential_error)?;
+        if ResolvedAuthority::from_snapshot(&initial).map_err(|_| ServerError::BindingChanged)?
+            != *requested
+            || initial.generation != lease.generation
+            || initial.preferences.service_generation != lease.preferences.service_generation
+            || initial.preferences.service != lease.preferences.service
+        {
+            return Err(ServerError::BindingChanged);
+        }
         let network = &lease.preferences.service;
-        let mut grant = self.grant(account, cancel, network, &lease.generation)?;
-        match grant.provider {
+        self.grant_budgeted(
+            account,
+            cancel,
+            network,
+            &lease.generation,
+            Some(&mut budget),
+        )?;
+        let acquire = || {
+            let snapshot = self.store.snapshot(account).map_err(credential_error)?;
+            let authority = ResolvedAuthority::from_snapshot(&snapshot)
+                .map_err(|_| ServerError::BindingChanged)?;
+            if !requested.same_transport_generation(&authority) {
+                return Err(ServerError::BindingChanged);
+            }
+            let grant = self
+                .store
+                .load_grant_for_authority(account, &snapshot.generation, &snapshot.organization)
+                .map_err(credential_error)?;
+            Ok((snapshot, authority, grant))
+        };
+        let (mut snapshot, mut authority, mut grant) = acquire()?;
+        let routes = match grant.provider {
             Provider::DeepSeek => {
-                let response = self.collect(
+                let response = budget.collect(
+                    self,
                     account_request(
                         NetworkHttpMethod::Get,
                         "https://api.deepseek.com/models",
@@ -853,17 +971,19 @@ impl Gateway {
                     network,
                 )?;
                 check_status(response.status)?;
-                parse_deepseek_catalog(&response.body)
+                parse_deepseek_catalog(&response.body)?
             }
             Provider::OpenCode => {
-                let user = self.collect(
-                    account_request(
-                        NetworkHttpMethod::Get,
-                        "https://opencode.ai/console/api/user",
-                        &grant,
-                        "",
-                        "",
-                    ),
+                let without_org = |url: &str, grant: &TokenGrant| {
+                    let mut request = account_request(NetworkHttpMethod::Get, url, grant, "", "");
+                    request
+                        .headers
+                        .retain(|(name, _)| !name.eq_ignore_ascii_case("x-org-id"));
+                    request
+                };
+                let user = budget.collect(
+                    self,
+                    without_org("https://opencode.ai/console/api/user", &grant),
                     cancel,
                     CATALOG_BYTES,
                     network,
@@ -876,30 +996,24 @@ impl Gateway {
                 {
                     return Err(ServerError::Upstream);
                 }
-                let orgs = self.collect(
-                    account_request(
-                        NetworkHttpMethod::Get,
-                        "https://opencode.ai/console/api/orgs",
-                        &grant,
-                        "",
-                        "",
-                    ),
+                // Reacquire before each metadata exchange. The requested
+                // service generation stays fixed even through token refresh.
+                (snapshot, _, grant) = acquire()?;
+                let orgs = budget.collect(
+                    self,
+                    without_org("https://opencode.ai/console/api/orgs", &grant),
                     cancel,
                     CATALOG_BYTES,
                     network,
                 )?;
                 check_status(orgs.status)?;
                 let selected = select_organization(&orgs.body, grant.organization.as_deref())?;
-                if grant.organization != selected {
-                    self.store
-                        .set_organization_if_current(account, &lease.generation, selected)
-                        .map_err(credential_error)?;
-                    grant = self
-                        .store
-                        .load_grant_for_generation(account, &lease.generation)
-                        .map_err(credential_error)?;
-                }
-                let response = self.collect(
+                self.store
+                    .resolve_catalogue_organization(&snapshot, selected)
+                    .map_err(credential_error)?;
+                (snapshot, authority, grant) = acquire()?;
+                let response = budget.collect(
+                    self,
                     account_request(
                         NetworkHttpMethod::Get,
                         "https://opencode.ai/console/api/v2/config",
@@ -912,9 +1026,53 @@ impl Gateway {
                     network,
                 )?;
                 check_status(response.status)?;
-                parse_opencode_catalog(&response.body, grant.organization.as_deref())
+                parse_opencode_catalog(&response.body, grant.organization.as_deref())?
             }
+        };
+        if cancel.is_cancelled() {
+            return Err(ServerError::Cancelled);
         }
+        let current = self.store.snapshot(account).map_err(credential_error)?;
+        if ResolvedAuthority::from_snapshot(&current).map_err(|_| ServerError::BindingChanged)?
+            != authority
+            || current.generation != snapshot.generation
+        {
+            return Err(ServerError::BindingChanged);
+        }
+        Ok(CatalogueResult {
+            authority,
+            routes,
+            response_bytes: budget.response_bytes,
+        })
+    }
+
+    #[cfg(test)]
+    pub fn catalog(
+        &self,
+        account: &str,
+        cancel: &Arc<NetworkHttpCancel>,
+    ) -> Result<Vec<ModelRoute>, ServerError> {
+        let snapshot = self.store.snapshot(account).map_err(credential_error)?;
+        let authority =
+            ResolvedAuthority::from_snapshot(&snapshot).map_err(|_| ServerError::BindingChanged)?;
+        self.catalogue(account, &authority, cancel)
+            .map(|result| result.routes)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fixture_catalogue_upstream(&self, url: String) {
+        *self.fixture_upstream.lock().unwrap() = Some(url);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fixture_catalogue_leases(&self, account: &str) -> usize {
+        self.state
+            .lock()
+            .unwrap()
+            .leases
+            .get(account)
+            .copied()
+            .unwrap_or(0)
     }
 
     pub fn probe(
@@ -1887,6 +2045,110 @@ mod tests {
     const FIRST: &str = "data: {\"id\":\"synthetic\",\"model\":\"fixture-wire\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello\"},\"finish_reason\":null}]}\n\n";
     const END: &str = "data: {\"id\":\"synthetic\",\"model\":\"fixture-wire\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
     const BODY: &str = r#"{"model":"minicon-selected","stream":true,"messages":[{"role":"user","content":"test"}]}"#;
+
+    #[test]
+    fn cs01_real_catalogue_deadline_spans_all_metadata_exchanges() {
+        let fixture = Fixture::new();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        *fixture.gateway.fixture_upstream.lock().unwrap() = Some(format!(
+            "http://{}/metadata",
+            listener.local_addr().unwrap()
+        ));
+        let stopping = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stop = stopping.clone();
+        struct OwnedPeer {
+            stopping: Arc<std::sync::atomic::AtomicBool>,
+            worker: Option<thread::JoinHandle<usize>>,
+        }
+        impl OwnedPeer {
+            fn finish(mut self) -> usize {
+                self.stopping
+                    .store(true, std::sync::atomic::Ordering::Release);
+                self.worker.take().unwrap().join().unwrap()
+            }
+        }
+        impl Drop for OwnedPeer {
+            fn drop(&mut self) {
+                self.stopping
+                    .store(true, std::sync::atomic::Ordering::Release);
+                if let Some(worker) = self.worker.take() {
+                    let result = worker.join();
+                    if !thread::panicking() {
+                        assert!(result.is_ok());
+                    }
+                }
+            }
+        }
+        let worker = thread::spawn(move || {
+            let mut count = 0;
+            while !stop.load(std::sync::atomic::Ordering::Acquire) {
+                let mut stream = match listener.accept() {
+                    Ok((stream, _)) => stream,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(2));
+                        continue;
+                    }
+                    Err(error) => panic!("bounded metadata accept: {error}"),
+                };
+                stream.set_nonblocking(false).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(4)))
+                    .unwrap();
+                stream
+                    .set_write_timeout(Some(Duration::from_secs(4)))
+                    .unwrap();
+                let request = read_headers(&mut stream);
+                assert!(request.starts_with("GET /metadata "));
+                assert!(
+                    request
+                        .to_lowercase()
+                        .contains("authorization: bearer synthetic-access")
+                );
+                let body = match count {
+                    0 => br#"{"id":"synthetic","email":"synthetic.invalid"}"#.to_vec(),
+                    1 => b"[]".to_vec(),
+                    _ => br#"{"providers":{"remote":{"package":"@opencode/ai/providers/openai-compatible","settings":{"baseURL":"https://opencode.ai/inference/fixture/v1"},"models":{"same":{"modelID":"wire"}}}}}"#.to_vec(),
+                };
+                count += 1;
+                thread::sleep(Duration::from_millis(350));
+                let header = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream
+                    .write_all(header.as_bytes())
+                    .and_then(|()| stream.write_all(&body));
+            }
+            count
+        });
+        let peer = OwnedPeer {
+            stopping,
+            worker: Some(worker),
+        };
+        let snapshot = fixture.gateway.store.snapshot(&fixture.account).unwrap();
+        let requested = ResolvedAuthority::from_snapshot(&snapshot).unwrap();
+        let started = Instant::now();
+        let result = fixture.gateway.catalogue_budgeted(
+            &fixture.account,
+            &requested,
+            &Arc::new(NetworkHttpCancel::new()),
+            CatalogueBudget {
+                deadline: Instant::now() + Duration::from_millis(600),
+                response_bytes: 0,
+            },
+        );
+        let requests = peer.finish();
+        assert!(
+            result.is_err(),
+            "three individually short exchanges outlived the shared deadline"
+        );
+        assert!(started.elapsed() < Duration::from_secs(3));
+        assert!(
+            requests < 3,
+            "metadata chain reached config after the global deadline"
+        );
+    }
 
     #[test]
     fn loopback_admission_and_binding_stay_authenticated_and_sticky() {

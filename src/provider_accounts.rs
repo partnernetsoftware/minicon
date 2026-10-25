@@ -304,6 +304,22 @@ impl AccountStore {
 
     pub fn snapshot(&self, id: &str) -> Result<AccountSnapshot, StoreError> {
         let _guard = self.mutation.lock().map_err(|_| StoreError::Storage)?;
+        self.snapshot_locked(id)
+    }
+
+    /// Hold current authority through a bounded in-memory metadata publication.
+    /// The callback must perform no IO or gateway acquisition. Lock order is
+    /// unchanged: a gateway caller must acquire gateway state before this lock.
+    pub fn with_snapshot<T>(
+        &self,
+        id: &str,
+        accept: impl FnOnce(AccountSnapshot) -> T,
+    ) -> Result<T, StoreError> {
+        let _guard = self.mutation.lock().map_err(|_| StoreError::Storage)?;
+        Ok(accept(self.snapshot_locked(id)?))
+    }
+
+    fn snapshot_locked(&self, id: &str) -> Result<AccountSnapshot, StoreError> {
         let accounts = self.read_registry()?;
         let account = accounts
             .iter()
@@ -374,6 +390,7 @@ impl AccountStore {
 
     /// Publish organization selection on the latest grant in this generation.
     /// A catalogue's older token snapshot must never overwrite a refresh.
+    #[cfg(test)]
     pub fn set_organization_if_current(
         &self,
         id: &str,
@@ -405,6 +422,63 @@ impl AccountStore {
         });
         credential.organization = organization;
         self.write_credential(id, &credential)
+    }
+
+    /// Catalogue organization resolution is scoped to the exact credential,
+    /// service and organization read, while preserving a concurrent token-only
+    /// refresh. This lock never encloses HTTP. Labels/login policy are unrelated.
+    pub fn resolve_catalogue_organization(
+        &self,
+        expected: &AccountSnapshot,
+        organization: Option<String>,
+    ) -> Result<AccountSnapshot, StoreError> {
+        let _guard = self.mutation.lock().map_err(|_| StoreError::Storage)?;
+        let id = &expected.summary.id;
+        let accounts = self.read_registry()?;
+        let record = accounts
+            .iter()
+            .find(|record| record.summary.id == *id)
+            .ok_or(StoreError::Missing)?;
+        let preferences = record
+            .preferences
+            .clone()
+            .unwrap_or_else(|| AccountPreferences::legacy(id));
+        let mut credential = self.read_credential(id, record.summary.provider)?;
+        check_generation(&credential, id, Some(&expected.generation))?;
+        if record.summary.provider != expected.summary.provider
+            || !preferences.enabled
+            || !expected.preferences.enabled
+            || preferences.service_generation != expected.preferences.service_generation
+            || preferences.service != expected.preferences.service
+            || organization_authority(&credential, id) != expected.organization
+        {
+            return Err(StoreError::Changed);
+        }
+        if organization.as_deref().is_some_and(|organization| {
+            record.summary.provider != Provider::OpenCode
+                || !crate::provider_auth::valid_organization_id(organization)
+        }) {
+            return Err(StoreError::InvalidAccount);
+        }
+        let state = projected_state(&credential, record.summary.state);
+        credential.generation = Some(credential_generation(&credential, id).to_owned());
+        credential.ready = Some(state == AccountState::AccountReady);
+        credential.version = 2;
+        credential.org_epoch = Some(if credential.organization != organization {
+            next_epoch(organization_epoch(&credential, id))?
+        } else {
+            organization_epoch(&credential, id).to_owned()
+        });
+        credential.organization = organization;
+        self.write_credential(id, &credential)?;
+        let mut summary = record.summary.clone();
+        summary.state = state;
+        Ok(AccountSnapshot {
+            summary,
+            preferences,
+            generation: credential_generation(&credential, id).into(),
+            organization: organization_authority(&credential, id),
+        })
     }
 
     pub fn mark_ready_if_current(
@@ -972,6 +1046,89 @@ mod tests {
             lifecycle: TokenLifecycle::OpaqueUntilRejected,
             organization: None,
         }
+    }
+
+    fn catalogue_org_grant(secret: &str) -> TokenGrant {
+        TokenGrant {
+            provider: Provider::OpenCode,
+            access_token: Secret::new(secret).unwrap(),
+            lifecycle: TokenLifecycle::ExpiringRefresh {
+                refresh_token: Secret::new("synthetic-refresh").unwrap(),
+                expires_at: Instant::now() + Duration::from_secs(3600),
+            },
+            organization: None,
+        }
+    }
+
+    #[test]
+    fn cs01_catalogue_organization_cas_keeps_latest_token_and_unrelated_metadata() {
+        let fixture = Fixture::new();
+        let store = AccountStore::new(fixture.0.clone()).unwrap();
+        let initial_grant = catalogue_org_grant("synthetic-old");
+        let account = store.insert("Before", initial_grant).unwrap();
+        store.mark_ready(&account.id).unwrap();
+        let expected = store.snapshot(&account.id).unwrap();
+        let fresh = catalogue_org_grant("synthetic-fresh");
+        store
+            .replace_grant_if_current(&account.id, &expected.generation, fresh)
+            .unwrap();
+        let mut preferences = expected.preferences.clone();
+        preferences.login = NetworkPolicy::Proxy("http://127.0.0.1:8021".into());
+        store
+            .update_preferences(&account.id, "Latest label", preferences.clone())
+            .unwrap();
+        let resolved = store
+            .resolve_catalogue_organization(&expected, Some("selected-org".into()))
+            .unwrap();
+        assert_eq!(resolved.summary.label, "Latest label");
+        assert_eq!(resolved.preferences, preferences);
+        assert_eq!(resolved.summary.state, AccountState::AccountReady);
+        assert_eq!(resolved.generation, expected.generation);
+        assert_ne!(resolved.organization, expected.organization);
+        let current = store
+            .load_grant_for_authority(&account.id, &resolved.generation, &resolved.organization)
+            .unwrap();
+        assert_eq!(current.access_token.expose(), "synthetic-fresh");
+        assert_eq!(current.organization.as_deref(), Some("selected-org"));
+        let disk = std::fs::read(store.credential_path(&account.id).unwrap()).unwrap();
+        assert_eq!(
+            store.resolve_catalogue_organization(&expected, Some("must-not-publish".into())),
+            Err(StoreError::Changed)
+        );
+        assert_eq!(
+            std::fs::read(store.credential_path(&account.id).unwrap()).unwrap(),
+            disk
+        );
+    }
+
+    #[test]
+    fn cs01_catalogue_organization_cas_refuses_changed_service_and_removed_account() {
+        let fixture = Fixture::new();
+        let store = AccountStore::new(fixture.0.clone()).unwrap();
+        let original = catalogue_org_grant("synthetic-original");
+        let account = store.insert("Synthetic", original).unwrap();
+        let expected = store.snapshot(&account.id).unwrap();
+        let mut preferences = expected.preferences.clone();
+        preferences.service_generation = "f".repeat(32);
+        preferences.service = NetworkPolicy::Proxy("http://127.0.0.1:8022".into());
+        store
+            .update_preferences(&account.id, "Synthetic", preferences)
+            .unwrap();
+        let disk = std::fs::read(store.credential_path(&account.id).unwrap()).unwrap();
+        assert_eq!(
+            store.resolve_catalogue_organization(&expected, Some("must-not-publish".into())),
+            Err(StoreError::Changed)
+        );
+        assert_eq!(
+            std::fs::read(store.credential_path(&account.id).unwrap()).unwrap(),
+            disk
+        );
+        store.remove(&account.id).unwrap();
+        assert_eq!(
+            store.resolve_catalogue_organization(&expected, None),
+            Err(StoreError::Missing)
+        );
+        assert!(!store.credential_path(&account.id).unwrap().exists());
     }
 
     #[test]

@@ -6,6 +6,9 @@ pub use crate::provider_accounts::{
 };
 pub use crate::provider_auth::Provider;
 pub use crate::provider_login::AttemptId;
+use crate::provider_selection::{CatalogueCache, CatalogueRequest, SelectionError};
+pub use crate::provider_selection::{CatalogueModel, CatalogueStatus};
+use crate::provider_server::CatalogueResult;
 use crate::{
     provider_accounts::AccountStore,
     provider_auth::Secret,
@@ -55,6 +58,15 @@ pub enum LoadState {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AccountCatalogueView {
+    pub account: String,
+    pub status: CatalogueStatus,
+    pub models: Vec<CatalogueModel>,
+    pub retained_rows: usize,
+    pub error: Option<RuntimeError>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct View {
     pub load_state: LoadState,
     pub port: u16,
@@ -65,6 +77,8 @@ pub struct View {
     pub selected_account: Option<String>,
     pub model: String,
     pub models: Vec<String>,
+    pub catalogues: Vec<AccountCatalogueView>,
+    pub catalogue_bytes: usize,
     pub listener: ListenerState,
     pub busy: bool,
     pub login_active: bool,
@@ -87,6 +101,8 @@ impl Default for View {
             selected_account: None,
             model: String::new(),
             models: Vec::new(),
+            catalogues: Vec::new(),
+            catalogue_bytes: 0,
             listener: ListenerState::Stopped,
             busy: true,
             login_active: false,
@@ -111,6 +127,7 @@ pub enum Action {
     CancelLogin,
     RefreshAccounts,
     RefreshModels,
+    RefreshAccountModels(String),
     SelectAccount(String),
     SaveAccount {
         request: u64,
@@ -154,7 +171,7 @@ pub enum RuntimeError {
     Corrupt,
     MissingAccount,
     MissingModel,
-    CatalogConflict,
+    Cancelled,
     AccountChanged,
     MissingClientKey,
     NeedsLogin,
@@ -381,14 +398,16 @@ fn login_event(event: LoginEvent, view: &mut View, store: &AccountStore) -> Opti
     Some(Effect::AuthFinished(attempt))
 }
 
-use crate::provider_server::{Config, ConfigPublication, Gateway, ModelRoute, ServerError};
+#[cfg(test)]
+use crate::provider_server::ModelRoute;
+use crate::provider_server::{Config, ConfigPublication, Gateway, ServerError};
 use minicon_platform::{
     filesystem, network_http_stream::NetworkHttpCancel, network_loopback::Server,
 };
 use std::path::Path;
 
 enum OperationResult {
-    Catalog(Vec<ModelRoute>),
+    Catalog(CatalogueResult),
     Tested,
 }
 
@@ -397,6 +416,7 @@ struct Operation {
     cancel: Arc<NetworkHttpCancel>,
     worker: JoinHandle<Result<OperationResult, RuntimeError>>,
     account: String,
+    catalogue: Option<CatalogueRequest>,
 }
 struct Owner {
     root: PathBuf,
@@ -406,6 +426,8 @@ struct Owner {
     gateway: Arc<Gateway>,
     server: Option<Server>,
     operation: Option<Operation>,
+    catalogues: CatalogueCache,
+    catalogue_errors: std::collections::BTreeMap<String, RuntimeError>,
     removing: Option<(crate::provider_login::AttemptId, String)>,
     view: View,
 }
@@ -444,6 +466,8 @@ impl Owner {
             gateway,
             server: None,
             operation: None,
+            catalogues: CatalogueCache::default(),
+            catalogue_errors: Default::default(),
             removing: None,
             view: View::default(),
         };
@@ -452,21 +476,58 @@ impl Owner {
         Ok(owner)
     }
     fn refresh_view(&mut self) -> Result<(), RuntimeError> {
-        let accounts = self.store.list().map_err(|_| RuntimeError::Storage)?;
-        let preferences = accounts
-            .iter()
-            .map(|account| {
-                self.store
-                    .preferences(&account.id)
-                    .map(|preferences| (account.id.clone(), preferences))
-                    .map_err(|_| RuntimeError::Storage)
-            })
-            .collect::<Result<_, _>>()?;
+        let metadata = (|| {
+            let accounts = self.store.list().map_err(|_| RuntimeError::Storage)?;
+            let preferences = accounts
+                .iter()
+                .map(|account| {
+                    self.store
+                        .preferences(&account.id)
+                        .map(|preferences| (account.id.clone(), preferences))
+                        .map_err(|_| RuntimeError::Storage)
+                })
+                .collect::<Result<_, _>>()?;
+            Ok::<_, RuntimeError>((accounts, preferences))
+        })();
+        let (accounts, preferences) = match metadata {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                // Retain bounded readings, but revoke Fresh/Loading claims
+                // even when registry/preferences cannot be reread. Operation
+                // completion is independent of that metadata read succeeding.
+                for account in self.catalogues.accounts() {
+                    self.catalogues.observe(&account, None);
+                    self.catalogue_errors.insert(account, error);
+                }
+                self.view.load_state = LoadState::Unavailable(error);
+                self.refresh_connection_view();
+                return Err(error);
+            }
+        };
         self.view
             .account_save_receipts
             .retain(|receipt| accounts.iter().any(|account| account.id == receipt.account));
+        for cached in self.catalogues.accounts() {
+            if !accounts.iter().any(|account| account.id == cached) {
+                self.catalogues.evict(&cached);
+                self.catalogue_errors.remove(&cached);
+            }
+        }
+        self.catalogue_errors
+            .retain(|id, _| accounts.iter().any(|account| &account.id == id));
+        for account in &accounts {
+            let snapshot = self.store.snapshot(&account.id);
+            self.catalogues.observe(&account.id, snapshot.as_ref().ok());
+            if let Err(error) = snapshot {
+                self.catalogue_errors.insert(
+                    account.id.clone(),
+                    map_login(crate::provider_login::LoginError::Store(error)),
+                );
+            }
+        }
         self.view.accounts = accounts;
         self.view.account_preferences = preferences;
+        self.view.load_state = LoadState::Loaded;
         self.refresh_connection_view();
         Ok(())
     }
@@ -488,6 +549,19 @@ impl Owner {
             .filter(|route| Some(route.provider) == provider)
             .map(|route| route.id.clone())
             .collect();
+        self.view.catalogues = self
+            .view
+            .accounts
+            .iter()
+            .map(|account| AccountCatalogueView {
+                account: account.id.clone(),
+                status: self.catalogues.status(&account.id),
+                models: self.catalogues.models(&account.id),
+                retained_rows: self.catalogues.stale_rows(&account.id),
+                error: self.catalogue_errors.get(&account.id).copied(),
+            })
+            .collect();
+        self.view.catalogue_bytes = self.catalogues.retained_bytes();
         self.view.local_key_exists = self.key.is_some();
         self.view.busy = self.operation.is_some() || self.view.login_active;
     }
@@ -527,8 +601,14 @@ impl Owner {
         if let Some(operation) = self.operation.take() {
             operation.cancel.cancel();
             let _ = operation.worker.join();
+            if let Some(ticket) = &operation.catalogue {
+                let _ = self.catalogues.fail(ticket);
+                self.catalogue_errors
+                    .insert(operation.account, RuntimeError::Cancelled);
+            }
         }
         self.view.busy = self.view.login_active;
+        self.refresh_connection_view();
     }
     fn stop(&mut self) {
         self.view.listener = ListenerState::Draining;
@@ -543,59 +623,6 @@ impl Owner {
         self.view.listener = ListenerState::Stopped;
         self.view.actual_port = None;
     }
-    fn apply_catalog(
-        &mut self,
-        account: &str,
-        models: Vec<ModelRoute>,
-    ) -> Result<(), RuntimeError> {
-        // A provider's catalogue IDs are not identities shared by accounts.
-        // Until catalogues have account-scoped ownership, refuse a conflicting
-        // refresh atomically rather than rewrite another client's applied route.
-        if models.iter().any(|model| {
-            self.config.models.iter().any(|old| {
-                old.id == model.id
-                    && old != model
-                    && self.config.profiles.iter().any(|profile| {
-                        profile.allocations.iter().any(|allocation| {
-                            allocation.route == old.id && allocation.account != account
-                        })
-                    })
-            })
-        }) {
-            return Err(RuntimeError::CatalogConflict);
-        }
-        let mut config = self.config.clone();
-        if !models.iter().any(|route| route.id == config.model) {
-            config.model.clear();
-        }
-        let allocated: std::collections::HashSet<_> = config
-            .profiles
-            .iter()
-            .flat_map(|profile| {
-                profile
-                    .allocations
-                    .iter()
-                    .map(|allocation| &allocation.route)
-            })
-            .collect();
-        let provider = self
-            .view
-            .accounts
-            .iter()
-            .find(|entry| entry.id == account)
-            .map(|entry| entry.provider);
-        config
-            .models
-            .retain(|route| Some(route.provider) != provider || allocated.contains(&route.id));
-        for model in models {
-            if let Some(route) = config.models.iter_mut().find(|route| route.id == model.id) {
-                *route = model;
-            } else {
-                config.models.push(model);
-            }
-        }
-        self.save(config)
-    }
     fn poll_operation(&mut self) {
         if !self
             .operation
@@ -609,26 +636,110 @@ impl Owner {
             .worker
             .join()
             .unwrap_or(Err(RuntimeError::WorkerUnavailable));
-        let result = match result {
-            Ok(OperationResult::Catalog(models))
-                if self.config.selected_account.as_deref() == Some(&operation.account) =>
-            {
-                self.apply_catalog(&operation.account, models)
+        if let Some(ticket) = &operation.catalogue {
+            let result = if operation.cancel.is_cancelled() {
+                Err(RuntimeError::Cancelled)
+            } else {
+                match result {
+                    Ok(OperationResult::Catalog(result)) => {
+                        let store = self.store.clone();
+                        store
+                            .with_snapshot(&operation.account, |current| {
+                                self.catalogues.complete(
+                                    ticket,
+                                    result.authority,
+                                    Some(&current),
+                                    result.routes,
+                                    result.response_bytes,
+                                )
+                            })
+                            .map_err(|error| {
+                                map_login(crate::provider_login::LoginError::Store(error))
+                            })
+                            .and_then(|result| result.map_err(map_selection))
+                    }
+                    Ok(OperationResult::Tested) => Err(RuntimeError::InvalidAction),
+                    Err(error) => Err(error),
+                }
+            };
+            match result {
+                Ok(()) => {
+                    self.catalogue_errors.remove(&operation.account);
+                }
+                Err(error) => {
+                    let _ = self.catalogues.fail(ticket);
+                    self.catalogue_errors
+                        .insert(operation.account.clone(), error);
+                }
             }
-            Ok(OperationResult::Catalog(_)) => Err(RuntimeError::InvalidAction),
-            Ok(OperationResult::Tested) => {
-                self.view.status = Some("Model authorization verified.".into());
-                Ok(())
+        } else {
+            match result {
+                Ok(OperationResult::Tested) => {
+                    self.view.status = Some("Model authorization verified.".into())
+                }
+                Ok(OperationResult::Catalog(_)) => {
+                    self.view.status = Some(RuntimeError::InvalidAction.to_string())
+                }
+                Err(error) => self.view.status = Some(error.to_string()),
             }
-            Err(error) => Err(error),
-        };
-        if let Err(error) = result {
-            self.view.status = Some(error.to_string());
         }
         if let Err(error) = self.refresh_view() {
             self.view.status = Some(error.to_string());
         }
     }
+    fn begin_catalogue(&mut self, account: String) -> Result<(), RuntimeError> {
+        if self.operation.is_some() || self.view.login_active {
+            return Err(RuntimeError::Busy);
+        }
+        let snapshot = self.store.snapshot(&account);
+        self.catalogues.observe(&account, snapshot.as_ref().ok());
+        let ticket = match snapshot
+            .map_err(|error| map_login(crate::provider_login::LoginError::Store(error)))
+            .and_then(|snapshot| self.catalogues.begin(&snapshot).map_err(map_selection))
+        {
+            Ok(ticket) => ticket,
+            Err(error) => {
+                // Unknown IDs cannot grow the bounded per-account error map.
+                if self.view.accounts.iter().any(|entry| entry.id == account) {
+                    self.catalogue_errors.insert(account, error);
+                }
+                self.refresh_connection_view();
+                return Err(error);
+            }
+        };
+        let requested = ticket.authority().clone();
+        let gateway = self.gateway.clone();
+        let cancel = Arc::new(NetworkHttpCancel::new());
+        let network = cancel.clone();
+        let selected = account.clone();
+        let worker = match std::thread::Builder::new()
+            .name("minicon-provider-catalogue".into())
+            .spawn(move || {
+                gateway
+                    .catalogue(&selected, &requested, &network)
+                    .map(OperationResult::Catalog)
+                    .map_err(map_server)
+            }) {
+            Ok(worker) => worker,
+            Err(_) => {
+                let _ = self.catalogues.fail(&ticket);
+                self.catalogue_errors
+                    .insert(account, RuntimeError::WorkerUnavailable);
+                self.refresh_connection_view();
+                return Err(RuntimeError::WorkerUnavailable);
+            }
+        };
+        self.catalogue_errors.remove(&account);
+        self.operation = Some(Operation {
+            cancel,
+            worker,
+            account,
+            catalogue: Some(ticket),
+        });
+        self.refresh_connection_view();
+        Ok(())
+    }
+
     fn begin_operation(&mut self, probe: bool) -> Result<(), RuntimeError> {
         if self.operation.is_some() || self.view.login_active {
             return Err(RuntimeError::Busy);
@@ -638,18 +749,16 @@ impl Owner {
             .selected_account
             .clone()
             .ok_or(RuntimeError::MissingAccount)?;
-        let route = if probe {
-            Some(
-                self.config
-                    .models
-                    .iter()
-                    .find(|route| route.id == self.config.model)
-                    .cloned()
-                    .ok_or(RuntimeError::MissingModel)?,
-            )
-        } else {
-            None
-        };
+        if !probe {
+            return self.begin_catalogue(account);
+        }
+        let route = self
+            .config
+            .models
+            .iter()
+            .find(|route| route.id == self.config.model)
+            .cloned()
+            .ok_or(RuntimeError::MissingModel)?;
         let gateway = self.gateway.clone();
         let identity = self.config.identity.clone();
         let cancel = Arc::new(NetworkHttpCancel::new());
@@ -658,23 +767,17 @@ impl Owner {
         let worker = std::thread::Builder::new()
             .name("minicon-provider-operation".into())
             .spawn(move || {
-                if let Some(route) = route {
-                    gateway
-                        .probe(&selected, &route, &identity, &network)
-                        .map_err(map_server)?;
-                    Ok(OperationResult::Tested)
-                } else {
-                    gateway
-                        .catalog(&selected, &network)
-                        .map(OperationResult::Catalog)
-                        .map_err(map_server)
-                }
+                gateway
+                    .probe(&selected, &route, &identity, &network)
+                    .map_err(map_server)?;
+                Ok(OperationResult::Tested)
             })
             .map_err(|_| RuntimeError::WorkerUnavailable)?;
         self.operation = Some(Operation {
             cancel,
             worker,
             account,
+            catalogue: None,
         });
         self.view.busy = true;
         self.view.status = None;
@@ -797,6 +900,7 @@ impl Owner {
                 self.view.status = Some("Account settings saved.".into());
             }
             Action::RefreshModels => self.begin_operation(false)?,
+            Action::RefreshAccountModels(account) => self.begin_catalogue(account)?,
             Action::TestModel => self.begin_operation(true)?,
             Action::SetPort(port) => {
                 if port < 1024
@@ -966,7 +1070,10 @@ fn run_owner(
                 if epoch != stop_requested.load(Ordering::Acquire)
                     && matches!(
                         action,
-                        Action::Start | Action::RefreshModels | Action::TestModel
+                        Action::Start
+                            | Action::RefreshModels
+                            | Action::RefreshAccountModels(_)
+                            | Action::TestModel
                     )
                 {
                     continue;
@@ -1037,6 +1144,17 @@ fn map_login(error: crate::provider_login::LoginError) -> RuntimeError {
     }
 }
 
+fn map_selection(error: SelectionError) -> RuntimeError {
+    match error {
+        SelectionError::InvalidAuthority
+        | SelectionError::AuthorityChanged
+        | SelectionError::LateResult => RuntimeError::AccountChanged,
+        SelectionError::Disabled => RuntimeError::NeedsLogin,
+        SelectionError::AccountBound => RuntimeError::Busy,
+        _ => RuntimeError::ProviderUnavailable,
+    }
+}
+
 fn map_server(error: ServerError) -> RuntimeError {
     match error {
         ServerError::MissingAccount => RuntimeError::MissingAccount,
@@ -1045,6 +1163,8 @@ fn map_server(error: ServerError) -> RuntimeError {
         ServerError::NeedsLogin => RuntimeError::NeedsLogin,
         ServerError::Busy => RuntimeError::Busy,
         ServerError::Storage => RuntimeError::Storage,
+        ServerError::BindingChanged => RuntimeError::AccountChanged,
+        ServerError::Cancelled => RuntimeError::Cancelled,
         _ => RuntimeError::ProviderUnavailable,
     }
 }
@@ -1104,6 +1224,636 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
     }
+    struct CataloguePeer {
+        address: std::net::SocketAddr,
+        stopping: Arc<AtomicBool>,
+        worker: Option<std::thread::JoinHandle<()>>,
+    }
+    impl CataloguePeer {
+        fn new(mut response: impl FnMut(usize, &str) -> Vec<u8> + Send + 'static) -> Self {
+            use std::io::{Read, Write};
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let stopping = Arc::new(AtomicBool::new(false));
+            let stop = stopping.clone();
+            let worker = std::thread::spawn(move || {
+                let mut index = 0;
+                while !stop.load(Ordering::Acquire) {
+                    let (mut stream, _) = match listener.accept() {
+                        Ok(pair) => pair,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            std::thread::sleep(Duration::from_millis(2));
+                            continue;
+                        }
+                        Err(error) => panic!("synthetic metadata peer accept: {error}"),
+                    };
+                    // Windows accepted streams can inherit nonblocking mode.
+                    stream.set_nonblocking(false).unwrap();
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(3)))
+                        .unwrap();
+                    stream
+                        .set_write_timeout(Some(Duration::from_secs(3)))
+                        .unwrap();
+                    let mut head = Vec::new();
+                    while !head.ends_with(b"\r\n\r\n") {
+                        let mut byte = [0];
+                        stream.read_exact(&mut byte).unwrap();
+                        head.push(byte[0]);
+                        assert!(head.len() <= 16_384);
+                    }
+                    let head = String::from_utf8(head).unwrap();
+                    assert!(
+                        head.starts_with("GET "),
+                        "metadata must not infer or refresh a fresh token"
+                    );
+                    assert!(index < 64);
+                    let body = response(index, &head);
+                    index += 1;
+                    let header = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    );
+                    // Stop/body caps may close the actual client before this
+                    // finite fixture reply; do not mask a request assertion.
+                    let _ = stream
+                        .write_all(header.as_bytes())
+                        .and_then(|()| stream.write_all(&body));
+                }
+            });
+            Self {
+                address,
+                stopping,
+                worker: Some(worker),
+            }
+        }
+        fn url(&self) -> String {
+            format!("http://{}/metadata", self.address)
+        }
+    }
+    impl Drop for CataloguePeer {
+        fn drop(&mut self) {
+            self.stopping.store(true, Ordering::Release);
+            if let Some(worker) = self.worker.take() {
+                let result = worker.join();
+                if !std::thread::panicking() {
+                    assert!(result.is_ok(), "synthetic metadata peer failed");
+                }
+            }
+        }
+    }
+    fn catalogue_reply(index: usize, head: &str) -> Vec<u8> {
+        match index % 3 {
+            0 => br#"{"id":"synthetic-user","email":"synthetic.invalid"}"#.to_vec(),
+            1 => b"[]".to_vec(),
+            _ => {
+                let account = if head.contains("synthetic-access-b") {
+                    "b"
+                } else {
+                    "a"
+                };
+                serde_json::to_vec(&serde_json::json!({"providers":{"remote":{
+                    "package":"@opencode/ai/providers/openai-compatible",
+                    "settings":{"baseURL":format!("https://opencode.ai/inference/account-{account}/v1")},
+                    "models":{"same":{"modelID":format!("wire-{account}")}}
+                }}})).unwrap()
+            }
+        }
+    }
+    fn catalogue_owner() -> (Root, Owner, [String; 2]) {
+        use crate::provider_auth::{TokenGrant, TokenLifecycle};
+        use crate::provider_server::{ClientAllocation, ClientProfile, WireProtocol};
+        let root = Root::new();
+        let mut owner = Owner::load(root.0.clone()).unwrap();
+        let mut accounts = Vec::new();
+        for name in ["a", "b"] {
+            let account = owner
+                .store
+                .insert(
+                    &format!("Synthetic {name}"),
+                    TokenGrant {
+                        provider: Provider::OpenCode,
+                        access_token: Secret::new(&format!("synthetic-access-{name}")).unwrap(),
+                        lifecycle: TokenLifecycle::ExpiringRefresh {
+                            refresh_token: Secret::new("synthetic-refresh").unwrap(),
+                            expires_at: Instant::now() + Duration::from_secs(3600),
+                        },
+                        organization: None,
+                    },
+                )
+                .unwrap();
+            owner.store.mark_ready(&account.id).unwrap();
+            accounts.push(account.id);
+        }
+        let mut config = owner.config.clone();
+        config.version = 2;
+        config.selected_account = Some(accounts[0].clone());
+        config.model = "opencode/remote/same".into();
+        config.models = vec![ModelRoute {
+            id: config.model.clone(),
+            model_id: "legacy-wire".into(),
+            provider: Provider::OpenCode,
+            protocol: WireProtocol::Chat,
+            url: "https://opencode.ai/inference/legacy/v1/chat/completions".into(),
+            headers: vec![],
+        }];
+        config.profiles = vec![ClientProfile {
+            id: "b".repeat(32),
+            label: "Other client".into(),
+            enabled: true,
+            default_model: "work".into(),
+            allocations: vec![ClientAllocation {
+                alias: "work".into(),
+                account: accounts[1].clone(),
+                route: config.model.clone(),
+            }],
+        }];
+        owner.save(config).unwrap();
+        owner
+            .gateway
+            .set_key(Some(Secret::new("synthetic-default").unwrap()))
+            .unwrap();
+        owner
+            .gateway
+            .set_client_key(
+                &"b".repeat(32),
+                Some(Secret::new("synthetic-custom").unwrap()),
+            )
+            .unwrap();
+        (root, owner, accounts.try_into().unwrap())
+    }
+    fn finish_catalogue(owner: &mut Owner) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while owner.operation.is_some() {
+            assert!(
+                Instant::now() < deadline,
+                "bounded synthetic catalogue did not complete"
+            );
+            owner.poll_operation();
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+    fn catalogue_binding(address: std::net::SocketAddr, key: &str) -> serde_json::Value {
+        use std::io::{Read, Write};
+        let mut stream = std::net::TcpStream::connect(address).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        stream
+            .set_write_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        write!(stream, "GET /v1/minicon/binding HTTP/1.1\r\nHost: {address}\r\nAuthorization: Bearer {key}\r\nx-minicon-session: catalogue-stable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+        let mut bytes = String::new();
+        stream.read_to_string(&mut bytes).unwrap();
+        assert!(
+            bytes.starts_with("HTTP/1.1 200"),
+            "local binding was changed by metadata: {bytes}"
+        );
+        serde_json::from_str(bytes.split_once("\r\n\r\n").unwrap().1).unwrap()
+    }
+
+    #[test]
+    fn cs01_real_account_catalogues_do_not_modify_applied_disk_or_named_bindings() {
+        let (root, mut owner, accounts) = catalogue_owner();
+        let peer = CataloguePeer::new(catalogue_reply);
+        owner.gateway.fixture_catalogue_upstream(peer.url());
+        let mut config = owner.config.clone();
+        config.port = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        owner.save(config).unwrap();
+        let mut server = owner.gateway.start(owner.config.port).unwrap();
+        let before = [
+            catalogue_binding(server.address(), "synthetic-default"),
+            catalogue_binding(server.address(), "synthetic-custom"),
+        ];
+        let disk = std::fs::read(root.0.join("gateway.json")).unwrap();
+        let applied = owner.config.clone();
+        let mut login = LoginCoordinator::new(
+            owner.store.clone(),
+            LoginMetadata {
+                version: "synthetic".into(),
+                locale: "en".into(),
+                timezone_offset_seconds: 0,
+            },
+        );
+        for account in &accounts {
+            owner
+                .action(Action::RefreshAccountModels(account.clone()), &mut login)
+                .unwrap();
+            assert_eq!(owner.catalogues.status(account), CatalogueStatus::Loading);
+            finish_catalogue(&mut owner);
+            assert_eq!(owner.catalogues.status(account), CatalogueStatus::Fresh);
+            assert_eq!(owner.config, applied);
+            assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), disk);
+        }
+        let a = owner
+            .catalogues
+            .select(
+                &owner.store.snapshot(&accounts[0]).unwrap(),
+                "opencode/remote/same",
+            )
+            .unwrap();
+        let b = owner
+            .catalogues
+            .select(
+                &owner.store.snapshot(&accounts[1]).unwrap(),
+                "opencode/remote/same",
+            )
+            .unwrap();
+        assert_eq!(a.route().model_id, "wire-a");
+        assert_eq!(b.route().model_id, "wire-b");
+        assert_ne!(a.route().url, b.route().url);
+        assert_eq!(owner.view.selected_account, applied.selected_account);
+        assert_eq!(owner.view.model, applied.model);
+        assert_eq!(
+            before,
+            [
+                catalogue_binding(server.address(), "synthetic-default"),
+                catalogue_binding(server.address(), "synthetic-custom")
+            ]
+        );
+        assert!(!owner.view.login_active);
+        let reopened = Owner::load(root.0.clone()).unwrap();
+        assert_eq!(reopened.config, applied);
+        assert!(
+            reopened
+                .view
+                .catalogues
+                .iter()
+                .all(|entry| entry.status == CatalogueStatus::NotLoaded && entry.models.is_empty())
+        );
+        server.stop();
+        login.shutdown(Duration::from_secs(3)).unwrap();
+    }
+
+    #[test]
+    fn cs01_real_late_catalogue_replies_cannot_cross_account_authority_changes() {
+        use crate::provider_auth::{TokenGrant, TokenLifecycle};
+        for change in [
+            "credential",
+            "service",
+            "disabled",
+            "removed",
+            "organization",
+        ] {
+            let (root, mut owner, accounts) = catalogue_owner();
+            let (arrived, waiting) = std::sync::mpsc::sync_channel(1);
+            let (release, released) = std::sync::mpsc::sync_channel(1);
+            let peer = CataloguePeer::new(move |index, head| {
+                if index == 2 {
+                    arrived.send(()).unwrap();
+                    let _ = released.recv_timeout(Duration::from_secs(3));
+                }
+                catalogue_reply(index, head)
+            });
+            owner.gateway.fixture_catalogue_upstream(peer.url());
+            let disk = std::fs::read(root.0.join("gateway.json")).unwrap();
+            owner.begin_catalogue(accounts[0].clone()).unwrap();
+            waiting.recv_timeout(Duration::from_secs(3)).unwrap();
+            let snapshot = owner.store.snapshot(&accounts[0]).unwrap();
+            match change {
+                "credential" => {
+                    owner
+                        .store
+                        .reconnect_if_current(
+                            &accounts[0],
+                            &snapshot.generation,
+                            TokenGrant {
+                                provider: Provider::OpenCode,
+                                access_token: Secret::new("synthetic-reconnected").unwrap(),
+                                lifecycle: TokenLifecycle::ExpiringRefresh {
+                                    refresh_token: Secret::new("synthetic-new-refresh").unwrap(),
+                                    expires_at: Instant::now() + Duration::from_secs(3600),
+                                },
+                                organization: None,
+                            },
+                        )
+                        .unwrap();
+                }
+                "service" | "disabled" => {
+                    owner
+                        .gateway
+                        .update_account(&AccountEdit {
+                            account: accounts[0].clone(),
+                            label: snapshot.summary.label.clone(),
+                            login: snapshot.preferences.login.clone(),
+                            service: if change == "service" {
+                                NetworkPolicy::Proxy("http://127.0.0.1:9".into())
+                            } else {
+                                snapshot.preferences.service.clone()
+                            },
+                            enabled: change != "disabled",
+                            expected: snapshot.preferences.clone(),
+                            expected_label: snapshot.summary.label,
+                        })
+                        .unwrap();
+                }
+                "removed" => {
+                    owner.store.remove(&accounts[0]).unwrap();
+                }
+                "organization" => {
+                    owner
+                        .store
+                        .set_organization_if_current(
+                            &accounts[0],
+                            &snapshot.generation,
+                            Some("new-org".into()),
+                        )
+                        .unwrap();
+                }
+                _ => unreachable!(),
+            }
+            release.send(()).unwrap();
+            finish_catalogue(&mut owner);
+            assert_ne!(
+                owner.catalogues.status(&accounts[0]),
+                CatalogueStatus::Fresh,
+                "late {change} response became Fresh"
+            );
+            assert!(owner.catalogues.models(&accounts[0]).is_empty());
+            if change == "removed" {
+                assert!(!owner.catalogue_errors.contains_key(&accounts[0]));
+            }
+            assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), disk);
+        }
+    }
+
+    #[test]
+    fn cs01_real_catalogue_stop_reaps_native_transport_and_allows_a_new_metadata_read() {
+        let (_root, mut owner, accounts) = catalogue_owner();
+        let (arrived, waiting) = std::sync::mpsc::sync_channel(1);
+        let (release, released) = std::sync::mpsc::sync_channel(1);
+        let peer = CataloguePeer::new(move |index, head| {
+            if index == 2 {
+                arrived.send(()).unwrap();
+                let _ = released.recv_timeout(Duration::from_secs(3));
+            }
+            catalogue_reply(index, head)
+        });
+        owner.gateway.fixture_catalogue_upstream(peer.url());
+        owner.begin_catalogue(accounts[0].clone()).unwrap();
+        waiting.recv_timeout(Duration::from_secs(3)).unwrap();
+        let started = Instant::now();
+        owner.stop();
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(owner.operation.is_none());
+        assert_eq!(owner.gateway.fixture_catalogue_leases(&accounts[0]), 0);
+        assert_eq!(
+            owner.catalogue_errors.get(&accounts[0]),
+            Some(&RuntimeError::Cancelled)
+        );
+        let cancelled_view = owner
+            .view
+            .catalogues
+            .iter()
+            .find(|entry| entry.account == accounts[0])
+            .unwrap();
+        assert_eq!(cancelled_view.status, CatalogueStatus::Error);
+        assert_eq!(cancelled_view.error, Some(RuntimeError::Cancelled));
+        release.send(()).unwrap();
+        owner.begin_catalogue(accounts[0].clone()).unwrap();
+        finish_catalogue(&mut owner);
+        assert_eq!(
+            owner.catalogues.status(&accounts[0]),
+            CatalogueStatus::Fresh
+        );
+        assert_eq!(owner.gateway.fixture_catalogue_leases(&accounts[0]), 0);
+        assert_eq!(owner.view.listener, ListenerState::Stopped);
+    }
+
+    #[test]
+    fn cs01_completed_http_result_is_rechecked_under_store_lock_before_cache_publication() {
+        use crate::provider_auth::{TokenGrant, TokenLifecycle};
+        let (root, mut owner, accounts) = catalogue_owner();
+        let peer = CataloguePeer::new(catalogue_reply);
+        owner.gateway.fixture_catalogue_upstream(peer.url());
+        owner.begin_catalogue(accounts[0].clone()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(4);
+        while !owner.operation.as_ref().unwrap().worker.is_finished() {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        // The real HTTP result and its transport-side check are complete, but
+        // the owner has deliberately not yet consumed that result.
+        let snapshot = owner.store.snapshot(&accounts[0]).unwrap();
+        let disk = std::fs::read(root.0.join("gateway.json")).unwrap();
+        owner
+            .store
+            .reconnect_if_current(
+                &accounts[0],
+                &snapshot.generation,
+                TokenGrant {
+                    provider: Provider::OpenCode,
+                    access_token: Secret::new("synthetic-new-generation").unwrap(),
+                    lifecycle: TokenLifecycle::ExpiringRefresh {
+                        refresh_token: Secret::new("synthetic-refresh").unwrap(),
+                        expires_at: Instant::now() + Duration::from_secs(3600),
+                    },
+                    organization: None,
+                },
+            )
+            .unwrap();
+        owner.poll_operation();
+        assert!(owner.operation.is_none());
+        assert_ne!(
+            owner.catalogues.status(&accounts[0]),
+            CatalogueStatus::Fresh
+        );
+        assert!(
+            owner.catalogues.models(&accounts[0]).is_empty(),
+            "a new late body was retained as stale metadata"
+        );
+        assert_eq!(
+            owner.catalogue_errors.get(&accounts[0]),
+            Some(&RuntimeError::AccountChanged)
+        );
+        assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), disk);
+    }
+
+    #[test]
+    fn cs01_real_catalogue_response_budget_is_cumulative_before_the_config_request() {
+        let (_root, mut owner, accounts) = catalogue_owner();
+        let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observed = count.clone();
+        let peer = CataloguePeer::new(move |index, head| {
+            observed.fetch_add(1, Ordering::AcqRel);
+            let mut body = catalogue_reply(index, head);
+            if index < 2 {
+                body.extend(std::iter::repeat_n(b' ', 1_100_000));
+            }
+            body
+        });
+        owner.gateway.fixture_catalogue_upstream(peer.url());
+        owner.begin_catalogue(accounts[0].clone()).unwrap();
+        finish_catalogue(&mut owner);
+        assert_eq!(
+            count.load(Ordering::Acquire),
+            2,
+            "oversized metadata chain reached config"
+        );
+        assert_ne!(
+            owner.catalogues.status(&accounts[0]),
+            CatalogueStatus::Fresh
+        );
+        assert!(
+            owner
+                .view
+                .catalogues
+                .iter()
+                .find(|entry| entry.account == accounts[0])
+                .unwrap()
+                .error
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn cs01_real_failed_refresh_retains_previous_rows_without_publishing_routes() {
+        let (root, mut owner, accounts) = catalogue_owner();
+        let peer = CataloguePeer::new(|index, head| {
+            if index == 5 {
+                b"invalid catalogue JSON".to_vec()
+            } else {
+                catalogue_reply(index, head)
+            }
+        });
+        owner.gateway.fixture_catalogue_upstream(peer.url());
+        let disk = std::fs::read(root.0.join("gateway.json")).unwrap();
+        owner.begin_catalogue(accounts[0].clone()).unwrap();
+        finish_catalogue(&mut owner);
+        assert_eq!(
+            owner.catalogues.status(&accounts[0]),
+            CatalogueStatus::Fresh
+        );
+        let rows = owner.catalogues.models(&accounts[0]);
+        assert_eq!(rows.len(), 1);
+        owner.begin_catalogue(accounts[0].clone()).unwrap();
+        finish_catalogue(&mut owner);
+        assert_eq!(
+            owner.catalogues.status(&accounts[0]),
+            CatalogueStatus::Error
+        );
+        assert_eq!(owner.catalogues.models(&accounts[0]), rows);
+        assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), disk);
+    }
+
+    #[test]
+    fn cs01_failed_start_reprojects_retained_catalogue_without_a_fresh_claim() {
+        for reason in ["missing-credential", "disabled"] {
+            let (root, mut owner, accounts) = catalogue_owner();
+            let peer = CataloguePeer::new(catalogue_reply);
+            owner.gateway.fixture_catalogue_upstream(peer.url());
+            owner.begin_catalogue(accounts[0].clone()).unwrap();
+            finish_catalogue(&mut owner);
+            let rows = owner.catalogues.models(&accounts[0]);
+            assert_eq!(
+                owner.catalogues.status(&accounts[0]),
+                CatalogueStatus::Fresh
+            );
+            let disk = std::fs::read(root.0.join("gateway.json")).unwrap();
+            match reason {
+                "missing-credential" => {
+                    std::fs::remove_file(
+                        root.0
+                            .join("accounts/credentials")
+                            .join(format!("{}.json", accounts[0])),
+                    )
+                    .unwrap();
+                }
+                "disabled" => {
+                    let snapshot = owner.store.snapshot(&accounts[0]).unwrap();
+                    owner
+                        .gateway
+                        .update_account(&AccountEdit {
+                            account: accounts[0].clone(),
+                            label: snapshot.summary.label.clone(),
+                            login: snapshot.preferences.login.clone(),
+                            service: snapshot.preferences.service.clone(),
+                            enabled: false,
+                            expected: snapshot.preferences,
+                            expected_label: snapshot.summary.label,
+                        })
+                        .unwrap();
+                }
+                _ => unreachable!(),
+            }
+            assert!(owner.begin_catalogue(accounts[0].clone()).is_err());
+            assert!(owner.operation.is_none());
+            assert!(!owner.view.busy);
+            let reading = owner
+                .view
+                .catalogues
+                .iter()
+                .find(|entry| entry.account == accounts[0])
+                .unwrap();
+            assert_ne!(
+                reading.status,
+                CatalogueStatus::Fresh,
+                "failed {reason} refresh retained a Fresh claim"
+            );
+            assert!(
+                reading.error.is_some(),
+                "failed {reason} refresh has no account error"
+            );
+            assert_eq!(
+                reading.models, rows,
+                "failed start discarded prior readings"
+            );
+            assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), disk);
+        }
+    }
+
+    #[test]
+    fn cs01_failed_metadata_read_publishes_terminal_operation_and_recovers() {
+        let (root, mut owner, accounts) = catalogue_owner();
+        let peer = CataloguePeer::new(catalogue_reply);
+        owner.gateway.fixture_catalogue_upstream(peer.url());
+        owner.begin_catalogue(accounts[0].clone()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(4);
+        while !owner.operation.as_ref().unwrap().worker.is_finished() {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        let registry_path = root.0.join("accounts/accounts.json");
+        let registry = std::fs::read(&registry_path).unwrap();
+        minicon_platform::filesystem::write_private_atomic(
+            &registry_path,
+            b"invalid registry JSON",
+        )
+        .unwrap();
+        owner.poll_operation();
+        assert!(owner.operation.is_none());
+        assert!(
+            !owner.view.busy,
+            "completed operation remained busy after registry read failed"
+        );
+        assert!(matches!(owner.view.load_state, LoadState::Unavailable(_)));
+        assert!(owner.view.status.is_some());
+        assert!(owner.view.catalogues.iter().all(|entry| !matches!(
+            entry.status,
+            CatalogueStatus::Loading | CatalogueStatus::Fresh
+        )));
+        assert!(
+            owner
+                .view
+                .catalogues
+                .iter()
+                .find(|entry| entry.account == accounts[0])
+                .unwrap()
+                .error
+                .is_some()
+        );
+        minicon_platform::filesystem::write_private_atomic(&registry_path, &registry).unwrap();
+        owner.refresh_view().unwrap();
+        assert_eq!(owner.view.load_state, LoadState::Loaded);
+        assert!(!owner.view.busy);
+        assert_eq!(owner.gateway.fixture_catalogue_leases(&accounts[0]), 0);
+    }
+
     #[test]
     fn h0_runtime_load_state_is_published_only_after_successful_private_metadata_read() {
         let good = Root::new();
@@ -1480,10 +2230,20 @@ mod tests {
             url: "https://opencode.ai/inference/go/openai/v1/chat/completions".into(),
             headers: vec![],
         };
+        let snapshot = owner.store.snapshot(&other.id).unwrap();
+        let ticket = owner.catalogues.begin(&snapshot).unwrap();
+        let authority = ticket.authority().clone();
         owner.operation = Some(Operation {
-            account: other.id,
+            account: other.id.clone(),
+            catalogue: Some(ticket),
             cancel: Arc::new(NetworkHttpCancel::new()),
-            worker: std::thread::spawn(move || Ok(OperationResult::Catalog(vec![route]))),
+            worker: std::thread::spawn(move || {
+                Ok(OperationResult::Catalog(CatalogueResult {
+                    authority,
+                    response_bytes: 128,
+                    routes: vec![route],
+                }))
+            }),
         });
         let deadline = Instant::now() + Duration::from_secs(3);
         while owner.operation.is_some() {
@@ -1492,8 +2252,20 @@ mod tests {
             std::thread::sleep(Duration::from_millis(1));
         }
         assert!(owner.view.status.is_none(), "{:?}", owner.view.status);
-        assert_eq!(owner.config.models.len(), 2);
-        assert_eq!(owner.view.models, vec!["opencode/go/new"]);
+        assert_eq!(
+            owner.config.models.len(),
+            1,
+            "metadata cannot import applied routes"
+        );
+        assert!(owner.view.models.is_empty());
+        let catalogue = owner
+            .view
+            .catalogues
+            .iter()
+            .find(|entry| entry.account == other.id)
+            .unwrap();
+        assert_eq!(catalogue.status, CatalogueStatus::Fresh);
+        assert_eq!(catalogue.models[0].id, "opencode/go/new");
         let loaded = Owner::load(root.0.clone()).unwrap();
         assert_eq!(loaded.config.models, owner.config.models);
         assert_eq!(loaded.config.profiles, owner.config.profiles);
@@ -1579,10 +2351,20 @@ mod tests {
         let disk = std::fs::read(root.0.join("gateway.json")).unwrap();
         let mut conflicting = original.clone();
         conflicting.url = "https://opencode.ai/inference/go/openai/v1/chat/completions".into();
+        let snapshot = owner.store.snapshot(&accounts[1].id).unwrap();
+        let ticket = owner.catalogues.begin(&snapshot).unwrap();
+        let authority = ticket.authority().clone();
         owner.operation = Some(Operation {
             account: accounts[1].id.clone(),
+            catalogue: Some(ticket),
             cancel: Arc::new(NetworkHttpCancel::new()),
-            worker: std::thread::spawn(move || Ok(OperationResult::Catalog(vec![conflicting]))),
+            worker: std::thread::spawn(move || {
+                Ok(OperationResult::Catalog(CatalogueResult {
+                    authority,
+                    response_bytes: 128,
+                    routes: vec![conflicting],
+                }))
+            }),
         });
         let deadline = Instant::now() + Duration::from_secs(3);
         while owner.operation.is_some() {
@@ -1590,15 +2372,15 @@ mod tests {
             owner.poll_operation();
             std::thread::sleep(Duration::from_millis(1));
         }
-        assert!(
-            owner
-                .view
-                .status
-                .as_deref()
-                .is_some_and(|status| status.contains("CatalogConflict")),
-            "{:?}",
-            owner.view.status
-        );
+        assert!(owner.view.status.is_none(), "{:?}", owner.view.status);
+        let catalogue = owner
+            .view
+            .catalogues
+            .iter()
+            .find(|entry| entry.account == accounts[1].id)
+            .unwrap();
+        assert_eq!(catalogue.status, CatalogueStatus::Fresh);
+        assert!(catalogue.error.is_none());
         assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), disk);
         assert_eq!(owner.config.models, vec![original]);
         assert_eq!(

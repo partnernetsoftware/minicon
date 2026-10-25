@@ -515,6 +515,12 @@ inside-click reproduction is an input baseline, not evidence of a repair.
   source regression is the extended H0 public journey owned by
   [PRD 36](PRD_02_36_harness_workspace.md#h0-local-implementation-checkpoint).
   A targeted Console image cannot be reported as a Harness image, or vice versa.
+- [-] `ui-snapshot.geometry.harness_workspace` publishes the actual `body`
+  rectangle, `card_pitch` and `visible_capacity` from the same layout used by
+  painting and pointer hits. `resize-window` acknowledges a requested size;
+  native bounds may differ. A caller checks the observed frame/capacity before
+  addressing the first visible card. Native clamp and hit evidence remains with
+  [PRD 36](PRD_02_36_harness_workspace.md#h0-local-implementation-checkpoint).
 - [v] an accepted screenshot has a 30-second server deadline across render and
   PNG publication. If either stage stalls, it sends a typed error, releases the
   single global request slot and permits a retry; the worker's shared reply slot
