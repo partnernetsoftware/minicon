@@ -92,6 +92,19 @@ UNKNOWN. Mac ordinary suites after that step were skipped. Raw audit:
 The enclosing scoped six-cell audit is `verification-index.json` beside it;
 its Linux/Windows passes do not qualify the skipped Mac suites.
 
+Run `40212235958` at exact `41f8be7c0bfe01fd638b82977acd831c3d065b3e`
+then passed both Mac builds, the existing browser Rust consumer and all original
+22 host checks. The new public phase failed its PTY-Meta refusal assertion
+before any half-frame sample. Source inspection shows target validation precedes
+key parsing: the fixture omitted its terminal target while Browser was active.
+The failed command's original output was not retained, so its exact error text
+is not directly observed. Both joint-native courts and subsequent shutdown/
+ordinary suites were skipped. Audit:
+`target-six/v0.2.23-window-half/ci-41f8be7-mac-canonical/verification-index.json`.
+The fixture now targets the actual listed terminal without changing active
+Browser, retains the original assertions and saves bounded refusal output;
+its next native replay remains pending.
+
 The next source court removes both related frame/content size-preflights as
 one boundary and records finite getter/refusal observations. It does not
 retroactively relabel the old NOTRED or prove each size guard independently.

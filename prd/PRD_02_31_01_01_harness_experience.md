@@ -524,3 +524,11 @@ explanation truncated in the narrow Settings pane. Receipt:
 HU-08 remains open: the complete explanatory text must be readable through a
 bounded layout/wrapping treatment before claiming overall narrow-view usability.
 The button observation is not human-owner acceptance or physical-input evidence.
+
+### Selected-profile key consumer candidate
+
+The [key lifecycle owner](PRD_02_31_01_02_02_profile_keys.md#k2-selected-applied-profile-consumer-candidate)
+owns K2 applied targeting, immediate Copy-intent invalidation, actual clipboard
+feedback and worker/Pi handoff semantics. Its integrated controlled-consumer
+checkpoint is recorded there; source controls and public/native handoff remain
+open. It does not complete HU-05/06/08/09 or native/client qualification.

@@ -616,3 +616,21 @@ suffix, followed by exact restoration and both tests passing. Receipt:
 `target-six/v0.2.23-window-half/public-meta-pure-controls-attempt-1/receipt.json`.
 This pure parser evidence does not establish the macOS public GUI route, WK
 focus, hardware input or release bytes.
+
+### Selected-profile key metadata candidate
+
+`geometry.harness_settings.client_key` is one finite object (K2 source compiled
+and tested with synthetic consumers; actual public GUI observation remains open).
+It contains nullable selected `profile` (opaque ID or default),
+`applied` boolean (includes canonical default pre-setup compatibility), nullable
+`exists`, `state` (NotCreated/Created/Revoked) and `durability_unconfirmed`.
+Nullable `pending` contains positive request and Create/Copy/Revoke; nullable
+`feedback` contains profile, nullable request and finite kind: waiting, created,
+revoked, copied, clipboard_failed, not_copied, busy, refused, apply_first,
+create_first, disabled, recipe_copied or recipe_failed. Existing default
+`local_key_exists` remains compatible. New fixed visible row IDs are
+key_durability/key_feedback/key_applied_binding/key_shell_setup/recipe_pi; key_actions retains
+its three columns and existing recipe retains the worker setup action.
+There is no secret, key hash/epoch, wire URL/header, account label or recipe text.
+Behavior/evidence belongs only to the
+[key lifecycle owner](PRD_02_31_01_02_02_profile_keys.md#k2-selected-applied-profile-consumer-candidate).

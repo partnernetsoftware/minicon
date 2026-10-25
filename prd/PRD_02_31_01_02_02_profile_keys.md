@@ -4,8 +4,8 @@ Parent: [provider pool](PRD_02_31_01_02_provider_pool.md#profiles-routing-and-ke
 Presentation: [Harness experience](PRD_02_31_01_01_harness_experience.md#client-allocation-form).
 Shared publication: [private publication](PRD_02_28_02_private_publication.md).
 Status: `[-]` K1 backend implemented with Windows x86_64 strict regression and
-original-assertion controls below; K2 UI and K3 public/native handoff remain
-separate, unqualified leaves.
+original-assertion controls below. K2 UI now compiles and passes synthetic
+consumers; its source controls and K3 public/native handoff remain open.
 
 ## Outcome tree DAG
 
@@ -163,3 +163,109 @@ These observations cover fresh synthetic private roots and controlled peers,
 not the OS clipboard, actual providers, Unix remove durability, native GUI input,
 other targets or release artifacts. K2 selected-profile UI and K3 actual public
 handoff/native evidence remain required before their product claims close.
+
+## K2 selected applied-profile consumer (candidate)
+
+```text
+Outcome: the explicit key/recipe click belongs to the intended applied profile
+├── [_] SELECT — actual opened form, not chooser highlight or dirty model
+│   invariant: custom drafts get Apply guidance and zero key I/O; canonical default setup remains
+│   evidence: K2 selected action/receipt and draft-only consumers, UNRUN
+│   safe failure: typed local refusal; dependency: K1 metadata; non-goal: altering forms/CAS
+├── [_] COPY — one exact profile/request/selection-intent, consumed once
+│   invariant: stale results cannot write clipboard or overwrite newer feedback
+│   evidence: K2 switch ABA/intent/receipt/actual sink consumers, UNRUN
+│   safe failure: Not copied or clipboard failure; dependency: K1 effect; non-goal: native sink qualification
+└── [_] RECIPE — selected applied mapping and actual running or explicitly configured stopped endpoint
+    invariant: templates never contain key bytes or dirty mappings; no implicit task/start/network
+    evidence: K2 actual recipe sink/alias/port consumers, UNRUN
+    safe failure: Apply/create/enable guidance; dependency: qualified worker/Pi contract; non-goal: all clients
+```
+
+```mermaid
+flowchart TD
+    OPEN[Opened form] --> APPLIED{Applied target or canonical default setup?}
+    APPLIED -->|no| REFUSE[Apply first; no key I/O]
+    APPLIED -->|yes| INTENT[Explicit key click: profile/request/selection generation]
+    INTENT --> K1[K1 Runtime admission and exact result/effect]
+    CLOSE[Confirmed switch / blur / actual close-route intent / newer click] --> INVALID[Invalidate earlier Copy immediately]
+    K1 --> MATCH{Still exact current Copy and key metadata?}
+    INVALID --> MATCH
+    MATCH -->|yes| SINK[Existing clipboard adapter once]
+    MATCH -->|no| DROP[Discard Secret without overwriting newer feedback]
+    SINK --> BOOL[Copied only on true; failure is visible and never replayed]
+    OPEN --> RECIPE[Applied alias/model; actual bound port or stopped configured endpoint]
+    RECIPE --> TEMPLATE[Worker / pinned Pi manual setup, separate private key input]
+```
+
+Create, Copy and Revoke capture the currently opened applied profile at the
+actual click. The canonical default retains pre-model-setup key creation and
+its existing Create/Copy/Revoke Action entry points; K1 translates those into
+the same monotonic targeted default operation. Custom profiles use explicit
+ProfileKey requests. Custom process-only forms show Apply guidance without
+creating an orphan key.
+The existing key row uses three short localized captions with the same actual
+cell/text-fit predicate for paint and pointer dispatch. A false highlight flag
+is not a disabled operation. Existing form edits, pending acknowledgements,
+caret/selection, scroll and CS05 revision merges retain their current authority.
+
+Only the current profile/request/local intent/selection generation may consume
+a Secret effect. Confirmed A->B->A changes, newer key/recipe clicks, actual
+Settings close/route transitions and blur revoke that intent synchronously,
+including close/reopen between polls. Chooser arrow-only highlighting is not a
+profile switch. Stale effects do not consume a newer profile's intent or replace
+newer Busy/clipboard-failure feedback. Copy preparation success is never called
+clipboard success. The actual clipboard adapter boolean owns that result; a
+failure is visible beside the operation and requires a new explicit click.
+
+Recipe handoff reuses the same reserved Batch gate, including a local Pending
+reservation and undelivered Finished, instead of trusting lagging View.active.
+It uses the selected applied default alias/model and actual listening port;
+otherwise it labels the configured endpoint as stopped. It requires that
+profile's existing key and an enabled applied mapping, but copies no key bytes.
+PowerShell/bash templates explain private prompt, process-local environment,
+cleanup and shared-key attribution. Worker root/task/allowed commands remain
+explicit user placeholders. The Pi 1.4.0 manual template reuses the pinned
+fixture's API/environment lookup/compatibility fields; actual numeric model
+capability limits remain explicitly replaceable placeholders, not invented
+entitlements. Nothing installs a client, writes its config, starts a service,
+runs a task, probes a provider or qualifies arbitrary clients by copying text.
+
+The finite public metadata schema is registered only with PRD26. No raw Secret,
+key digest/epoch, wire URL/header or rendered recipe enters snapshots/logs.
+K2 now passes fmt, default/native-auth-court all-target strict Clippy and
+79 controlled consumer executions: all 47 Harness settings tests (including
+eleven added K2 consumers), fourteen K1 Runtime cases and eighteen alignment
+tests, with zero failed/ignored. Receipt:
+`target-six/v0.2.23-provider/k2-repaired-gates/receipt.json`.
+The initial strict Clippy rejection of three no-longer-constructed legacy
+Actions is retained in `k2-initial-gates/clippy.log`; canonical default setup
+now genuinely reuses those original entries and their targeted translation.
+No test or assertion was weakened. This lint failure is not assertion RED.
+
+Selection, actual memory-sink results, receipt/intent fencing, applied recipes
+and narrow caption-fit now have synthetic consumer observations. Thirteen
+actual original-assertion RED controls cover the eleven new subjects, followed
+by exact source restoration and passing consumers. Twelve controls are in
+`target-six/v0.2.23-provider/k2-source-controls-attempt-2/receipt.json`; the
+joint blur/selection ABA control is in
+`target-six/v0.2.23-provider/k2-selection-aba-control-attempt-1/receipt.json`.
+Both bind the same original source hashes. The earlier compound-mutant syntax
+failure and selection-only passing mutant remain retained, not accepted RED:
+real blur invalidation protected the latter, so the final ABA control removes
+that joint boundary rather than claiming each redundant guard is necessary.
+
+K3 actual selected-profile GUI/clipboard/client journeys retain their separate
+scope. The no-window route leaf does not prove removal of the actual main
+repaint hook. Public dispatch and visible-form events also poll the Runtime;
+any integration counterproof must account for those real routes instead of
+assuming requests in one batch execute without intervening polls.
+
+The final restored-source regression passes fmt, both strict Clippy profiles,
+380 Rust executions with zero failed and the one existing opt-in Pi case
+ignored, plus 15 public Apply, six whole-profile and 22 browser checks on an
+explicitly rebuilt and pinned default Windows x64 image. The fresh synthetic
+GUI roots exit normally and are removed. Evidence:
+`target-six/v0.2.23-provider/k2-final-gates/completion.json` and its linked
+original/child receipts. This is regression evidence, not the new K3 selected
+key/OS clipboard journey, real provider authorization or release qualification.

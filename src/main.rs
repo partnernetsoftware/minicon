@@ -2233,6 +2233,7 @@ impl ConApp {
 
     fn mark_host_ui_full_and_repaint(&mut self, window: &PixelWindow) {
         self.restore_harness_settings_focus(window);
+        self.invalidate_inactive_harness_key_copy();
         self.mark_host_ui_full();
         window.request_redraw();
     }

@@ -95,6 +95,22 @@ fn key_path(root: &Path, config: &Config, profile: &str) -> Result<PathBuf, Runt
 }
 
 impl Runtime {
+    /// Read-only local handoff admission; no queue, key I/O or paid work.
+    pub fn profile_key_handoff_ready(&self, profile: &str) -> Result<(), RuntimeError> {
+        let pending = self.pending.lock().map_err(|_| RuntimeError::Storage)?;
+        if pending.batch_gate.reserved() || !pending.keys.flights.is_empty() {
+            return Err(RuntimeError::Busy);
+        }
+        if !self
+            .view
+            .profile_keys
+            .iter()
+            .any(|row| row.profile == profile && row.exists)
+        {
+            return Err(RuntimeError::MissingClientKey);
+        }
+        Ok(())
+    }
     /// Candidate for one explicit key click; only successful act enqueue claims
     /// it. This sequence is independent of connection draft/proof requests.
     pub fn next_profile_key_request(&self) -> Result<u64, RuntimeError> {

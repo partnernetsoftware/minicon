@@ -1,8 +1,10 @@
 //! Harness settings presentation. Runtime authority stays with provider_runtime.
 use super::*;
 mod connection_forms;
+mod profile_keys;
 use connection_forms::{ConnectionForms, FormFocus, ProfileField};
 use minicon_core::field_editor::{self, Command, Intent, Limits};
+use profile_keys::{KeyUi, RecipeKind};
 use provider_runtime::ConnectionChange;
 use provider_runtime::{AccountEdit, AccountPreferences, AccountSummary, NetworkPolicy};
 use provider_runtime::{Action, Effect, ListenerState, Provider, View};
@@ -79,10 +81,15 @@ enum Row {
     ProfileVerification,
     Connect,
     KeyState,
+    KeyDurability,
+    KeyFeedback,
+    KeyApplied,
+    KeyShell,
     KeyActions,
     OpenAi,
     Anthropic,
     Recipe,
+    RecipePi,
     Status,
 }
 
@@ -225,6 +232,7 @@ pub(super) struct HarnessSettings {
     port: composer::ComposerState,
     model: composer::ComposerState,
     forms: ConnectionForms,
+    keys: KeyUi,
     profile_navigation: Option<usize>,
     focused: Option<Field>,
     scroll: usize,
@@ -400,6 +408,7 @@ impl HarnessSettings {
             port,
             model: composer::ComposerState::default(),
             forms: ConnectionForms::default(),
+            keys: KeyUi::default(),
             profile_navigation: None,
             focused: None,
             scroll: 0,
@@ -515,10 +524,15 @@ impl HarnessSettings {
         rows.extend([
             Row::Connect,
             Row::KeyState,
+            Row::KeyDurability,
+            Row::KeyFeedback,
+            Row::KeyApplied,
+            Row::KeyShell,
             Row::KeyActions,
             Row::OpenAi,
             Row::Anthropic,
             Row::Recipe,
+            Row::RecipePi,
         ]);
         rows
     }
@@ -576,6 +590,7 @@ impl HarnessSettings {
     }
 
     fn blur(&mut self) {
+        self.keys.invalidate_copy();
         self.remember_connection_focus();
         self.forms.blur();
         field_editor::apply(&mut self.port, Command::Blur, PORT_LIMITS);
@@ -596,6 +611,9 @@ impl HarnessSettings {
     }
 
     fn act(&mut self, action: Action) {
+        if matches!(action, Action::Stop) {
+            self.keys.invalidate_copy();
+        }
         let result = self.runtime.as_mut().map_or(
             Err(provider_runtime::RuntimeError::WorkerUnavailable),
             |runtime| runtime.act(action.clone()),
@@ -703,6 +721,7 @@ impl HarnessSettings {
     fn sync_connection_forms(&mut self) {
         let previous = self.forms.selected.clone();
         self.forms.sync(&self.view);
+        self.sync_key_ui();
         if previous != self.forms.selected {
             self.focused = None;
             self.drag = None;
@@ -756,6 +775,7 @@ impl HarnessSettings {
         }
         if let Some(scroll) = self.forms.focus(id, self.scroll) {
             self.scroll = scroll;
+            self.sync_key_ui();
             self.restore_connection_focus();
             self.act(Action::FocusConnectionProfile(id.into()));
         }
@@ -1228,24 +1248,46 @@ impl HarnessSettings {
                     self.connection_command(ConnectionChange::Apply, None);
                 }
             }
-            Row::KeyActions => self.act(match column {
-                0 => Action::CreateClientKey,
-                1 => Action::CopyClientKey,
-                _ => Action::RevokeClientKey,
+            Row::KeyActions => self.key_action(match column {
+                0 => provider_runtime::ProfileKeyOperation::Create,
+                1 => provider_runtime::ProfileKeyOperation::Copy,
+                _ => provider_runtime::ProfileKeyOperation::Revoke,
             }),
             Row::Recipe => {
-                let port = self.view.actual_port.unwrap_or(self.view.port);
-                let command = format!(
-                    "minicon harness --root <path> --task <task> --gateway http://127.0.0.1:{port}/v1 --client-key-env MINICON_LOCAL_API_KEY --allow-cmd <command>"
-                );
-                if !clipboard_status::set_text(&command) {
-                    self.error = Some("Could not copy the connection template.".to_owned());
-                }
+                self.copy_connection_template(RecipeKind::Worker, clipboard_status::set_text)
+            }
+            Row::RecipePi => {
+                self.copy_connection_template(RecipeKind::Pi, clipboard_status::set_text)
             }
             _ => {}
         }
         None
     }
+}
+
+fn invalidate_key_for_settings_route(settings: Option<&mut HarnessSettings>, visible: bool) {
+    if !visible && let Some(settings) = settings {
+        settings.keys.invalidate_copy();
+    }
+}
+
+fn key_button_caption(language: ui::UiLanguage, column: usize) -> &'static str {
+    match (language, column) {
+        (ui::UiLanguage::ChineseSimplified, 0) => "创建",
+        (ui::UiLanguage::ChineseSimplified, 1) => "复制",
+        (ui::UiLanguage::ChineseSimplified, _) => "撤销",
+        (ui::UiLanguage::ChineseTraditional, 0) => "建立",
+        (ui::UiLanguage::ChineseTraditional, 1) => "複製",
+        (ui::UiLanguage::ChineseTraditional, _) => "撤銷",
+        (_, 0) => "Create",
+        (_, 1) => "Copy",
+        (_, _) => "Revoke",
+    }
+}
+fn key_button_fits(rect: ui::Rect, caption: &str, size: u16, scale: f64) -> bool {
+    rect.height >= font::cell_metrics(size).height
+        && rect.width.saturating_sub((16.0 * scale) as u32)
+            >= host_ui::host_ui_text_width(caption, size)
 }
 
 fn row_columns(row: Row) -> usize {
@@ -1308,10 +1350,15 @@ fn row_id(row: Row) -> String {
         Row::ProbeNotice => "probe_notice",
         Row::Connect => "connect",
         Row::KeyState => "key_state",
+        Row::KeyDurability => "key_durability",
+        Row::KeyFeedback => "key_feedback",
+        Row::KeyApplied => "key_applied_binding",
+        Row::KeyShell => "key_shell_setup",
         Row::KeyActions => "key_actions",
         Row::OpenAi => "openai_base_url",
         Row::Anthropic => "anthropic_base_url",
         Row::Recipe => "recipe",
+        Row::RecipePi => "recipe_pi",
         Row::Status => "status",
         Row::Account(index) => return format!("account_{index}"),
         Row::ModelChoice(index) => return format!("model_{index}"),
@@ -1433,9 +1480,9 @@ impl ConApp {
                 }
                 Row::Connect => {
                     label = tr(
-                        "Connect a client to the applied default",
-                        "将客户端连接到当前默认连接",
-                        "將用戶端連接到目前預設連線",
+                        "Connect the selected applied profile",
+                        "连接所选已应用连接",
+                        "連接所選已套用連線",
                     )
                     .to_owned();
                     heading = true;
@@ -2147,39 +2194,54 @@ impl ConApp {
                             && !settings.view.login_active,
                     );
                 }
-                Row::KeyState => {
-                    label = if settings.view.local_key_exists {
-                        "Local client key: stored privately"
+                Row::KeyState => label = settings.key_state_label(),
+                Row::KeyDurability => {
+                    label = if settings.selected_key_durability_unconfirmed() {
+                        "Crash durability: unconfirmed"
                     } else {
-                        "Local client key: not created"
+                        "No outstanding key durability warning"
                     }
-                    .to_owned()
+                    .into()
+                }
+                Row::KeyFeedback => label = settings.key_feedback_label(),
+                Row::KeyApplied => label = settings.key_applied_label(),
+                Row::KeyShell => {
+                    label = if cfg!(windows) {
+                        "PowerShell: private prompt in setup"
+                    } else {
+                        "bash: private prompt in setup"
+                    }
+                    .into()
                 }
                 Row::KeyActions => {
-                    button(surface, cell(0, 3), "Create key", false);
-                    button(surface, cell(1, 3), "Copy key", false);
-                    button(surface, cell(2, 3), "Revoke key", false);
+                    for column in 0..3 {
+                        let caption = key_button_caption(self.ui_language, column);
+                        button(
+                            surface,
+                            cell(column, 3),
+                            if key_button_fits(cell(column, 3), caption, size, scale) {
+                                caption
+                            } else {
+                                "..."
+                            },
+                            false,
+                        );
+                    }
                 }
-                Row::OpenAi => {
-                    label = format!(
-                        "OpenAI: http://127.0.0.1:{}/v1",
-                        settings.view.actual_port.unwrap_or(settings.view.port)
-                    )
-                }
-                Row::Anthropic => {
-                    label = format!(
-                        "Anthropic: http://127.0.0.1:{}",
-                        settings.view.actual_port.unwrap_or(settings.view.port)
-                    )
-                }
-                Row::Recipe => {
-                    button(
-                        surface,
-                        rect,
-                        "Copy worker command template (key from environment)",
-                        false,
-                    );
-                }
+                Row::OpenAi => label = settings.endpoint_label(true),
+                Row::Anthropic => label = settings.endpoint_label(false),
+                Row::Recipe => button(
+                    surface,
+                    rect,
+                    tr("Copy worker setup", "复制 Worker 设置", "複製 Worker 設定"),
+                    false,
+                ),
+                Row::RecipePi => button(
+                    surface,
+                    rect,
+                    tr("Copy Pi 1.4 setup", "复制 Pi 1.4 设置", "複製 Pi 1.4 設定"),
+                    false,
+                ),
                 Row::Status => {
                     label = settings
                         .status()
@@ -2263,6 +2325,7 @@ impl ConApp {
             ("busy", settings.view.busy.into()),
             ("login_active", settings.view.login_active.into()),
             ("local_key_exists", settings.view.local_key_exists.into()),
+            ("client_key", settings.key_snapshot()),
             (
                 "selected_account",
                 settings
@@ -2465,6 +2528,15 @@ impl ConApp {
         ])
     }
 
+    /// Synchronous close/route-transition hook: close->reopen between polls
+    /// must not preserve a clipboard intent. The common repaint path calls it.
+    pub(super) fn invalidate_inactive_harness_key_copy(&mut self) {
+        invalidate_key_for_settings_route(
+            self.harness_settings.as_mut(),
+            self.settings_open && self.settings_section == ui::SettingsSection::Harness,
+        );
+    }
+
     pub(super) fn blur_harness_fields(&mut self) {
         if let Some(settings) = &mut self.harness_settings {
             settings.blur();
@@ -2545,6 +2617,7 @@ impl ConApp {
             return;
         };
         if !self.settings_open || self.settings_section != ui::SettingsSection::Harness {
+            settings.keys.invalidate_copy();
             // Menus suspend a settings field; real route changes explicitly blur.
             field_editor::apply(&mut settings.port, Command::Blur, PORT_LIMITS);
             field_editor::apply(&mut settings.model, Command::Blur, MODEL_LIMITS);
@@ -2610,8 +2683,11 @@ impl ConApp {
         }
         for effect in effects {
             match effect {
-                Effect::CopyClientKey(secret) => {
-                    let _ = clipboard_status::set_text(secret.expose());
+                Effect::CopyClientKey(copy) => {
+                    if let Some(settings) = &mut self.harness_settings {
+                        settings.consume_key_copy(copy, clipboard_status::set_text);
+                        changed = true;
+                    }
                 }
                 Effect::DeviceChallenge {
                     attempt,
@@ -2834,7 +2910,16 @@ impl ConApp {
                                     scale,
                                 )
                                 .is_none();
-                            if unreadable_profile
+                            let unreadable_key = matches!(row, Row::KeyActions)
+                                && !key_button_fits(
+                                    geometry.cell(index, column, columns, scale),
+                                    key_button_caption(self.ui_language, column),
+                                    size,
+                                    scale,
+                                );
+                            if unreadable_key {
+                                settings.refuse_unreadable_key();
+                            } else if unreadable_profile
                                 || (matches!(row, Row::VerificationActions)
                                     && verification_button_font(
                                         geometry.cell(index, column, columns, scale),
@@ -3160,6 +3245,77 @@ fn paint_cost_button(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn k2_recipe_handoff_refuses_actual_pending_gate_even_before_active_view() {
+        cs05_pending_ui(|settings| {
+            assert!(settings.view.connection_check_active.is_none());
+            assert_eq!(
+                settings
+                    .runtime
+                    .as_ref()
+                    .unwrap()
+                    .profile_key_handoff_ready("default"),
+                Err(provider_runtime::RuntimeError::Busy)
+            );
+            settings.view.profile_keys = vec![provider_runtime::ProfileKeyMetadata {
+                profile: "default".into(),
+                state: provider_runtime::ProfileKeyState::Created,
+                exists: true,
+                epoch: 1,
+                durability_unconfirmed: false,
+            }];
+            settings.copy_connection_template(RecipeKind::Worker, |_| {
+                panic!("reserved Batch handoff wrote clipboard")
+            });
+            assert!(settings.key_feedback_label().contains("Busy"));
+        });
+    }
+
+    #[test]
+    fn k2_short_localized_key_captions_share_real_cell_fit_and_tiny_cells_refuse() {
+        let size = 14;
+        for (width, height) in [(760, 420), (420, 360), (760, 300)] {
+            let layout = ui::Layout::new(width, height, 1.0);
+            let mut settings = HarnessSettings::default();
+            let rows = settings.rows();
+            let index = rows
+                .iter()
+                .position(|row| matches!(row, Row::KeyActions))
+                .unwrap();
+            let initial = layout.harness_settings(1.0, rows.len(), 0);
+            settings.scroll = initial.rows.reveal(index);
+            let geometry = layout.harness_settings(1.0, rows.len(), settings.scroll);
+            assert!(
+                index >= geometry.rows.start
+                    && index < geometry.rows.start + geometry.rows.visible_rows
+            );
+            for language in [
+                ui::UiLanguage::English,
+                ui::UiLanguage::ChineseSimplified,
+                ui::UiLanguage::ChineseTraditional,
+            ] {
+                for column in 0..3 {
+                    let caption = key_button_caption(language, column);
+                    assert!(
+                        key_button_fits(geometry.cell(index, column, 3, 1.0), caption, size, 1.0),
+                        "actual supported viewport clipped a key action: {width}x{height}, {caption}"
+                    );
+                    assert!(!key_button_fits(
+                        ui::Rect {
+                            x: 0,
+                            y: 0,
+                            width: 1,
+                            height: 1
+                        },
+                        caption,
+                        size,
+                        1.0
+                    ));
+                }
+            }
+        }
+    }
+
     fn cs05_pending_ui(test: impl FnOnce(&mut HarnessSettings)) {
         use std::sync::{Arc, Mutex, mpsc};
         let root = std::env::temp_dir().join(format!(

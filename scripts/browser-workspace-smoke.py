@@ -429,6 +429,8 @@ print(String(decoding: raw, as: UTF8.self))
                     "address": {key: address[key] for key in ("text", "caret", "selection", "focused", "preedit")},
                     "browser": {key: browser()["browser"][key] for key in ("url", "title", "load")}}
 
+        terminal_target = next(row["id"] for row in cli("list-tabs")["tabs"]
+                               if row["kind"] == "terminal")
         keys("Ctrl+Shift+I")
         cli("send-ui-ime", "commit", "owned Mac composer draft")
         open_browser_from_menu()
@@ -458,10 +460,18 @@ print(String(decoding: raw, as: UTF8.self))
         def save_observations():
             (output / "mac-window-half-observations.json").write_bytes((json.dumps(observations, indent=2) + "\n").encode())
         save_observations()
+        refusals = []
         for label, arguments in (("ui-invalid-suffix", ["send-ui-keys", "Cmd+Left", "UnknownModifier+x"]),
-                                 ("pty-meta-refused", ["send-keys", "Cmd+Left"])):
+                                 ("pty-meta-refused", ["send-keys", "--target", terminal_target, "Cmd+Left"])):
             refused = subprocess.run([str(binary), "cli", "--control", endpoint, *arguments],
                                      text=True, capture_output=True, timeout=20)
+            # These fixed invalid-key commands contain no private input. Keep
+            # bounded raw refusal evidence before the unchanged assertion.
+            refusals.append({"phase": label, "arguments": arguments,
+                             "exit_code": refused.returncode,
+                             "stdout": refused.stdout[:4096], "stderr": refused.stderr[:4096]})
+            (output / "mac-window-half-refusals.json").write_bytes(
+                (json.dumps(refusals, indent=2) + "\n").encode())
             assert refused.returncode != 0 and "unknown key modifier" in (refused.stdout + refused.stderr), label
             observed = observe()
             assert close_frame(observed["window_frame_cg"], initial["window_frame_cg"]), label + " moved window"
