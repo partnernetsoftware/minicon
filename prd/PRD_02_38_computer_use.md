@@ -49,6 +49,36 @@ flowchart LR
 
 ## Product experience
 
+### Product role and first-preview acceptance
+
+Planning refinement, 2026-10-26: `minicon-cu` is the MiniCon family's selected
+application observation/action capability. Its initial users are developers
+and harness authors who need to inspect a real application before operating
+it. MiniCon supplies the native capability and accountable result; the existing
+worker or an external harness supplies the task and model loop. An optional
+standalone entry must remain useful without MiniCon's GUI, provider pool or
+model listener running.
+
+The first preview is complete when a user can discover support, choose one
+window, request an observation, understand its coverage and privately consume
+or delete the result. A screenshot command alone does not complete that journey.
+
+| Step | User-visible result | Acceptance boundary |
+| --- | --- | --- |
+| Check support | Separate capture/accessibility/action availability and permission state for this native session | A source facade or successful build cannot label a capability available |
+| Select a target | Application/window identity and current geometry, with an explicit choice when several windows match | Discovery does not capture each candidate or choose the foreground window implicitly |
+| Observe once | A bounded result with per-source status, times and private artifacts | Missing accessibility can produce a clearly labeled pixels-only result; unavailable pixels must not be shown as a successful visual observation |
+| Inspect or export | Preview/tree coverage, omitted content and a caller-owned result usable by a script | No model account or upload is needed to use CU1; export is an explicit disclosure choice |
+| Finish | Delete owned artifacts or retain them under the stated bounded policy | Retained evidence is not a live target or permission to act later |
+
+Use one synthetic owned application journey for preview acceptance: select its
+window, inspect a known label/control and image, resize and re-observe, close
+it and observe an honest target-lost result. Reopening an application with the
+same title must not revive the old target. CU2 extends this same journey with
+one declared control effect and readback, so observation and action cannot be
+qualified against unrelated fixtures. Detailed target/effect invariants remain
+in the lifecycle contract below.
+
 ### First users and useful journeys
 
 | User | First useful journey | Delivery owner |
@@ -139,6 +169,26 @@ This is a design reservation: no empty crate or dependency is added now.
 MiniCon's ordinary startup and one-executable usability stay independent of CU;
 an optional companion is not a required bundled runtime. Account for any later
 feature's actual artifact size and idle resources before selecting packaging.
+
+Repository, code ownership, distribution and transport are separate decisions:
+
+| Decision | Initial recommendation | Reason / reconsideration gate |
+| --- | --- | --- |
+| Source repository | This MiniCon repository | Native contracts, CU consumers and their regressions can change and be reviewed in one source revision; repository extraction has its own gate below |
+| Product module | `crates/minicon-cu`, with native mechanisms in `minicon-platform` | A separate library bounds CU dependencies and semantics while preserving the existing native mechanism owners |
+| Distribution | Prefer an optional native `minicon-cu` CLI for the observation preview; select the actual asset only after size/startup measurements | A separate executable can ship from the same repository; default terminal startup must not launch or load CU merely because the asset exists |
+| Internal consumer | Typed library calls from a selected MiniCon integration | One target/result contract; GUI and worker adapters do not duplicate native logic |
+| External consumer | Versioned CLI requests/results first | An external harness can own its model loop; a concrete retained-session/event requirement is needed before choosing a service transport |
+
+Initially align companion releases with the selected MiniCon source/release
+train while versioning the request/result schema explicitly. A package version
+alone is not an interoperability contract. Discovery must let a caller check
+schema and actual native capabilities before capture or action. CU0 must
+resolve cross-invocation target references, expiry and private artifact ownership
+before the CLI schema is frozen; a raw window handle is not that contract.
+The base terminal must remain usable when the optional CU asset is absent.
+Packaging budgets and exact artifact qualification remain with
+[delivery](PRD_02_27_con_delivery.md).
 
 Use typed calls inside the workspace. Start external consumers with a bounded
 versioned CLI: a command is one request/result with explicit artifact ownership,

@@ -40,6 +40,12 @@ flowchart LR
 
 ## Candidate version placement
 
+Recommendation refined 2026-10-26: begin CU0 design now and aim for the first
+usable local CU1 preview in 0.2.25. This separates early contract work from
+runtime delivery. Select each following stage only after its own gate; CU2
+does not wait for the full Harness dashboard, cluster, llm-gate or ujs/tinyvm.
+CU3 waits for the specific H2 lifecycle it consumes, not every future H3 feature.
+
 | Candidate | Smallest useful outcome | Selection gate |
 | --- | --- | --- |
 | Design alongside existing work | CU0 contract and actual platform inventory; no new runtime | Preserve the selected 0.2.23 release and 0.2.24 tab-tree obligations |
@@ -54,6 +60,34 @@ three-OS parity a reason to label an unqualified path supported. If CU1 misses
 its gate, keep it planned and reconsider the version rather than dilute the
 target or permission contract. CU planning does not add a release requirement
 to the current version or postpone ongoing Console/Web fixes.
+
+## CU0 decisions and first-preview selection
+
+Before creating a crate, review these concrete CU0 outputs together. Their
+behavioral requirements belong to [PRD 38](../prd/PRD_02_38_computer_use.md);
+the checklist here decides whether implementation is ready to start.
+
+| Preparation output | Required decision before CU1 selection |
+| --- | --- |
+| Native capability inventory | Name the first actual OS/ISA/native runtime, required permission states and synthetic fixture. Record capture, accessibility and input separately as source-only, runtime-observed, unsupported or BLOCKED; no implied parity |
+| Versioned request/result sketch | Walk capability discovery, target selection, one observation and artifact disposal through the same contract; resolve cross-invocation identity, limits and expiration |
+| Acceptance journey | Name CU-01/02 public tests and intended guard-removal failures for the PRD's selection/observation/resize/close/replacement journey |
+| Packaging estimate | Compare optional companion and any proposed default-binary integration against the delivery owner's actual size/startup/resource budgets; measure rather than infer cost from crate size |
+| Integration ownership | Identify native versus CU versus host-UI hot files, the release integrator and exact qualification scope; use the existing PRD 28 reuse map |
+
+CU0 closes only when those outputs are recorded with the owning contracts and
+named evidence. The presence of this checklist is not a completed inventory.
+For CU1, prefer one complete qualified Windows or macOS native journey over
+several incomplete adapters; select the starting target from available courts
+and mechanism readiness. Other targets retain their actual status.
+
+At the candidate-version review, select only the smallest complete product
+slice whose prerequisites are ready. If CU1 is not ready for its candidate
+version, the already selected tree/Harness/foundation work continues and the CU
+candidate moves. Do not attach a partially implemented action or empty GUI tab
+to the observation preview to preserve a version number. Local CU observation
+and action can proceed while cluster planning continues independently; only
+CU4 consumes the cross-machine gates.
 
 ## Preparation and integration
 
