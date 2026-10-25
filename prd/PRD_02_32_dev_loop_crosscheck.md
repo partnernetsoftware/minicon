@@ -1234,3 +1234,25 @@ refusal assertion failure, with a DLL sentinel intercepting the attempted load;
 no real native call occurs even in the mutant. Exact source restoration then
 passes both entries again. Desktop allocation/input and cleanup still need the
 actual hosted ARM64 replay; local refusal is not a native-input pass.
+
+The first allocated-desktop replay at exact
+`f4acbab6868b2a15a9bb9cddb12d634f7e778d2c`,
+[run40246195061](https://github.com/partnernetsoftware/minicon/actions/runs/40246195061),
+passes the complete unchanged x86_64 court again. ARM64 now passes actual native
+page echo/Ctrl+L/menu and forward/reverse Robot/Settings traversal on the new
+desktop. The allocator verifies that input desktop, binds the inner receipt
+to the measured image/source, reaps its controller, closes its Job and both
+owned desktop handles, and verifies original input/thread desktop restoration.
+Inner clipboard/presentation/GUI/thread/config and outer language-profile
+cleanup also pass.
+
+ARM64 remains **BLOCKED**, now at the first editor's complete real Pinyin
+preedit. Its retained public failure state shows focused address text `nihao`,
+empty preedit, a known/available Simplified Chinese layout, but open=false and
+native_mode=false. Layout selection is not successful Chinese composition.
+Do not count committed Latin text or the earlier page row as the required IME
+pass. Investigate actual mode activation/readback on the allocated desktop;
+retain the original complete-preedit/Space-commit assertions and refuse any
+unowned foreground input. Artifacts:
+`target-six/v0.2.23-provider/native-controls-ci-f4acbab/`. No further unchanged
+default-desktop retry is justified by this result.
