@@ -1071,3 +1071,19 @@ SetWindowPos with NOACTIVATE before resolving the actual click target again.
 This neither unlocks the foreground restriction nor clicks an unrelated window;
 keyboard still requires actual foreground readback. A failed/obscured presentation
 remains BLOCKED. Both language-profile restoration receipts remain retained.
+
+The exact `a3925e3` physical replay
+[run40240295246](https://github.com/partnernetsoftware/minicon/actions/runs/40240295246)
+reaches four actual x86_64 passed browser/input rows, now including complete
+Pinyin preedit/commit and clipboard operations in all three editors. Their
+scope and reviewed images belong to [PRD25.02](PRD_02_25_02_browser_controls.md).
+The overall court is BLOCKED later in the Harness phase when foreground is
+lost; it stops input, closes the GUI normally and verifies clipboard restoration.
+ARM64 is separately BLOCKED before input by the obscured activation point.
+Do not report this run as a complete physical-input PASS.
+
+The six-cell `360222f` run40239951153 remains in flight while its Linux x86_64
+job has failed the intended native authorization-context qualifier.
+[PRD28.01](PRD_02_28_01_browser_context_lifecycle.md) owns its reopened-storage
+observation and lifecycle investigation. An earlier positive arm does not
+override the terminal failed cell or substitute for its missing restored arm.

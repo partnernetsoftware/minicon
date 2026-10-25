@@ -269,4 +269,27 @@ The overall court remains **BLOCKED**: its clipboard restoration returned
 `0x800401D4` after the functional assertions. Keep that failed fixture receipt;
 a corrected cleanup mechanism and a fresh complete run are required. These
 observations do not qualify another OS/ISA, another scale or final signed bytes.
+
+### Isolated hosted physical-input checkpoint with exact clipboard cleanup
+
+At exact `a3925e394d1f15db748d602d5701ea3b3813b7d9`,
+[run40240295246](https://github.com/partnernetsoftware/minicon/actions/runs/40240295246)
+uses default Windows x86_64 developer image SHA-256
+`3715218ec4655f0a5840dc953007385e499f1a21a38ef4e742234c8aa5bb698a`.
+Its four passed rows cover actual page-key echo/Ctrl+L/full forward-reverse
+header traversal, then each of the address, active proxy and saved-candidate
+editors: native select/copy/cut/paste, complete Pinyin preedit and Space commit
+without navigation/proxy application/Add. Actual scale is1000 permille.
+The owned GUI exits normally with0, its page thread joins, synthetic roots are
+removed, the original empty clipboard is verified exactly restored, and the
+court restores original language profiles. Receipts and named PNGs are under
+`target-six/v0.2.23-provider/native-controls-ci-a3925e3/`.
+
+Root visually reviewed the three committed-editor PNGs: the Chinese text and
+caret are readable inside their actual fields. Owned-client-DC images do not
+qualify GPU page or IME candidate-popup pixels. The overall job remains BLOCKED
+when foreground is lost later in the independent Harness phase; that phase is
+not passed by these four rows. ARM64 sends no input because its activation point
+is obscured. Other scales, complete remaining native scope and signed-artifact
+qualification stay open under PRD32/31.01.
 Harness observations from the same run belong to PRD 31.01.

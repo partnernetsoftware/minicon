@@ -3,8 +3,8 @@
 Parent: [shared mechanisms](PRD_02_28_shared_core.md). Product consumer:
 [provider pool](PRD_02_31_01_02_provider_pool.md). Native evidence:
 [developer courts](PRD_02_32_dev_loop_crosscheck.md).
-Status: `[-]` Windows release observer and product wait implemented in the
-development tree; actual SDK delivery and persistence qualification remain open.
+Status: `[-]` Windows release observer/path conversion have developer native
+evidence; Linux helper release/reuse and final-artifact qualification remain open.
 
 This module owns the native release boundary before reusing or deleting a
 browser context. Account identity, pending-login ownership and UI recovery stay
@@ -75,12 +75,17 @@ Outcome: reuse an account's browser context only after its previous native host 
 │   evidence: managed SDK variants pass; minimal wry / direct Rust SDK variants fail; named receipts below
 │   safe failure: setup/permission/exit/profile uncertainty stays inconclusive; original eight-oracle gate remains required
 │   dependency: SDK FACTORY CONTRAST and bounded owned hidden host; non-goal: a replacement production host, full original qualification or private-profile access
-├── [-] SDK UDF PATH — pass an identity-preserving ordinary Windows path to WebView2
+├── [v] SDK UDF PATH — pass an identity-preserving ordinary Windows path to WebView2
 │   invariant: canonical paths retain store identity; only the native SDK parameter uses compatible drive spelling
-│   evidence: original KEEP/EXIT eight checks both pass with path-only prototype; shared production join/native replay pending
+│   evidence: original KEEP/EXIT prototype passes; integrated dual-Windows native replay40236848290 with actual counterexamples, scoped below
 │   safe failure: a path requiring an incompatible namespace is explicitly unsupported before creation; no alternate store
 │   dependency: verified profile, existing pinned dunce compatibility helper and SDK HOST CONTRAST
 │   non-goal: changing ACLs, persistence delays/flush, credential paths or replacing the browser host
+├── [-] LINUX HELPER REUSE — preserve acknowledged storage across A -> B -> A
+│   invariant: a forced helper kill is not normal native release or persistence acknowledgement
+│   evidence: run40239951153 original PASS followed by a reopened localStorage failure; actual graceful-release/persistence controls remain required
+│   safe failure: retain the failed predicate and block an unconfirmed reuse claim; no extra sleep or fabricated empty-store success
+│   dependency: actual helper close API, owned child lifetime, existing transport and auth presentation; non-goal: changing profiles/ACLs or accepting a different RED failure
 └── [_] LATER DELETE — compose release with an explicitly authorized store deletion
     invariant: observation, deletion and durable completion are separate results
     evidence: future OS-specific deletion/retry courts; currently unavailable
@@ -131,6 +136,10 @@ flowchart TD
     ROOTS -->|no| UNAVAILABLE[No diagnostic file reads / unchanged court verdict]
     CANCEL[Cancel / expired attempt / bounded deadline] --> DISCARD[Discard pending navigation; preserve ordinary page]
     READY -. separate future authority .-> DELETE[Explicit native store deletion]
+    LNX[Linux helper / exact account profile] --> LCLOSE[Native close request and owned process lifetime]
+    LCLOSE --> LRESULT{Actual release and unchanged storage observed?}
+    LRESULT -->|yes| OPEN
+    LRESULT -->|unconfirmed / forced / missing storage| FAIL
 ```
 
 ## Windows release boundary
@@ -990,3 +999,35 @@ This closes the integrated Windows development persistence replay at this
 source; it does not qualify real provider authorization or final signed bytes.
 The uploaded receipts do not record a runtime version, so a specifically named
 newer-runtime claim remains unproved rather than inferred from runner age.
+
+### Linux x86_64 replay: reopened localStorage fails before the intended RED
+
+In [run40239951153](https://github.com/partnernetsoftware/minicon/actions/runs/40239951153)
+at exact `360222fc1d0065b2e69855d031467ac0731654b9`, the Linux x86_64
+authorization-context job is terminal FAIL. Its initial native test build passes
+all eight original predicates; the previous-context mutation produces the
+intended `context-b-inherited-storage` failure. The ordinary-reload mutation
+then fails earlier with `context-a-reopen-inherited-storage`: its finite
+fixture observations show the Cookie matches but localStorage is missing.
+That is not the intended ordinary-document RED, so its `valid` is false and
+the restored runtime arm never executes. Exact source and canonical product
+bytes are restored. Artifacts are retained under
+`target-six/v0.2.23-provider/ci-360222f-native/lnx-x86_64/native-auth-context/`.
+Do not count the earlier positive arm or a neighboring architecture as closing
+this failed qualifier; other cells in that run retain their own outcomes.
+
+Source inspection finds `ConApp::stop_page_host` clears the Linux transport,
+then kills and waits for its child. The helper's IPC accepts navigation/focus
+but no native close operation. This is an actual forced-close boundary, not
+proof that it caused this particular missing localStorage observation.
+Investigate that lifecycle against a supported native close before changing
+storage or the oracle. WebKitGTK documents
+[try_close](https://webkitgtk.org/reference/webkit2gtk/2.39.7/method.WebView.try_close.html)
+and the resulting [close signal](https://webkitgtk.org/reference/webkit2gtk/stable/signal.WebView.close.html);
+neither reference promises a storage-flush acknowledgement. Do not invent one.
+Any implementation must keep the GUI responsive, bind the direct owned helper
+and profile, distinguish normal/forced/unknown closure, and retain all eight
+storage predicates plus intended negative/restored runtime controls.
+Shared prerequisites/hot files are `minicon-web`'s native helper close path,
+MiniCon's existing browser transport and auth/page teardown consumers, and this
+qualifier; one integrator owns the join. No Linux repair is implemented here.
