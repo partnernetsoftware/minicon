@@ -727,3 +727,27 @@ path; both guarded Rust files are restored byte-exactly, with no live controls.
 This adjudication records the observed guard results without relabeling the
 failed full-tree run. The matching-source native comparison remains pending;
 the original EXIT Cookie failure and production storage requirement stay open.
+
+
+### Actual fixed-histogram replay: unavailable mechanism, original EXIT failure
+
+Exact `6a80fbedaebed9ecd3852a887b2e0b3b9c27c432`, Windows x64 run
+`40230396330`, executes the diagnostic on Runtime `155.0.4283.62`.
+KEEP still passes all eight original predicates. EXIT still fails at reopened-A
+Cookie inheritance while localStorage matches, after the verified normal exit
+and new environment. The original three earlier predicates pass; subsequent
+predicates remain unobserved. Both phases of both arms return
+`unsupported-or-failed-unknown` for both fixed histogram names, with no numeric
+buckets/count/sum. This mechanism yields no backend-error evidence; it does not
+mean zero Cookie errors. No changed persistence verdict or production repair
+is claimed, and repeating the same unsupported query is not the next step.
+
+Build/source/arm receipts and the unchanged original storage observations are
+retained in
+`target-six/v0.2.23-provider/ci-6a80fbe-cookie-histogram/lifetime/`.
+The test-only image is SHA-256
+`277f4e5e533a9a07400a752062c397a67ea26f59d81ce28fbbd7a11a82f7870b`;
+its build driver reports the source and canonical product unchanged. The first
+attempt (`40230209292`) failed checkout because root supplied a short ref;
+it executed no build or native comparison. The corrected run uses the full
+40-character source SHA and preserves the failing aggregate.

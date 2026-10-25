@@ -2229,9 +2229,48 @@ and fixed phase-file presence at the original deadline. It preserves all old
 assertions, 18/20-second deadlines and service logic. Both exact subjects pass
 through the canonical selected-suite entry on local build 20348; receipt:
 `target-six/v0.2.23-provider/console-disconnect-diagnostic-local-receipt.json`.
-The new diagnostic's Windows 2025 CI replay is still UNRUN. These local passes
-and added observations do not resolve the actual build-26100 failures or claim
-a persistence/retirement fix.
+The matching-source diagnostic replay at `f659387d64c6f7ca3d4bf2c96a25ae9d5c14f6f1`,
+CI `40229716348`, retains both failures. The queued case has one deferred native
+ReadFile, no admitted read and no intervening close/control before its blocked
+FreeConsole. The accepted-read case reports successful FreeConsole but retains
+one admitted read and receives no DISCONNECT. Thus the earlier conditional
+pre-DISCONNECT close hypothesis is not supported by these actual tails. Evidence:
+`target-six/v0.2.23-provider/ci-f659387-native/windows-job.log`.
+
+The earlier accepted cross-version correction in
+[PRD 32](PRD_02_32_dev_loop_crosscheck.md) already records the same installed
+ConPTY failure, unchanged explicit FreeConsole observations and mandatory actual
+process-exit/peer-isolation replacements. The direct library court still combined
+that invalid API-to-driver-order assumption with valid cancellation/input-close
+checks. Apply the same correction there: keep every old FreeConsole assertion
+and deadline in explicitly selected observations; retain valid mandatory cases,
+and add mandatory actual process-exit checks for deferred read families and
+accepted-read fallback under output pressure. Each requires the independently
+owned peer to survive and finish real native input. This is a fixture/claim
+correction, not a production cancellation change or a FreeConsole pass. New
+library tests now pass the canonical selected-suite gate locally: 26 passed,
+zero failed and two explicitly retained FreeConsole observations ignored, from
+28 total subjects (previously 24). The deferred test covers all three actual
+read families; the admitted test also rejects a sink, retains fallback, then
+requires `B>`/cursor `(0,2)` and real peer input `[122]`. Each observes root exit
+35, peer completion and zero clients/handles/Job members before returning.
+The initial new fixture had incorrectly required a dead root's read to survive
+a rejected fallback; the corrected assertion requires that read to retire while
+the independent peer and pending fallback remain. The original failed log is
+retained as `console-process-retirement-initial.log`, with the passing complete
+native-input inventory in `console-process-retirement-corrected.log` under the
+same evidence root.
+
+Three actual source controls across the two new subjects fail their intended
+original assertions: global process retirement loses the deferred/admitted peer,
+and discarding fallback after a rejected sink loses the retained projection.
+Both source files are restored byte-exactly and both subjects pass again.
+`console-process-retirement-controls-resume/receipt.json` records the completed
+restoration; `console-process-retirement-controls-attempt-1/receipt.json` remains
+FAIL because root's runner expected Rust's default assert wording instead of
+the original custom panic. The actual custom assertion location/text and RED
+exit are verified without rerunning or changing that assertion. No production
+source mutation remains. New Windows 2025/full-workspace replay remains open.
 
 ### Queued-read retirement and keyboard waiters
 

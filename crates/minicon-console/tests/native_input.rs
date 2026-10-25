@@ -8,6 +8,8 @@ mod aliases_court;
 mod cache_court;
 #[path = "support/inherit_cache_court.rs"]
 mod inherit_cache_court;
+#[path = "support/process_retirement_court.rs"]
+mod process_retirement_court;
 #[path = "support/raw_batch_court.rs"]
 mod raw_batch_court;
 use std::ffi::OsStr;
@@ -271,6 +273,11 @@ impl Drop for Report {
             "observed",
             "detached",
             "records",
+            "exit",
+            "disconnect-before",
+            "disconnect-after",
+            "reader-returned",
+            "read-error",
         ] {
             let _ = std::fs::remove_file(self.path.with_extension(extension));
         }
@@ -596,6 +603,16 @@ fn rust_console_native_cancelled_read_reclaims_buffers_and_orders_fallback_under
 
 #[test]
 fn rust_console_native_read_retirement_waits_for_fallback_publication() {
+    native_read_retirement_cases(&["input-close"]);
+}
+
+#[test]
+#[ignore = "cross-version FreeConsole observation; detach does not promise pending synchronous read cancellation"]
+fn rust_console_native_free_console_read_retirement_observation() {
+    native_read_retirement_cases(&["disconnect", "remaining"]);
+}
+
+fn native_read_retirement_cases(kinds: &[&str]) {
     struct Reject;
     impl std::io::Write for Reject {
         fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
@@ -605,7 +622,7 @@ fn rust_console_native_read_retirement_waits_for_fallback_publication() {
             Ok(())
         }
     }
-    for kind in ["input-close", "disconnect", "remaining"] {
+    for &kind in kinds {
         let report = Report::new();
         let session = DriverSession::open().unwrap();
         let child = launch_probe(&format!("cooked-retire-{kind}"), &report, &session);
@@ -1068,6 +1085,27 @@ fn rust_console_native_pending_text_reads_keep_their_admitted_mode() {
 
 #[test]
 fn rust_console_native_queued_reads_keep_reply_shapes_causes_and_other_callers() {
+    native_queued_read_cases(&[
+        "interrupt-file",
+        "interrupt-console",
+        "interrupt-records",
+        "signal-records",
+        "signal-file",
+    ]);
+}
+
+#[test]
+#[ignore = "cross-version FreeConsole observation; detach does not promise pending synchronous read cancellation"]
+fn rust_console_native_free_console_queued_reads_observation() {
+    native_queued_read_cases(&[
+        "disconnect-file",
+        "disconnect-console",
+        "disconnect-records",
+        "other-console",
+    ]);
+}
+
+fn native_queued_read_cases(kinds: &[&str]) {
     struct Reject;
     impl std::io::Write for Reject {
         fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
@@ -1077,17 +1115,7 @@ fn rust_console_native_queued_reads_keep_reply_shapes_causes_and_other_callers()
             Ok(())
         }
     }
-    for kind in [
-        "interrupt-file",
-        "interrupt-console",
-        "interrupt-records",
-        "disconnect-file",
-        "disconnect-console",
-        "disconnect-records",
-        "other-console",
-        "signal-records",
-        "signal-file",
-    ] {
+    for &kind in kinds {
         let report = Report::new();
         let session = DriverSession::open().unwrap();
         let child = launch_probe(&format!("queued-read-{kind}"), &report, &session);

@@ -339,3 +339,47 @@ The next diagnostic must preserve primary failure and publish only finite helper
 lifecycle/status fields; it must not relax original assertions or export the
 private carrier, keys or clipboard contents. The earlier failed runs remain
 separate source observations, not reclassified successes.
+
+
+### K3 observed contention prerequisite and owned-window correction
+
+Exact `f659387d64c6f7ca3d4bf2c96a25ae9d5c14f6f1`, run `40229716348`,
+again passes nine public checks and then fails the original
+`key-terminal-result-mismatch:clipboard_failed` assertion. The primary error is
+now preserved separately from cleanup: the lock child reports release observed,
+but CloseClipboard fails with Win32 1418 (clipboard not open). This does not
+prove continuous native contention or identify a product Copy defect. The safe
+receipt is `target-six/v0.2.23-provider/ci-f659387-native/receipts/profile-key-handoff.json`.
+The private carrier and clipboard values remain excluded from uploads.
+
+The fixture now creates one hidden message-only STATIC window on its lock
+thread, associates OpenClipboard with that exact window, verifies
+GetOpenClipboardWindow before publishing Ready and while holding/releasing,
+then explicitly closes and destroys its owned window. It never activates a
+window or reads/writes clipboard contents in the lock child. Only four extra
+fixed booleans and finite lifecycle errors enter the existing safe receipt;
+no window handle or arbitrary diagnostic payload is exported. Primary and
+cleanup errors remain separate. All twelve product assertions, the contention
+failure expectation and original 20-second lock deadline remain unchanged.
+This corrects an unproven fixture prerequisite; actual native replay is still
+pending, not a product fix or K3 pass.
+
+Microsoft's [OpenClipboard contract](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-openclipboard)
+allows a NULL window association, while
+[GetOpenClipboardWindow](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getopenclipboardwindow)
+cannot identify that NULL-associated open. The explicit owned association
+provides an observable lock identity; documentation alone does not establish
+why the previous run lost its lock.
+
+
+The replay's key-action wait also accepted an old terminal presented frame
+before requiring its new request ID. This could evaluate the wrong result and
+release contention before the new adapter operation finished. The wait now
+requires the selected profile and a strictly newer request before consuming a
+terminal; all original target/result/request assertions remain unchanged.
+`target-six/v0.2.23-provider/k3-fresh-terminal-reproduction.json` records two
+controlled old-terminal frame sequences: the original function fails its
+original result/fresh-request requirement; the corrected function ignores the
+old and pending frames, then accepts the exact new receipt. This exercises no
+GUI or clipboard and does not yet prove which race occurred in the CI failure.
+Native replay of the owned-window and receipt-wait corrections remains open.

@@ -91,6 +91,12 @@ def windows_clipboard():
     user.OpenClipboard.argtypes, user.OpenClipboard.restype = [w.HWND], w.BOOL
     user.CloseClipboard.argtypes, user.CloseClipboard.restype = [], w.BOOL
     user.GetClipboardData.argtypes, user.GetClipboardData.restype = [w.UINT], w.HANDLE
+    user.GetOpenClipboardWindow.argtypes, user.GetOpenClipboardWindow.restype = [], w.HWND
+    user.CreateWindowExW.argtypes = [w.DWORD, w.LPCWSTR, w.LPCWSTR, w.DWORD,
+                                   ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                   w.HWND, w.HMENU, w.HINSTANCE, ctypes.c_void_p]
+    user.CreateWindowExW.restype = w.HWND
+    user.DestroyWindow.argtypes, user.DestroyWindow.restype = [w.HWND], w.BOOL
     kernel.GlobalSize.argtypes, kernel.GlobalSize.restype = [w.HANDLE], ctypes.c_size_t
     kernel.GlobalLock.argtypes, kernel.GlobalLock.restype = [w.HANDLE], ctypes.c_void_p
     kernel.GlobalUnlock.argtypes, kernel.GlobalUnlock.restype = [w.HANDLE], w.BOOL
@@ -128,6 +134,8 @@ _LOCK_FAILURE_CODES = frozenset((
     "lock-directory", "lock-authority", "clipboard-lock-unavailable",
     "clipboard-lock-deadline", "clipboard-lock-release", "clipboard-lock-not-ready",
     "clipboard-lock-ended-before-adapter-failure", "clipboard-lock-cleanup",
+    "clipboard-lock-window-unavailable", "clipboard-lock-window-cleanup",
+    "clipboard-lock-owner-mismatch", "clipboard-lock-owner-changed",
     "key-operation-no-terminal-feedback", "key-terminal-target-mismatch",
     "key-terminal-result-mismatch:clipboard_failed", "key-terminal-did-not-ack-new-request",
 ))
@@ -147,20 +155,41 @@ def clipboard_lock_child(directory, authority):
     require(json.loads((directory / "authority.json").read_bytes()) == {"authority": authority},
             "lock-authority")
     result = {"phase": "opening", "ready": False, "release_observed": False,
-              "closed": False, "failure": None, "cleanup_failure": None, "win32_error": None}
+              "closed": False, "window_owned": False, "ownership_observed": False,
+              "ownership_retained": False, "window_destroyed": False,
+              "failure": None, "cleanup_failure": None, "win32_error": None}
     primary_error = cleanup_error = None
     opened = False
+    window = None
     try:
-        opened = bool(user.OpenClipboard(None))
+        # A real owned window makes the open association observable. NULL is
+        # allowed by Win32 but GetOpenClipboardWindow cannot identify that lock.
+        # This hidden message-only STATIC window never activates or owns data.
+        from ctypes import wintypes as w
+        window = user.CreateWindowExW(0, "STATIC", "MiniCon K3 clipboard lock", 0,
+                                      0, 0, 0, 0, w.HWND(-3), None, None, None)
+        if not window:
+            result["win32_error"] = ctypes.get_last_error()
+        require(bool(window), "clipboard-lock-window-unavailable")
+        result["window_owned"] = True
+        opened = bool(user.OpenClipboard(window))
         if not opened:
             result["win32_error"] = ctypes.get_last_error()
         require(opened, "clipboard-lock-unavailable")
+        require(user.GetOpenClipboardWindow() == window, "clipboard-lock-owner-mismatch")
+        result.update(ownership_observed=True, ownership_retained=True)
         save(directory / "ready.json", {"locked": True})
         result.update(phase="holding", ready=True)
         deadline = time.monotonic() + 20
         while not (directory / "release").exists():
+            if user.GetOpenClipboardWindow() != window:
+                result["ownership_retained"] = False
+                raise Failure("clipboard-lock-owner-changed")
             require(time.monotonic() < deadline, "clipboard-lock-deadline")
             time.sleep(0.01)
+        if user.GetOpenClipboardWindow() != window:
+            result["ownership_retained"] = False
+            raise Failure("clipboard-lock-owner-changed")
         result.update(phase="release-observed", release_observed=True)
     except BaseException as error:
         primary_error = error
@@ -174,6 +203,15 @@ def clipboard_lock_child(directory, authority):
                 result.update(phase="closed", closed=True)
             except BaseException as error:
                 cleanup_error = error
+        if window:
+            try:
+                destroyed = bool(user.DestroyWindow(window))
+                if not destroyed:
+                    result["win32_error"] = ctypes.get_last_error()
+                require(destroyed, "clipboard-lock-window-cleanup")
+                result["window_destroyed"] = True
+            except BaseException as error:
+                cleanup_error = cleanup_error or error
         result.update(failure=lock_failure_code(primary_error),
                       cleanup_failure=lock_failure_code(cleanup_error))
         try:
@@ -198,9 +236,13 @@ def lock_child_result(directory):
         if len(raw) > 1024:
             return {"status": "unavailable"}
         value = json.loads(raw)
-        if (set(value) != {"phase", "ready", "release_observed", "closed", "failure", "cleanup_failure", "win32_error"}
+        if (set(value) != {"phase", "ready", "release_observed", "closed", "window_owned",
+                           "ownership_observed", "ownership_retained", "window_destroyed",
+                           "failure", "cleanup_failure", "win32_error"}
                 or value["phase"] not in _LOCK_CHILD_PHASES
-                or any(type(value[k]) is not bool for k in ("ready", "release_observed", "closed"))
+                or any(type(value[k]) is not bool for k in ("ready", "release_observed", "closed",
+                                                           "window_owned", "ownership_observed",
+                                                           "ownership_retained", "window_destroyed"))
                 or any(value[k] not in (*_LOCK_FAILURE_CODES, "unexpected-error", None)
                        for k in ("failure", "cleanup_failure"))
                 or not (value["win32_error"] is None or (type(value["win32_error"]) is int
@@ -333,7 +375,18 @@ class Replay:
             s = self.state()
             k = s["client_key"]
             feedback = k["feedback"]
-            return s if (k["pending"] is None and feedback and feedback["kind"] != "waiting") else None
+            if (k["pending"] is not None or not feedback or feedback["kind"] == "waiting"
+                    or k["profile"] != profile or feedback["profile"] != profile):
+                return None
+            # Snapshots describe a presented frame. A click acknowledgement can
+            # precede the frame containing its pending/new receipt; do not accept
+            # an older terminal and release the contention fixture prematurely.
+            request = feedback["request"]
+            fresh = (isinstance(request, int)
+                     and (old_request is None or request > old_request))
+            if expected == "apply_first":
+                fresh = feedback["kind"] == "apply_first"
+            return s if fresh else None
         result = self.wait(done, "key-operation-no-terminal-feedback")
         key = result["client_key"]
         require(key["profile"] == profile and key["feedback"]["profile"] == profile,
