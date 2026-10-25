@@ -23,7 +23,7 @@ Outcome: retain actual local model work once and reveal measurement coverage
 │   safe failure: coverage gaps; dependency: shared typed private publisher; non-goal: a database/daemon
 └── [-] SUMMARY — cached UTC windows and separate account/profile/model dimensions
     invariant: final/partial/missing/probe and charge/list-price/allowance are not conflated
-    evidence: known dimensional totals/Other buckets and read-only projection
+    evidence: known dimensional totals/Other buckets, idle UTC rollover and unavailable-clock cache consumers
     safe failure: stale/incomplete retained snapshot; dependency: HISTORY; non-goal: UI or wallet inference
 ```
 
@@ -44,6 +44,7 @@ flowchart TD
     END -->|bounded try_send outside locks| WRITER[Private history writer]
     WRITER --> RETAIN[Parent-owned detail/daily byte and age ceilings]
     WRITER --> CACHE[Finite summary cache]
+    IDLE[Existing bounded writer wake / UTC day or clock-validity change] --> CACHE
     GAP[Queue drop/write fault/interrupted run/capped detail] --> CACHE
     RETAIN --> CACHE
     CACHE --> VIEW[Actual Owner polling -> typed read-only View]
@@ -143,6 +144,19 @@ sample counts remain distinct. Read-only sampling shares an immutable Arc snapsh
 preserves a prior cached summary on contention/failure. Later UI must label this
 basis explicitly rather than relabeling it as an unspecified local day.
 
+The summary samples `computed_at_unix_ms` and optional `today_utc_day` from one
+local clock reading. They describe local cache computation, not provider
+freshness, latest request or durable publication time. With no receipts or
+counter changes, the existing writer's bounded receive wake still republishes
+UTC windows when the day changes. An unchanged valid day preserves the Arc;
+rollover alone changes no disk bytes, dirty flag or the existing writer revision.
+Missing time makes both the day and computation time unavailable and provides
+no current-period totals; a consumer must not present their default numeric
+fields as measured zero. Clock recovery republishes from retained observations.
+This uses the existing writer and cache, without a new timer, network call or
+public clock override. Matching-source cache evidence is recorded below.
+
+
 ## Evidence frontier
 
 Initial controlled implementation consumers now have named observations below.
@@ -202,3 +216,30 @@ two actual local gateway worker journeys and eighteen alignment tests passing:
 Source/HEAD/index remain unchanged during the gate. This is controlled Windows
 integration evidence; real accounts, metadata reads, report pixels, other native
 targets and final selected artifacts remain open under their owning modules.
+
+
+### Idle UTC rollover and unavailable-clock cache evidence
+
+`target-six/v0.2.23-provider/usage-idle-rollover-initial-evidence-index.json`
+indexes actual fmt/default/native-auth strict Clippy, eighteen accounting
+consumers (original sixteen plus two new) and eighteen alignment passes, with
+unchanged source/HEAD/index during execution. Its original runner receipt keeps
+a copied literal total of34; the actual named command logs prove18+18=36.
+The evidence index records this bookkeeping correction without replacing logs.
+
+The new consumers call the same private cache publication function used by the
+existing writer wake, then inspect its actual shared immutable Arc. Without new
+receipts, Today/7/30 shift from1/2/3 to0/1/2 at the next UTC day; an unchanged
+day retains the Arc, the old Arc remains immutable, the writer revision stays
+unchanged and retained Snapshot serialization is unchanged. A missing clock
+produces no current UTC day/computation time or current-period totals, then
+recovers from retained observations, including a legitimate day0 timestamp.
+
+`target-six/v0.2.23-provider/usage-idle-rollover-controls-attempt-1/receipt.json`
+records two actual original-assertion REDs: suppressing idle-day publication
+retains1/2/3 against the original0/1/2 expectation; substituting epoch0 for an
+unavailable clock returnsSome(0) against the originalNone expectation. Both
+single-consumer controls retain the original assertions and reach their exact
+source locations; source restores byte-exactly and both restored tests pass.
+These are controlled cache/clock-input consumers, without changing the OS clock,
+performing a native midnight wait or qualifying the future report pixels.

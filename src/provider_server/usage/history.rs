@@ -415,7 +415,8 @@ pub(crate) struct UsageSummary {
     pub revision: u64,
     pub state: UsageState,
     pub timezone_basis: TimezoneBasis,
-    pub today_utc_day: u64,
+    pub today_utc_day: Option<u64>,
+    pub computed_at_unix_ms: Option<u64>,
     pub retained_from_ms: Option<u64>,
     pub retained_to_ms: Option<u64>,
     pub windows: [PurposeTotals; 3],
@@ -535,12 +536,18 @@ impl Snapshot {
             }
         }
     }
-    fn summary(&self, revision: u64, state: UsageState) -> UsageSummary {
-        let today = now_ms().unwrap_or(0) / DAY_MS;
+    fn summary(
+        &self,
+        revision: u64,
+        state: UsageState,
+        computed_at_unix_ms: Option<u64>,
+    ) -> UsageSummary {
+        let today = computed_at_unix_ms.map(|time| time / DAY_MS);
         let mut summary = UsageSummary {
             revision,
             state,
             today_utc_day: today,
+            computed_at_unix_ms,
             gaps: self.gaps.clone(),
             retained_from_ms: self
                 .details
@@ -551,6 +558,9 @@ impl Snapshot {
                 .back()
                 .and_then(|record| record.finished_unix_ms),
             ..Default::default()
+        };
+        let Some(today) = today else {
+            return summary;
         };
         for day in &self.days {
             for (index, length) in [1, 7, 30].into_iter().enumerate() {
@@ -810,6 +820,33 @@ fn overlay_run(summary: &mut UsageSummary, counters: &SharedCounters) {
     summary.run_oversized = oversized;
     summary.gaps.counter_overflow |= counters.overflow.load(Ordering::Relaxed);
 }
+/// Called by the existing writer wake, including idle receive timeouts. This
+/// updates only the shared read cache; it neither marks disk dirty nor flushes.
+fn publish_summary(
+    snapshot: &Snapshot,
+    shared: &Shared,
+    revision: u64,
+    state: UsageState,
+    changed: bool,
+    computed_at_unix_ms: Option<u64>,
+) {
+    let Ok(mut cache) = shared.cache.try_lock() else {
+        return;
+    };
+    let counters = &shared.counters;
+    let counters_changed = cache.run_admitted != counters.admitted.load(Ordering::Relaxed)
+        || cache.run_terminals != counters.terminal.load(Ordering::Relaxed)
+        || cache.run_rejected != counters.rejected.load(Ordering::Relaxed)
+        || cache.run_queue_dropped != counters.dropped.load(Ordering::Relaxed)
+        || cache.run_oversized != counters.oversized.load(Ordering::Relaxed)
+        || (!cache.gaps.counter_overflow && counters.overflow.load(Ordering::Relaxed));
+    let day_changed = cache.today_utc_day != computed_at_unix_ms.map(|time| time / DAY_MS);
+    if changed || counters_changed || day_changed || cache.state != state {
+        let mut summary = snapshot.summary(revision, state, computed_at_unix_ms);
+        overlay_run(&mut summary, counters);
+        *cache = Arc::new(summary);
+    }
+}
 struct WriterCompletion {
     done: Arc<(Mutex<bool>, Condvar)>,
     shared: Arc<Shared>,
@@ -935,18 +972,14 @@ fn writer(root: PathBuf, incoming: mpsc::Receiver<Receipt>, shared: Arc<Shared>)
             revision = revision.saturating_add(1);
             next_flush = Instant::now() + Duration::from_secs(1);
         }
-        let counters_changed = shared.cache.try_lock().is_ok_and(|cache| {
-            cache.run_admitted != shared.counters.admitted.load(Ordering::Relaxed)
-                || cache.run_terminals != shared.counters.terminal.load(Ordering::Relaxed)
-                || cache.run_rejected != shared.counters.rejected.load(Ordering::Relaxed)
-        });
-        if (changed || closing || counters_changed)
-            && let Ok(mut cache) = shared.cache.try_lock()
-        {
-            let mut summary = snapshot.summary(revision, state);
-            overlay_run(&mut summary, &shared.counters);
-            *cache = Arc::new(summary);
-        }
+        publish_summary(
+            &snapshot,
+            &shared,
+            revision,
+            state,
+            changed || closing,
+            now_ms(),
+        );
         if closing {
             break;
         }
@@ -1360,6 +1393,95 @@ mod tests {
         }
     }
     #[test]
+    fn um_idle_utc_rollover_republishes_actual_cache_without_new_receipts_or_disk_revision() {
+        let mut snapshot = Snapshot::default();
+        for (index, day) in [100, 94, 71].into_iter().enumerate() {
+            let mut receipt = record(index as u64 + 1);
+            receipt.finished_unix_ms = Some(day * DAY_MS);
+            snapshot.add(receipt);
+        }
+        let stored = serde_json::to_vec(&snapshot).unwrap();
+        let shared = Shared {
+            counters: Default::default(),
+            cache: Mutex::new(Arc::new(UsageSummary::default())),
+        };
+        let before_midnight = 101 * DAY_MS - 1;
+        publish_summary(
+            &snapshot,
+            &shared,
+            7,
+            UsageState::Ready,
+            true,
+            Some(before_midnight),
+        );
+        let original = shared.cache.lock().unwrap().clone();
+        assert_eq!(
+            original
+                .windows
+                .each_ref()
+                .map(|window| window.client.requests),
+            [1, 2, 3]
+        );
+        publish_summary(
+            &snapshot,
+            &shared,
+            7,
+            UsageState::Ready,
+            false,
+            Some(before_midnight),
+        );
+        assert!(Arc::ptr_eq(&original, &shared.cache.lock().unwrap()));
+
+        let midnight = 101 * DAY_MS;
+        publish_summary(
+            &snapshot,
+            &shared,
+            7,
+            UsageState::Ready,
+            false,
+            Some(midnight),
+        );
+        let updated = shared.cache.lock().unwrap().clone();
+        assert_eq!(
+            updated
+                .windows
+                .each_ref()
+                .map(|window| window.client.requests),
+            [0, 1, 2]
+        );
+        assert_eq!(updated.today_utc_day, Some(101));
+        assert_eq!(updated.computed_at_unix_ms, Some(midnight));
+        assert_eq!(updated.revision, 7);
+        assert_eq!(original.windows[0].client.requests, 1);
+        assert_eq!(serde_json::to_vec(&snapshot).unwrap(), stored);
+    }
+    #[test]
+    fn um_cache_clock_loss_is_unavailable_not_epoch_zero_and_recovers_without_new_receipts() {
+        let mut snapshot = Snapshot::default();
+        let mut receipt = record(1);
+        receipt.finished_unix_ms = Some(1);
+        snapshot.add(receipt);
+        let shared = Shared {
+            counters: Default::default(),
+            cache: Mutex::new(Arc::new(UsageSummary::default())),
+        };
+        publish_summary(&snapshot, &shared, 3, UsageState::Ready, true, Some(2));
+        assert_eq!(shared.cache.lock().unwrap().windows[0].client.requests, 1);
+        publish_summary(&snapshot, &shared, 3, UsageState::Ready, false, None);
+        {
+            let cache = shared.cache.lock().unwrap();
+            assert_eq!(cache.today_utc_day, None);
+            assert_eq!(cache.computed_at_unix_ms, None);
+            assert_eq!(cache.windows[0].client.requests, 0);
+        }
+        publish_summary(&snapshot, &shared, 3, UsageState::Ready, false, Some(4));
+        let cache = shared.cache.lock().unwrap();
+        assert_eq!(cache.today_utc_day, Some(0));
+        assert_eq!(cache.computed_at_unix_ms, Some(4));
+        assert_eq!(cache.windows[0].client.requests, 1);
+        assert_eq!(cache.revision, 3);
+    }
+    #[test]
     fn um_last_sender_lifetime_keeps_run_open_until_late_terminal_is_drained() {
         let directory = Directory::new();
         let history = UsageHistory::open(directory.0.clone());
@@ -1494,7 +1616,7 @@ mod tests {
             snapshot.add(receipt);
         }
         snapshot.cap_aggregates();
-        let summary = snapshot.summary(1, UsageState::Ready);
+        let summary = snapshot.summary(1, UsageState::Ready, now_ms());
         assert_eq!(snapshot.details.len(), DETAILS);
         assert_eq!(
             summary.windows[2].client.requests,
