@@ -29,6 +29,8 @@ const NON_STREAM_BYTES: usize = 8 * 1024 * 1024;
 const CATALOG_BYTES: usize = 2 * 1024 * 1024;
 const MAX_MODELS: usize = 512;
 const MAX_SESSIONS: usize = 256;
+const MAX_CLIENT_PROFILES: usize = 8;
+const MAX_CLIENT_ALLOCATIONS: usize = 32;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ServerError {
@@ -80,6 +82,26 @@ pub struct ModelRoute {
     pub headers: Vec<(String, String)>,
 }
 
+/// Non-secret allocations. Keys remain separate private files owned by the
+/// runtime, and an alias never grants access to the whole provider catalogue.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientAllocation {
+    pub alias: String,
+    pub account: String,
+    pub route: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientProfile {
+    pub id: String,
+    pub label: String,
+    pub enabled: bool,
+    pub default_model: String,
+    pub allocations: Vec<ClientAllocation>,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -90,6 +112,10 @@ pub struct Config {
     pub identity: String,
     #[serde(default)]
     pub models: Vec<ModelRoute>,
+    /// Version 1's selected account/model and client-key remain the default
+    /// profile. Additional profiles are admitted only by the version 2 schema.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub profiles: Vec<ClientProfile>,
 }
 
 impl Config {
@@ -101,10 +127,13 @@ impl Config {
             model: String::new(),
             identity: random_id()?,
             models: Vec::new(),
+            profiles: Vec::new(),
         })
     }
     pub fn validate(&self) -> Result<(), ServerError> {
-        if self.version != 1
+        if !matches!(self.version, 1 | 2)
+            || (self.version == 1 && !self.profiles.is_empty())
+            || self.profiles.len() >= MAX_CLIENT_PROFILES
             || self.port < 1024
             || !opaque_id(&self.identity)
             || self
@@ -123,13 +152,41 @@ impl Config {
                 return Err(ServerError::InvalidConfig);
             }
         }
+        let mut profiles = HashSet::new();
+        for profile in &self.profiles {
+            if !opaque_id(&profile.id)
+                || !profiles.insert(&profile.id)
+                || profile.label.trim().is_empty()
+                || profile.label.len() > 128
+                || profile.label.chars().any(char::is_control)
+                || profile.allocations.len() > MAX_CLIENT_ALLOCATIONS
+                || (profile.allocations.is_empty() != profile.default_model.is_empty())
+            {
+                return Err(ServerError::InvalidConfig);
+            }
+            let mut aliases = HashSet::new();
+            for allocation in &profile.allocations {
+                if !safe_model(&allocation.alias, false)
+                    || allocation.alias.chars().any(char::is_whitespace)
+                    || !aliases.insert(&allocation.alias)
+                    || !opaque_id(&allocation.account)
+                    || !ids.contains(&allocation.route)
+                {
+                    return Err(ServerError::InvalidConfig);
+                }
+            }
+            if !profile.allocations.is_empty() && !aliases.contains(&profile.default_model) {
+                return Err(ServerError::InvalidConfig);
+            }
+        }
         Ok(())
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct Binding {
-    pub profile: &'static str,
+    pub profile: String,
+    pub alias: String,
     pub provider: Provider,
     pub account: String,
     pub model: String,
@@ -143,11 +200,18 @@ struct Session {
 }
 struct Active {
     account: String,
+    profile: Option<String>,
     cancel: Weak<NetworkHttpCancel>,
+}
+struct ClientAccess {
+    key: Secret,
+    generation: String,
 }
 struct State {
     config: Config,
     key: Option<Secret>,
+    clients: HashMap<String, ClientAccess>,
+    route_generations: HashMap<(String, String), String>,
     sessions: VecDeque<Session>,
     disabled: HashSet<String>,
     leases: HashMap<String, usize>,
@@ -163,6 +227,8 @@ pub struct Gateway {
     refresh: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     #[cfg(test)]
     fixture_upstream: Mutex<Option<String>>,
+    #[cfg(test)]
+    fail_update: std::sync::atomic::AtomicBool,
 }
 
 impl Gateway {
@@ -171,14 +237,32 @@ impl Gateway {
         config: Config,
         key: Option<Secret>,
     ) -> Result<Arc<Self>, ServerError> {
+        Self::with_client_keys(store, config, key, Vec::new())
+    }
+
+    pub fn with_client_keys(
+        store: Arc<AccountStore>,
+        config: Config,
+        key: Option<Secret>,
+        client_keys: Vec<(String, Secret)>,
+    ) -> Result<Arc<Self>, ServerError> {
         config.validate()?;
+        let mut route_generations = HashMap::new();
+        for profile in &config.profiles {
+            for allocation in &profile.allocations {
+                route_generations
+                    .insert((profile.id.clone(), allocation.alias.clone()), random_id()?);
+            }
+        }
         let executable = std::env::current_exe().map_err(|_| ServerError::Storage)?;
-        Ok(Arc::new(Self {
+        let gateway = Arc::new(Self {
             store,
             executable,
             state: Mutex::new(State {
                 config,
                 key,
+                clients: HashMap::new(),
+                route_generations,
                 sessions: VecDeque::new(),
                 disabled: HashSet::new(),
                 leases: HashMap::new(),
@@ -189,11 +273,40 @@ impl Gateway {
             refresh: Mutex::new(HashMap::new()),
             #[cfg(test)]
             fixture_upstream: Mutex::new(None),
-        }))
+            #[cfg(test)]
+            fail_update: std::sync::atomic::AtomicBool::new(false),
+        });
+        if client_keys.len() >= MAX_CLIENT_PROFILES {
+            return Err(ServerError::InvalidConfig);
+        }
+        let mut seen = HashSet::new();
+        for (profile, key) in client_keys {
+            if !seen.insert(profile.clone()) {
+                return Err(ServerError::InvalidConfig);
+            }
+            gateway.set_client_key(&profile, Some(key))?;
+        }
+        Ok(gateway)
     }
 
+    #[cfg(test)]
     pub fn update(&self, config: Config) -> Result<(), ServerError> {
+        self.update_and_publish(config, || Ok(()))
+    }
+
+    pub fn update_and_publish(
+        &self,
+        config: Config,
+        publish: impl FnOnce() -> Result<(), ServerError>,
+    ) -> Result<(), ServerError> {
         config.validate()?;
+        #[cfg(test)]
+        if self
+            .fail_update
+            .swap(false, std::sync::atomic::Ordering::AcqRel)
+        {
+            return Err(ServerError::Storage);
+        }
         let mut state = self.state.lock().map_err(|_| ServerError::Storage)?;
         let selected = |config: &Config| {
             config
@@ -202,8 +315,65 @@ impl Gateway {
                 .find(|route| route.id == config.model)
                 .cloned()
         };
-        if selected(&state.config) != selected(&config) {
-            state.generation = random_id()?;
+        let generation = if selected(&state.config) != selected(&config) {
+            random_id()?
+        } else {
+            state.generation.clone()
+        };
+        let route_identity = |config: &Config, profile: &str, alias: &str| {
+            let allocation = config
+                .profiles
+                .iter()
+                .find(|entry| entry.id == profile)?
+                .allocations
+                .iter()
+                .find(|entry| entry.alias == alias)?;
+            let route = config
+                .models
+                .iter()
+                .find(|route| route.id == allocation.route)?;
+            Some((allocation.account.clone(), route.clone()))
+        };
+        let mut generations = HashMap::new();
+        for profile in &config.profiles {
+            for allocation in &profile.allocations {
+                let identity = (profile.id.clone(), allocation.alias.clone());
+                let generation = if route_identity(&state.config, &profile.id, &allocation.alias)
+                    == route_identity(&config, &profile.id, &allocation.alias)
+                {
+                    state.route_generations.get(&identity).cloned()
+                } else {
+                    None
+                };
+                generations.insert(identity, generation.map_or_else(random_id, Ok)?);
+            }
+        }
+        // Validation, locking and entropy can fail; finish them before the
+        // runtime publishes bytes. No fallible preparation follows publication.
+        publish()?;
+        state.generation = generation;
+        state.route_generations = generations;
+        state.sessions.retain(|session| {
+            session.binding.profile == "default"
+                || config
+                    .profiles
+                    .iter()
+                    .any(|profile| profile.id == session.binding.profile)
+        });
+        state
+            .clients
+            .retain(|id, _| config.profiles.iter().any(|profile| profile.id == *id));
+        for active in &state.active {
+            if let Some(profile) = &active.profile
+                && profile != "default"
+                && !config
+                    .profiles
+                    .iter()
+                    .any(|entry| entry.id == *profile && entry.enabled)
+                && let Some(cancel) = active.cancel.upgrade()
+            {
+                cancel.cancel();
+            }
         }
         state.config = config;
         // Keep existing mappings: their old generation must produce 409 rather
@@ -211,17 +381,66 @@ impl Gateway {
         Ok(())
     }
 
+    #[cfg(test)]
+    pub fn fail_next_update(&self) {
+        self.fail_update
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+
     pub fn set_key(&self, key: Option<Secret>) -> Result<(), ServerError> {
+        self.set_client_key("default", key)
+    }
+
+    pub fn set_client_key(&self, profile: &str, key: Option<Secret>) -> Result<(), ServerError> {
         let mut state = self.state.lock().map_err(|_| ServerError::Storage)?;
-        if state.key == key {
+        if profile != "default"
+            && !state
+                .config
+                .profiles
+                .iter()
+                .any(|entry| entry.id == profile)
+        {
+            return Err(ServerError::InvalidConfig);
+        }
+        let unchanged = if profile == "default" {
+            state.key == key
+        } else {
+            state.clients.get(profile).map(|access| &access.key) == key.as_ref()
+        };
+        if unchanged {
             return Ok(());
         }
+        if let Some(key) = &key
+            && ((profile != "default"
+                && state
+                    .key
+                    .as_ref()
+                    .is_some_and(|other| same_key(other.expose(), key.expose())))
+                || state
+                    .clients
+                    .iter()
+                    .any(|(id, other)| id != profile && same_key(other.key.expose(), key.expose())))
+        {
+            return Err(ServerError::InvalidConfig);
+        }
         let generation = random_id()?;
-        state.key = key;
-        state.generation = generation;
-        state.sessions.clear();
+        if profile == "default" {
+            state.key = key;
+            state.generation = generation;
+        } else if let Some(key) = key {
+            state
+                .clients
+                .insert(profile.to_owned(), ClientAccess { key, generation });
+        } else {
+            state.clients.remove(profile);
+        }
+        state
+            .sessions
+            .retain(|session| session.binding.profile != profile);
         for active in &state.active {
-            if let Some(cancel) = active.cancel.upgrade() {
+            if active.profile.as_deref() == Some(profile)
+                && let Some(cancel) = active.cancel.upgrade()
+            {
                 cancel.cancel();
             }
         }
@@ -262,19 +481,44 @@ impl Gateway {
     }
 
     pub fn start(self: &Arc<Self>, port: u16) -> Result<local::Server, ServerError> {
-        let (binding, _) = self.current_binding()?;
-        self.store
-            .load_grant(&binding.account)
-            .map_err(|_| ServerError::NeedsLogin)?;
-        if self
-            .state
-            .lock()
-            .map_err(|_| ServerError::Storage)?
-            .key
-            .is_none()
-        {
-            return Err(ServerError::MissingKey);
+        let state = self.state.lock().map_err(|_| ServerError::Storage)?;
+        let mut candidates = Vec::new();
+        if state.key.is_some() {
+            candidates.push(("default", None));
         }
+        for profile in &state.config.profiles {
+            if profile.enabled && state.clients.contains_key(&profile.id) {
+                for allocation in &profile.allocations {
+                    candidates.push((profile.id.as_str(), Some(allocation.alias.as_str())));
+                }
+            }
+        }
+        // An unfinished default profile cannot prevent another complete
+        // profile from starting the shared listener.
+        let mut ready = false;
+        let mut error = self
+            .binding_for(&state, "default", None)
+            .err()
+            .unwrap_or(ServerError::MissingKey);
+        for (profile, alias) in candidates {
+            match self
+                .binding_for(&state, profile, alias)
+                .and_then(|(binding, _)| {
+                    self.store
+                        .load_grant(&binding.account)
+                        .map_err(|_| ServerError::NeedsLogin)
+                }) {
+                Ok(_) => {
+                    ready = true;
+                    break;
+                }
+                Err(failure) => error = failure,
+            }
+        }
+        if !ready {
+            return Err(error);
+        }
+        drop(state);
         let server = local::Server::start(port, self.clone()).map_err(|_| ServerError::Busy)?;
         self.state
             .lock()
@@ -283,13 +527,48 @@ impl Gateway {
         Ok(server)
     }
 
-    fn current_binding(&self) -> Result<(Binding, ModelRoute), ServerError> {
-        let state = self.state.lock().map_err(|_| ServerError::Storage)?;
-        let account = state
-            .config
-            .selected_account
-            .as_ref()
-            .ok_or(ServerError::MissingAccount)?;
+    fn binding_for(
+        &self,
+        state: &State,
+        profile: &str,
+        requested: Option<&str>,
+    ) -> Result<(Binding, ModelRoute), ServerError> {
+        let (account, route_id, alias, generation) = if profile == "default" {
+            (
+                state
+                    .config
+                    .selected_account
+                    .as_ref()
+                    .ok_or(ServerError::MissingAccount)?,
+                state.config.model.as_str(),
+                MODEL_ALIAS,
+                state.generation.clone(),
+            )
+        } else {
+            let client = state
+                .config
+                .profiles
+                .iter()
+                .find(|entry| entry.id == profile && entry.enabled)
+                .ok_or(ServerError::MissingKey)?;
+            let alias = requested.unwrap_or(&client.default_model);
+            let allocation = client
+                .allocations
+                .iter()
+                .find(|entry| entry.alias == alias)
+                .ok_or(ServerError::MissingModel)?;
+            let access = state.clients.get(profile).ok_or(ServerError::MissingKey)?;
+            let generation = state
+                .route_generations
+                .get(&(profile.to_owned(), alias.to_owned()))
+                .ok_or(ServerError::InvalidConfig)?;
+            (
+                &allocation.account,
+                allocation.route.as_str(),
+                allocation.alias.as_str(),
+                format!("{}-{generation}", access.generation),
+            )
+        };
         if state.disabled.contains(account) {
             return Err(ServerError::NeedsLogin);
         }
@@ -305,23 +584,34 @@ impl Gateway {
             .config
             .models
             .iter()
-            .find(|model| model.id == state.config.model && model.provider == summary.provider)
+            .find(|model| model.id == route_id && model.provider == summary.provider)
             .ok_or(ServerError::MissingModel)?
             .clone();
+        if profile == "default"
+            && requested.is_some_and(|model| {
+                model != MODEL_ALIAS && model != route.model_id && model != route.id
+            })
+        {
+            return Err(ServerError::MissingModel);
+        }
         Ok((
             Binding {
-                profile: "default",
+                profile: profile.to_owned(),
+                alias: alias.to_owned(),
                 provider: summary.provider,
                 account: account.clone(),
                 model: route.model_id.clone(),
-                generation: state.generation.clone(),
+                generation,
             },
             route,
         ))
     }
 
-    fn sticky(&self, head: &RequestHead) -> Result<(Binding, ModelRoute, String), ServerError> {
-        let (binding, route) = self.current_binding()?;
+    fn sticky(
+        &self,
+        head: &RequestHead,
+        requested: Option<&str>,
+    ) -> Result<(Binding, ModelRoute, String), ServerError> {
         let name = head
             .header("x-minicon-session")
             .map_err(|_| ServerError::InvalidConfig)?
@@ -335,10 +625,12 @@ impl Gateway {
             return Err(ServerError::InvalidConfig);
         }
         let mut state = self.state.lock().map_err(|_| ServerError::Storage)?;
+        let profile = authorized_profile(&state, head).ok_or(ServerError::MissingKey)?;
+        let (binding, route) = self.binding_for(&state, profile, requested)?;
         if let Some(session) = state
             .sessions
             .iter_mut()
-            .find(|session| session.name == name)
+            .find(|session| session.name == name && session.binding.profile == binding.profile)
         {
             if session.binding != binding {
                 return Err(ServerError::BindingChanged);
@@ -361,10 +653,7 @@ impl Gateway {
         let Ok(state) = self.state.lock() else {
             return false;
         };
-        let Some(key) = &state.key else {
-            return false;
-        };
-        supplied_key(head).is_some_and(|value| same_key(key.expose(), value))
+        authorized_profile(&state, head).is_some()
     }
 
     fn grant(&self, account: &str, cancel: &NetworkHttpCancel) -> Result<TokenGrant, ServerError> {
@@ -657,11 +946,46 @@ impl Gateway {
         context: &RequestContext,
         reply: &mut Reply,
     ) -> Result<(), ServerError> {
-        let (binding, route, upstream_session) = self.sticky(&request.head)?;
         if request.head.path == "/v1/models" {
-            return reply.send(Response { status: 200, content_type: "application/json", body: serde_json::to_vec(&json!({"object":"list","data":[{"id":MODEL_ALIAS,"object":"model","owned_by":"minicon"}],"binding":binding})).map_err(|_| ServerError::InvalidConfig)? }).map_err(|_| ServerError::Cancelled);
+            let state = self.state.lock().map_err(|_| ServerError::Storage)?;
+            let profile =
+                authorized_profile(&state, &request.head).ok_or(ServerError::MissingKey)?;
+            let aliases = if profile == "default" {
+                vec![MODEL_ALIAS]
+            } else {
+                state
+                    .config
+                    .profiles
+                    .iter()
+                    .find(|entry| entry.id == profile)
+                    .ok_or(ServerError::MissingKey)?
+                    .allocations
+                    .iter()
+                    .map(|allocation| allocation.alias.as_str())
+                    .collect()
+            };
+            let data: Vec<_> = aliases
+                .into_iter()
+                .filter(|alias| self.binding_for(&state, profile, Some(alias)).is_ok())
+                .map(|alias| json!({"id":alias,"object":"model","owned_by":"minicon"}))
+                .collect();
+            let binding = self
+                .binding_for(&state, profile, None)
+                .ok()
+                .map(|(binding, _)| binding);
+            let body = serde_json::to_vec(&json!({"object":"list","data":data,"binding":binding}))
+                .map_err(|_| ServerError::InvalidConfig)?;
+            drop(state);
+            return reply
+                .send(Response {
+                    status: 200,
+                    content_type: "application/json",
+                    body,
+                })
+                .map_err(|_| ServerError::Cancelled);
         }
         if request.head.path == "/v1/minicon/binding" {
+            let (binding, _, _) = self.sticky(&request.head, None)?;
             return reply
                 .send(Response {
                     status: 200,
@@ -673,15 +997,12 @@ impl Gateway {
         let downstream = protocol_for(&request.head).ok_or(ServerError::InvalidConfig)?;
         let value: Value = serde_json::from_slice(&request.body)
             .map_err(|_| ServerError::Protocol(protocol::ProtocolError::InvalidJson))?;
-        if value
-            .get("model")
-            .and_then(Value::as_str)
-            .is_some_and(|model| {
-                model != MODEL_ALIAS && model != route.model_id && model != route.id
-            })
-        {
-            return Err(ServerError::MissingModel);
-        }
+        let model = match value.get("model") {
+            None => None,
+            Some(Value::String(model)) => Some(model.as_str()),
+            _ => return Err(ServerError::Protocol(protocol::ProtocolError::InvalidJson)),
+        };
+        let (binding, route, upstream_session) = self.sticky(&request.head, model)?;
         let prepared = protocol::prepare_request(
             downstream,
             route.protocol.protocol(),
@@ -697,7 +1018,12 @@ impl Gateway {
         }
         // The Handler receives &self; retain a lease through a narrow borrowed
         // guard rather than transferring tool or route authority elsewhere.
-        let _lease = BorrowedLease::acquire(self, &binding.account, &cancel, Some(&request.head))?;
+        let _lease = BorrowedLease::acquire(
+            self,
+            &binding.account,
+            &cancel,
+            Some((&request.head, &binding)),
+        )?;
         let grant = self.grant(&binding.account, &cancel)?;
         let identity = self
             .state
@@ -721,7 +1047,7 @@ impl Gateway {
                 downstream,
                 route.protocol.protocol(),
                 &response.body,
-                MODEL_ALIAS,
+                &binding.alias,
             )
             .map_err(ServerError::Protocol)?;
             return reply
@@ -733,7 +1059,7 @@ impl Gateway {
                 .map_err(|_| ServerError::Cancelled);
         }
         upstream.max_response_bytes = protocol::MAX_STREAM_BYTES;
-        let mut bridge = SseBridge::new(downstream, route.protocol.protocol(), MODEL_ALIAS)
+        let mut bridge = SseBridge::new(downstream, route.protocol.protocol(), &binding.alias)
             .map_err(ServerError::Protocol)?
             .with_include_usage(prepared.include_usage);
         let mut error = None;
@@ -802,22 +1128,30 @@ impl<'a> BorrowedLease<'a> {
         gateway: &'a Gateway,
         account: &str,
         cancel: &Arc<NetworkHttpCancel>,
-        head: Option<&RequestHead>,
+        client: Option<(&RequestHead, &Binding)>,
     ) -> Result<Self, ServerError> {
         let mut state = gateway.state.lock().map_err(|_| ServerError::Storage)?;
         if state.disabled.contains(account) {
             return Err(ServerError::NeedsLogin);
         }
-        if head.is_some() && state.draining {
+        if client.is_some() && state.draining {
             return Err(ServerError::Busy);
         }
-        if head.is_some_and(|head| {
-            !state.key.as_ref().is_some_and(|key| {
-                supplied_key(head).is_some_and(|supplied| same_key(key.expose(), supplied))
+        let profile = client
+            .map(|(head, expected)| {
+                let profile = authorized_profile(&state, head).ok_or(ServerError::MissingKey)?;
+                if profile != expected.profile {
+                    return Err(ServerError::BindingChanged);
+                }
+                let (current, _) = gateway.binding_for(&state, profile, Some(&expected.alias))?;
+                // Body preparation is outside this lock. Key/profile/route
+                // changes since resolution must not admit the stale snapshot.
+                if &current != expected || current.account != account {
+                    return Err(ServerError::BindingChanged);
+                }
+                Ok(profile.to_owned())
             })
-        }) {
-            return Err(ServerError::MissingKey);
-        }
+            .transpose()?;
         if state.leases.values().sum::<usize>() >= 8 {
             return Err(ServerError::Busy);
         }
@@ -831,6 +1165,7 @@ impl<'a> BorrowedLease<'a> {
             .retain(|active| active.cancel.strong_count() != 0);
         state.active.push(Active {
             account: account.to_owned(),
+            profile,
             cancel: Arc::downgrade(cancel),
         });
         Ok(Self {
@@ -850,6 +1185,29 @@ impl Drop for BorrowedLease<'_> {
             }
         }
     }
+}
+
+fn authorized_profile<'a>(state: &'a State, head: &RequestHead) -> Option<&'a str> {
+    let supplied = supplied_key(head)?;
+    if state
+        .key
+        .as_ref()
+        .is_some_and(|key| same_key(key.expose(), supplied))
+    {
+        return Some("default");
+    }
+    state
+        .config
+        .profiles
+        .iter()
+        .find(|profile| {
+            profile.enabled
+                && state
+                    .clients
+                    .get(&profile.id)
+                    .is_some_and(|access| same_key(access.key.expose(), supplied))
+        })
+        .map(|profile| profile.id.as_str())
 }
 
 fn account_request(
@@ -1262,6 +1620,9 @@ mod tests {
     }
     impl ServerFixture {
         fn request(&self, path: &str, extra: &str, body: Option<&str>) -> TcpStream {
+            self.request_key(path, "synthetic-local", extra, body)
+        }
+        fn request_key(&self, path: &str, key: &str, extra: &str, body: Option<&str>) -> TcpStream {
             let mut stream = TcpStream::connect(self.server.address()).unwrap();
             stream
                 .set_read_timeout(Some(Duration::from_secs(4)))
@@ -1270,8 +1631,14 @@ mod tests {
                 .set_write_timeout(Some(Duration::from_secs(4)))
                 .unwrap();
             let body = body.unwrap_or("");
-            write!(stream,"{} {path} HTTP/1.1\r\nHost: {}\r\nAuthorization: Bearer synthetic-local\r\n{extra}Content-Length: {}\r\n\r\n{body}",if body.is_empty(){"GET"}else{"POST"},self.server.address(),body.len()).unwrap();
+            write!(stream,"{} {path} HTTP/1.1\r\nHost: {}\r\nAuthorization: Bearer {key}\r\n{extra}Content-Length: {}\r\n\r\n{body}",if body.is_empty(){"GET"}else{"POST"},self.server.address(),body.len()).unwrap();
             stream
+        }
+        fn get_key(&self, path: &str, key: &str, extra: &str) -> String {
+            let mut stream = self.request_key(path, key, extra, None);
+            let mut bytes = Vec::new();
+            stream.read_to_end(&mut bytes).unwrap();
+            String::from_utf8(bytes).unwrap()
         }
         fn get(&self, path: &str, extra: &str) -> String {
             let mut stream = self.request(path, extra, None);
@@ -1432,17 +1799,26 @@ mod tests {
     #[test]
     fn account_lease_is_bounded_and_revoke_cancels_registered_io() {
         let fixture = Fixture::new();
+        let (binding, _, _) = fixture
+            .gateway
+            .sticky(&head("synthetic-local"), None)
+            .unwrap();
         let one = Arc::new(NetworkHttpCancel::new());
         let two = Arc::new(NetworkHttpCancel::new());
         let first = BorrowedLease::acquire(
             &fixture.gateway,
             &fixture.account,
             &one,
-            Some(&head("synthetic-local")),
+            Some((&head("synthetic-local"), &binding)),
         )
         .unwrap();
-        let second =
-            BorrowedLease::acquire(&fixture.gateway, &fixture.account, &two, None).unwrap();
+        let second = BorrowedLease::acquire(
+            &fixture.gateway,
+            &fixture.account,
+            &two,
+            Some((&head("synthetic-local"), &binding)),
+        )
+        .unwrap();
         assert!(matches!(
             BorrowedLease::acquire(
                 &fixture.gateway,
@@ -1462,10 +1838,290 @@ mod tests {
                 &fixture.gateway,
                 &fixture.account,
                 &Arc::new(NetworkHttpCancel::new()),
-                Some(&head("synthetic-local"))
+                Some((&head("synthetic-local"), &binding))
             ),
             Err(ServerError::MissingKey)
         ));
+    }
+
+    fn add_profile(fixture: &Fixture, account: &str) -> String {
+        let id = "a".repeat(32);
+        let mut config = fixture.gateway.state.lock().unwrap().config.clone();
+        config.version = 2;
+        config.profiles.push(ClientProfile {
+            id: id.clone(),
+            label: "Synthetic client".into(),
+            enabled: true,
+            default_model: "work".into(),
+            allocations: vec![ClientAllocation {
+                alias: "work".into(),
+                account: account.to_owned(),
+                route: config.model.clone(),
+            }],
+        });
+        fixture.gateway.update(config).unwrap();
+        fixture
+            .gateway
+            .set_client_key(&id, Some(Secret::new("synthetic-other").unwrap()))
+            .unwrap();
+        id
+    }
+
+    #[test]
+    fn lease_revalidates_the_resolved_binding_after_key_or_route_changes() {
+        for change in ["same-key-generation", "other-profile", "route-change"] {
+            let fixture = Fixture::new();
+            let header = head("synthetic-local");
+            let (binding, _, _) = fixture.gateway.sticky(&header, None).unwrap();
+            match change {
+                "same-key-generation" => {
+                    fixture.gateway.set_key(None).unwrap();
+                    fixture
+                        .gateway
+                        .set_key(Some(Secret::new("synthetic-local").unwrap()))
+                        .unwrap();
+                }
+                "other-profile" => {
+                    let profile = add_profile(&fixture, &fixture.account);
+                    fixture.gateway.set_key(None).unwrap();
+                    fixture
+                        .gateway
+                        .set_client_key(&profile, Some(Secret::new("synthetic-local").unwrap()))
+                        .unwrap();
+                }
+                _ => {
+                    let mut config = fixture.gateway.state.lock().unwrap().config.clone();
+                    config.models[0].url =
+                        "https://opencode.ai/inference/go/openai/v1/chat/completions".into();
+                    fixture.gateway.update(config).unwrap();
+                }
+            }
+            let cancel = Arc::new(NetworkHttpCancel::new());
+            assert!(
+                matches!(
+                    BorrowedLease::acquire(
+                        &fixture.gateway,
+                        &binding.account,
+                        &cancel,
+                        Some((&header, &binding))
+                    ),
+                    Err(ServerError::BindingChanged)
+                ),
+                "stale {change} request acquired upstream authority"
+            );
+            assert!(fixture.gateway.state.lock().unwrap().leases.is_empty());
+        }
+    }
+
+    #[test]
+    fn profile_leases_share_account_capacity_and_revoke_only_their_own_work() {
+        let fixture = Fixture::new();
+        let profile = add_profile(&fixture, &fixture.account);
+        let (binding, _, _) = fixture
+            .gateway
+            .sticky(&head("synthetic-local"), None)
+            .unwrap();
+        let (other, _, _) = fixture
+            .gateway
+            .sticky(&head("synthetic-other"), None)
+            .unwrap();
+        let one = Arc::new(NetworkHttpCancel::new());
+        let two = Arc::new(NetworkHttpCancel::new());
+        let first = BorrowedLease::acquire(
+            &fixture.gateway,
+            &fixture.account,
+            &one,
+            Some((&head("synthetic-local"), &binding)),
+        )
+        .unwrap();
+        let second = BorrowedLease::acquire(
+            &fixture.gateway,
+            &fixture.account,
+            &two,
+            Some((&head("synthetic-other"), &other)),
+        )
+        .unwrap();
+        assert!(matches!(
+            BorrowedLease::acquire(
+                &fixture.gateway,
+                &fixture.account,
+                &Arc::new(NetworkHttpCancel::new()),
+                Some((&head("synthetic-other"), &other))
+            ),
+            Err(ServerError::Busy)
+        ));
+        fixture.gateway.set_key(None).unwrap();
+        assert!(one.is_cancelled());
+        assert!(!two.is_cancelled());
+        drop(first);
+        let probe = Arc::new(NetworkHttpCancel::new());
+        let _probe =
+            BorrowedLease::acquire(&fixture.gateway, &fixture.account, &probe, None).unwrap();
+        fixture.gateway.set_client_key(&profile, None).unwrap();
+        assert!(two.is_cancelled());
+        assert!(!probe.is_cancelled());
+        drop(second);
+    }
+
+    #[test]
+    fn profile_route_changes_are_scoped_and_catalog_reads_do_not_bind_sessions() {
+        let fixture = Fixture::new();
+        let profile = add_profile(&fixture, &fixture.account);
+        let server = fixture.server();
+        let before = server.get("/v1/minicon/binding", "x-minicon-session: stable\r\n");
+        assert!(before.starts_with("HTTP/1.1 200"));
+        for _ in 0..3 {
+            assert!(
+                server
+                    .get_key("/v1/models", "synthetic-other", "")
+                    .contains("\"id\":\"work\"")
+            );
+        }
+        assert_eq!(fixture.gateway.state.lock().unwrap().sessions.len(), 1);
+        let bound = server.get_key(
+            "/v1/minicon/binding",
+            "synthetic-other",
+            "x-minicon-session: stable\r\n",
+        );
+        assert!(bound.starts_with("HTTP/1.1 200"), "{bound}");
+        let mut config = fixture.gateway.state.lock().unwrap().config.clone();
+        let mut alternative = config.models[0].clone();
+        alternative.id = "opencode/alternate/fixture".into();
+        alternative.url = "https://opencode.ai/inference/go/openai/v1/chat/completions".into();
+        config.models.push(alternative.clone());
+        config.profiles[0].allocations[0].route = alternative.id;
+        fixture.gateway.update(config.clone()).unwrap();
+        assert!(
+            server
+                .get_key(
+                    "/v1/minicon/binding",
+                    "synthetic-other",
+                    "x-minicon-session: stable\r\n"
+                )
+                .starts_with("HTTP/1.1 409")
+        );
+        assert_eq!(
+            server.get("/v1/minicon/binding", "x-minicon-session: stable\r\n"),
+            before
+        );
+        let fresh = server.get_key(
+            "/v1/minicon/binding",
+            "synthetic-other",
+            "x-minicon-session: fresh\r\n",
+        );
+        assert!(fresh.starts_with("HTTP/1.1 200"));
+        config.profiles[0].label = "Renamed client".into();
+        fixture.gateway.update(config.clone()).unwrap();
+        assert_eq!(
+            server.get_key(
+                "/v1/minicon/binding",
+                "synthetic-other",
+                "x-minicon-session: fresh\r\n"
+            ),
+            fresh
+        );
+        assert!(matches!(
+            fixture
+                .gateway
+                .set_client_key(&profile, Some(Secret::new("synthetic-local").unwrap())),
+            Err(ServerError::InvalidConfig)
+        ));
+        config.profiles[0].enabled = false;
+        fixture.gateway.update(config).unwrap();
+        assert!(
+            server
+                .get_key("/v1/models", "synthetic-other", "")
+                .starts_with("HTTP/1.1 401")
+        );
+        assert!(server.get("/v1/models", "").starts_with("HTTP/1.1 200"));
+    }
+
+    #[test]
+    fn profile_only_listener_routes_private_grant_and_survives_default_revoke_during_sse() {
+        let fixture = Fixture::new();
+        let account = fixture
+            .gateway
+            .store
+            .insert(
+                "Other synthetic account",
+                TokenGrant {
+                    provider: Provider::OpenCode,
+                    access_token: Secret::new("synthetic-second-provider").unwrap(),
+                    lifecycle: TokenLifecycle::ExpiringRefresh {
+                        refresh_token: Secret::new("synthetic-second-refresh").unwrap(),
+                        expires_at: Instant::now() + Duration::from_secs(3600),
+                    },
+                    organization: None,
+                },
+            )
+            .unwrap();
+        fixture.gateway.store.mark_ready(&account.id).unwrap();
+        add_profile(&fixture, &account.id);
+        let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
+        upstream.set_nonblocking(true).unwrap();
+        *fixture.gateway.fixture_upstream.lock().unwrap() =
+            Some(format!("http://{}/", upstream.local_addr().unwrap()));
+        let (release, wait) = mpsc::channel();
+        thread::scope(|scope| {
+            let peer = scope.spawn(move || {
+                let mut stream = accept_upstream(&upstream);
+                stream.set_nonblocking(false).unwrap();
+                stream.set_read_timeout(Some(Duration::from_secs(4))).unwrap();
+                stream.set_write_timeout(Some(Duration::from_secs(4))).unwrap();
+                let headers = read_headers(&mut stream);
+                assert!(headers.to_lowercase().contains("authorization: bearer synthetic-second-provider\r\n"));
+                assert!(!headers.contains("synthetic-other"));
+                assert!(!headers.contains("synthetic-local"));
+                let length: usize = headers.lines().find_map(|line| line.split_once(':')
+                    .filter(|(key, _)| key.eq_ignore_ascii_case("content-length"))
+                    .map(|(_, value)| value.trim().parse().unwrap())).unwrap();
+                let mut body = vec![0; length];
+                stream.read_exact(&mut body).unwrap();
+                let value: Value = serde_json::from_slice(&body).unwrap();
+                assert_eq!(value["model"], "fixture-wire");
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n{FIRST}", FIRST.len() + END.len()).unwrap();
+                stream.flush().unwrap();
+                wait.recv_timeout(Duration::from_secs(4)).unwrap();
+                stream.write_all(END.as_bytes()).unwrap();
+            });
+            let server = fixture.server();
+            let mut client = server.request_key("/v1/chat/completions", "synthetic-other", "x-minicon-session: independent\r\n",
+                Some(r#"{"model":"work","stream":true,"messages":[{"role":"user","content":"test"}]}"#));
+            assert!(read_headers(&mut client).starts_with("HTTP/1.1 200"));
+            assert_eq!(
+                sse_event(&mut client)["choices"][0]["delta"]["content"],
+                "hello"
+            );
+            fixture.gateway.set_key(None).unwrap();
+            assert!(server.get("/v1/models", "").starts_with("HTTP/1.1 401"));
+            assert!(
+                server
+                    .get_key("/v1/models", "synthetic-other", "")
+                    .contains("\"id\":\"work\"")
+            );
+            release.send(()).unwrap();
+            assert_eq!(
+                sse_event(&mut client)["choices"][0]["finish_reason"],
+                "stop"
+            );
+            let mut tail = Vec::new();
+            client.read_to_end(&mut tail).unwrap();
+            assert_eq!(tail, b"data: [DONE]\n\n");
+            peer.join().unwrap();
+        });
+        fixture.gateway.set_key(None).unwrap();
+        let mut config = fixture.gateway.state.lock().unwrap().config.clone();
+        config.selected_account = None;
+        config.model.clear();
+        let port = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        config.port = port;
+        fixture.gateway.update(config).unwrap();
+        let mut server = fixture.gateway.start(port).unwrap();
+        server.stop();
     }
 
     #[test]
@@ -1607,6 +2263,10 @@ mod tests {
     #[test]
     fn draining_cancels_owned_io_and_refuses_incoming_but_allows_explicit_probe() {
         let fixture = Fixture::new();
+        let (binding, _, _) = fixture
+            .gateway
+            .sticky(&head("synthetic-local"), None)
+            .unwrap();
         let server = fixture.server();
         let network = Arc::new(NetworkHttpCancel::new());
         let lease =
@@ -1619,7 +2279,7 @@ mod tests {
                 &fixture.gateway,
                 &fixture.account,
                 &Arc::new(NetworkHttpCancel::new()),
-                Some(&head("synthetic-local"))
+                Some((&head("synthetic-local"), &binding))
             ),
             Err(ServerError::Busy)
         ));

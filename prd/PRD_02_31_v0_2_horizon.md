@@ -4,6 +4,10 @@ Owner decision, 2026-09-24: `AGENTS.md`'s product-boundary exclusion of "mux"
 and "script runtime, plugin host or Agent permission policy" is narrowed (not
 removed) to admit exactly the two subcommands below. This module is their
 scope statement; dated evidence below records implemented mux/worker scope.
+The owner's 2026-10-25 visual Harness direction is now owned by
+[PRD 36](PRD_02_36_harness_workspace.md). Its robot/overview reservation and
+later built-in task operation are a separately staged extension; the retracted
+GUI-workbench material below remains historical and is not its design owner.
 The 2026-10-24 local model-listener amendment is separately owned by
 [PRD 31.01](PRD_02_31_01_provider_gateway.md), including Harness settings,
 provider accounts and the future llm-gate seam. Legend: `[v]` shipped,
@@ -22,6 +26,7 @@ process-lifetime listener boundary in PRD 31.01; it cannot execute these tools.
 
 ```text
 0.2.x horizon — mux and harness
+├── [_] Robot entry / visual Harness workspace → PRD_02_36_harness_workspace.md
 ├── [_] Local model gateway / Harness settings / manual provider-pool
 │   invariant, evidence, safe failure, dependencies and non-goals: PRD_02_31_01_provider_gateway.md
 │   worker execution remains here; ujs/tinyvm scheduling is future, not first-delivery scope
@@ -241,6 +246,8 @@ flowchart TB
     HAR --> BE["model backends [-] <br/>DeepSeek API · opencode-go"]
     HAR -. planned inference client .-> G["PRD 31.01: loopback model API<br/>manual account binding"]
     EXT[Named local external client] --> G
+    VIS[PRD 36: planned robot / operational workspace] --> HAR
+    VIS --> G
     G --> BE
     G -. cannot invoke .-> TOOLS[Worker-owned file / exec]
     PROC -. "no daemon, manager or plugin host" .-> X["excluded"]
@@ -616,6 +623,11 @@ Two process notes worth keeping, because each cost real time:
   wrapper timeout would have hidden this.
 
 ### harness GUI workbench — RETRACTED 2026-10-07, frozen history below
+
+**Later owner direction (2026-10-25):** a new, separately bounded visual Harness
+workspace is now planned under [PRD 36](PRD_02_36_harness_workspace.md). Read that
+owner for current scope and stage selection. The text below records the earlier
+retraction and rejected alternatives; it is not rewritten as an accepted plan.
 
 **Superseding decision (owner, 2026-10-07):** this entire section is
 retracted along with `harness-manage` {hm} above, for the same reason —

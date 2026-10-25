@@ -7,32 +7,46 @@ existing harness/browser mechanisms are inputs, not qualification of this featur
 Account-auth implementation is now in progress; the owner goal authorizes
 development through public 0.2.23 without changing the evidence requirements.
 
-This module owns Harness settings, provider account identity and authentication,
-the local inference API, and the selection seam for a future `llm-gate`.
-The existing worker's file/exec authority remains in the parent module.
+This module owns provider account identity and authentication, the local
+inference API, and the selection seam for a future `llm-gate`. Its
+[connection-experience child](PRD_02_31_01_01_harness_experience.md) owns Harness
+information architecture, visible state, first use and recovery;
+[provider pool](PRD_02_31_01_02_provider_pool.md) owns multiple accounts,
+per-account networks and keyed client allocation; [monitoring](PRD_02_31_01_03_usage_monitoring.md)
+owns local statistics and provider balance/allowance observations. The existing
+worker's file/exec authority remains in the parent module.
 
 ## Outcome tree DAG
 
 ```text
 Outcome: connect a model account once and use it from MiniCon's worker or a compatible local harness
 ├── [-] SETTINGS — Console / Web / Harness in the existing settings panel
-│   invariant: one Harness route presents listener, accounts, selected model and connection instructions
-│   evidence: public route/focus/state/pixel journey, including a narrow window and failed save
+│   invariant: one Harness route guides account -> verified model -> local tool, with truthful independent states
+│   evidence: PRD 31.01.01 HU-01..09 plus public route/focus/state/pixel journeys
 │   safe failure: keep the prior configuration and terminal draft; show a local actionable error
 │   dependency: workspace controls and additive PRD 26 observations
-│   non-goal: another settings window or an agent workbench
+│   non-goal: another settings window or duplicating PRD 36 task operation in Settings
+│   owner: PRD_02_31_01_01_harness_experience.md (redesign specified; implementation open)
 ├── [-] AUTH — DeepSeek and OpenCode provider identities and usable credentials
 │   invariant: flow availability follows the verified initialization contract; AccountReady requires successful real inference
 │   evidence: dated official contract plus real login/inference/logout and expiry/refresh where the provider supplies them
 │   safe failure: unavailable authentication is BLOCKED; no fabricated OAuth endpoint or successful-login badge
 │   dependency: provider feasibility probe, private platform storage and browser presentation when required
 │   non-goal: calling API-key entry, website cookies or Console MCP authorization model-inference OAuth
-├── [-] POOL — small account registry and manual selection
-│   invariant: an explicit provider/model/account binding stays fixed for a conversation
-│   evidence: two isolated accounts, manual switch, disabled/missing account and continuation refusals
+├── [-] POOL — account registry; multi-account/client allocation redesign open
+│   invariant: separate account/network/profile identities; conversation binding stays fixed
+│   evidence: PRD 31.01.02 PP-01..06; two DeepSeek accounts plus OpenCode Go
 │   safe failure: explain which binding needs repair; never silently use another account or provider
 │   dependency: AUTH and a typed selection contract
 │   non-goal: automatic rotation, load balancing, fallback chains or quota scheduling
+│   owner: PRD_02_31_01_02_provider_pool.md
+├── [_] OBSERVE — local client/account usage and provider balance/allowance
+│   invariant: measured local usage and authoritative remote snapshots retain source and coverage
+│   evidence: PRD 31.01.03 UM-01..06, including stream/cancel and unavailable metadata
+│   safe failure: unknown/stale/partial instead of fabricated zero balance or usage
+│   dependency: POOL identities, response metadata and verified provider read contracts
+│   non-goal: invoices, auto-top-up, scraping or changing a provider's paid overage policy
+│   owner: PRD_02_31_01_03_usage_monitoring.md
 ├── [-] API — explicit process-lifetime loopback model endpoint
 │   invariant: OpenAI Chat Completions and Anthropic Messages expose model inference only
 │   evidence: authenticated text/tool/SSE/cancel round trips and unauthorized/port-conflict/stop black boxes
@@ -57,7 +71,9 @@ Outcome: connect a model account once and use it from MiniCon's worker or a comp
 
 ```mermaid
 flowchart LR
-    S[Settings: Console / Web / Harness] --> A[Account registry and login]
+    S[Settings: Console / Web / Harness] --> UX[PRD 31.01.01: guided connection and recovery]
+    UX --> A[Account registry and login]
+    A --> POOL[PRD 31.01.02: account networks / client keys / allocations]
     A --> V{Verified inference authorization?}
     V -->|no| B[BLOCKED provider auth claim]
     V -->|yes| P[Manual provider/model/account selector]
@@ -65,6 +81,10 @@ flowchart LR
     E[Named external harness] --> G
     G --> C[Protocol adapters and capability validation]
     C --> P
+    POOL --> P
+    G --> OBS[PRD 31.01.03: local request statistics]
+    U --> BAL[Verified provider balance / allowance reads]
+    BAL --> OBS
     P --> U[Provider adapter and private credentials]
     U --> M[Upstream model]
     M -->|text or tool description| G
@@ -85,10 +105,13 @@ provider-pool with DeepSeek and OpenCode account login. Subsequent narrowing:
 **first make the path work**; a future `llm-gate` may schedule through the
 owner's ujs + tinyvm (wasm) dynamic engine.
 
-The first delivery is a small connection product: connect an account, choose
-one model/account, start the endpoint, copy a connection recipe, and complete
-a tool-using task. The pool is an account collection with explicit selection.
-No scheduler or script engine is needed to demonstrate that outcome.
+Owner clarification, 2026-10-25: the product is a provider pool serving several
+local harnesses. Two DeepSeek accounts (one needing a proxy for Google sign-in)
+and one OpenCode Go account are the reference case. Multiple keyed client
+allocations, account-specific network policy and statistics/balance/allowance
+monitoring are selected design scope under the children above. This supersedes
+the earlier single-default-profile and no-monitoring cut. Initial allocation is
+manual; automatic scheduling and the dynamic engine remain later work.
 
 **Transport decision:** HTTP is the model interchange for external clients.
 CLI commands manage or run that same product capability; they do not spawn
@@ -132,35 +155,17 @@ does not inherit the local client key.
 
 ## Settings and first-use journey
 
-All three routes stay in the existing settings panel. Console retains terminal
-and current shared preferences; Web retains browser/proxy preferences. Harness
-owns these sections, in order:
+Owner: [Harness connection experience](PRD_02_31_01_01_harness_experience.md).
+The owner's 2026-10-25 product feedback reopens the experience before public
+0.2.23. That module replaces the earlier listener-first section layout and
+owns the proposed journey, account/model draft and apply behavior, independent
+visible states, authorization result handling and complete client handoff.
+Its `[_]` rows are not implemented merely because the current API works.
 
-| Section | First-delivery behavior |
-| --- | --- |
-| Local API | Stopped/listening/error status, numeric port, explicit Start/Stop, actual base URL and last bounded error |
-| Provider accounts | Add DeepSeek/OpenCode, account label and auth method, login/cancel/reconnect/remove, readiness and selected account |
-| Model | Provider-qualified model ID, explicit account, capability badges derived from the adapter, Apply |
-| Connect a client | OpenAI/Anthropic base URLs and a versioned recipe for the client actually qualified; create/copy/revoke a local client key |
-
-First use: Harness -> Add provider -> supported login -> select model/account
--> Start -> copy recipe -> run the existing worker or the qualified client.
-Enable Login once the supported initialization contract is established; keep
-account readiness pending until its real grant and inference probe succeed.
-Never use guessed endpoints or a successful-login badge for an anonymous
-challenge. The first connection uses provider-generated labels plus a stable
-short account ID to distinguish accounts from the same provider. Custom label
-editing is deferred; diagnostics use opaque account IDs.
-
-Settings opens without a listener, account probe or paid model request. Saving
-configuration does not start the service. A deliberate Connect/Test action may
-perform a small, disclosed inference probe. Provider failures remain in this
-route and do not interrupt terminal input or page navigation.
-
-Use the existing bounded editor, menu, focus and short-window scrolling seams.
-Secrets remain masked, absent from snapshots and diagnostic exports. Copying a
-new local key is an explicit action; connection recipes contain a placeholder
-or environment-variable reference, never an upstream credential.
+The API, auth and resource contracts below remain authoritative. In particular,
+the UI distinction between authorization received and model verified must not
+weaken account admission. Existing first-connection receipts remain scoped to
+their actual source and behavior; they do not qualify the redesigned product.
 
 ## Listener lifecycle and local client credentials
 
@@ -170,7 +175,8 @@ or environment-variable reference, never an upstream credential.
   free. No wildcard bind, LAN mode, tunnel, browser CORS grant or port search.
 - States: `stopped -> starting -> listening -> draining -> stopped`; startup
   and runtime failure enter `error` with a retry action. Start validates the
-  configuration and at least one usable binding before accepting inference.
+  configuration and at least one usable client binding before accepting inference;
+  another incomplete profile cannot disable an unrelated working profile.
 - Changing the port requires Stop first; while listening the field explains
   that step and is not editable. Save the validated port atomically, then
   explicitly Start. A failed save retains the previous configuration; a bind
@@ -185,11 +191,12 @@ or environment-variable reference, never an upstream credential.
   neither attaches to nor starts a second GUI-owned server. A duplicate bind
   fails clearly. Ctrl+C, Stop and process shutdown cancel active work.
 - Every inference and model-list request requires a locally generated client
-  key, independent of upstream credentials. Accept Bearer authorization on
+  profile key, independent of upstream credentials. Accept Bearer authorization on
   OpenAI routes and `x-api-key` on Anthropic routes. Keys identify a local
   client profile and its selected binding; compare without logging the secret.
-  Revocation rejects new requests; active requests drain or cancel within the
-  same stop bound. An invalid key never reaches an upstream or any tool.
+  Revocation rejects that profile's new requests; its active requests drain or
+  cancel within the same stop bound. Other profiles keep working. An invalid
+  key never reaches an upstream or any tool.
 - Check Host against the bound loopback authority, reject browser-origin
   requests, and do not serve credentials/configuration over model HTTP. Local
   management remains a separate private CLI/GUI control path.
@@ -278,12 +285,14 @@ never import other agents' credential files automatically. Existing API-key
 environment overrides remain explicit legacy inputs and are not silently
 added as pooled OAuth accounts.
 
-### Manual pool policy and conversation binding
+### Pool ownership and conversation binding
 
-Store at most 16 provider accounts. The first connection exposes one local client profile, `default`, with explicit create/copy/revoke of its independent key. The schema ceiling is 8 profiles; multi-profile creation and editing are deferred until needed by real client recipes.
-Each client profile selects exactly one `{provider, account, model}` binding.
+Account/profile ceilings, key lifecycle, account-specific proxies, aliases and
+explicit allocations belong to [provider pool](PRD_02_31_01_02_provider_pool.md).
+Each selected profile/model alias resolves to one `{provider, account, model}` binding.
 Its generation also pins the selected catalogue route identity, native protocol,
-endpoint and configured non-secret headers. Changing that route invalidates old
+endpoint, configured non-secret headers and account network-policy generation.
+Changing that route invalidates old
 conversations even when its wire model ID is unchanged; unrelated catalogue
 edits do not invalidate the current route.
 The model listing shows only compatible configured routes for that profile;
@@ -297,10 +306,10 @@ For hosted OpenCode Go, send the provider-required session header through
 the adapter. Never reuse the existing one-global-session constant for every
 client. A client without a stable session signal is limited to a dedicated
 fixed account profile; do not claim arbitrary continuation or live switching.
-Routing metadata is process-local and capped at 256 entries, including the
-dedicated no-session slot. A full table refuses new conversations; it does not
+Routing metadata is process-local and capped at 256 entries globally, including
+each profile's dedicated no-session slot. A full table refuses new conversations; it does not
 evict old bindings and silently recreate their upstream sessions. Mappings
-expire on process exit or client-key replacement, whose generation also changes.
+expire on process exit or that profile's client-key replacement, whose generation also changes.
 No prompts or tool transcripts are persisted by the gateway. A restart loses
 gateway session mappings and requires a new conversation for session-dependent
 providers. The qualification recipe must expose this limit.

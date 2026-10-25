@@ -19,6 +19,7 @@ dev-loop-crosscheck — agent cross-arch dev/test loop
 │   ├── core and UI library tests, including each native ISA kernel
 │   ├── isolated minimal consumer; no workspace feature leakage
 │   ├── [-] provider / worker / HTTP mechanism and real CLI gateway courts (0.2.23)
+│   │   scope: provider/gateway/harness selection includes both default and custom-alias CLI gateway journeys
 │   │   invariant: each named native scope actually executes its selected tests
 │   │   evidence: per-cell suite logs; first hosted dispatch of added scopes pending
 │   │   safe failure: fail that cell and retain logs; absent authorization stays unqualified

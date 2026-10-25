@@ -262,8 +262,8 @@ jobs:
           # This headless CLI court uses a controlled model peer; it proves
           # worker-owned tools and resume binding on this native cell without
           # claiming an OAuth account or hosted-provider entitlement.
-          if [ -z "$filter" ] || [[ "$filter" == *gateway* ]] || [[ "$filter" == *harness* ]]; then
-            run_suite minicon_harness_gateway bash scripts/build.sh test-suite --target "$triple" --test minicon_harness gateway_worker_runs_its_own_tools_and_refuses_changed_resume_binding -- --exact --test-threads 2
+          if [ -z "$filter" ] || [[ "$filter" == *gateway* ]] || [[ "$filter" == *harness* ]] || [[ "$filter" == *provider* ]]; then
+            run_suite minicon_harness_gateway bash scripts/build.sh test-suite --target "$triple" --test minicon_harness gateway_worker_ -- --test-threads 2
           fi
           if [ -z "$filter" ] || [[ "$filter" == *provider* ]]; then
             run_suite minicon-provider bash scripts/build.sh test-suite --target "$triple" --bin minicon provider_ -- --test-threads 2

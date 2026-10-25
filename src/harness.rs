@@ -215,7 +215,11 @@ pub fn run_harness(args: &[String]) -> Result<String, String> {
                 transport,
                 &format!("{}/chat/completions", transport.base),
                 &key,
-                "minicon-selected",
+                &state
+                    .gateway_binding
+                    .as_ref()
+                    .ok_or_else(|| "harness: gateway binding unavailable".to_owned())?
+                    .alias,
                 task,
                 &file_tool,
                 &exec_tool,

@@ -21,6 +21,10 @@ permission policy. Its control endpoint belongs to the GUI process lifetime.
 The bounded `mux`/`harness` subcommands have their own scope in PRD 02.31;
 the planned explicit local model listener is owned by PRD 02.31.01.
 Settings and notes persistence belong to the workspace owner.
+The owner's planned visual Harness direction is owned by PRD 36: a robot entry
+and operational workspace become a core product track while Console/Web
+foundations continue improvement and bug fixing. Its staged scope does not
+grant the AgenTerm/Fleet server authorities excluded above.
 
 ## Markdown-tree DAG PRD
 
@@ -28,7 +32,7 @@ Settings and notes persistence belong to the workspace owner.
 MiniCon — one-file local terminal
 ├── Charter and authority → prd/PRD_02_23_minicon.md
 │   ├── local hosting, bounded resources and explicit failure
-│   └── [no] Agent workbench/server, Fleet, MCP or permission policy
+│   └── [no] AgenTerm/Fleet server, remote execution, MCP or permission policy
 ├── Product composition — binary-private modules
 │   ├── PTY lifecycle, VT/rendering and native presentation
 │   │   └── prd/PRD_02_24_con_terminal.md
@@ -38,11 +42,17 @@ MiniCon — one-file local terminal
 │   ├── tab tree, content panels, composer, IME, selection, notes, settings and manual update
 │   │   └── prd/PRD_02_25_con_workspace.md
 │   │       ├── [v] Browser proxy preferences / Console-Web routes → prd/PRD_02_25_01_browser_preferences.md
-│   │       └── [-] Consistent browser controls → prd/PRD_02_25_02_browser_controls.md
+│   │       ├── [-] Consistent browser controls → prd/PRD_02_25_02_browser_controls.md
+│   │       └── [_] Tab-tree drag / reliable inline editing (0.2.24) → prd/PRD_02_25_03_tab_tree_interactions.md
 │   ├── local CLI, waits, structured snapshots and screenshots
 │   │   └── prd/PRD_02_26_con_control_cli.md
+│   ├── [_] Robot entry / visual Harness operation and monitoring → prd/PRD_02_36_harness_workspace.md
+│   ├── [_] Future cluster / cross-machine coordination → prd/PRD_02_37_cluster_horizon.md
 │   └── bounded mux/harness composition → prd/PRD_02_31_v0_2_horizon.md
 │       └── [-] Harness settings / provider-pool / model API → prd/PRD_02_31_01_provider_gateway.md
+│           ├── [_] Guided connection experience and recovery → prd/PRD_02_31_01_01_harness_experience.md
+│           ├── [-] Multi-account pool / account networks / client allocation → prd/PRD_02_31_01_02_provider_pool.md
+│           └── [_] Usage statistics / balance and allowance monitoring → prd/PRD_02_31_01_03_usage_monitoring.md
 ├── Reusable foundations → prd/PRD_02_28_shared_core.md
 │   ├── minicon-core — shared rules; not a complete terminal engine
 │   ├── minicon-ui-core — host-neutral UI mechanisms with internal ISA kernels
@@ -62,6 +72,7 @@ MiniCon — one-file local terminal
 └── Current delivery
     ├── [v] public v0.2.22 → prd/archive/v0.2.22-release-history.md
     ├── [-] v0.2.23 browser controls and first harness connection → plan/plan-v0.2.23.md
+    ├── [_] v0.2.24 tree drag and inline rename → plan/plan-v0.2.24.md
     ├── current independent tracks → plan/plan-v0.2.x-product-roadmap.md
     └── historical outcomes and receipts → prd/archive/README.md
 ```
@@ -84,7 +95,15 @@ flowchart LR
     WEB --> UX["browser workspace UX<br/>owner acceptance gate / PRD 25"]
     WWEB["Native browser adapters and per-OS qualification"] --> UX
     CTRL["PRD 25.02: browser control consistency"] --> UX
-    GW["PRD 31.01: local model API / manual account pool"] --> AUTH{Verified inference authorization?}
+    TREE["PRD 25.03: next-version tree drag / rename pointer ownership"] --> MC
+    HX["PRD 31.01.01: account -> verified model -> local tool"] --> GW["PRD 31.01: local model API / manual account pool"]
+    GW --> AUTH{Verified inference authorization?}
+    POOL["PRD 31.01.02: account networks / keyed client allocations"] --> GW
+    GW --> MON["PRD 31.01.03: attributed usage / provider balances and quota"]
+    ROB["PRD 36: robot beside Settings / visual Harness workspace"] --> HX
+    POOL & MON --> ROB
+    ROB -. later explicit task operation .-> HC
+    CL["PRD 37: future paired nodes / cross-machine coordination"] -. origin-scoped observations .-> ROB
     AUTH -->|yes| HC[Existing worker and named external client]
     AUTH -->|no| BLOCK[BLOCKED auth claim]
     HC --> D
@@ -141,7 +160,9 @@ flowchart LR
 | Built-in browser surface (not tray) | [Workspace](prd/PRD_02_25_con_workspace.md) + [horizon / minicon-web](prd/PRD_02_31_v0_2_horizon.md) | Tab / content panel; open/load via minicon-web; wry isolated; proxy hook; staged OAuth/dashboard/preview/wasm |
 | Automate what the GUI presents | [Control](prd/PRD_02_26_con_control_cli.md) | catalog, wait, snapshot and PNG black boxes; bounded typed errors |
 | Bounded mux/harness subcommands | [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md) | explicit provider/session contracts; no workbench authority inherited |
-| Connect model accounts to local harnesses | [Provider gateway](prd/PRD_02_31_01_provider_gateway.md) | Development Harness settings, manual pool and OpenAI/Anthropic inference API; DeepSeek development grant/probe evidence; final qualification open; gateway cannot execute tools |
+| Connect model accounts to local harnesses | [Provider gateway](prd/PRD_02_31_01_provider_gateway.md), [connection experience](prd/PRD_02_31_01_01_harness_experience.md) | Development manual pool and model API; guided experience redesign specified after owner feedback, implementation and final qualification open; gateway cannot execute tools |
+| Operate and monitor local Harness work | [Harness workspace](prd/PRD_02_36_harness_workspace.md) | Planned robot entry left of Settings, truthful operational overview and later bounded built-in task operation; stages and native evidence open |
+| Coordinate personal machines in future versions | [Cluster horizon](prd/PRD_02_37_cluster_horizon.md) | Planned explicit pairing/observation, later deliberate task handoff; origin, trust, stale state and two-machine evidence remain open |
 | Embed a reusable terminal library | [Terminal library](prd/PRD_02_35_terminal_library.md) | common state/stream facade; OS/ISA runtime and session composition remain explicit |
 | Abstract and reuse existing mechanisms | [Module/reuse map](prd/PRD_02_28_shared_core.md) | feature graphs, type identity, source boundaries and kernel oracles; keep product policy local |
 | Native developer feedback | [Dev court](prd/PRD_02_32_dev_loop_crosscheck.md) | observed native suite execution; unavailable courts stay BLOCKED |
@@ -152,6 +173,17 @@ flowchart LR
 
 ## Current frontier
 
+- [_] **Visual Harness becomes a core product track.** The owner's 2026-10-25
+  direction selects a robot entry/overview reservation with the current work,
+  then staged visual operation/monitoring. [PRD 36](prd/PRD_02_36_harness_workspace.md)
+  owns the design and [its plan](plan/plan-harness-workspace.md) owns sequencing.
+  Settings forms, the provider pool and monitoring retain their existing owners;
+  Console/Web maintenance and qualification continue.
+- [_] **Next 0.2.x: tab-tree drag and reliable inline rename.** The owner
+  selects this for 0.2.24 under the two-version development/publication goal.
+  [PRD 25.03](prd/PRD_02_25_03_tab_tree_interactions.md) owns the reproduced
+  inside-click failure and proposed subtree/gesture contract;
+  [the plan](plan/plan-v0.2.24.md) sequences rename repair before drag integration.
 - [v] **Public v0.2.22: terminal-to-browser preview and proxy preferences.**
   [Release history](prd/archive/v0.2.22-release-history.md) owns final source,
   signed/Candidate/Defender/public qualification, retained failures and scope.
@@ -165,6 +197,18 @@ flowchart LR
   llm-gate selection seam. The provider owner records a real DeepSeek development grant/inference
   checkpoint; OpenCode and final worker/artifact qualification remain open;
   initial scope is connection, not dynamic scheduling.
+  The owner's 2026-10-25 product feedback reopens the
+  [Harness connection experience](prd/PRD_02_31_01_01_harness_experience.md)
+  before publication; successful machine release preparation does not close
+  that product acceptance gate.
+  Its [provider pool](prd/PRD_02_31_01_02_provider_pool.md) now explicitly includes
+  same-provider accounts, account-specific proxy settings and separate client
+  allocations; [monitoring](prd/PRD_02_31_01_03_usage_monitoring.md) owns local
+  usage and authoritative balance/allowance visibility. These are selected
+  designs with product implementation and evidence still open. The pool owner
+  records a partial private-store/HTTP backend checkpoint for keyed profiles,
+  alias allowlists, isolated sessions/revocation and shared account limits;
+  actual three-account/native UI acceptance remains open.
   [The plan](plan/plan-v0.2.23.md) sequences both branches. Implementation is
   active under the owner's public-0.2.23 goal. Installation remains
   [deferred for coordinated AgenTerm planning](prd/PRD_02_27_01_install.md).
@@ -196,6 +240,17 @@ flowchart LR
   decision. [Current roadmap](plan/plan-v0.2.x-product-roadmap.md) and
   [hygiene sequence](plan/plan-repo-hygiene.md) point to open owners; archiving
   obsolete version proposals neither completes nor abandons their obligations.
+
+## 未来构想
+
+- [_] **MiniCon 群集与跨机联动。** The owner selected this as an important
+  subsequent-version direction on 2026-10-25. [PRD 37](prd/PRD_02_37_cluster_horizon.md#未来构想)
+  owns identity/pairing, cross-node observation, deliberate task handoff and
+  later model/capacity coordination. [Its plan](plan/plan-cluster-horizon.md)
+  makes the concrete node/observation design the next planning milestone;
+  current 0.2.23 does not claim or silently require cluster implementation.
+  The [Harness dashboard](prd/PRD_02_36_harness_workspace.md) is its future
+  operating surface; unsupported remote actions remain unavailable.
 
 ## History and evidence
 

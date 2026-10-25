@@ -97,6 +97,22 @@ ATC1 tab-control verbs or a second route to local tools. Freeze actual schema
 and register command identities during implementation, not in this planning
 change. Behavior belongs to [PRD 31.01](PRD_02_31_01_provider_gateway.md).
 
+`[_]` The [Harness workspace](PRD_02_36_harness_workspace.md) additionally needs
+an explicit active host-view identity, robot geometry/selected state, typed
+Settings deep-link/return targets and opaque account/profile/request selections.
+Qualify paint, hits, focus and CLI input against the same active view; a hidden
+selected terminal is not an input target while Harness owns focus. Later task
+observations distinguish owned built-in runs from externally observed model
+requests and expose only the evidence-supported lifecycle. Freeze/register the
+actual additive schema with implementation; this prose adds no public verb.
+
+`[_]` [PRD 25.03](PRD_02_25_03_tab_tree_interactions.md) needs additive rename
+caret/selection/focus and tree-drag phase/source/target/validity geometry for
+the next 0.2.x version. Existing `send-ui-mouse` press/move/release must observe
+the production gesture path. Freeze/register actual schemas with implementation;
+no new move verb is advertised by this planning entry. The retained old-source
+inside-click reproduction is an input baseline, not evidence of a repair.
+
 ### Existing command evidence
 
 - [-] `docs/control-cli.html` is the public mirror of this section's command set

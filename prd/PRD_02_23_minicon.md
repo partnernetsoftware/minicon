@@ -21,6 +21,8 @@ Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
 | 26 | [Control protocol and public CLI](PRD_02_26_con_control_cli.md) | `minicon cli`、`ATC1` 帧、JSON 契约、快照/截图证据 |
 | 27 | [Package, budget and delivery](PRD_02_27_con_delivery.md) | 独立 package、unwind profile、APE join、按平台/目标陈述体积与宿主 RSS、独立 CI、加载期可移植性 |
 | 28 | [Shared core and reuse boundary](PRD_02_28_shared_core.md) | `minicon-core`、跨产品复用的可测边界、与 agenterm 的依赖方向分期 |
+| 36 | [Harness dashboard](PRD_02_36_harness_workspace.md) | Planned robot entry, visual local operation/monitoring and staged task lifecycle |
+| 37 | [Cluster horizon](PRD_02_37_cluster_horizon.md) | Future paired-node observation and explicit cross-machine coordination |
 
 ## Map
 
@@ -32,6 +34,7 @@ minicon — one-file local terminal (product root)
 │   ├── Distribution priority — native product; APE packaging demonstration
 │   ├── Explicit non-goals and the narrowed mux/harness exception
 │   └── [_] Explicit local model listener exception → PRD_02_31_01_provider_gateway.md
+│       [_] Visual Harness direction → PRD 36; future cluster direction → PRD 37
 ├── Governing invariants
 ├── Observable success evidence
 ├── Safe failure result
@@ -51,6 +54,8 @@ flowchart TB
     ROOT --> D["[27] Package, budget and delivery"]
     ROOT --> S["[28] Shared core and reuse boundary"]
     ROOT --> G["[31.01] Planned local model gateway<br/>no remote tool execution"]
+    ROOT --> H["[36] Planned Harness dashboard"]
+    FUT["[37] Future paired-node coordination"] -. separately staged authority .-> H
     ROOT -. "capability sinks into" .-> MC["MiniCon"]
     ROOT -. "plugin / app gathers in" .-> AG["agenterm (workbench)"]
     MC -. "versioned capability contract" .- AG
@@ -108,6 +113,10 @@ post-0.2.21 installation work are owned by
 
 ### Explicit non-goals
 
+The current local-product exclusions below retain their force. Later dated
+owner directions admit only their named planned scope; a future PRD does not
+turn a current endpoint into remote execution authority.
+
 - [v] no background server, Fleet authority, persistent workspace, remote mux,
   MCP, script runtime, task engine, or general plugin host. The no-script
   boundary is enforced in the binary rather than by convention: `--script`,
@@ -161,6 +170,31 @@ post-0.2.21 installation work are owned by
   connection and account selection. Future llm-gate/ujs/tinyvm scheduling is
   a separate horizon, not a runtime added by this amendment. Behavior, auth
   feasibility and evidence: [PRD 31.01](PRD_02_31_01_provider_gateway.md).
+- **Clarification (2026-10-25, owner direction; planned).** The admitted model
+  capability includes multiple accounts, account-specific proxies and local
+  harness allocations through independent client profiles, plus bounded local
+  statistics and provider-authoritative balance/allowance monitoring. Owners:
+  [provider pool](PRD_02_31_01_02_provider_pool.md) and
+  [monitoring](PRD_02_31_01_03_usage_monitoring.md). Tool execution remains with
+  each harness; monitoring adds no payment administration or automatic routing.
+- **New direction (2026-10-25, owner decision; planned).** Reserve a robot
+  icon immediately left of Settings and establish a visual Harness operation/
+  monitoring workspace as a future core MiniCon product track. Console and Web
+  continue foundation improvement and bug fixing. The new
+  [Harness workspace owner](PRD_02_36_harness_workspace.md) narrows the earlier
+  blanket GUI-workbench exclusion for this explicit direction: current entry,
+  truthful account/client/usage overview and Settings links, then separately
+  staged local built-in task operation. It grants no Fleet authority, remote
+  execution, MCP/plugin host, background daemon or control over arbitrary
+  external harness processes. The historical GUI retraction remains history;
+  it does not veto this later direction or silently re-enable its old proposals.
+- **Future direction (2026-10-25, owner decision; planned).** Add MiniCon
+  cluster/cross-machine coordination to the future product roadmap, with node
+  identity/trust and observation designed promptly for subsequent versions.
+  [PRD 37](PRD_02_37_cluster_horizon.md#未来构想) owns that separate staged scope.
+  Current loopback, GUI control and local file/exec authority do not widen merely
+  because the future design exists; paired observation and remote task operation
+  require their own selected contracts and real two-machine qualification.
 
 ## Governing invariants
 

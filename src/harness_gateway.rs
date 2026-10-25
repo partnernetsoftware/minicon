@@ -20,6 +20,8 @@ pub struct Binding {
     pub provider: String,
     pub account: String,
     pub model: String,
+    #[serde(default = "legacy_model_alias")]
+    pub alias: String,
     pub generation: String,
     pub session: String,
 }
@@ -30,7 +32,13 @@ struct RemoteBinding {
     provider: String,
     account: String,
     model: String,
+    #[serde(default = "legacy_model_alias")]
+    alias: String,
     generation: String,
+}
+
+fn legacy_model_alias() -> String {
+    "minicon-selected".into()
 }
 
 pub fn validate_url(value: &str) -> Result<String, String> {
@@ -84,6 +92,7 @@ impl GatewayTransport {
             &binding.provider,
             &binding.account,
             &binding.model,
+            &binding.alias,
             &binding.generation,
         ] {
             if field.is_empty() || field.len() > 512 || field.chars().any(char::is_control) {
@@ -96,6 +105,7 @@ impl GatewayTransport {
             provider: binding.provider,
             account: binding.account,
             model: binding.model,
+            alias: binding.alias,
             generation: binding.generation,
             session: self.session.clone(),
         })

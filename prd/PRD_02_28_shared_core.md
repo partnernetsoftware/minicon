@@ -39,8 +39,13 @@ Outcome: maintain one terminal implementation with explicit reusable boundaries
 ├── Product composition — src/; behavior owners PRD_02_24 / 25 / 26 / 31
 │   ├── terminal lifecycle and painting; no exported terminal-engine crate yet
 │   ├── tabs, composer routing, notes, settings and update policy
+│   │   └── [_] robot / Harness host destination / operational projection → PRD 36
+│   │       [_] future origin-scoped node observation / task handoff → PRD 37
 │   └── control CLI, mux and harness composition
-│       └── [_] product-private model gateway / manual account selection → PRD 31.01
+│       └── [-] product-private model gateway / manual account selection → PRD 31.01
+│           ├── [_] connection journey / state projection / recovery → PRD 31.01.01
+│           ├── [-] account-specific networks / keyed client allocation → PRD 31.01.02
+│           └── [_] usage receipts / balance and allowance monitoring → PRD 31.01.03
 ├── Reusable rules — crates/minicon-core
 │   └── click / composer / json / keymap / numeric / tree / version
 │       no ISA branches or native backend dependency; one legacy OS helper
@@ -167,7 +172,38 @@ than duplicating the full platform feature catalog.
 | `src/workspace.rs`, `ui.rs`, `rename.rs`, `notes.rs`, `session_store.rs`, `update*.rs`, `browser.rs`, `browser_ui.rs`, `browser_process.rs` | Tab identity, layout, editable surfaces, persistence, manual update policy; `browser.rs` re-exports `minicon_web`, `browser_ui.rs` owns product address/focus/state and pointer editing through core composer/click rules; Linux-only `browser_process.rs` owns bounded parent pipe transport | Product composition; native WebView calls and anonymous executable carrier stay in `minicon-web`; parent process transport is GUI-only | Do not export product state merely because a helper is pure; browser shell owner [workspace](PRD_02_25_con_workspace.md); wry isolation [horizon](PRD_02_31_v0_2_horizon.md) |
 | `src/control*.rs`, `snapshot.rs`, `agent_interface.rs`, `cli.rs` | Public CLI/protocol and local observation/control composition | Shared product protocol over native IPC/input/screenshot mechanisms | A CLI contract is not a reusable Rust crate; owner [control](PRD_02_26_con_control_cli.md) |
 | `src/mux.rs`, `harness*.rs` | Bounded mux/harness subcommands | Product policy over native mechanisms and transport | Keep provider/session policy out of reusable native crates; owner [0.2.x horizon](PRD_02_31_v0_2_horizon.md) |
-| `src/provider_*.rs` and settings integration (implementation in progress) | Product-private single-turn request/events, model protocol adapters, account registry, manual selector and loopback API; existing worker and named external client are consumers | Protocol/selection policy is OS/ISA-neutral; bounded streaming HTTP, private storage, listener/cancel and child-process mechanisms use platform capability seams; login presentation uses minicon-web only when needed | Owner [provider gateway](PRD_02_31_01_provider_gateway.md); headless serve initializes no GUI/WebView, while native GUI binaries may still link wry. Standalone mechanism consumers remain WebView-free. Extract native mechanisms only when a concrete contract needs them; no new public provider crate or ujs/tinyvm dependency in the first delivery. Auth, client and native target evidence remain separately scoped |
+| `src/provider_*.rs` and settings integration (implementation in progress) | Product-private single-turn request/events, model protocol adapters, account registry, manual selector and loopback API; existing worker and named external client are consumers. Planned journey/state projection and draft/apply composition stay in product settings/runtime code | Protocol/selection and experience projection are OS/ISA-neutral; bounded streaming HTTP, private storage, listener/cancel and child-process mechanisms use platform capability seams; login presentation uses minicon-web only when needed | Owners [provider gateway](PRD_02_31_01_provider_gateway.md) and [connection experience](PRD_02_31_01_01_harness_experience.md); headless serve initializes no GUI/WebView, while native GUI binaries may still link wry. Standalone mechanism consumers remain WebView-free. Extract native mechanisms only when a concrete contract needs them; no new public provider crate or ujs/tinyvm dependency in the first delivery. Auth, client and native target evidence remain separately scoped |
+
+Provider account labels/network policies, profile keys/allocations, usage
+attribution, persistence budgets and monitoring policy remain MiniCon-owned
+composition under [PRD 31.01.02](PRD_02_31_01_02_provider_pool.md) and
+[PRD 31.01.03](PRD_02_31_01_03_usage_monitoring.md). Existing native HTTP proxy
+and minicon-web storage/proxy primitives are mechanisms to qualify, not evidence
+of per-account isolation. Any missing native context capability belongs in
+minicon-web/platform; do not implement product account state in those crates or
+add an independent browser/agent runtime for this design.
+
+The planned [Harness workspace](PRD_02_36_harness_workspace.md) adds product-owned
+host destination/return state, settings deep links and operational projections
+over those same runtimes. Initial native chrome/layout/hits reuse the current
+host UI mechanisms; a design HTML preview is not a new shipped renderer. Later
+built-in task operation consumes a bounded worker event/lifecycle seam instead
+of adding another agent loop or depending on AgenTerm product state. Native
+focus/page visibility and ISA/scale evidence remain explicit shared mechanisms.
+
+The next-version [tab-tree interaction owner](PRD_02_25_03_tab_tree_interactions.md)
+keeps subtree move intents, kind/drop rules and event ownership in product
+`workspace.rs`/`rename.rs`/host composition. Reuse shared typed topology, bounded
+field editing, pointer capture and geometry mechanisms. Do not extract a new
+tree framework or place MiniCon tab policy in native adapters; qualify paint,
+hits, input and session preservation through MiniCon's actual consumer.
+
+The [cluster horizon](PRD_02_37_cluster_horizon.md) reserves product-owned node
+identity, pairing/authority, origin-scoped projection and operation reconciliation.
+Audit reusable transport/identity/storage mechanisms at C0 before implementation;
+the current local control/model APIs are not a remote authorization contract.
+Node/account policy and the dashboard must not migrate into shared native crates
+or depend on AgenTerm Fleet state. No cluster mechanism is exported by this plan.
 
 MiniCon consumes its crates through workspace paths. External products consume
 `minicon-platform` and `minicon-ui-core` through immutable full Git revisions;

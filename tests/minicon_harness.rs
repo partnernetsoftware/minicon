@@ -70,6 +70,15 @@ fn stderr_of(output: &Output) -> String {
 /// resume identity. The fixture is a model endpoint, never a tool executor.
 #[test]
 fn gateway_worker_runs_its_own_tools_and_refuses_changed_resume_binding() {
+    gateway_worker_journey(None);
+}
+
+#[test]
+fn gateway_worker_uses_custom_profile_alias_for_tools_and_resume() {
+    gateway_worker_journey(Some("work"));
+}
+
+fn gateway_worker_journey(alias: Option<&'static str>) {
     use std::{
         io::{Read, Write},
         net::TcpListener,
@@ -157,13 +166,17 @@ fn gateway_worker_runs_its_own_tools_and_refuses_changed_resume_binding() {
             let mut observed = observed_worker.lock().unwrap();
             observed.1.push(session);
             let reply = if head.starts_with("GET /v1/minicon/binding ") {
-                serde_json::json!({"profile":"default", "provider":"deepseek",
+                let mut binding = serde_json::json!({"profile":if alias.is_some() { "synthetic-custom-client" } else { "default" }, "provider":"deepseek",
                     "account":if changed_worker.load(Ordering::Acquire) {"account-b"} else {"account-a"},
-                    "model":"fixture-model", "generation":"fixture-generation"})
+                    "model":"fixture-model", "generation":"fixture-generation"});
+                if let Some(alias) = alias {
+                    binding["alias"] = alias.into();
+                }
+                binding
             } else {
                 assert!(head.starts_with("POST /v1/chat/completions "), "{head}");
                 let request: serde_json::Value = serde_json::from_slice(&body).unwrap();
-                assert_eq!(request["model"], "minicon-selected");
+                assert_eq!(request["model"], alias.unwrap_or("minicon-selected"));
                 observed.0 += 1;
                 if observed.0 == 1 {
                     #[cfg(windows)]
@@ -217,6 +230,18 @@ fn gateway_worker_runs_its_own_tools_and_refuses_changed_resume_binding() {
         )
     };
     let first = invoke(false);
+    if alias.is_none() && first.status.success() {
+        // The default profile must also resume sessions saved before the
+        // additive alias field existed, rather than treating them as corrupt.
+        let path = root.join(".minicon-harness-sessions/bound-session.json");
+        let mut saved: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        saved["gateway_binding"]
+            .as_object_mut()
+            .unwrap()
+            .remove("alias");
+        std::fs::write(path, serde_json::to_vec(&saved).unwrap()).unwrap();
+    }
     let second = invoke(true);
     changed.store(true, Ordering::Release);
     let third = invoke(true);

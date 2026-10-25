@@ -100,6 +100,7 @@ pub enum RuntimeError {
     Corrupt,
     MissingAccount,
     MissingModel,
+    CatalogConflict,
     MissingClientKey,
     NeedsLogin,
     WorkerUnavailable,
@@ -344,6 +345,13 @@ impl Owner {
         );
         let gateway = Gateway::new(store.clone(), config.clone(), clone_secret(key.as_ref())?)
             .map_err(map_server)?;
+        for profile in &config.profiles {
+            if let Some(key) = read_key_path(&root.join(format!("client-key-{}", profile.id)))? {
+                gateway
+                    .set_client_key(&profile.id, Some(key))
+                    .map_err(map_server)?;
+            }
+        }
         let mut owner = Self {
             root,
             store,
@@ -360,6 +368,12 @@ impl Owner {
     }
     fn refresh_view(&mut self) -> Result<(), RuntimeError> {
         self.view.accounts = self.store.list().map_err(|_| RuntimeError::Storage)?;
+        let provider = self
+            .view
+            .accounts
+            .iter()
+            .find(|account| Some(&account.id) == self.config.selected_account.as_ref())
+            .map(|account| account.provider);
         self.view.port = self.config.port;
         self.view.selected_account = self.config.selected_account.clone();
         self.view.model = self.config.model.clone();
@@ -367,6 +381,7 @@ impl Owner {
             .config
             .models
             .iter()
+            .filter(|route| Some(route.provider) == provider)
             .map(|route| route.id.clone())
             .collect();
         self.view.local_key_exists = self.key.is_some();
@@ -376,9 +391,12 @@ impl Owner {
     fn save(&mut self, config: Config) -> Result<(), RuntimeError> {
         config.validate().map_err(map_server)?;
         let bytes = serde_json::to_vec(&config).map_err(|_| RuntimeError::Corrupt)?;
-        filesystem::write_private_atomic(&self.root.join("gateway.json"), &bytes)
-            .map_err(|_| RuntimeError::Storage)?;
-        self.gateway.update(config.clone()).map_err(map_server)?;
+        self.gateway
+            .update_and_publish(config.clone(), || {
+                filesystem::write_private_atomic(&self.root.join("gateway.json"), &bytes)
+                    .map_err(|_| ServerError::Storage)
+            })
+            .map_err(map_server)?;
         self.config = config;
         self.refresh_view()
     }
@@ -402,6 +420,59 @@ impl Owner {
         self.view.listener = ListenerState::Stopped;
         self.view.actual_port = None;
     }
+    fn apply_catalog(
+        &mut self,
+        account: &str,
+        models: Vec<ModelRoute>,
+    ) -> Result<(), RuntimeError> {
+        // A provider's catalogue IDs are not identities shared by accounts.
+        // Until catalogues have account-scoped ownership, refuse a conflicting
+        // refresh atomically rather than rewrite another client's applied route.
+        if models.iter().any(|model| {
+            self.config.models.iter().any(|old| {
+                old.id == model.id
+                    && old != model
+                    && self.config.profiles.iter().any(|profile| {
+                        profile.allocations.iter().any(|allocation| {
+                            allocation.route == old.id && allocation.account != account
+                        })
+                    })
+            })
+        }) {
+            return Err(RuntimeError::CatalogConflict);
+        }
+        let mut config = self.config.clone();
+        if !models.iter().any(|route| route.id == config.model) {
+            config.model.clear();
+        }
+        let allocated: std::collections::HashSet<_> = config
+            .profiles
+            .iter()
+            .flat_map(|profile| {
+                profile
+                    .allocations
+                    .iter()
+                    .map(|allocation| &allocation.route)
+            })
+            .collect();
+        let provider = self
+            .view
+            .accounts
+            .iter()
+            .find(|entry| entry.id == account)
+            .map(|entry| entry.provider);
+        config
+            .models
+            .retain(|route| Some(route.provider) != provider || allocated.contains(&route.id));
+        for model in models {
+            if let Some(route) = config.models.iter_mut().find(|route| route.id == model.id) {
+                *route = model;
+            } else {
+                config.models.push(model);
+            }
+        }
+        self.save(config)
+    }
     fn poll_operation(&mut self) {
         if !self
             .operation
@@ -419,12 +490,7 @@ impl Owner {
             Ok(OperationResult::Catalog(models))
                 if self.config.selected_account.as_deref() == Some(&operation.account) =>
             {
-                let mut config = self.config.clone();
-                config.models = models;
-                if !config.models.iter().any(|route| route.id == config.model) {
-                    config.model.clear();
-                }
-                self.save(config)
+                self.apply_catalog(&operation.account, models)
             }
             Ok(OperationResult::Catalog(_)) => Err(RuntimeError::InvalidAction),
             Ok(OperationResult::Tested) => {
@@ -579,7 +645,6 @@ impl Owner {
                 }
                 let mut config = self.config.clone();
                 config.selected_account = Some(id);
-                config.models.clear();
                 config.model.clear();
                 self.save(config)?;
             }
@@ -587,7 +652,7 @@ impl Owner {
                 if self.operation.is_some() {
                     return Err(RuntimeError::Busy);
                 }
-                if !self.config.models.iter().any(|route| route.id == id) {
+                if !self.view.models.contains(&id) {
                     return Err(RuntimeError::MissingModel);
                 }
                 let mut config = self.config.clone();
@@ -747,7 +812,10 @@ fn clone_secret(secret: Option<&Secret>) -> Result<Option<Secret>, RuntimeError>
         .transpose()
 }
 fn read_key(root: &Path) -> Result<Option<Secret>, RuntimeError> {
-    match filesystem::read_private_bounded(&root.join("client-key"), 256) {
+    read_key_path(&root.join("client-key"))
+}
+fn read_key_path(path: &Path) -> Result<Option<Secret>, RuntimeError> {
+    match filesystem::read_private_bounded(path, 256) {
         Ok(bytes) => Secret::new(&String::from_utf8(bytes).map_err(|_| RuntimeError::Corrupt)?)
             .map(Some)
             .map_err(|_| RuntimeError::Corrupt),
@@ -814,7 +882,14 @@ mod tests {
         }
     }
     fn until(runtime: &mut Runtime, condition: impl Fn(&View) -> bool) -> Vec<Effect> {
-        let deadline = Instant::now() + Duration::from_secs(5);
+        until_with_timeout(runtime, Duration::from_secs(5), condition)
+    }
+    fn until_with_timeout(
+        runtime: &mut Runtime,
+        timeout: Duration,
+        condition: impl Fn(&View) -> bool,
+    ) -> Vec<Effect> {
+        let deadline = Instant::now() + timeout;
         let mut effects = Vec::new();
         loop {
             effects.extend(runtime.poll());
@@ -830,6 +905,342 @@ mod tests {
         }
     }
     #[test]
+    fn client_profiles_load_private_keys_and_keep_sessions_and_revocation_isolated() {
+        use crate::provider_auth::{TokenGrant, TokenLifecycle};
+        use crate::provider_server::{Config, ModelRoute, WireProtocol};
+        use std::io::{Read, Write};
+        use std::net::{TcpListener, TcpStream};
+
+        let root = Root::new();
+        prepare_root(&root.0).unwrap();
+        let store = AccountStore::new(root.0.join("accounts")).unwrap();
+        let mut accounts = Vec::new();
+        for (label, provider) in [
+            ("DeepSeek A", Provider::DeepSeek),
+            ("DeepSeek B", Provider::DeepSeek),
+            ("OpenCode Go C", Provider::OpenCode),
+        ] {
+            let account = store
+                .insert(
+                    label,
+                    TokenGrant {
+                        provider,
+                        access_token: Secret::new("synthetic-provider").unwrap(),
+                        lifecycle: match provider {
+                            Provider::DeepSeek => TokenLifecycle::OpaqueUntilRejected,
+                            Provider::OpenCode => TokenLifecycle::ExpiringRefresh {
+                                refresh_token: Secret::new("synthetic-refresh").unwrap(),
+                                expires_at: Instant::now() + Duration::from_secs(3600),
+                            },
+                        },
+                        organization: None,
+                    },
+                )
+                .unwrap();
+            store.mark_ready(&account.id).unwrap();
+            accounts.push(account);
+        }
+        let mut config = Config::fresh().unwrap();
+        config.port = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        config.selected_account = Some(accounts[0].id.clone());
+        config.model = "deepseek/model".into();
+        config.models = vec![
+            ModelRoute {
+                id: "deepseek/model".into(),
+                model_id: "ds-model".into(),
+                provider: Provider::DeepSeek,
+                protocol: WireProtocol::Messages,
+                url: "https://api.deepseek.com/anthropic/v1/messages".into(),
+                headers: vec![],
+            },
+            ModelRoute {
+                id: "opencode/model".into(),
+                model_id: "go-model".into(),
+                provider: Provider::OpenCode,
+                protocol: WireProtocol::Chat,
+                url: "https://opencode.ai/inference/go/openai/v1/chat/completions".into(),
+                headers: vec![],
+            },
+        ];
+        let first_profile = "b".repeat(32);
+        let second_profile = "c".repeat(32);
+        let mut value = serde_json::to_value(&config).unwrap();
+        value["version"] = 2.into();
+        value["profiles"] = serde_json::json!([
+            {"id":first_profile,"label":"Pi","enabled":true,"default_model":"work",
+             "allocations":[{"alias":"work","account":accounts[1].id,"route":"deepseek/model"}]},
+            {"id":second_profile,"label":"Go client","enabled":true,"default_model":"coding",
+             "allocations":[{"alias":"coding","account":accounts[2].id,"route":"opencode/model"}]}
+        ]);
+        filesystem::write_private_atomic(
+            &root.0.join("gateway.json"),
+            &serde_json::to_vec(&value).unwrap(),
+        )
+        .unwrap();
+        for (profile, key) in [
+            ("default".to_owned(), "synthetic-default"),
+            (first_profile.clone(), "synthetic-pi"),
+            (second_profile.clone(), "synthetic-go"),
+        ] {
+            let name = if profile == "default" {
+                "client-key".to_owned()
+            } else {
+                format!("client-key-{profile}")
+            };
+            filesystem::write_private_atomic(&root.0.join(name), key.as_bytes()).unwrap();
+        }
+        // Real private-store/runtime/listener composition, using synthetic
+        // ready accounts only. No provider inference or clipboard operation.
+        let owner = Owner::load(root.0.clone()).unwrap();
+        let mut server = owner.gateway.start(config.port).unwrap();
+        let request = |path: &str, key: &str, body: Option<&str>| {
+            let mut stream = TcpStream::connect(server.address()).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(4)))
+                .unwrap();
+            let body = body.unwrap_or("");
+            write!(stream, "{} {path} HTTP/1.1\r\nHost: {}\r\nAuthorization: Bearer {key}\r\nx-minicon-session: same-name\r\nContent-Length: {}\r\n\r\n{body}", if body.is_empty() { "GET" } else { "POST" }, server.address(), body.len()).unwrap();
+            let mut bytes = Vec::new();
+            stream.read_to_end(&mut bytes).unwrap();
+            String::from_utf8(bytes).unwrap()
+        };
+        for (key, profile, account, model) in [
+            ("synthetic-default", "default", &accounts[0].id, "ds-model"),
+            (
+                "synthetic-pi",
+                first_profile.as_str(),
+                &accounts[1].id,
+                "ds-model",
+            ),
+            (
+                "synthetic-go",
+                second_profile.as_str(),
+                &accounts[2].id,
+                "go-model",
+            ),
+        ] {
+            let response = request("/v1/minicon/binding", key, None);
+            assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+            let binding: serde_json::Value =
+                serde_json::from_str(response.split_once("\r\n\r\n").unwrap().1).unwrap();
+            assert_eq!(binding["profile"], profile);
+            assert_eq!(binding["account"], account.as_str());
+            assert_eq!(binding["model"], model);
+        }
+        let models = request("/v1/models", "synthetic-pi", None);
+        let models: serde_json::Value =
+            serde_json::from_str(models.split_once("\r\n\r\n").unwrap().1).unwrap();
+        assert_eq!(models["data"][0]["id"], "work");
+        assert_eq!(models["data"].as_array().unwrap().len(), 1);
+        let denied = request(
+            "/v1/chat/completions",
+            "synthetic-pi",
+            Some(r#"{"model":"opencode/model","messages":[{"role":"user","content":"denied"}]}"#),
+        );
+        assert!(denied.starts_with("HTTP/1.1 400"), "{denied}");
+        assert!(denied.contains("model_unavailable"), "{denied}");
+        owner.gateway.set_key(None).unwrap();
+        assert!(request("/v1/models", "synthetic-default", None).starts_with("HTTP/1.1 401"));
+        assert!(request("/v1/minicon/binding", "synthetic-pi", None).starts_with("HTTP/1.1 200"));
+        assert!(request("/v1/minicon/binding", "synthetic-go", None).starts_with("HTTP/1.1 200"));
+        server.stop();
+    }
+
+    #[test]
+    fn switching_default_account_and_refreshing_catalog_preserves_allocated_routes() {
+        use crate::provider_server::{ClientAllocation, ClientProfile};
+        let root = Root::new();
+        let (mut owner, account) = seed_ready(&root);
+        let other = owner
+            .store
+            .insert(
+                "Other synthetic account",
+                crate::provider_auth::TokenGrant {
+                    provider: Provider::OpenCode,
+                    access_token: Secret::new("synthetic-other-access").unwrap(),
+                    lifecycle: crate::provider_auth::TokenLifecycle::ExpiringRefresh {
+                        refresh_token: Secret::new("synthetic-other-refresh").unwrap(),
+                        expires_at: Instant::now() + Duration::from_secs(3600),
+                    },
+                    organization: None,
+                },
+            )
+            .unwrap();
+        owner.store.mark_ready(&other.id).unwrap();
+        let mut config = owner.config.clone();
+        config.version = 2;
+        config.profiles.push(ClientProfile {
+            id: "a".repeat(32),
+            label: "Keep working".into(),
+            enabled: true,
+            default_model: "work".into(),
+            allocations: vec![ClientAllocation {
+                alias: "work".into(),
+                account,
+                route: config.model.clone(),
+            }],
+        });
+        owner.save(config).unwrap();
+        let mut login = LoginCoordinator::new(
+            owner.store.clone(),
+            LoginMetadata {
+                version: "fixture".into(),
+                locale: "en".into(),
+                timezone_offset_seconds: 0,
+            },
+        );
+        owner
+            .action(Action::SelectAccount(other.id.clone()), &mut login)
+            .unwrap();
+        assert_eq!(owner.config.models.len(), 1);
+        assert!(
+            owner.view.models.is_empty(),
+            "Other provider's cached routes must not be selectable"
+        );
+        let route = ModelRoute {
+            id: "opencode/go/new".into(),
+            model_id: "new-wire".into(),
+            provider: Provider::OpenCode,
+            protocol: crate::provider_server::WireProtocol::Chat,
+            url: "https://opencode.ai/inference/go/openai/v1/chat/completions".into(),
+            headers: vec![],
+        };
+        owner.operation = Some(Operation {
+            account: other.id,
+            cancel: Arc::new(NetworkHttpCancel::new()),
+            worker: std::thread::spawn(move || Ok(OperationResult::Catalog(vec![route]))),
+        });
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while owner.operation.is_some() {
+            assert!(Instant::now() < deadline);
+            owner.poll_operation();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(owner.view.status.is_none(), "{:?}", owner.view.status);
+        assert_eq!(owner.config.models.len(), 2);
+        assert_eq!(owner.view.models, vec!["opencode/go/new"]);
+        let loaded = Owner::load(root.0.clone()).unwrap();
+        assert_eq!(loaded.config.models, owner.config.models);
+        assert_eq!(loaded.config.profiles, owner.config.profiles);
+        login.shutdown(Duration::from_secs(5)).unwrap();
+    }
+
+    #[test]
+    fn conflicting_other_account_catalog_keeps_applied_routes_and_sessions_unchanged() {
+        use crate::provider_auth::{TokenGrant, TokenLifecycle};
+        use crate::provider_server::{ClientAllocation, ClientProfile, WireProtocol};
+        let root = Root::new();
+        let (mut owner, _) = seed_ready(&root);
+        let mut accounts = Vec::new();
+        for label in ["Synthetic OpenCode A", "Synthetic OpenCode B"] {
+            let account = owner
+                .store
+                .insert(
+                    label,
+                    TokenGrant {
+                        provider: Provider::OpenCode,
+                        access_token: Secret::new("synthetic-access").unwrap(),
+                        lifecycle: TokenLifecycle::ExpiringRefresh {
+                            refresh_token: Secret::new("synthetic-refresh").unwrap(),
+                            expires_at: Instant::now() + Duration::from_secs(3600),
+                        },
+                        organization: None,
+                    },
+                )
+                .unwrap();
+            owner.store.mark_ready(&account.id).unwrap();
+            accounts.push(account);
+        }
+        let mut config = owner.config.clone();
+        config.version = 2;
+        config.selected_account = Some(accounts[0].id.clone());
+        config.model = "opencode/shared-id".into();
+        let original = ModelRoute {
+            id: config.model.clone(),
+            model_id: "same-wire-model".into(),
+            provider: Provider::OpenCode,
+            protocol: WireProtocol::Chat,
+            url: "https://opencode.ai/inference/openai/v1/chat/completions".into(),
+            headers: vec![],
+        };
+        config.models = vec![original.clone()];
+        let profile = "a".repeat(32);
+        config.profiles.push(ClientProfile {
+            id: profile.clone(),
+            label: "Applied A".into(),
+            enabled: true,
+            default_model: "work".into(),
+            allocations: vec![ClientAllocation {
+                alias: "work".into(),
+                account: accounts[0].id.clone(),
+                route: original.id.clone(),
+            }],
+        });
+        owner.save(config).unwrap();
+        owner
+            .gateway
+            .set_client_key(&profile, Some(Secret::new("synthetic-profile").unwrap()))
+            .unwrap();
+        let mut server = owner.gateway.start(owner.config.port).unwrap();
+        let transport = crate::harness_gateway::GatewayTransport {
+            base: format!("http://{}/v1", server.address()),
+            session: "stable-account-a".into(),
+            cancelled: Arc::new(AtomicBool::new(false)),
+        };
+        let before = transport
+            .binding("synthetic-profile", Duration::from_secs(4))
+            .unwrap();
+        let mut login = LoginCoordinator::new(
+            owner.store.clone(),
+            LoginMetadata {
+                version: "fixture".into(),
+                locale: "en".into(),
+                timezone_offset_seconds: 0,
+            },
+        );
+        owner
+            .action(Action::SelectAccount(accounts[1].id.clone()), &mut login)
+            .unwrap();
+        let disk = std::fs::read(root.0.join("gateway.json")).unwrap();
+        let mut conflicting = original.clone();
+        conflicting.url = "https://opencode.ai/inference/go/openai/v1/chat/completions".into();
+        owner.operation = Some(Operation {
+            account: accounts[1].id.clone(),
+            cancel: Arc::new(NetworkHttpCancel::new()),
+            worker: std::thread::spawn(move || Ok(OperationResult::Catalog(vec![conflicting]))),
+        });
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while owner.operation.is_some() {
+            assert!(Instant::now() < deadline);
+            owner.poll_operation();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(
+            owner
+                .view
+                .status
+                .as_deref()
+                .is_some_and(|status| status.contains("CatalogConflict")),
+            "{:?}",
+            owner.view.status
+        );
+        assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), disk);
+        assert_eq!(owner.config.models, vec![original]);
+        assert_eq!(
+            transport
+                .binding("synthetic-profile", Duration::from_secs(4))
+                .unwrap(),
+            before
+        );
+        server.stop();
+        login.shutdown(Duration::from_secs(5)).unwrap();
+    }
+
+    #[test]
     fn port_save_failure_keeps_previous_configuration_and_view() {
         let root = Root::new();
         let mut runtime = root.runtime();
@@ -841,6 +1252,22 @@ mod tests {
         assert_eq!(runtime.view().port, previous);
         assert_eq!(runtime.view().listener, ListenerState::Stopped);
         assert!(runtime.view().status.as_ref().unwrap().contains("Storage"));
+    }
+
+    #[test]
+    fn gateway_prepare_failure_cannot_publish_a_new_disk_configuration() {
+        let root = Root::new();
+        let (mut owner, _) = seed_ready(&root);
+        let before = std::fs::read(root.0.join("gateway.json")).unwrap();
+        let port = owner.config.port;
+        let mut changed = owner.config.clone();
+        changed.port = if port == u16::MAX { port - 1 } else { port + 1 };
+        owner.gateway.fail_next_update();
+        assert_eq!(owner.save(changed), Err(RuntimeError::Storage));
+        assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), before);
+        assert_eq!(owner.config.port, port);
+        assert_eq!(owner.view.port, port);
+        assert_eq!(Owner::load(root.0.clone()).unwrap().config.port, port);
     }
     #[test]
     fn private_client_key_creation_copy_and_explicit_revocation_persist() {
@@ -1148,7 +1575,10 @@ mod tests {
         readonly.set_readonly(true);
         std::fs::set_permissions(&permissions.path, readonly).unwrap();
         runtime.act(Action::RemoveAccount(account.clone())).unwrap();
-        until(&mut runtime, |view| {
+        // Windows atomic publication deliberately retries a real readonly
+        // destination 400 times. Parallel test scheduling can push that
+        // ~4-second failure path beyond the ordinary 5-second view deadline.
+        until_with_timeout(&mut runtime, Duration::from_secs(15), |view| {
             !view.login_active && view.status.is_some()
         });
         assert!(runtime.view().status.as_ref().unwrap().contains("Storage"));

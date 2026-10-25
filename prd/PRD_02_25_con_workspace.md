@@ -24,9 +24,11 @@ minicon workspace and input
 │       ├── [v] released local-preview workflow (0.2.22): visible entry, readable chrome, recovery and terminal draft continuity
 │       ├── [v] proxy editing and Console/Web preferences → PRD_02_25_01_browser_preferences.md
 │       └── [_] consistent browser control editing/menu operation → PRD_02_25_02_browser_controls.md
+│   [_] tab-tree drag and inline rename pointer ownership (0.2.24) → PRD 25.03
 ├── Host UI (host chrome around the active tab's content panel(s))
 │   ├── header tools: New · Settings · sidebar toggle · panel toggle
 │   │     (panel toggle = chrome sent-history column — not a content panel)
+│   │     [_] robot immediately left of Settings / reversible Harness view → PRD 36
 │   ├── sent-history panel (chrome; 0.2.6) · settings panel (chrome)
 │   │   └── [_] Console / Web / Harness routes → PRD_02_25_01_browser_preferences.md
 │   │       Harness model/accounts/API content → PRD_02_31_01_provider_gateway.md
@@ -87,10 +89,21 @@ flowchart LR
     TermTab -.->|"future 1:N"| Multi["split content panels"]
     Chrome["chrome panels"] --> Hist["sent-history panel"]
     Chrome --> Sett["settings panel"]
+    Robot["planned robot immediately left of Settings / PRD 36"] --> HW["Harness operational host view"]
+    TI["PRD 25.03: tree drag / inline editing"] --> Strip
+    HW -->|"restore tab and focus"| Strip
+    HW -->|"typed configuration link"| Sett
     Hist -.->|"not a content panel"| Strip
 ```
 
 ## Terminology (naming decision, 2026-10-23)
+
+Planned 2026-10-25: the [Harness workspace](PRD_02_36_harness_workspace.md)
+is a separate host destination, not another PTY tab, Browser root or chrome
+settings panel. That owner defines the robot/return/compact-geometry behavior;
+this module retains shared tab, input and native visibility mechanics. The
+historical header-tool count below describes released behavior until the new
+entry is implemented and qualified.
 
 Commissioner re-nail and machine-room steer: the word **panel** had two live
 meanings. This glossary is the explicit ruling. Do not silently rename shipped
@@ -278,6 +291,11 @@ names above.
 
 ## Tab and window naming
 
+The next-version [tree interaction owner](PRD_02_25_03_tab_tree_interactions.md)
+owns the 2026-10-25 reported/reproduced inside-click rename failure and its
+planned pointer-ownership repair. Naming precedence and the existing shipped
+keyboard behavior below remain here; the new interaction is not yet delivered.
+
 - [v] a tab is named by what distinguishes it, not by what it runs. `cmd.exe`
   reports its own full path as its window title, so taking a child's title
   literally made every tab in the tree read the shell's own full path: long,
@@ -329,6 +347,11 @@ names above.
   `the_rename_editor_renders_typed_text_and_the_caret`.)
 
 ## Tab tree authority
+
+Planned 0.2.24 subtree dragging/reorder/reparent, drop validation, preview and
+cancellation are owned by [PRD 25.03](PRD_02_25_03_tab_tree_interactions.md).
+It must preserve the existing identity/session/close semantics below. The
+current tree supports creation/close; a planned move is not a shipped ability.
 
 - [v] `Workspace` is the sole authority for tree order, parentage and stable tab
   identity. Closing a parent promotes its direct children instead of terminating

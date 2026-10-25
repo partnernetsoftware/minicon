@@ -3,17 +3,35 @@
 Status: `[-]` implementation active. Planning refined at the
 owner's request on 2026-10-24, using exploration of public 0.2.22 and the
 subsequent Harness/provider-pool direction. Scope is the first working model
-connection, with manual account selection; future llm-gate/ujs/tinyvm scheduling
+connection through a multi-account pool, per-account networks, keyed client
+allocations and basic usage/balance monitoring; future llm-gate/ujs/tinyvm scheduling
 is outside this version. The owner's subsequent goal explicitly authorizes
 development through **public 0.2.23**, subject to the selected evidence gates;
 no second publication approval is needed for that named version. Installation remains deferred for
 coordinated AgenTerm planning.
+
+Owner feedback on 2026-10-25 reopens the Harness product experience before
+publication. The [redesign sequence](#harness-product-redesign-before-publication)
+is the next Harness work; successful signing/Candidate/scan/dry-run preparation
+does not close product acceptance or authorize publishing the rejected experience.
 
 Behavior belongs to [browser controls](../prd/PRD_02_25_02_browser_controls.md)
 and [preferences](../prd/PRD_02_25_01_browser_preferences.md). Harness settings,
 provider accounts, the inference API and the future selection seam belong to
 [provider gateway](../prd/PRD_02_31_01_provider_gateway.md); the existing worker
 and its tool budgets belong to [horizon](../prd/PRD_02_31_v0_2_horizon.md).
+Harness information architecture, first use, state and recovery belong to
+[connection experience](../prd/PRD_02_31_01_01_harness_experience.md). Multi-account
+networks and keyed allocations belong to [provider pool](../prd/PRD_02_31_01_02_provider_pool.md);
+statistics, balances and allowance belong to [monitoring](../prd/PRD_02_31_01_03_usage_monitoring.md).
+The robot entry and operational host view belong to
+[PRD 36](../prd/PRD_02_36_harness_workspace.md), sequenced by
+[the Harness workspace plan](plan-harness-workspace.md). This version selects
+its H0 entry/overview/deep-link reservation and available H1 projections;
+the later H2 task-operation UI is not silently included in this release.
+The newly requested [cluster horizon](../prd/PRD_02_37_cluster_horizon.md#未来构想)
+starts subsequent-version design under [its plan](plan-cluster-horizon.md),
+without adding cluster implementation to 0.2.23's selected delivery.
 Public observation
 belongs to [control](../prd/PRD_02_26_con_control_cli.md), reusable mechanisms to
 [PRD 28](../prd/PRD_02_28_shared_core.md), qualification to
@@ -58,11 +76,29 @@ Outcome: operate browser controls predictably and connect a model account to a l
 │   dependency: EDIT/MENU/LAYOUT, PRD 26 observations and PRD 28 adapters
 │   non-goal: provider OAuth, downloads, defaults, dashboard/wasm or 1:N panels
 ├── [-] HARNESS-CONNECT — first shared inference path, not a scheduler
-│   invariant: PRD 31.01 settings/auth/manual-binding/API contracts share one existing worker
-│   evidence: verified provider login/inference; both model protocols; real file/exec and one named external client
+│   invariant: PRD 31.01 API serves independent client allocations over isolated account/network identities
+│   evidence: verified provider login/inference; PP-01..06; both protocols; real file/exec and one named external client
 │   safe failure: unverified OAuth is BLOCKED; transport-only API-key evidence is labeled separately
 │   dependency: auth feasibility, single-turn/streaming seam and worker lifecycle repairs
 │   non-goal: automatic pool rotation, llm-gate, ujs/tinyvm integration or all-client compatibility
+├── [_] HARNESS-MONITOR — attribute usage and show account balance/allowance
+│   invariant: local receipts and provider-authoritative snapshots retain their source and coverage
+│   evidence: PRD 31.01.03 UM-01..06; real supported account reads and unknown/partial failures
+│   safe failure: bounded monitoring with no model request, fake zero or auto-top-up
+│   dependency: account/profile/network identity and provider metadata contracts
+│   non-goal: invoice management, rich analytics or automatic quota scheduling
+├── [_] HARNESS-EXPERIENCE — apply the owner's product feedback before release
+│   invariant: PRD 31.01.01 guides account -> verified model -> local tool with truthful results
+│   evidence: HU-01..09, including a continuous first-use and recovery journey
+│   safe failure: preserve the applied binding and show the affected step's recovery
+│   dependency: existing HARNESS-CONNECT mechanisms, shared controls and typed state
+│   non-goal: another agent loop, new runtime, duplicate Settings window or new provider scope
+├── [_] HARNESS-ENTRY — robot immediately left of Settings and one operational view
+│   invariant: H0 navigation preserves Console/Web context and reads actual runtime state
+│   evidence: PRD 36 HW-01/02/03/06/07, Settings HU-10/11 and selected PP/UM projections
+│   safe failure: useful setup/unavailable states; no task/service/login side effects on entry
+│   dependency: host view/header/focus seam, profile IDs and existing settings/runtime owners
+│   non-goal: the later H2 task launcher, arbitrary external harness control or a new engine
 └── [_] QUALIFY — integrate, qualify exact source, then publish authorized 0.2.23
     invariant: mechanism tests, native input and signed/public artifact evidence stay distinct
     evidence: mutation results, full product gate and six-cell qualification
@@ -85,6 +121,12 @@ flowchart LR
     A --> F[Single-turn and selection contracts]
     F --> G[Loopback API / manual pool / worker repairs]
     G --> HS[Harness settings and first worker tool cycle]
+    UX[PRD 31.01.01 product redesign] --> HS
+    H0[PRD 36 robot entry / host view / return context] --> UQ
+    POOL[PRD 31.01.02 account networks and client allocations] --> G
+    G --> MET[PRD 31.01.03 receipts and provider allowance reads]
+    MET --> UQ
+    HS --> UQ[Guided first-use and recovery acceptance HU-01..09]
     HS --> EC[Named external client and both protocol courts]
     A -->|unverified grant| AB[BLOCKED OAuth claim; record scope]
     M --> I[Serial input, focus and native-page integration]
@@ -92,6 +134,7 @@ flowchart LR
     I --> N[Native input and real page/proxy journeys]
     N --> Q[Full product and six-cell qualification]
     EC --> Q
+    UQ --> Q
     AB --> RD[Resolve selected scope before qualification/release]
     RD --> Q
     Q --> R[Authorized 0.2.23 exact-artifact chain and public verification]
@@ -147,7 +190,7 @@ demonstration or moving connection work to a later version is a scope change,
 not something this plan silently decides. The user need not design endpoints,
 PKCE, streaming or selection details to let feasibility work proceed.
 
-**First-path cut:** omit automatic failover/rotation, billing dashboards,
+**First-path cut:** omit automatic failover/rotation, invoice/payment administration,
 cross-provider model substitution, all-client presets, Responses/Codex claims,
 dynamic engine packaging and OS services. Do not omit cancellation, private
 credentials, real streaming/tool linkage or worker cleanup merely to obtain a
@@ -181,6 +224,53 @@ exact-source delivery gates. The prior
 `7694388` pack and signatures are a scoped checkpoint, not reusable proof for
 changed source. No Candidate has been sealed from that checkpoint.
 
+### Harness product redesign before publication
+
+Behavior and acceptance IDs belong to
+[experience HU-01..09](../prd/PRD_02_31_01_01_harness_experience.md),
+[pool PP-01..06](../prd/PRD_02_31_01_02_provider_pool.md) and
+[monitoring UM-01..06](../prd/PRD_02_31_01_03_usage_monitoring.md). This sequence
+implements that design; it does not replace the two-provider, protocol, worker,
+native-input or scaling obligations selected elsewhere in this plan.
+
+The exact `10237e8e382a9c2c3d9cd3e2eaaa4e9f00e544f7` implementation reached
+internal Candidate `40130115929`, measured Defender `40130309812`, reputation
+`40130431408` and dry-run `40130527092`, all successful. The ignored handoff
+index is `target-six/v0.2.23-provider/handoff-current.json`; independent audits
+are under `ci-sign-10237e8/` and `defender-10237e8/`. These are machine release
+preparation for the earlier experience, not public 0.2.23 or proof of the new
+design. Retain the sealed bytes as a historical checkpoint. Product changes
+require matching new-source qualification and a new Candidate; do not rebuild
+or overwrite that sealed Candidate, and do not publish it to bypass feedback.
+
+| Order / status | Delivery slice | Exit evidence / dependency |
+| --- | --- | --- |
+| 0 `[-]` — pool and state contracts | Account/network identity, keyed profiles, aliases, immutable attribution and operation-local observations; host destination/return and Settings deep links; migrate existing default binding/key | Partial backend migration/key/alias/session proof in PP-04..06; network/attribution/host-destination seams and HU-01/09/10/11 remain open |
+| 1 `[_]` — account authorization | Isolated contexts for two DeepSeek accounts and OpenCode Go; account labels and explicit login/service proxy choices; host-owned result and retry | HU-02 and PP-01..03; real supported grants, observed proxy paths, no inherited cookie/credential crossover; Google-login visibility recorded without assuming inference proxy needs |
+| 2 `[-]` — client allocation and model apply | Create independent profiles/keys, account-scoped aliases and bounded picker, explicit verification and transactional apply | Partial backend routing/shared-limit/scoped-revoke proof in PP-04..06; profile-management UI, HU-03/04 and verified transactional apply remain open |
+| 3 `[_]` — usage and provider readings | Capture terminal usage before adapter normalization, bounded local history/summary, credential-compatible balance/quota reads and explicit/opt-in monitoring | UM-01..06; no double-counted stream usage, no fabricated zero balance/cost, no model-call polling; unsupported exact grants remain BLOCKED for that capability |
+| 4 `[_]` — complete handoff and H0 | Explicit shared service enable, per-profile key setup and recipes; robot left of Settings, real overview/empty states, back navigation and precise configuration links | HU-05/06/10/11 and HW-01/02/03; actual tasks work through recipes; opening robot has no start side effect; H2 visual task operation stays later |
+| 5 `[_]` — integrated product acceptance | Account lifecycle, selected languages, narrow/native input, account attention and stop/reopen recovery | HU-07..09 plus continuous first use and the three-account/multiple-client scenario; preserve all selected browser/native/scale obligations |
+| 6 `[_]` — qualify changed source | Upsert actual implementation/evidence status, finish source, then matching final delivery gates | Product feedback resolved by observable journeys; no old-source signed bytes used to qualify the new pool/monitoring product |
+
+Start with slices 0 and 1 under one integrator. Hot files are
+`src/harness_settings_ui.rs`, `provider_runtime.rs`, `provider_accounts.rs`,
+`provider_server.rs`, `provider_login.rs`, protocol usage extraction, `ui.rs`,
+host control snapshots and browser/input fixtures. The shared boundaries are
+private storage/native HTTP and minicon-web login-context isolation.
+The H0 header/host-view join also owns `src/main.rs`, `host_ui.rs` and
+`host_paint.rs`; agree their shared ownership before concurrent source work.
+Agree ownership and freeze the state/action seam before parallelizing. Bounded metrics/presentation work and client
+recipe content can proceed independently after attribution/network/profile
+inputs are stable; runtime
+binding transactions and GUI callers join serially. No shared Cargo, desktop,
+clipboard or guard mutation runs concurrently.
+
+Use focused assertions for each changed guard and the continuous public journey
+for product acceptance. Native IME/clipboard/scale and real provider grants keep
+their actual prerequisites; missing access stays BLOCKED. Reorganizing the UI
+does not silently drop these obligations or turn design rows into delivered rows.
+
 ## Browser control delivery sequence and stop conditions
 
 | Step | Deliverable / evidence | Gate before proceeding |
@@ -211,7 +301,7 @@ including profile isolation, before spending time on the final pack.
 | MENU | Page -> keyboard-only entry -> navigation -> one commit/cancel; no mouse-assisted opening; hover/highlight does not apply | Pure action-count checks, public state and native keyboard path |
 | GEOMETRY | Zero/one/eight candidates, normal/narrow/short windows, sidebar collapse and scale 1/1.5/2; readable scrolling, retained drafts | Shared geometry checks plus actual owned-window pixels and pointer hits |
 | PREFERENCES | Real proxy applies/clears/refuses, saved choices restart/delete, manual non-list value and failed-save rollback retain released semantics | Public local service/proxy and isolated config/profile; no provider credentials |
-| HARNESS | Three settings routes, listener lifecycle, manual account binding, two protocols, real worker tools and one external client | PRD 31.01 acceptance; synthetic mechanism courts separate from real provider grants and native settings evidence |
+| HARNESS | Three settings routes, listener lifecycle, manual account binding, two protocols, real worker tools and one external client | PRD 31.01 mechanism/account evidence plus HU-01..09, PP-01..06 and UM-01..06 product journeys; native and synthetic scopes stay separate |
 | ARTIFACT | Selected control/browser behavior runs on all six exact native payloads and policy-required signed transformations | PRD 27/32 courts; development bytes do not qualify release bytes |
 
 Unit checks count menu effects; black boxes observe real connection/page state.
