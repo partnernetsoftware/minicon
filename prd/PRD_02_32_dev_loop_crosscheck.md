@@ -850,3 +850,47 @@ exclusion checks. Index:
 `target-six/v0.2.23-provider/ci-2d7c3e1-native/verification-index.json`
 (SHA-256 `0135ddd11734d2d817088bd77c657ad4bef1d5dd7e7dfde086c2c093ba9ebe18`).
 Newer source does not borrow this as complete six-cell or release qualification.
+
+### Windows rasteriser routing and host-dependent winners
+
+Exact `999c797ec90a848287d005dfcf0a6094deb82dbf` in
+[run 40231767306](https://github.com/partnernetsoftware/minicon/actions/runs/40231767306)
+is terminal FAIL. The standard workspace reaches the platform font suite:
+559 pass, one fails, one is explicitly ignored. The failing
+`the_rasteriser_that_measured_closer_is_the_one_that_draws` passes every
+per-size selection/drawing assertion, then fails its additional assumption
+that both rasterisers must win at least one sampled size (`[true, false]`).
+That winner distribution depends on the installed face and native runtime;
+it is not a product requirement. The same original test passes on the local
+Windows 20348 court. Neither result establishes a rendering defect.
+
+The corrected test retains every per-size selection/drawing assertion and
+replaces the winner-distribution assumption with two required native routing
+subjects. Each selects one branch in the test thread's resolved renderer
+cache, then compares the public adapter's glyph pixels, dimensions and offsets
+with the independently invoked native GDI or DirectWrite result over five
+sizes. Actual native references must differ somewhere, otherwise this court
+cannot establish routing. A drop guard restores the original thread-local
+cache. There is no process-environment mutation, desktop input, mock native
+rasteriser or production change.
+
+Local evidence under `target-six/v0.2.23-provider/`:
+`font-routing-original-local.log` records the original passing subject;
+`font-routing-corrected.log` records 24 pass / zero fail / one explicit
+measurement ignore, with two added required subjects. In
+`font-routing-controls-attempt-2/receipt.json`, forcing constant DirectWrite
+breaks the GDI subject's actual pixel assertion and forcing constant GDI
+breaks the DirectWrite subject's assertion; each exact restoration passes
+both subjects. Source bytes, index and HEAD are restored. The first control
+driver's FAIL is retained in `font-routing-controls/`: it misclassified the
+actual expected assertion failure because `--nocapture` interleaves panic
+output with the test result line; it is not a separate product failure.
+Hosted replay of the correction remains open until its actual result exists.
+
+The same terminal 999 run separately passes the original native-input suite
+(26 pass, zero fail, two explicit FreeConsole observations), all 27 selected
+suite entries and the twelve profile-key/handoff checks. The uploaded selected
+suite receipt's `job_status: success` describes only those suites; it does not
+override the standard workspace failure or certify an overall green job.
+Cookie persistence, physical native input and exact-source release gates
+retain their separate owners and remain open.

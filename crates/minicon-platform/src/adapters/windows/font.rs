@@ -1532,18 +1532,16 @@ mod tests {
     /// The property held: at every size the glyph is drawn by the rasteriser
     /// `prefer_directwrite` measured as closer to the outline -- the
     /// measurement is honoured, not decorative. Which one wins at which size
-    /// is the font's business and is not pinned, beyond noting that on this
-    /// host each wins somewhere.
+    /// is the font's business and is not pinned. Both routing branches are
+    /// exercised separately below, even on a host where one wins every size.
     #[test]
     fn the_rasteriser_that_measured_closer_is_the_one_that_draws() {
         let directwrite_levels: std::collections::HashSet<u8> = (0..=16_u16)
             .map(|level| ((level * 255 + 8) / 16) as u8)
             .collect();
-        let mut chose = [false, false];
         for size in [12_u16, 15, 16, 18, 24] {
             let mut grid = select_grid(size).expect("selection");
             let choice = prefer_directwrite(&mut grid.face);
-            chose[usize::from(choice)] = true;
             let drawn = rasterize('@', size).expect("raster").expect("@");
             let on_lattice = drawn
                 .alpha
@@ -1557,10 +1555,68 @@ mod tests {
                 if on_lattice { "DirectWrite" } else { "GDI" }
             );
         }
+    }
+
+    fn assert_selected_rasteriser_draws_native_coverage(directwrite: bool) {
+        // Only this thread's already-resolved cache is selected. Native face
+        // discovery and both rasterisers remain real; no process environment,
+        // desktop input or production override is changed.
+        struct RestoreRasterFaces(Option<RasterFaces>);
+        impl Drop for RestoreRasterFaces {
+            fn drop(&mut self) {
+                RASTER_FACES.with(|slot| {
+                    *slot.borrow_mut() = self.0.take().expect("saved raster faces");
+                });
+            }
+        }
+        let _restore = RestoreRasterFaces(Some(
+            RASTER_FACES.with(|slot| slot.replace(RasterFaces::empty())),
+        ));
+        let mut distinguished = false;
+        for size in [12_u16, 15, 16, 18, 24] {
+            let mut grid = select_grid(size).expect("selection");
+            let mut utf16 = [0_u16; 2];
+            let index = grid
+                .face
+                .glyph_index('@', '@'.encode_utf16(&mut utf16))
+                .expect("lookup")
+                .expect("@");
+            let ascent = grid.face.metrics.tmAscent;
+            let gdi = gdi_raster_face(&mut grid.face, index, ascent)
+                .expect("native GDI raster")
+                .expect("GDI @");
+            let dw = dwrite::raster(&mut grid.face, index, ascent).expect("native DirectWrite @");
+            distinguished |= gdi != dw;
+            RASTER_FACES.with(|slot| {
+                let mut renderer = slot.borrow_mut();
+                *renderer = RasterFaces::empty();
+                renderer.reset(size);
+                renderer.resolve();
+                renderer.directwrite = directwrite;
+            });
+            let drawn = crate::font::rasterize('@', size)
+                .expect("raster")
+                .expect("@");
+            assert_eq!(
+                drawn,
+                if directwrite { dw } else { gdi },
+                "selected native rasteriser was not used at {size}px (DirectWrite={directwrite})"
+            );
+        }
         assert!(
-            chose[0] && chose[1],
-            "one rasteriser won at every size ({chose:?}); re-read the measurement"
+            distinguished,
+            "native references never differed; this host cannot prove rasteriser routing"
         );
+    }
+
+    #[test]
+    fn selected_gdi_draws_its_actual_native_coverage() {
+        assert_selected_rasteriser_draws_native_coverage(false);
+    }
+
+    #[test]
+    fn selected_directwrite_draws_its_actual_native_coverage() {
+        assert_selected_rasteriser_draws_native_coverage(true);
     }
 
     /// Not a gate: a measurement, run on demand on a Windows host with
