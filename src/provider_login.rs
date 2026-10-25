@@ -1,7 +1,9 @@
 //! Background account login for PRD 02.31.01; no UI or CLI dependency.
 //! `start`, `poll`, `cancel` and `logout` never wait on disk/network.
 
-use crate::provider_accounts::{AccountPreferences, AccountStore, AccountSummary, StoreError};
+use crate::provider_accounts::{
+    AccountPreferences, AccountSnapshot, AccountStore, AccountSummary, StoreError,
+};
 use crate::provider_auth::{
     self as auth, Attempt, AuthClient, AuthError, DevicePoll, Pkce, Provider, Secret, TokenGrant,
 };
@@ -53,6 +55,8 @@ impl From<StoreError> for LoginError {
 impl std::fmt::Display for LoginError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Store(StoreError::Changed) => formatter
+                .write_str("The account changed while reconnecting. Review its details and retry."),
             Self::CallbackExpired {
                 received_requests: 0,
                 ..
@@ -251,6 +255,7 @@ impl LoginCoordinator {
             provider,
             label,
             preferences: None,
+            target: None,
         })
     }
 
@@ -268,6 +273,29 @@ impl LoginCoordinator {
             provider,
             label,
             preferences: Some(preferences),
+            target: None,
+        })
+    }
+
+    pub fn start_reconnect(&mut self, account: AccountSnapshot) -> Result<AttemptId, LoginError> {
+        account.preferences.validate()?;
+        if [&account.summary.id, &account.generation]
+            .iter()
+            .any(|id| id.len() != 32 || !id.bytes().all(|byte| byte.is_ascii_hexdigit()))
+            || account.summary.label.trim().is_empty()
+            || account.summary.label.len() > 128
+            || account.summary.label.chars().any(char::is_control)
+        {
+            return Err(AuthError::InvalidInput.into());
+        }
+        self.spawn(Operation::Login {
+            provider: account.summary.provider,
+            label: account.summary.label,
+            preferences: Some(account.preferences),
+            target: Some(ReconnectTarget {
+                account: account.summary.id,
+                generation: account.generation,
+            }),
         })
     }
 
@@ -353,6 +381,10 @@ impl LoginCoordinator {
             Operation::Login { preferences, .. } => preferences.clone(),
             _ => None,
         };
+        let target = match &operation {
+            Operation::Login { target, .. } => target.clone(),
+            _ => None,
+        };
         let job = Job {
             id,
             generation: self.generation.clone(),
@@ -361,6 +393,7 @@ impl LoginCoordinator {
             transport: self.transport.clone(),
             metadata: self.metadata.clone(),
             preferences,
+            target,
             outgoing,
             cancel: cancel.clone(),
         };
@@ -442,11 +475,18 @@ impl Drop for LoginCoordinator {
     }
 }
 
+#[derive(Clone)]
+struct ReconnectTarget {
+    account: String,
+    generation: String,
+}
+
 enum Operation {
     Login {
         provider: Provider,
         label: String,
         preferences: Option<AccountPreferences>,
+        target: Option<ReconnectTarget>,
     },
     #[cfg(test)]
     List,
@@ -463,6 +503,7 @@ struct Job {
     transport: Arc<dyn AuthTransport>,
     metadata: LoginMetadata,
     preferences: Option<AccountPreferences>,
+    target: Option<ReconnectTarget>,
     outgoing: SyncSender<LoginEvent>,
     cancel: NetworkHttpCancel,
 }
@@ -546,7 +587,10 @@ impl Job {
         completion_url: Option<Secret>,
     ) -> Result<LoginEvent, LoginError> {
         self.begin_commit(attempt)?;
-        let account = if let Some(preferences) = &self.preferences {
+        let account = if let Some(target) = &self.target {
+            self.store
+                .reconnect_if_current(&target.account, &target.generation, grant)?
+        } else if let Some(preferences) = &self.preferences {
             self.store
                 .insert_with_preferences(label, grant, Some(preferences.clone()))?
         } else {
@@ -1238,6 +1282,138 @@ mod tests {
         }
     }
 
+    fn complete_configured_callback(transport: &ConfiguredAuthTransport) {
+        let (redirect, state) = transport.callback.lock().unwrap().clone().unwrap();
+        let address = redirect
+            .strip_prefix("http://")
+            .unwrap()
+            .split('/')
+            .next()
+            .unwrap();
+        assert!(address.starts_with("127.0.0.1:"));
+        let mut callback = TcpStream::connect(address).unwrap();
+        callback
+            .set_read_timeout(Some(Duration::from_secs(4)))
+            .unwrap();
+        callback
+            .set_write_timeout(Some(Duration::from_secs(4)))
+            .unwrap();
+        write!(callback, "GET /oauth/callback?state={state}&code=synthetic-code HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n").unwrap();
+        let mut reply = String::new();
+        callback.read_to_string(&mut reply).unwrap();
+        assert!(reply.starts_with("HTTP/1.1 200"));
+    }
+
+    #[test]
+    fn reconnect_reuses_account_context_and_cannot_duplicate_or_resurrect_a_removed_target() {
+        struct Cleanup(std::path::PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        for remove in [false, true] {
+            let fixture = Cleanup(
+                temporary_parent().join(format!("minicon-reconnect-{}", device_id().unwrap())),
+            );
+            let store = Arc::new(AccountStore::new(fixture.0.clone()).unwrap());
+            let preferences = AccountPreferences::pending(
+                crate::provider_accounts::NetworkPolicy::from_input(
+                    "http://reconnect-login.invalid:8080",
+                )
+                .unwrap(),
+                crate::provider_accounts::NetworkPolicy::Direct,
+            )
+            .unwrap();
+            let account = store
+                .insert_with_preferences(
+                    "Existing",
+                    TokenGrant {
+                        provider: Provider::DeepSeek,
+                        access_token: Secret::new("synthetic-initial-grant").unwrap(),
+                        lifecycle: auth::TokenLifecycle::OpaqueUntilRejected,
+                        organization: None,
+                    },
+                    Some(preferences.clone()),
+                )
+                .unwrap();
+            store.mark_ready(&account.id).unwrap();
+            let snapshot = store.snapshot(&account.id).unwrap();
+            let context = store.browser_context(&preferences).unwrap();
+            let transport = Arc::new(ConfiguredAuthTransport {
+                requests: Mutex::new(Vec::new()),
+                callback: Mutex::new(None),
+                expected_login: preferences.login.proxy().map(str::to_owned),
+                expected_service: None,
+            });
+            let mut login = LoginCoordinator::with_transport(
+                store.clone(),
+                LoginMetadata {
+                    version: "0.2.23".into(),
+                    locale: "en-US".into(),
+                    timezone_offset_seconds: 0,
+                },
+                transport.clone(),
+            );
+            let attempt = login.start_reconnect(snapshot.clone()).unwrap();
+            let LoginEvent::Challenge {
+                attempt: received,
+                context: Some(actual),
+                ..
+            } = next_event(&mut login)
+            else {
+                panic!("reconnect challenge expected")
+            };
+            assert_eq!(received, attempt);
+            assert_eq!(actual, context);
+            let mut latest = preferences.clone();
+            latest.enabled = false;
+            latest.service = crate::provider_accounts::NetworkPolicy::from_input(
+                "http://later-service.invalid:8081",
+            )
+            .unwrap();
+            store
+                .update_preferences(&account.id, "Later label", latest.clone())
+                .unwrap();
+            if remove {
+                store.remove(&account.id).unwrap();
+            }
+            complete_configured_callback(&transport);
+            let event = next_event(&mut login);
+            if remove {
+                assert!(
+                    matches!(event, LoginEvent::Failed { attempt: current, error: LoginError::Store(StoreError::Missing) } if current == attempt)
+                );
+                assert!(store.list().unwrap().is_empty());
+            } else {
+                let LoginEvent::CredentialStored {
+                    account: reconnected,
+                    ..
+                } = event
+                else {
+                    panic!("reconnected grant expected")
+                };
+                assert_eq!(reconnected.id, account.id);
+                assert_eq!(reconnected.label, "Later label");
+                assert_eq!(
+                    reconnected.state,
+                    crate::provider_accounts::AccountState::CredentialStored
+                );
+                assert_eq!(store.list().unwrap(), vec![reconnected]);
+                assert_eq!(store.preferences(&account.id).unwrap(), latest);
+                assert_ne!(
+                    store.snapshot(&account.id).unwrap().generation,
+                    snapshot.generation
+                );
+                assert_eq!(
+                    store.load_grant(&account.id).unwrap().access_token.expose(),
+                    "synthetic-configured-grant"
+                );
+            }
+            login.shutdown(Duration::from_secs(2)).unwrap();
+        }
+    }
+
     #[test]
     fn configured_deepseek_login_pins_its_network_and_logout_uses_service_policy() {
         struct Cleanup(std::path::PathBuf);
@@ -1279,25 +1455,7 @@ mod tests {
         assert!(
             matches!(next_event(&mut login), LoginEvent::Challenge { attempt, .. } if attempt == id)
         );
-        let (redirect, state) = transport.callback.lock().unwrap().clone().unwrap();
-        let address = redirect
-            .strip_prefix("http://")
-            .unwrap()
-            .split('/')
-            .next()
-            .unwrap();
-        assert!(address.starts_with("127.0.0.1:"));
-        let mut callback = TcpStream::connect(address).unwrap();
-        callback
-            .set_read_timeout(Some(Duration::from_secs(4)))
-            .unwrap();
-        callback
-            .set_write_timeout(Some(Duration::from_secs(4)))
-            .unwrap();
-        write!(callback, "GET /oauth/callback?state={state}&code=synthetic-code HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n").unwrap();
-        let mut reply = String::new();
-        callback.read_to_string(&mut reply).unwrap();
-        assert!(reply.starts_with("HTTP/1.1 200"));
+        complete_configured_callback(&transport);
         let LoginEvent::CredentialStored { account, .. } = next_event(&mut login) else {
             panic!("configured account expected");
         };
@@ -1602,6 +1760,7 @@ mod tests {
                     timezone_offset_seconds: 0,
                 },
                 preferences: None,
+                target: None,
                 outgoing,
                 cancel: NetworkHttpCancel::new(),
             };
@@ -1699,6 +1858,7 @@ mod tests {
                     timezone_offset_seconds: 0,
                 },
                 preferences: None,
+                target: None,
                 outgoing,
                 cancel: NetworkHttpCancel::new(),
             };

@@ -25,6 +25,14 @@ pub struct AccountSummary {
     pub state: AccountState,
 }
 
+/// Grant-free account identity and policy captured for one operation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AccountSnapshot {
+    pub summary: AccountSummary,
+    pub preferences: AccountPreferences,
+    pub generation: String,
+}
+
 /// Private account policy. Debug and public account summaries never disclose
 /// endpoints; the GUI may expose a value only in its explicit edit field.
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
@@ -140,6 +148,7 @@ pub enum StoreError {
     InvalidRoot,
     InvalidAccount,
     Missing,
+    Changed,
     Capacity,
     Storage,
     Corrupt,
@@ -172,6 +181,10 @@ struct AccountRecord {
 #[derive(Deserialize, Serialize)]
 struct Credential {
     version: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    generation: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ready: Option<bool>,
     provider: Provider,
     access_token: String,
     refresh_token: Option<String>,
@@ -198,8 +211,18 @@ impl AccountStore {
 
     pub fn list(&self) -> Result<Vec<AccountSummary>, StoreError> {
         let _guard = self.mutation.lock().map_err(|_| StoreError::Storage)?;
-        self.read_registry()
-            .map(|accounts| accounts.into_iter().map(|record| record.summary).collect())
+        Ok(self
+            .read_registry()?
+            .into_iter()
+            .map(|record| {
+                let mut summary = record.summary;
+                summary.state = self
+                    .read_credential(&summary.id, summary.provider)
+                    .map(|credential| projected_state(&credential, summary.state))
+                    .unwrap_or(AccountState::CredentialStored);
+                summary
+            })
+            .collect())
     }
 
     pub fn insert(&self, label: &str, grant: TokenGrant) -> Result<AccountSummary, StoreError> {
@@ -237,8 +260,11 @@ impl AccountStore {
         if path.try_exists().map_err(|_| StoreError::Storage)? {
             return Err(StoreError::Storage);
         }
-        let credential = encode_grant(grant)?;
+        let credential = encode_grant(grant, summary.id.clone(), false)?;
         let encoded = serde_json::to_vec(&credential).map_err(|_| StoreError::Storage)?;
+        if encoded.len() > MAX_STORE_BYTES {
+            return Err(StoreError::Capacity);
+        }
         filesystem::write_private_atomic(&path, &encoded).map_err(|_| StoreError::Storage)?;
         accounts.push(AccountRecord {
             summary: summary.clone(),
@@ -261,11 +287,121 @@ impl AccountStore {
         self.read_grant(id, summary.summary.provider)
     }
 
+    pub fn snapshot(&self, id: &str) -> Result<AccountSnapshot, StoreError> {
+        let _guard = self.mutation.lock().map_err(|_| StoreError::Storage)?;
+        let accounts = self.read_registry()?;
+        let account = accounts
+            .iter()
+            .find(|account| account.summary.id == id)
+            .ok_or(StoreError::Missing)?;
+        let credential = self.read_credential(id, account.summary.provider)?;
+        let mut summary = account.summary.clone();
+        summary.state = projected_state(&credential, summary.state);
+        Ok(AccountSnapshot {
+            summary,
+            preferences: account
+                .preferences
+                .clone()
+                .unwrap_or_else(|| AccountPreferences::legacy(id)),
+            generation: credential_generation(&credential, id).to_owned(),
+        })
+    }
+
+    /// Acquisition and generation validation share removal/reconnect's lock.
+    pub fn load_grant_for_generation(
+        &self,
+        id: &str,
+        expected: &str,
+    ) -> Result<TokenGrant, StoreError> {
+        let _guard = self.mutation.lock().map_err(|_| StoreError::Storage)?;
+        let accounts = self.read_registry()?;
+        let account = accounts
+            .iter()
+            .find(|account| account.summary.id == id)
+            .ok_or(StoreError::Missing)?;
+        let credential = self.read_credential(id, account.summary.provider)?;
+        check_generation(&credential, id, Some(expected))?;
+        decode_grant(&credential)
+    }
+
+    pub fn replace_grant_if_current(
+        &self,
+        id: &str,
+        expected: &str,
+        grant: TokenGrant,
+    ) -> Result<(), StoreError> {
+        let _guard = self.mutation.lock().map_err(|_| StoreError::Storage)?;
+        self.replace_grant_locked(id, Some(expected), grant, false)
+            .map(|_| ())
+    }
+
+    /// Publish organization selection on the latest grant in this generation.
+    /// A catalogue's older token snapshot must never overwrite a refresh.
+    pub fn set_organization_if_current(
+        &self,
+        id: &str,
+        expected: &str,
+        organization: Option<String>,
+    ) -> Result<(), StoreError> {
+        let _guard = self.mutation.lock().map_err(|_| StoreError::Storage)?;
+        let accounts = self.read_registry()?;
+        let account = accounts
+            .iter()
+            .find(|account| account.summary.id == id)
+            .ok_or(StoreError::Missing)?;
+        let mut credential = self.read_credential(id, account.summary.provider)?;
+        check_generation(&credential, id, Some(expected))?;
+        if organization.as_deref().is_some_and(|organization| {
+            account.summary.provider != Provider::OpenCode
+                || !crate::provider_auth::valid_organization_id(organization)
+        }) {
+            return Err(StoreError::InvalidAccount);
+        }
+        credential.generation = Some(credential_generation(&credential, id).to_owned());
+        credential.ready =
+            Some(projected_state(&credential, account.summary.state) == AccountState::AccountReady);
+        credential.version = 2;
+        credential.organization = organization;
+        self.write_credential(id, &credential)
+    }
+
+    pub fn mark_ready_if_current(
+        &self,
+        id: &str,
+        expected: &str,
+    ) -> Result<AccountSummary, StoreError> {
+        let _guard = self.mutation.lock().map_err(|_| StoreError::Storage)?;
+        self.mark_ready_locked(id, Some(expected))
+    }
+
+    pub fn reconnect_if_current(
+        &self,
+        id: &str,
+        expected: &str,
+        grant: TokenGrant,
+    ) -> Result<AccountSummary, StoreError> {
+        let _guard = self.mutation.lock().map_err(|_| StoreError::Storage)?;
+        self.replace_grant_locked(id, Some(expected), grant, true)
+    }
+
     /// Refresh cannot recreate an account removed while its HTTP request ran.
     /// The existence/provider check and private atomic replacement share the
     /// same mutation lock as removal. Existing readiness and metadata survive.
+    #[cfg(test)]
     pub fn replace_grant_if_present(&self, id: &str, grant: TokenGrant) -> Result<(), StoreError> {
         let _guard = self.mutation.lock().map_err(|_| StoreError::Storage)?;
+        self.replace_grant_locked(id, None, grant, false)
+            .map(|_| ())
+    }
+
+    // Callers hold mutation through the single private-file publication.
+    fn replace_grant_locked(
+        &self,
+        id: &str,
+        expected: Option<&str>,
+        mut grant: TokenGrant,
+        reconnect: bool,
+    ) -> Result<AccountSummary, StoreError> {
         let accounts = self.read_registry()?;
         let account = accounts
             .iter()
@@ -274,27 +410,72 @@ impl AccountStore {
         if account.summary.provider != grant.provider {
             return Err(StoreError::InvalidAccount);
         }
-        let path = self.credential_path(id)?;
-        let credential = encode_grant(grant)?;
-        let encoded = serde_json::to_vec(&credential).map_err(|_| StoreError::Storage)?;
-        self.prepare()?;
-        filesystem::write_private_atomic(&path, &encoded).map_err(|_| StoreError::Storage)
+        let current = self.read_credential(id, account.summary.provider)?;
+        check_generation(&current, id, expected)?;
+        // A token refresh may omit the organization. Merge from the latest
+        // locked credential, never the snapshot taken before its HTTP call.
+        // Reconnect publishes a new authorization and cannot inherit it.
+        if !reconnect && grant.organization.is_none() {
+            grant.organization.clone_from(&current.organization);
+        }
+        let previous = credential_generation(&current, id);
+        let generation = if reconnect {
+            let bytes = minicon_platform::entropy::secure_random_array::<16>()
+                .map_err(|_| StoreError::Storage)?;
+            let next: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+            if !valid_generation(&next) || next == previous {
+                return Err(StoreError::Storage);
+            }
+            next
+        } else {
+            previous.to_owned()
+        };
+        let ready = !reconnect
+            && projected_state(&current, account.summary.state) == AccountState::AccountReady;
+        let credential = encode_grant(grant, generation, ready)?;
+        self.write_credential(id, &credential)?;
+        let mut summary = account.summary.clone();
+        summary.state = projected_state(&credential, summary.state);
+        Ok(summary)
     }
 
     /// Only an inference consumer with a successful real grant-backed request
     /// calls this. Login initialization/token persistence does not make it ready.
+    #[cfg(test)]
     pub fn mark_ready(&self, id: &str) -> Result<AccountSummary, StoreError> {
         let _guard = self.mutation.lock().map_err(|_| StoreError::Storage)?;
-        let mut accounts = self.read_registry()?;
+        self.mark_ready_locked(id, None)
+    }
+
+    fn mark_ready_locked(
+        &self,
+        id: &str,
+        expected: Option<&str>,
+    ) -> Result<AccountSummary, StoreError> {
+        let accounts = self.read_registry()?;
         let account = accounts
-            .iter_mut()
+            .iter()
             .find(|account| account.summary.id == id)
             .ok_or(StoreError::Missing)?;
-        self.read_grant(id, account.summary.provider)?;
-        account.summary.state = AccountState::AccountReady;
-        let summary = account.summary.clone();
-        self.write_registry(accounts)?;
+        let mut credential = self.read_credential(id, account.summary.provider)?;
+        check_generation(&credential, id, expected)?;
+        credential.generation = Some(credential_generation(&credential, id).to_owned());
+        credential.version = 2;
+        credential.ready = Some(true);
+        self.write_credential(id, &credential)?;
+        let mut summary = account.summary.clone();
+        summary.state = AccountState::AccountReady;
         Ok(summary)
+    }
+
+    fn write_credential(&self, id: &str, credential: &Credential) -> Result<(), StoreError> {
+        let path = self.credential_path(id)?;
+        let encoded = serde_json::to_vec(credential).map_err(|_| StoreError::Storage)?;
+        if encoded.len() > MAX_STORE_BYTES {
+            return Err(StoreError::Capacity);
+        }
+        self.prepare()?;
+        filesystem::write_private_atomic(&path, &encoded).map_err(|_| StoreError::Storage)
     }
 
     /// Local removal happens before the coordinator attempts remote revocation.
@@ -522,37 +703,93 @@ impl AccountStore {
             .map_err(|_| StoreError::Storage)
     }
 
-    fn read_grant(&self, id: &str, provider: Provider) -> Result<TokenGrant, StoreError> {
+    fn read_credential(&self, id: &str, provider: Provider) -> Result<Credential, StoreError> {
         let bytes = filesystem::read_private_bounded(&self.credential_path(id)?, MAX_STORE_BYTES)
             .map_err(|_| StoreError::Storage)?;
         let credential: Credential =
             serde_json::from_slice(&bytes).map_err(|_| StoreError::Corrupt)?;
-        if credential.version != 1 || credential.provider != provider {
+        let header_valid = match credential.version {
+            1 => credential.generation.is_none() && credential.ready.is_none(),
+            2 => {
+                credential
+                    .generation
+                    .as_deref()
+                    .is_some_and(valid_generation)
+                    && credential.ready.is_some()
+            }
+            _ => false,
+        };
+        if !header_valid || credential.provider != provider {
             return Err(StoreError::Corrupt);
         }
-        let lifecycle = match (credential.refresh_token, credential.expires_unix_ms) {
-            (None, None) if provider == Provider::DeepSeek => TokenLifecycle::OpaqueUntilRejected,
-            (Some(refresh), Some(expires)) if provider == Provider::OpenCode => {
-                let remaining = Duration::from_millis(expires.saturating_sub(unix_ms()?));
-                TokenLifecycle::ExpiringRefresh {
-                    refresh_token: Secret::new(&refresh).map_err(|_| StoreError::Corrupt)?,
-                    expires_at: Instant::now()
-                        .checked_add(remaining)
-                        .ok_or(StoreError::Corrupt)?,
-                }
-            }
-            _ => return Err(StoreError::Corrupt),
-        };
-        Ok(TokenGrant {
-            provider,
-            access_token: Secret::new(&credential.access_token).map_err(|_| StoreError::Corrupt)?,
-            lifecycle,
-            organization: credential.organization,
-        })
+        // A syntactically valid header must not make a broken grant Ready.
+        decode_grant(&credential)?;
+        Ok(credential)
+    }
+
+    fn read_grant(&self, id: &str, provider: Provider) -> Result<TokenGrant, StoreError> {
+        decode_grant(&self.read_credential(id, provider)?)
     }
 }
 
-fn encode_grant(grant: TokenGrant) -> Result<Credential, StoreError> {
+fn credential_generation<'a>(credential: &'a Credential, id: &'a str) -> &'a str {
+    credential.generation.as_deref().unwrap_or(id)
+}
+
+fn projected_state(credential: &Credential, legacy: AccountState) -> AccountState {
+    match credential.ready {
+        Some(true) => AccountState::AccountReady,
+        Some(false) => AccountState::CredentialStored,
+        None => legacy,
+    }
+}
+
+fn check_generation(
+    credential: &Credential,
+    id: &str,
+    expected: Option<&str>,
+) -> Result<(), StoreError> {
+    if expected.is_some_and(|expected| expected != credential_generation(credential, id)) {
+        return Err(StoreError::Changed);
+    }
+    Ok(())
+}
+
+fn valid_generation(value: &str) -> bool {
+    value.len() == 32 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn decode_grant(credential: &Credential) -> Result<TokenGrant, StoreError> {
+    let provider = credential.provider;
+    let lifecycle = match (&credential.refresh_token, credential.expires_unix_ms) {
+        (None, None) if provider == Provider::DeepSeek => TokenLifecycle::OpaqueUntilRejected,
+        (Some(refresh), Some(expires)) if provider == Provider::OpenCode => {
+            let remaining = Duration::from_millis(expires.saturating_sub(unix_ms()?));
+            TokenLifecycle::ExpiringRefresh {
+                refresh_token: Secret::new(refresh).map_err(|_| StoreError::Corrupt)?,
+                expires_at: Instant::now()
+                    .checked_add(remaining)
+                    .ok_or(StoreError::Corrupt)?,
+            }
+        }
+        _ => return Err(StoreError::Corrupt),
+    };
+    Ok(TokenGrant {
+        provider,
+        access_token: Secret::new(&credential.access_token).map_err(|_| StoreError::Corrupt)?,
+        lifecycle,
+        organization: credential.organization.clone(),
+    })
+}
+
+fn encode_grant(
+    grant: TokenGrant,
+    generation: String,
+    ready: bool,
+) -> Result<Credential, StoreError> {
+    if !valid_generation(&generation) {
+        return Err(StoreError::Corrupt);
+    }
     let (refresh_token, expires_unix_ms) = match grant.lifecycle {
         TokenLifecycle::OpaqueUntilRejected if grant.provider == Provider::DeepSeek => (None, None),
         TokenLifecycle::ExpiringRefresh {
@@ -577,7 +814,9 @@ fn encode_grant(grant: TokenGrant) -> Result<Credential, StoreError> {
         _ => return Err(StoreError::Corrupt),
     };
     Ok(Credential {
-        version: 1,
+        version: 2,
+        generation: Some(generation),
+        ready: Some(ready),
         provider: grant.provider,
         access_token: grant.access_token.expose().to_owned(),
         refresh_token,
@@ -626,6 +865,538 @@ mod tests {
             access_token: Secret::new(secret).unwrap(),
             lifecycle: TokenLifecycle::OpaqueUntilRejected,
             organization: None,
+        }
+    }
+
+    #[test]
+    fn reconnect_atomically_resets_readiness_preserves_latest_metadata_and_survives_reopen() {
+        let fixture = Fixture::new();
+        let store = AccountStore::new(fixture.0.clone()).unwrap();
+        let account = store.insert("Before", grant("synthetic-before")).unwrap();
+        let initial = store.snapshot(&account.id).unwrap();
+        store
+            .mark_ready_if_current(&account.id, &initial.generation)
+            .unwrap();
+        let preferences = AccountPreferences {
+            context_id: "e".repeat(32),
+            service_generation: "f".repeat(32),
+            enabled: false,
+            login: NetworkPolicy::Proxy("http://latest-login.invalid:8080".into()),
+            service: NetworkPolicy::Proxy("http://latest-service.invalid:8081".into()),
+        };
+        store
+            .update_preferences(&account.id, "Latest label", preferences.clone())
+            .unwrap();
+        // A persisted legacy readiness value must not override credential-v2.
+        let registry_path = fixture.0.join("accounts.json");
+        let mut registry: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&registry_path).unwrap()).unwrap();
+        registry["accounts"][0]["state"] = "AccountReady".into();
+        filesystem::write_private_atomic(&registry_path, &serde_json::to_vec(&registry).unwrap())
+            .unwrap();
+        let registry_before = std::fs::read(&registry_path).unwrap();
+        let replaced = store
+            .reconnect_if_current(&account.id, &initial.generation, grant("synthetic-after"))
+            .unwrap();
+        assert_eq!(replaced.state, AccountState::CredentialStored);
+        assert_eq!(replaced.id, account.id);
+        assert_eq!(replaced.label, "Latest label");
+        assert_eq!(std::fs::read(&registry_path).unwrap(), registry_before);
+        let reopened = AccountStore::new(fixture.0.clone()).unwrap();
+        let current = reopened.snapshot(&account.id).unwrap();
+        assert_eq!(current.summary, replaced);
+        assert_eq!(current.preferences, preferences);
+        assert_ne!(current.generation, initial.generation);
+        assert_eq!(reopened.list().unwrap(), vec![replaced]);
+        let private: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(store.credential_path(&account.id).unwrap()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(private["version"], 2);
+        assert_eq!(private["generation"], current.generation);
+        assert_eq!(private["ready"], false);
+        assert_eq!(
+            std::fs::read_dir(fixture.0.join("credentials"))
+                .unwrap()
+                .count(),
+            1
+        );
+        let debug = format!("{current:?}");
+        assert!(!debug.contains("synthetic-before"));
+        assert!(!debug.contains("synthetic-after"));
+        assert!(!debug.contains("latest-login.invalid"));
+        assert_eq!(
+            reopened
+                .load_grant_for_generation(&account.id, &current.generation)
+                .unwrap()
+                .access_token
+                .expose(),
+            "synthetic-after"
+        );
+    }
+
+    #[test]
+    fn reconnect_rejects_stale_refresh_readiness_reconnect_and_grant_acquisition() {
+        let fixture = Fixture::new();
+        let store = AccountStore::new(fixture.0.clone()).unwrap();
+        let account = store.insert("Account", grant("synthetic-old")).unwrap();
+        let old = store.snapshot(&account.id).unwrap();
+        store
+            .reconnect_if_current(&account.id, &old.generation, grant("synthetic-new"))
+            .unwrap();
+        let private_path = store.credential_path(&account.id).unwrap();
+        let before = std::fs::read(&private_path).unwrap();
+        assert_eq!(
+            store.replace_grant_if_current(&account.id, &old.generation, grant("stale-refresh")),
+            Err(StoreError::Changed)
+        );
+        assert_eq!(
+            store.mark_ready_if_current(&account.id, &old.generation),
+            Err(StoreError::Changed)
+        );
+        assert_eq!(
+            store.reconnect_if_current(&account.id, &old.generation, grant("stale-reconnect")),
+            Err(StoreError::Changed)
+        );
+        assert_eq!(
+            store
+                .load_grant_for_generation(&account.id, &old.generation)
+                .unwrap_err(),
+            StoreError::Changed
+        );
+        assert_eq!(std::fs::read(&private_path).unwrap(), before);
+        let current = store.snapshot(&account.id).unwrap();
+        store
+            .replace_grant_if_current(&account.id, &current.generation, grant("current-refresh"))
+            .unwrap();
+        assert_eq!(
+            store.snapshot(&account.id).unwrap().generation,
+            current.generation
+        );
+        store
+            .mark_ready_if_current(&account.id, &current.generation)
+            .unwrap();
+        assert_eq!(
+            store.snapshot(&account.id).unwrap().generation,
+            current.generation
+        );
+        assert_eq!(store.list().unwrap()[0].state, AccountState::AccountReady);
+    }
+
+    #[test]
+    fn reconnect_wrong_provider_and_removed_target_never_publish_credentials() {
+        let fixture = Fixture::new();
+        let store = AccountStore::new(fixture.0.clone()).unwrap();
+        let account = store
+            .insert("Account", grant("synthetic-existing"))
+            .unwrap();
+        let initial = store.snapshot(&account.id).unwrap();
+        let path = store.credential_path(&account.id).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        let other_provider = TokenGrant {
+            provider: Provider::OpenCode,
+            access_token: Secret::new("synthetic-opencode-access").unwrap(),
+            lifecycle: TokenLifecycle::ExpiringRefresh {
+                refresh_token: Secret::new("synthetic-opencode-refresh").unwrap(),
+                expires_at: Instant::now() + Duration::from_secs(60),
+            },
+            organization: None,
+        };
+        assert_eq!(
+            store.reconnect_if_current(&account.id, &initial.generation, other_provider),
+            Err(StoreError::InvalidAccount)
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        store.remove(&account.id).unwrap();
+        assert_eq!(store.snapshot(&account.id), Err(StoreError::Missing));
+        assert_eq!(
+            store.reconnect_if_current(&account.id, &initial.generation, grant("late-reconnect")),
+            Err(StoreError::Missing)
+        );
+        assert_eq!(
+            store.replace_grant_if_current(&account.id, &initial.generation, grant("late-refresh")),
+            Err(StoreError::Missing)
+        );
+        assert_eq!(
+            store.mark_ready_if_current(&account.id, &initial.generation),
+            Err(StoreError::Missing)
+        );
+        assert_eq!(
+            store
+                .load_grant_for_generation(&account.id, &initial.generation)
+                .unwrap_err(),
+            StoreError::Missing
+        );
+        assert!(!path.exists());
+        assert!(store.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn reconnect_legacy_credentials_upgrade_without_losing_initial_generation_or_readiness() {
+        for legacy_ready in [false, true] {
+            for refresh in [false, true] {
+                let fixture = Fixture::new();
+                let store = AccountStore::new(fixture.0.clone()).unwrap();
+                let account = store.insert("Legacy", grant("legacy-grant")).unwrap();
+                let private_path = store.credential_path(&account.id).unwrap();
+                let mut private: serde_json::Value =
+                    serde_json::from_slice(&std::fs::read(&private_path).unwrap()).unwrap();
+                private["version"] = 1.into();
+                private.as_object_mut().unwrap().remove("generation");
+                private.as_object_mut().unwrap().remove("ready");
+                filesystem::write_private_atomic(
+                    &private_path,
+                    &serde_json::to_vec(&private).unwrap(),
+                )
+                .unwrap();
+                let registry_path = fixture.0.join("accounts.json");
+                let mut registry: serde_json::Value =
+                    serde_json::from_slice(&std::fs::read(&registry_path).unwrap()).unwrap();
+                registry["accounts"][0]["state"] = if legacy_ready {
+                    "AccountReady"
+                } else {
+                    "CredentialStored"
+                }
+                .into();
+                filesystem::write_private_atomic(
+                    &registry_path,
+                    &serde_json::to_vec(&registry).unwrap(),
+                )
+                .unwrap();
+                let before = std::fs::read(&registry_path).unwrap();
+                let initial = store.snapshot(&account.id).unwrap();
+                assert_eq!(initial.generation, account.id);
+                assert_eq!(
+                    initial.summary.state == AccountState::AccountReady,
+                    legacy_ready
+                );
+                if refresh {
+                    store
+                        .replace_grant_if_current(
+                            &account.id,
+                            &account.id,
+                            grant("legacy-refreshed"),
+                        )
+                        .unwrap();
+                } else {
+                    store
+                        .mark_ready_if_current(&account.id, &account.id)
+                        .unwrap();
+                }
+                let reopened = AccountStore::new(fixture.0.clone()).unwrap();
+                let upgraded = reopened.snapshot(&account.id).unwrap();
+                assert_eq!(upgraded.generation, account.id);
+                assert_eq!(
+                    upgraded.summary.state == AccountState::AccountReady,
+                    !refresh || legacy_ready
+                );
+                assert_eq!(std::fs::read(&registry_path).unwrap(), before);
+                let private: serde_json::Value =
+                    serde_json::from_slice(&std::fs::read(&private_path).unwrap()).unwrap();
+                assert_eq!(private["version"], 2);
+                assert_eq!(private["generation"], account.id);
+                assert_eq!(private["ready"], !refresh || legacy_ready);
+                assert_eq!(
+                    reopened
+                        .load_grant(&account.id)
+                        .unwrap()
+                        .access_token
+                        .expose(),
+                    if refresh {
+                        "legacy-refreshed"
+                    } else {
+                        "legacy-grant"
+                    }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn reconnect_broken_credentials_are_not_ready_and_do_not_block_other_accounts_or_removal() {
+        let fixture = Fixture::new();
+        let store = AccountStore::new(fixture.0.clone()).unwrap();
+        let broken = store.insert("Broken", grant("synthetic-broken")).unwrap();
+        let good = store.insert("Good", grant("synthetic-good")).unwrap();
+        store.mark_ready(&broken.id).unwrap();
+        store.mark_ready(&good.id).unwrap();
+        let path = store.credential_path(&broken.id).unwrap();
+        let original: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        for (field, value) in [
+            ("version", serde_json::json!(9)),
+            ("generation", serde_json::Value::Null),
+            ("generation", serde_json::json!("malformed")),
+            ("ready", serde_json::Value::Null),
+            ("provider", serde_json::json!("opencode")),
+            ("access_token", serde_json::json!("")),
+        ] {
+            let mut corrupted = original.clone();
+            corrupted[field] = value;
+            let bytes = serde_json::to_vec(&corrupted).unwrap();
+            filesystem::write_private_atomic(&path, &bytes).unwrap();
+            let listed = store.list().unwrap();
+            assert_eq!(listed.len(), 2);
+            assert_eq!(listed[0].state, AccountState::CredentialStored);
+            assert_eq!(listed[1].state, AccountState::AccountReady);
+            assert_eq!(store.snapshot(&broken.id), Err(StoreError::Corrupt));
+            assert_eq!(
+                store.reconnect_if_current(&broken.id, &broken.id, grant("not-published")),
+                Err(StoreError::Corrupt)
+            );
+            assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        }
+        assert!(store.remove(&broken.id).unwrap().is_none());
+        assert_eq!(store.list().unwrap()[0].id, good.id);
+        std::fs::remove_file(store.credential_path(&good.id).unwrap()).unwrap();
+        assert_eq!(
+            store.list().unwrap()[0].state,
+            AccountState::CredentialStored
+        );
+        assert!(store.remove(&good.id).unwrap().is_none());
+        assert!(store.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn reconnect_rejected_grant_or_oversize_publication_preserves_the_entire_credential() {
+        let fixture = Fixture::new();
+        let store = AccountStore::new(fixture.0.clone()).unwrap();
+        let account = store.insert("Account", grant("unchanged-grant")).unwrap();
+        store.mark_ready(&account.id).unwrap();
+        let initial = store.snapshot(&account.id).unwrap();
+        let path = store.credential_path(&account.id).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        let mut invalid = grant("invalid-lifecycle");
+        invalid.lifecycle = TokenLifecycle::ExpiringRefresh {
+            refresh_token: Secret::new("invalid-refresh").unwrap(),
+            expires_at: Instant::now() + Duration::from_secs(60),
+        };
+        assert_eq!(
+            store.reconnect_if_current(&account.id, &initial.generation, invalid),
+            Err(StoreError::Corrupt)
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        let mut oversized = grant("not-published");
+        oversized.organization = Some("x".repeat(MAX_STORE_BYTES));
+        assert_eq!(
+            store.reconnect_if_current(&account.id, &initial.generation, oversized),
+            Err(StoreError::Capacity)
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert_eq!(store.snapshot(&account.id).unwrap(), initial);
+        assert_eq!(
+            std::fs::read_dir(fixture.0.join("credentials"))
+                .unwrap()
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn organization_selection_preserves_a_same_generation_refresh_and_every_other_credential_field()
+    {
+        let fixture = Fixture::new();
+        let store = AccountStore::new(fixture.0.clone()).unwrap();
+        let opencode = |access: &str, refresh: &str| TokenGrant {
+            provider: Provider::OpenCode,
+            access_token: Secret::new(access).unwrap(),
+            lifecycle: TokenLifecycle::ExpiringRefresh {
+                refresh_token: Secret::new(refresh).unwrap(),
+                expires_at: Instant::now() + Duration::from_secs(600),
+            },
+            organization: None,
+        };
+        let account = store
+            .insert("OpenCode", opencode("old-access", "old-refresh"))
+            .unwrap();
+        let initial = store.snapshot(&account.id).unwrap();
+        store
+            .mark_ready_if_current(&account.id, &initial.generation)
+            .unwrap();
+        // The catalogue began with initial; inference refreshed while its org
+        // HTTP exchange was in flight. Only the organization is published now.
+        store
+            .replace_grant_if_current(
+                &account.id,
+                &initial.generation,
+                opencode("new-access", "new-refresh"),
+            )
+            .unwrap();
+        let path = store.credential_path(&account.id).unwrap();
+        let mut expected: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        for organization in [
+            Some("org_live-1.example:primary".to_owned()),
+            Some("a".repeat(256)),
+            None,
+        ] {
+            store
+                .set_organization_if_current(&account.id, &initial.generation, organization.clone())
+                .unwrap();
+            expected["organization"] = serde_json::to_value(&organization).unwrap();
+            let actual: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            assert_eq!(actual, expected);
+            let loaded = store
+                .load_grant_for_generation(&account.id, &initial.generation)
+                .unwrap();
+            assert_eq!(loaded.access_token.expose(), "new-access");
+            match loaded.lifecycle {
+                TokenLifecycle::ExpiringRefresh { refresh_token, .. } => {
+                    assert_eq!(refresh_token.expose(), "new-refresh");
+                }
+                _ => panic!("OpenCode refresh lifecycle changed"),
+            }
+            assert_eq!(loaded.organization, organization);
+            let current = store.snapshot(&account.id).unwrap();
+            assert_eq!(current.generation, initial.generation);
+            assert_eq!(current.summary.state, AccountState::AccountReady);
+        }
+    }
+
+    #[test]
+    fn organization_refresh_merges_latest_selection_but_explicit_grant_and_reconnect_replace_it() {
+        let fixture = Fixture::new();
+        let store = AccountStore::new(fixture.0.clone()).unwrap();
+        let opencode = |access: &str, organization: Option<&str>| TokenGrant {
+            provider: Provider::OpenCode,
+            access_token: Secret::new(access).unwrap(),
+            lifecycle: TokenLifecycle::ExpiringRefresh {
+                refresh_token: Secret::new("synthetic-refresh").unwrap(),
+                expires_at: Instant::now() + Duration::from_secs(600),
+            },
+            organization: organization.map(str::to_owned),
+        };
+        let account = store
+            .insert("OpenCode", opencode("old-access", Some("org_old")))
+            .unwrap();
+        let initial = store.snapshot(&account.id).unwrap();
+        store
+            .mark_ready_if_current(&account.id, &initial.generation)
+            .unwrap();
+        // Refresh started before organization selection; its returned grant
+        // omitted org_id. The selection completed before refresh publication.
+        let pending_refresh = opencode("fresh-access", None);
+        store
+            .set_organization_if_current(
+                &account.id,
+                &initial.generation,
+                Some("org_latest".into()),
+            )
+            .unwrap();
+        store
+            .replace_grant_if_current(&account.id, &initial.generation, pending_refresh)
+            .unwrap();
+        let fresh = store
+            .load_grant_for_generation(&account.id, &initial.generation)
+            .unwrap();
+        assert_eq!(fresh.access_token.expose(), "fresh-access");
+        assert_eq!(fresh.organization.as_deref(), Some("org_latest"));
+        let current = store.snapshot(&account.id).unwrap();
+        assert_eq!(current.generation, initial.generation);
+        assert_eq!(current.summary.state, AccountState::AccountReady);
+
+        store
+            .replace_grant_if_current(
+                &account.id,
+                &initial.generation,
+                opencode("explicit-access", Some("org_explicit")),
+            )
+            .unwrap();
+        let explicit = store
+            .load_grant_for_generation(&account.id, &initial.generation)
+            .unwrap();
+        assert_eq!(explicit.access_token.expose(), "explicit-access");
+        assert_eq!(explicit.organization.as_deref(), Some("org_explicit"));
+        assert_eq!(store.snapshot(&account.id).unwrap(), current);
+
+        store
+            .reconnect_if_current(
+                &account.id,
+                &initial.generation,
+                opencode("reconnected-access", None),
+            )
+            .unwrap();
+        let reconnected = store.snapshot(&account.id).unwrap();
+        assert_ne!(reconnected.generation, initial.generation);
+        assert_eq!(reconnected.summary.state, AccountState::CredentialStored);
+        let grant = store
+            .load_grant_for_generation(&account.id, &reconnected.generation)
+            .unwrap();
+        assert_eq!(grant.access_token.expose(), "reconnected-access");
+        assert_eq!(grant.organization, None);
+    }
+
+    #[test]
+    fn organization_selection_rejects_invalid_provider_stale_or_removed_without_writing() {
+        let fixture = Fixture::new();
+        let store = AccountStore::new(fixture.0.clone()).unwrap();
+        let account = store.insert("DeepSeek", grant("preserved-access")).unwrap();
+        let initial = store.snapshot(&account.id).unwrap();
+        let path = store.credential_path(&account.id).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        assert_eq!(
+            store.set_organization_if_current(
+                &account.id,
+                &initial.generation,
+                Some("org_valid".into())
+            ),
+            Err(StoreError::InvalidAccount)
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        store
+            .set_organization_if_current(&account.id, &initial.generation, None)
+            .unwrap();
+        store
+            .reconnect_if_current(
+                &account.id,
+                &initial.generation,
+                grant("reconnected-access"),
+            )
+            .unwrap();
+        let before = std::fs::read(&path).unwrap();
+        assert_eq!(
+            store.set_organization_if_current(&account.id, &initial.generation, None),
+            Err(StoreError::Changed)
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        store.remove(&account.id).unwrap();
+        assert_eq!(
+            store.set_organization_if_current(&account.id, &initial.generation, None),
+            Err(StoreError::Missing)
+        );
+        assert!(!path.exists());
+
+        let opencode = store
+            .insert(
+                "OpenCode",
+                TokenGrant {
+                    provider: Provider::OpenCode,
+                    access_token: Secret::new("valid-access").unwrap(),
+                    lifecycle: TokenLifecycle::ExpiringRefresh {
+                        refresh_token: Secret::new("valid-refresh").unwrap(),
+                        expires_at: Instant::now() + Duration::from_secs(600),
+                    },
+                    organization: None,
+                },
+            )
+            .unwrap();
+        let current = store.snapshot(&opencode.id).unwrap();
+        let path = store.credential_path(&opencode.id).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        for invalid in [
+            String::new(),
+            " ".into(),
+            "bad/id".into(),
+            "bad\nheader".into(),
+            "组织".into(),
+            "a".repeat(257),
+        ] {
+            assert_eq!(
+                store.set_organization_if_current(&opencode.id, &current.generation, Some(invalid)),
+                Err(StoreError::InvalidAccount)
+            );
+            assert_eq!(std::fs::read(&path).unwrap(), before);
         }
     }
 

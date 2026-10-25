@@ -95,6 +95,7 @@ pub enum Action {
         login: NetworkPolicy,
         service: NetworkPolicy,
     },
+    Reconnect(String),
     CancelLogin,
     RefreshAccounts,
     RefreshModels,
@@ -709,10 +710,24 @@ impl Owner {
                         },
                         preferences,
                     )
-                    .map_err(|_| RuntimeError::Busy)?;
+                    .map_err(map_login)?;
                 self.view.login_active = true;
                 self.view.auth_attempt = Some(attempt);
                 self.view.auth_result = None;
+            }
+            Action::Reconnect(account) => {
+                if self.operation.is_some() || self.view.login_active {
+                    return Err(RuntimeError::Busy);
+                }
+                let snapshot = self
+                    .store
+                    .snapshot(&account)
+                    .map_err(|error| map_login(crate::provider_login::LoginError::Store(error)))?;
+                let attempt = login.start_reconnect(snapshot).map_err(map_login)?;
+                self.view.login_active = true;
+                self.view.auth_attempt = Some(attempt);
+                self.view.auth_result = None;
+                self.view.status = Some("Reconnect in progress. Existing account settings are retained; model verification is required after success.".into());
             }
             Action::RefreshAccounts => self.refresh_view()?,
             Action::SaveAccount { request, edit } => {
@@ -966,6 +981,22 @@ fn prepare_root(root: &Path) -> Result<(), RuntimeError> {
     std::fs::create_dir_all(root).map_err(|_| RuntimeError::Storage)?;
     filesystem::protect_private_directory(root).map_err(|_| RuntimeError::Storage)
 }
+fn map_login(error: crate::provider_login::LoginError) -> RuntimeError {
+    use crate::{
+        provider_accounts::StoreError, provider_auth::AuthError, provider_login::LoginError,
+    };
+    match error {
+        LoginError::Busy => RuntimeError::Busy,
+        LoginError::WorkerUnavailable => RuntimeError::WorkerUnavailable,
+        LoginError::Store(StoreError::Missing) => RuntimeError::MissingAccount,
+        LoginError::Store(StoreError::Changed) => RuntimeError::AccountChanged,
+        LoginError::Store(StoreError::InvalidAccount)
+        | LoginError::Auth(AuthError::InvalidInput) => RuntimeError::InvalidAction,
+        LoginError::Store(_) => RuntimeError::Storage,
+        _ => RuntimeError::ProviderUnavailable,
+    }
+}
+
 fn map_server(error: ServerError) -> RuntimeError {
     match error {
         ServerError::MissingAccount => RuntimeError::MissingAccount,
@@ -1707,6 +1738,94 @@ mod tests {
             .unwrap();
         (owner, account.id)
     }
+    #[test]
+    fn reconnect_action_and_cancel_keep_the_applied_connection_and_existing_grant() {
+        struct AwaitCancel(std::sync::mpsc::SyncSender<()>);
+        impl crate::provider_login::AuthTransport for AwaitCancel {
+            fn request(
+                &self,
+                request: &minicon_platform::network_http::NetworkHttpRequest,
+                cancel: &NetworkHttpCancel,
+            ) -> Result<
+                minicon_platform::network_http::NetworkHttpResponse,
+                crate::provider_auth::AuthError,
+            > {
+                assert!(request.url.ends_with("/auth_init"));
+                self.0.send(()).unwrap();
+                let deadline = Instant::now() + Duration::from_secs(5);
+                while !cancel.is_cancelled() {
+                    assert!(
+                        Instant::now() < deadline,
+                        "reconnect cancellation did not reach auth transport"
+                    );
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+                Err(crate::provider_auth::AuthError::Cancelled)
+            }
+        }
+        let root = Root::new();
+        let (mut owner, account) = seed_ready(&root);
+        let before = owner.store.snapshot(&account).unwrap();
+        let config = serde_json::to_value(&owner.config).unwrap();
+        let (entered, incoming) = mpsc::sync_channel(1);
+        let mut login = LoginCoordinator::with_transport(
+            owner.store.clone(),
+            LoginMetadata {
+                version: "fixture".into(),
+                locale: "en-US".into(),
+                timezone_offset_seconds: 0,
+            },
+            Arc::new(AwaitCancel(entered)),
+        );
+        assert!(
+            owner
+                .action(Action::Reconnect(account.clone()), &mut login)
+                .unwrap()
+                .is_none()
+        );
+        incoming.recv_timeout(Duration::from_secs(5)).unwrap();
+        let attempt = owner.view.auth_attempt.unwrap();
+        assert!(owner.view.login_active);
+        assert!(owner.view.busy);
+        assert_eq!(serde_json::to_value(&owner.config).unwrap(), config);
+        assert_eq!(owner.store.snapshot(&account).unwrap(), before);
+        owner.action(Action::CancelLogin, &mut login).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let event = loop {
+            if let Some(event) = login.poll() {
+                break event;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "no reconnect cancellation result"
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        };
+        assert!(
+            matches!(&event, LoginEvent::Cancelled { attempt: current } if *current == attempt)
+        );
+        assert!(
+            matches!(owner.login_event(event), Some(Effect::AuthFinished(current)) if current == attempt)
+        );
+        assert_eq!(
+            owner.view.auth_result,
+            Some((attempt, AuthOutcome::Cancelled))
+        );
+        assert!(!owner.view.login_active);
+        assert_eq!(owner.store.snapshot(&account).unwrap(), before);
+        assert_eq!(serde_json::to_value(&owner.config).unwrap(), config);
+        assert_eq!(
+            owner
+                .store
+                .load_grant(&account)
+                .unwrap()
+                .access_token
+                .expose(),
+            "synthetic-access"
+        );
+        login.shutdown(Duration::from_secs(2)).unwrap();
+    }
+
     #[test]
     fn rejected_logout_does_not_disable_the_account() {
         let root = Root::new();

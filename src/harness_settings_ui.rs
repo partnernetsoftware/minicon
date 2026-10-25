@@ -42,6 +42,8 @@ enum Row {
     AccountInput(Field),
     AccountActions,
     AccountConnection,
+    AccountReconnect,
+    AccountReconnectHint,
     AccountNetworkHint,
     NoAccounts,
     Model,
@@ -348,6 +350,8 @@ impl HarnessSettings {
                 Row::AccountNetworkHint,
                 Row::AccountActions,
                 Row::AccountConnection,
+                Row::AccountReconnect,
+                Row::AccountReconnectHint,
             ]);
         }
         rows.extend([
@@ -669,6 +673,13 @@ impl HarnessSettings {
             Row::AccountConnection => {
                 self.account_draft.enabled = !self.account_draft.enabled;
             }
+            Row::AccountReconnect => {
+                if self.account_draft.dirty() || self.account_draft.submitted.is_some() {
+                    self.error = Some("Save or revert account changes before reconnecting.".into());
+                } else if let Some(account) = self.account_focus.clone() {
+                    self.act(Action::Reconnect(account));
+                }
+            }
             Row::ModelInput if column == 1 => self.submit(Field::Model),
             Row::ModelActions => self.act(if column == 0 {
                 Action::RefreshModels
@@ -745,6 +756,8 @@ fn row_id(row: Row) -> String {
         Row::AccountInput(_) => "account_input",
         Row::AccountActions => "account_edit_actions",
         Row::AccountConnection => "account_connection",
+        Row::AccountReconnect => "account_reconnect",
+        Row::AccountReconnectHint => "account_reconnect_hint",
         Row::AccountNetworkHint => "account_network_hint",
         Row::Model => "model",
         Row::ModelInput => "model_input",
@@ -1007,6 +1020,12 @@ impl ConApp {
                 Row::AccountNetworkHint => {
                     label = "Empty proxy = Direct. Login and service networks are independent."
                         .to_owned();
+                }
+                Row::AccountReconnect => {
+                    button(surface, cell(0, 1), "Reconnect this account", false);
+                }
+                Row::AccountReconnectHint => {
+                    label = "Uses saved login settings. Connections to this account require model verification again after reconnecting.".into();
                 }
                 Row::ConnectNetworkHint => {
                     label =
@@ -1685,6 +1704,41 @@ impl ConApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reconnect_requires_saved_account_edits_and_never_applies_the_form_implicitly() {
+        let preferences = AccountPreferences::legacy(&"a".repeat(32));
+        let account = AccountSummary {
+            id: "a".repeat(32),
+            provider: Provider::DeepSeek,
+            label: "Applied".into(),
+            state: provider_accounts::AccountState::AccountReady,
+        };
+        let mut settings = HarnessSettings {
+            account_focus: Some(account.id.clone()),
+            account_draft: AccountDraft::from_account(&account, &preferences),
+            ..Default::default()
+        };
+        settings.account_draft.login.text = "http://unsaved-login.invalid:8080".into();
+        assert!(settings.activate(Row::AccountReconnect, 0).is_none());
+        assert_eq!(
+            settings.error.as_deref(),
+            Some("Save or revert account changes before reconnecting.")
+        );
+        assert_eq!(settings.account_draft.applied, Some(preferences.clone()));
+        assert_eq!(
+            settings.account_draft.login.text,
+            "http://unsaved-login.invalid:8080"
+        );
+        settings.account_draft = AccountDraft::from_account(&account, &preferences);
+        settings.account_draft.submitted = Some(1);
+        settings.error = None;
+        assert!(settings.activate(Row::AccountReconnect, 0).is_none());
+        assert_eq!(
+            settings.error.as_deref(),
+            Some("Save or revert account changes before reconnecting.")
+        );
+    }
 
     #[test]
     fn queued_device_challenge_cannot_return_after_cancel_or_replace_another_attempt() {

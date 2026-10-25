@@ -5,8 +5,8 @@ Parent: [provider gateway](PRD_02_31_01_provider_gateway.md). Presentation:
 [usage and balances](PRD_02_31_01_03_usage_monitoring.md). Sequence:
 [0.2.23 plan](../plan/plan-v0.2.23.md#harness-product-redesign-before-publication).
 Status: `[-]` selected design with a partial backend checkpoint, clarified by
-the owner on 2026-10-25. Account networks, isolated authorization contexts,
-profile management UI and actual three-account acceptance remain open.
+the owner on 2026-10-25. Native account-network/context acceptance, profile
+management UI and actual three-account acceptance remain open.
 
 This module owns multi-account identity, account-specific network policy,
 client profiles and allocation. The parent retains protocol, admission,
@@ -376,7 +376,7 @@ the DeepSeek journey also uses an actual loopback callback socket. Park/restore
 unit journeys exercise the production detach and observation consumers without
 native handles. Neither establishes native DOM/history/cookie preservation,
 actual provider entitlement or a completed product connection journey. Context
-cleanup after host release, same-account reconnect, per-account catalogues,
+cleanup after host release, native reconnect acceptance, per-account catalogues,
 client-allocation UI and monitoring retain their open obligations.
 
 The Windows x86_64 local restored-source receipt is
@@ -389,14 +389,127 @@ removals fail at runtime with byte-exact restoration
 (`auth-integration-guard-receipt.json`). Initial fixture compilation mistakes
 and the first Clippy rejection are retained separately and are not runtime
 counterexample evidence. No GUI, clipboard or human input is claimed by this
-local join. Linux readiness/X11 and real WebView isolation remain unqualified
-until the named native courts execute on this source.
+local join. The subsequent scoped native feedback for source `1d14868`, run
+`40163306959`, completed successfully in all six cells. Its independently
+audited receipt is
+`target-six/v0.2.23-provider/ci-1d14868-native/verification-index.json`:
+600 Rust passing execution instances, zero failed and six unselected opt-in
+tests. Linux explicitly executed its owned-child X11 court. This is filtered
+native developer feedback, not full suites, actual authorization/storage
+preservation, real-provider acceptance or release-artifact qualification.
 
 The preceding checkpoint `e6f9f38` has completed successful native development
 feedback in all six cells, run `40161247565`, retained in
 `target-six/v0.2.23-provider/ci-e6f9f38-native/verification-index.json`.
 Its 506 Rust passes are execution instances, not unique tests. That historical
 filtered run does not qualify the new auth presentation or checked-XCB source.
+
+### Reconnect implementation frontier
+
+`[-]` Reconnect retains the account ID, latest label, enabled state and its
+existing browser context. It uses a frozen login-policy snapshot and an expected
+credential generation. A successful private grant replacement advances that
+generation and resets readiness in one atomic credential-file publication;
+cancel, stale completion, wrong provider or removed target cannot insert a new
+account or overwrite the current grant. Network/label edits made while the
+provider page is open remain applied rather than being replaced by an old form.
+
+The version-2 private credential record owns its generation and readiness
+together with its grant. Legacy version-1 credentials remain readable and use
+their registry readiness and stable account ID as the initial generation.
+The registry's persisted summary state is a legacy compatibility input only;
+current public summaries project version-2 readiness from the credential.
+This avoids publishing a new grant and its readiness across two separate files,
+and requires no growing collection of historical credential files.
+
+Refresh, organization selection and readiness writes compare their starting
+credential generation under the same account-store mutation lock as removal
+and reconnect. Request leases snapshot policy and credential generation together.
+An admitted old request may finish with its already acquired old grant; it
+cannot acquire a reconnected grant under the old binding. New conversation
+bindings include credential generation, so re-verifying a reconnected account
+does not silently revive old conversations. Affected account work stays local;
+other accounts and client allocations are preserved.
+
+Organization selection changes only that field on the latest locked credential,
+so a delayed catalogue cannot restore old tokens. Conversely, normal token
+refresh with no provider-supplied organization inherits the latest locked value;
+the caller must not prefill it from its pre-HTTP snapshot. An explicit provider
+organization replaces it. Reconnect is a new authorization and does not inherit
+the old value. Both actual HTTP completion orders require regression evidence.
+
+Implementation leaves and evidence join:
+
+```text
+Outcome: reconnect an account without identity loss or stale credential publication
+├── [-] STORE — atomic grant/generation/readiness and legacy projection
+│   invariant: one credential publication; stale refresh/probe and removal cannot win
+│   evidence: store reconnect/refresh/readiness/removal/legacy counterexamples
+│   safe failure: preserve existing grant on rejected publication; never insert target
+│   dependency: existing private atomic filesystem; non-goal: historical secret files
+├── [-] ADMISSION — leases and bindings retain credential generation
+│   invariant: old work cannot borrow a new grant; other accounts remain independent
+│   evidence: actual loopback refresh/probe/admission and conversation refusal
+│   safe failure: typed changed-binding/login error before unintended dispatch
+│   dependency: STORE; non-goal: automatic retry under another account
+└── [-] HANDOFF — explicit reconnect through the existing auth presentation
+    invariant: same account/context; cancelled/stale result cannot duplicate or resurrect
+    evidence: configured coordinator/runtime and native recovery journey
+    safe failure: retain account and draft; show operation-specific recovery
+    dependency: STORE/ADMISSION; non-goal: treating authorization as model verification
+```
+
+```mermaid
+flowchart LR
+    S[Account snapshot: identity / context / login policy / credential generation] --> A[Existing provider authorization]
+    A --> CAS{Target still exists and generation matches?}
+    CAS -->|yes| C[Atomic new grant + new generation + unverified]
+    CAS -->|no| R[Refuse stale completion; no insert]
+    C --> V[Explicit model verification]
+    OLD[Old refresh / probe / admission] --> CHECK{Same generation?}
+    CHECK -->|no| R
+    CHECK -->|yes| B[Existing scoped operation]
+    V --> N[New binding generation; old named conversation refused]
+```
+
+The development Settings account detail now offers **Reconnect this account**.
+Save or revert dirty/submitted account edits before starting; reconnect does not
+implicitly apply a form or change the selected client/model. Cancelling keeps
+the existing grant and applied connection. Successful authorization resets model
+readiness, and the existing explicit verification path must succeed again.
+
+Windows x86_64 restored-source evidence:
+`target-six/v0.2.23-provider/reconnect-final-gate-receipt.json` records provider
+94 passes plus one unselected opt-in Pi test, auth presentation 2, auth settings
+4, public gateway workers 2 and alignment 17 passes: 119 passing executions.
+Formatting and strict all-target Clippy pass. Main's test inventory increases
+from 606 to 622. The source stayed stable throughout these gates; this paragraph
+is a subsequent evidence-only documentation closeout.
+
+`reconnect-guard-receipt.json` records fourteen actual runtime failures with
+byte-exact restoration. The original reconnect baseline and both organization
+HTTP failures remain in `reconnect-baseline-red.log`,
+`reconnect-organization-http-red.log` and
+`reconnect-organization-reverse-http-red.log`. A runner preflight rejected an
+ambiguous size-guard anchor before mutation; `reconnect-guard-setup-note.json`
+retains it separately and does not count it as a runtime counterexample.
+
+Named production-consumer regressions include:
+
+- `provider_accounts::tests::reconnect_atomically_resets_readiness_preserves_latest_metadata_and_survives_reopen`
+- `provider_login::tests::reconnect_reuses_account_context_and_cannot_duplicate_or_resurrect_a_removed_target`
+- `provider_runtime::tests::reconnect_action_and_cancel_keep_the_applied_connection_and_existing_grant`
+- `harness_settings_ui::tests::reconnect_requires_saved_account_edits_and_never_applies_the_form_implicitly`
+- `provider_server::tests::reconnect_changes_only_its_bindings_and_old_leases_cannot_borrow_the_new_grant`
+- `provider_server::tests::reconnect_rejects_late_refresh_and_probe_results_after_real_http_completes`
+- `provider_server::tests::organization_selection_preserves_a_concurrent_refresh_through_actual_catalog_and_probe`
+- `provider_server::tests::refresh_preserves_a_new_organization_selected_while_its_http_response_is_pending`
+
+Store and coordinator fixtures use synthetic grants; the callback, refresh,
+catalogue and probe regressions use actual bounded loopback sockets. These
+results do not certify native context storage/history preservation, real
+provider reconnect, other OS/ISA execution, full workspace or release bytes.
+Those obligations remain open with the preceding account acceptance journeys.
 
 ### Native feedback retained from the profile checkpoint
 

@@ -265,8 +265,9 @@ records pinned auth transport, serial presentation, stale-event refusal and
 remaining real-context/native qualification. The earlier failed macOS ARM
 continuation from run `40159013816` remains retained with unknown root cause;
 all six cells passed the subsequent `e6f9f38` development run. That historical
-pass does not qualify the subsequent auth/XCB source. Finish actual-helper
-readiness/parking and native same-origin context evidence before calling slice 1
+pass does not qualify the subsequent auth/XCB source. The auth/context checkpoint
+and reconnect frontier retain their source-specific evidence and open work in
+the pool owner. Finish actual-helper readiness/parking and native same-origin context evidence before calling slice 1
 accepted; profile/catalogue/apply UI, monitoring and H0 still follow the table.
 The H0 header/host-view join also owns `src/main.rs`, `host_ui.rs` and
 `host_paint.rs`; agree their shared ownership before concurrent source work.

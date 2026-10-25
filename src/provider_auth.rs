@@ -713,7 +713,7 @@ pub fn parse_opencode_token(
     if wire
         .org_id
         .as_deref()
-        .is_some_and(|id| !identifier(id, 256))
+        .is_some_and(|id| !valid_organization_id(id))
     {
         return Err(AuthError::InvalidResponse);
     }
@@ -801,6 +801,10 @@ fn opaque(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= MAX_FIELD_BYTES
         && value.bytes().all(|byte| (0x21..=0x7e).contains(&byte))
+}
+
+pub(crate) fn valid_organization_id(value: &str) -> bool {
+    identifier(value, 256)
 }
 
 fn identifier(value: &str, limit: usize) -> bool {

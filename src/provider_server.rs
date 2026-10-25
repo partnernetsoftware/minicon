@@ -2,7 +2,7 @@
 
 use crate::{
     provider_accounts::{
-        AccountEdit, AccountPreferences, AccountState, AccountStore, NetworkPolicy,
+        AccountEdit, AccountPreferences, AccountState, AccountStore, NetworkPolicy, StoreError,
     },
     provider_auth::{self, AuthClient, Provider, Secret, TokenGrant, TokenLifecycle},
     provider_protocol::{self as protocol, Protocol, SseBridge},
@@ -622,18 +622,12 @@ impl Gateway {
         if state.disabled.contains(account) {
             return Err(ServerError::NeedsLogin);
         }
-        let accounts = self.store.list().map_err(|_| ServerError::Storage)?;
-        let summary = accounts
-            .iter()
-            .find(|entry| &entry.id == account)
-            .ok_or(ServerError::MissingAccount)?;
+        let snapshot = self.store.snapshot(account).map_err(credential_error)?;
+        let summary = &snapshot.summary;
         if summary.state != AccountState::AccountReady {
             return Err(ServerError::NeedsLogin);
         }
-        let preferences = self
-            .store
-            .preferences(account)
-            .map_err(|_| ServerError::Storage)?;
+        let preferences = &snapshot.preferences;
         if !preferences.enabled {
             return Err(ServerError::NeedsLogin);
         }
@@ -658,7 +652,10 @@ impl Gateway {
                 provider: summary.provider,
                 account: account.clone(),
                 model: route.model_id.clone(),
-                generation: format!("{generation}:{}", preferences.service_generation),
+                generation: format!(
+                    "{generation}:{}:{}",
+                    preferences.service_generation, snapshot.generation
+                ),
             },
             route,
         ))
@@ -718,6 +715,7 @@ impl Gateway {
         account: &str,
         cancel: &NetworkHttpCancel,
         network: &NetworkPolicy,
+        generation: &str,
     ) -> Result<TokenGrant, ServerError> {
         if cancel.is_cancelled() {
             return Err(ServerError::Cancelled);
@@ -743,8 +741,8 @@ impl Gateway {
         };
         let mut grant = self
             .store
-            .load_grant(account)
-            .map_err(|_| ServerError::NeedsLogin)?;
+            .load_grant_for_generation(account, generation)
+            .map_err(credential_error)?;
         if let TokenLifecycle::ExpiringRefresh { expires_at, .. } = &grant.lifecycle
             && *expires_at <= Instant::now() + Duration::from_secs(30)
         {
@@ -757,18 +755,15 @@ impl Gateway {
                 provider_auth::AUTH_MAX_RESPONSE_BYTES,
                 network,
             )?;
-            let mut fresh = provider_auth::parse_opencode_refresh(&response, Instant::now())
+            let fresh = provider_auth::parse_opencode_refresh(&response, Instant::now())
                 .map_err(|_| ServerError::NeedsLogin)?;
-            if fresh.organization.is_none() {
-                fresh.organization = grant.organization.take();
-            }
             self.store
-                .replace_grant_if_present(account, fresh)
-                .map_err(|_| ServerError::NeedsLogin)?;
+                .replace_grant_if_current(account, generation, fresh)
+                .map_err(credential_error)?;
             grant = self
                 .store
-                .load_grant(account)
-                .map_err(|_| ServerError::NeedsLogin)?;
+                .load_grant_for_generation(account, generation)
+                .map_err(credential_error)?;
         }
         Ok(grant)
     }
@@ -829,7 +824,7 @@ impl Gateway {
     ) -> Result<Vec<ModelRoute>, ServerError> {
         let lease = BorrowedLease::acquire(self, account, cancel, None)?;
         let network = &lease.preferences.service;
-        let mut grant = self.grant(account, cancel, network)?;
+        let mut grant = self.grant(account, cancel, network, &lease.generation)?;
         match grant.provider {
             Provider::DeepSeek => {
                 let response = self.collect(
@@ -883,14 +878,13 @@ impl Gateway {
                 check_status(orgs.status)?;
                 let selected = select_organization(&orgs.body, grant.organization.as_deref())?;
                 if grant.organization != selected {
-                    grant.organization = selected;
                     self.store
-                        .replace_grant_if_present(account, grant)
-                        .map_err(|_| ServerError::NeedsLogin)?;
+                        .set_organization_if_current(account, &lease.generation, selected)
+                        .map_err(credential_error)?;
                     grant = self
                         .store
-                        .load_grant(account)
-                        .map_err(|_| ServerError::NeedsLogin)?;
+                        .load_grant_for_generation(account, &lease.generation)
+                        .map_err(credential_error)?;
                 }
                 let response = self.collect(
                     account_request(
@@ -920,7 +914,7 @@ impl Gateway {
         validate_route(route)?;
         let lease = BorrowedLease::acquire(self, account, cancel, None)?;
         let network = &lease.preferences.service;
-        let grant = self.grant(account, cancel, network)?;
+        let grant = self.grant(account, cancel, network, &lease.generation)?;
         if grant.provider != route.provider {
             return Err(ServerError::InvalidConfig);
         }
@@ -944,8 +938,8 @@ impl Gateway {
         )
         .map_err(ServerError::Protocol)?;
         self.store
-            .mark_ready(account)
-            .map_err(|_| ServerError::NeedsLogin)?;
+            .mark_ready_if_current(account, &lease.generation)
+            .map_err(credential_error)?;
         Ok(())
     }
 }
@@ -1100,7 +1094,7 @@ impl Gateway {
             Some((&request.head, &binding)),
         )?;
         let network = &lease.preferences.service;
-        let grant = self.grant(&binding.account, &cancel, network)?;
+        let grant = self.grant(&binding.account, &cancel, network, &lease.generation)?;
         let identity = self
             .state
             .lock()
@@ -1196,10 +1190,20 @@ impl Gateway {
     }
 }
 
+fn credential_error(error: StoreError) -> ServerError {
+    match error {
+        StoreError::Changed => ServerError::BindingChanged,
+        StoreError::Missing => ServerError::MissingAccount,
+        StoreError::Storage | StoreError::InvalidRoot => ServerError::Storage,
+        _ => ServerError::NeedsLogin,
+    }
+}
+
 struct BorrowedLease<'a> {
     gateway: &'a Gateway,
     account: String,
     preferences: AccountPreferences,
+    generation: String,
 }
 impl<'a> BorrowedLease<'a> {
     fn acquire(
@@ -1214,6 +1218,12 @@ impl<'a> BorrowedLease<'a> {
         }
         if client.is_some() && state.draining {
             return Err(ServerError::Busy);
+        }
+        // Read policy and credential generation together before the binding
+        // revalidation. Reconnect publishes outside the gateway state lock.
+        let snapshot = gateway.store.snapshot(account).map_err(credential_error)?;
+        if !snapshot.preferences.enabled {
+            return Err(ServerError::NeedsLogin);
         }
         let profile = client
             .map(|(head, expected)| {
@@ -1230,13 +1240,6 @@ impl<'a> BorrowedLease<'a> {
                 Ok(profile.to_owned())
             })
             .transpose()?;
-        let preferences = gateway
-            .store
-            .preferences(account)
-            .map_err(|_| ServerError::MissingAccount)?;
-        if !preferences.enabled {
-            return Err(ServerError::NeedsLogin);
-        }
         if state.leases.values().sum::<usize>() >= 8 {
             return Err(ServerError::Busy);
         }
@@ -1256,7 +1259,8 @@ impl<'a> BorrowedLease<'a> {
         Ok(Self {
             gateway,
             account: account.to_owned(),
-            preferences,
+            preferences: snapshot.preferences,
+            generation: snapshot.generation,
         })
     }
 }
@@ -1755,6 +1759,53 @@ mod tests {
         assert!(response.starts_with("HTTP/1.1 200"), "{response}");
         serde_json::from_str(response.split_once("\r\n\r\n").unwrap().1).unwrap()
     }
+    fn controlled_peer_request(listener: &TcpListener) -> (TcpStream, String, Value) {
+        listener.set_nonblocking(true).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let (mut stream, _) = loop {
+            match listener.accept() {
+                Ok(pair) => break pair,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(
+                        Instant::now() < deadline,
+                        "controlled provider request did not arrive"
+                    );
+                    thread::sleep(Duration::from_millis(5));
+                }
+                Err(error) => panic!("controlled provider accept: {error}"),
+            }
+        };
+        stream.set_nonblocking(false).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        stream
+            .set_write_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let headers = read_headers(&mut stream);
+        let length: usize = headers
+            .lines()
+            .find_map(|line| {
+                line.split_once(':')
+                    .filter(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                    .map(|(_, value)| value.trim().parse().unwrap())
+            })
+            .unwrap_or(0);
+        assert!(length <= 16384);
+        let mut body = vec![0; length];
+        stream.read_exact(&mut body).unwrap();
+        let value = if body.is_empty() {
+            Value::Null
+        } else {
+            serde_json::from_slice(&body).unwrap()
+        };
+        (stream, headers, value)
+    }
+    fn reply_controlled_peer(mut stream: TcpStream, value: Value) {
+        let body = value.to_string();
+        write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+        stream.flush().unwrap();
+    }
     fn upstream_request(stream: &mut TcpStream) -> String {
         stream.set_nonblocking(false).unwrap();
         stream
@@ -2188,6 +2239,436 @@ mod tests {
             .set_client_key(&id, Some(Secret::new("synthetic-other").unwrap()))
             .unwrap();
         id
+    }
+
+    #[test]
+    fn organization_selection_preserves_a_concurrent_refresh_through_actual_catalog_and_probe() {
+        let fixture = Fixture::new();
+        let before = fixture.gateway.store.snapshot(&fixture.account).unwrap();
+        let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
+        *fixture.gateway.fixture_upstream.lock().unwrap() =
+            Some(format!("http://{}/", upstream.local_addr().unwrap()));
+        let gateway = fixture.gateway.clone();
+        let account = fixture.account.clone();
+        let catalog =
+            thread::spawn(move || gateway.catalog(&account, &Arc::new(NetworkHttpCancel::new())));
+        let (user, _, _) = controlled_peer_request(&upstream);
+        reply_controlled_peer(
+            user,
+            json!({"id":"synthetic-user","email":"synthetic@fixture.invalid"}),
+        );
+        // Hold the actual org response after the catalogue captured its grant.
+        let (orgs, _, _) = controlled_peer_request(&upstream);
+        fixture
+            .gateway
+            .store
+            .replace_grant_if_current(
+                &fixture.account,
+                &before.generation,
+                TokenGrant {
+                    provider: Provider::OpenCode,
+                    access_token: Secret::new("synthetic-access").unwrap(),
+                    lifecycle: TokenLifecycle::ExpiringRefresh {
+                        refresh_token: Secret::new("synthetic-refresh").unwrap(),
+                        expires_at: Instant::now(),
+                    },
+                    organization: None,
+                },
+            )
+            .unwrap();
+        let gateway = fixture.gateway.clone();
+        let route = gateway.state.lock().unwrap().config.models[0].clone();
+        let account = fixture.account.clone();
+        let probe = thread::spawn(move || {
+            gateway.probe(
+                &account,
+                &route,
+                "synthetic-org-probe",
+                &Arc::new(NetworkHttpCancel::new()),
+            )
+        });
+        let (refresh, _, body) = controlled_peer_request(&upstream);
+        assert_eq!(body["grant_type"], "refresh_token");
+        reply_controlled_peer(
+            refresh,
+            json!({"access_token":"synthetic-refreshed","refresh_token":"synthetic-refreshed-key","expires_in":3600}),
+        );
+        let (inference, inference_headers, body) = controlled_peer_request(&upstream);
+        assert_eq!(body["model"], "fixture-wire");
+        assert!(
+            inference_headers
+                .to_ascii_lowercase()
+                .contains("authorization: bearer synthetic-refreshed")
+        );
+        reply_controlled_peer(
+            inference,
+            json!({"id":"synthetic-probe","model":"fixture-wire","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}]}),
+        );
+        probe.join().unwrap().unwrap();
+        reply_controlled_peer(
+            orgs,
+            json!([{"id":"org_selected","name":"Synthetic workspace"}]),
+        );
+        let (config, config_headers, _) = controlled_peer_request(&upstream);
+        reply_controlled_peer(
+            config,
+            json!({"providers":{"remote":{
+                "package":"@opencode/ai/providers/openai-compatible",
+                "settings":{"baseURL":"https://opencode.ai/inference/openai/v1"},
+                "headers":{"x-org-id":"org_selected"},
+                "models":{"fixture":{"modelID":"fixture-wire"}}
+            }}}),
+        );
+        assert!(!catalog.join().unwrap().unwrap().is_empty());
+        assert!(
+            config_headers
+                .to_ascii_lowercase()
+                .contains("authorization: bearer synthetic-refreshed"),
+            "catalogue restored an old token after refresh"
+        );
+        let current = fixture.gateway.store.snapshot(&fixture.account).unwrap();
+        assert_eq!(current.generation, before.generation);
+        assert_eq!(current.summary.state, AccountState::AccountReady);
+        let grant = fixture.gateway.store.load_grant(&fixture.account).unwrap();
+        assert_eq!(grant.access_token.expose(), "synthetic-refreshed");
+        assert_eq!(grant.organization.as_deref(), Some("org_selected"));
+        let TokenLifecycle::ExpiringRefresh {
+            refresh_token,
+            expires_at,
+        } = grant.lifecycle
+        else {
+            panic!("refreshable grant expected")
+        };
+        assert_eq!(refresh_token.expose(), "synthetic-refreshed-key");
+        assert!(expires_at > Instant::now() + Duration::from_secs(3000));
+        assert!(fixture.gateway.state.lock().unwrap().leases.is_empty());
+    }
+
+    #[test]
+    fn refresh_preserves_a_new_organization_selected_while_its_http_response_is_pending() {
+        let fixture = Fixture::new();
+        let before = fixture.gateway.store.snapshot(&fixture.account).unwrap();
+        let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
+        *fixture.gateway.fixture_upstream.lock().unwrap() =
+            Some(format!("http://{}/", upstream.local_addr().unwrap()));
+        let gateway = fixture.gateway.clone();
+        let account = fixture.account.clone();
+        let catalog =
+            thread::spawn(move || gateway.catalog(&account, &Arc::new(NetworkHttpCancel::new())));
+        let (user, _, _) = controlled_peer_request(&upstream);
+        reply_controlled_peer(
+            user,
+            json!({"id":"synthetic-user","email":"synthetic@fixture.invalid"}),
+        );
+        let (orgs, _, _) = controlled_peer_request(&upstream);
+        fixture
+            .gateway
+            .store
+            .replace_grant_if_current(
+                &fixture.account,
+                &before.generation,
+                TokenGrant {
+                    provider: Provider::OpenCode,
+                    access_token: Secret::new("synthetic-access").unwrap(),
+                    lifecycle: TokenLifecycle::ExpiringRefresh {
+                        refresh_token: Secret::new("synthetic-refresh").unwrap(),
+                        expires_at: Instant::now(),
+                    },
+                    organization: None,
+                },
+            )
+            .unwrap();
+        let gateway = fixture.gateway.clone();
+        let route = gateway.state.lock().unwrap().config.models[0].clone();
+        let account = fixture.account.clone();
+        let probe = thread::spawn(move || {
+            gateway.probe(
+                &account,
+                &route,
+                "synthetic-refresh-probe",
+                &Arc::new(NetworkHttpCancel::new()),
+            )
+        });
+        // Refresh captured an organization-free grant; keep that HTTP response pending.
+        let (refresh, _, body) = controlled_peer_request(&upstream);
+        assert_eq!(body["grant_type"], "refresh_token");
+        reply_controlled_peer(
+            orgs,
+            json!([{"id":"org_selected","name":"Synthetic workspace"}]),
+        );
+        let (config, config_headers, _) = controlled_peer_request(&upstream);
+        reply_controlled_peer(
+            config,
+            json!({"providers":{"remote":{
+                "package":"@opencode/ai/providers/openai-compatible",
+                "settings":{"baseURL":"https://opencode.ai/inference/openai/v1"},
+                "headers":{"x-org-id":"org_selected"},
+                "models":{"fixture":{"modelID":"fixture-wire"}}
+            }}}),
+        );
+        assert!(!catalog.join().unwrap().unwrap().is_empty());
+        assert!(
+            config_headers
+                .to_ascii_lowercase()
+                .contains("x-org-id: org_selected")
+        );
+        assert_eq!(
+            fixture
+                .gateway
+                .store
+                .load_grant(&fixture.account)
+                .unwrap()
+                .organization
+                .as_deref(),
+            Some("org_selected")
+        );
+        reply_controlled_peer(
+            refresh,
+            json!({"access_token":"synthetic-refreshed","refresh_token":"synthetic-refreshed-key","expires_in":3600}),
+        );
+        let (inference, headers, _) = controlled_peer_request(&upstream);
+        reply_controlled_peer(
+            inference,
+            json!({"id":"synthetic-probe","model":"fixture-wire","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}]}),
+        );
+        probe.join().unwrap().unwrap();
+        assert!(
+            headers
+                .to_ascii_lowercase()
+                .contains("authorization: bearer synthetic-refreshed")
+        );
+        assert!(
+            headers
+                .to_ascii_lowercase()
+                .contains("x-org-id: org_selected"),
+            "refresh discarded organization selected while its response was pending"
+        );
+        let grant = fixture.gateway.store.load_grant(&fixture.account).unwrap();
+        assert_eq!(grant.access_token.expose(), "synthetic-refreshed");
+        assert_eq!(grant.organization.as_deref(), Some("org_selected"));
+        let after = fixture.gateway.store.snapshot(&fixture.account).unwrap();
+        assert_eq!(after.generation, before.generation);
+        assert_eq!(after.summary.state, AccountState::AccountReady);
+        assert!(fixture.gateway.state.lock().unwrap().leases.is_empty());
+    }
+
+    #[test]
+    fn reconnect_changes_only_its_bindings_and_old_leases_cannot_borrow_the_new_grant() {
+        let fixture = Fixture::new();
+        let grant = |token: &str| TokenGrant {
+            provider: Provider::OpenCode,
+            access_token: Secret::new(token).unwrap(),
+            lifecycle: TokenLifecycle::ExpiringRefresh {
+                refresh_token: Secret::new("synthetic-refresh").unwrap(),
+                expires_at: Instant::now() + Duration::from_secs(3600),
+            },
+            organization: None,
+        };
+        let other = fixture
+            .gateway
+            .store
+            .insert("Unaffected", grant("synthetic-other-account"))
+            .unwrap();
+        fixture.gateway.store.mark_ready(&other.id).unwrap();
+        add_profile(&fixture, &other.id);
+        let server = fixture.server();
+        let before = read_binding(server.get(
+            "/v1/minicon/binding",
+            "x-minicon-session: reconnect-old\r\n",
+        ));
+        let independent = read_binding(server.get_key(
+            "/v1/minicon/binding",
+            "synthetic-other",
+            "x-minicon-session: other-stable\r\n",
+        ));
+        let cancel = Arc::new(NetworkHttpCancel::new());
+        let lease =
+            BorrowedLease::acquire(&fixture.gateway, &fixture.account, &cancel, None).unwrap();
+        let acquired = fixture
+            .gateway
+            .grant(
+                &fixture.account,
+                &cancel,
+                &lease.preferences.service,
+                &lease.generation,
+            )
+            .unwrap();
+        fixture
+            .gateway
+            .store
+            .reconnect_if_current(
+                &fixture.account,
+                &lease.generation,
+                grant("synthetic-reconnected"),
+            )
+            .unwrap();
+        assert_eq!(acquired.access_token.expose(), "synthetic-access");
+        assert!(!cancel.is_cancelled());
+        assert!(matches!(
+            fixture.gateway.grant(
+                &fixture.account,
+                &cancel,
+                &lease.preferences.service,
+                &lease.generation
+            ),
+            Err(ServerError::BindingChanged)
+        ));
+        assert!(
+            server
+                .get("/v1/minicon/binding", "")
+                .starts_with("HTTP/1.1 401")
+        );
+        let current = fixture.gateway.store.snapshot(&fixture.account).unwrap();
+        fixture
+            .gateway
+            .store
+            .mark_ready_if_current(&fixture.account, &current.generation)
+            .unwrap();
+        assert!(
+            server
+                .get(
+                    "/v1/minicon/binding",
+                    "x-minicon-session: reconnect-old\r\n"
+                )
+                .starts_with("HTTP/1.1 409")
+        );
+        let after = read_binding(server.get(
+            "/v1/minicon/binding",
+            "x-minicon-session: reconnect-new\r\n",
+        ));
+        assert_ne!(before["generation"], after["generation"]);
+        for field in ["profile", "provider", "account", "model"] {
+            assert_eq!(before[field], after[field]);
+        }
+        assert_eq!(
+            independent,
+            read_binding(server.get_key(
+                "/v1/minicon/binding",
+                "synthetic-other",
+                "x-minicon-session: other-stable\r\n"
+            ))
+        );
+    }
+
+    #[test]
+    fn reconnect_rejects_late_refresh_and_probe_results_after_real_http_completes() {
+        for refresh in [true, false] {
+            let fixture = Fixture::new();
+            let before = fixture.gateway.store.snapshot(&fixture.account).unwrap();
+            let grant = |token: &str, expires_at: Instant| TokenGrant {
+                provider: Provider::OpenCode,
+                access_token: Secret::new(token).unwrap(),
+                lifecycle: TokenLifecycle::ExpiringRefresh {
+                    refresh_token: Secret::new("synthetic-refresh").unwrap(),
+                    expires_at,
+                },
+                organization: None,
+            };
+            if refresh {
+                fixture
+                    .gateway
+                    .store
+                    .replace_grant_if_current(
+                        &fixture.account,
+                        &before.generation,
+                        grant("synthetic-access", Instant::now()),
+                    )
+                    .unwrap();
+            }
+            let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
+            upstream.set_nonblocking(true).unwrap();
+            *fixture.gateway.fixture_upstream.lock().unwrap() =
+                Some(format!("http://{}/", upstream.local_addr().unwrap()));
+            let gateway = fixture.gateway.clone();
+            let account = fixture.account.clone();
+            let route = gateway.state.lock().unwrap().config.models[0].clone();
+            let worker = thread::spawn(move || {
+                gateway.probe(
+                    &account,
+                    &route,
+                    "synthetic-probe",
+                    &Arc::new(NetworkHttpCancel::new()),
+                )
+            });
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let (mut stream, _) = loop {
+                match upstream.accept() {
+                    Ok(pair) => break pair,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(
+                            Instant::now() < deadline,
+                            "probe did not reach the controlled HTTP peer"
+                        );
+                        thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("controlled peer accept: {error}"),
+                }
+            };
+            stream.set_nonblocking(false).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            stream
+                .set_write_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let headers = read_headers(&mut stream);
+            let length: usize = headers
+                .lines()
+                .find_map(|line| {
+                    line.split_once(':')
+                        .filter(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                        .map(|(_, length)| length.trim().parse().unwrap())
+                })
+                .unwrap();
+            assert!(length <= 16384);
+            let mut body = vec![0; length];
+            stream.read_exact(&mut body).unwrap();
+            let body: Value = serde_json::from_slice(&body).unwrap();
+            if refresh {
+                assert_eq!(body["grant_type"], "refresh_token");
+            } else {
+                assert_eq!(body["model"], "fixture-wire");
+                assert!(
+                    headers
+                        .to_ascii_lowercase()
+                        .contains("authorization: bearer synthetic-access")
+                );
+            }
+            fixture
+                .gateway
+                .store
+                .reconnect_if_current(
+                    &fixture.account,
+                    &before.generation,
+                    grant(
+                        "synthetic-reconnect-winner",
+                        Instant::now() + Duration::from_secs(3600),
+                    ),
+                )
+                .unwrap();
+            let response = if refresh {
+                json!({"access_token":"synthetic-stale-refresh","refresh_token":"synthetic-stale-refresh-key","expires_in":3600})
+            } else {
+                json!({"id":"synthetic-probe","model":"fixture-wire","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}})
+            }.to_string();
+            write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response}", response.len()).unwrap();
+            drop(stream);
+            assert_eq!(worker.join().unwrap(), Err(ServerError::BindingChanged));
+            let current = fixture.gateway.store.snapshot(&fixture.account).unwrap();
+            assert_ne!(current.generation, before.generation);
+            assert_eq!(current.summary.state, AccountState::CredentialStored);
+            assert_eq!(
+                fixture
+                    .gateway
+                    .store
+                    .load_grant(&fixture.account)
+                    .unwrap()
+                    .access_token
+                    .expose(),
+                "synthetic-reconnect-winner"
+            );
+            assert!(fixture.gateway.state.lock().unwrap().leases.is_empty());
+        }
     }
 
     #[test]
