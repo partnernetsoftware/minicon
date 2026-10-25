@@ -966,3 +966,27 @@ failures when the canonical verbatim path is returned or incompatible paths
 are accepted; each exact restoration passes both subjects. These are conversion
 and refusal checks. The actual product/native authorization court and newer
 runtime must still replay the integrated source before closing persistence.
+
+### Integrated Windows development replay: both architectures pass
+
+[Run 40236848290](https://github.com/partnernetsoftware/minicon/actions/runs/40236848290)
+at exact `7a18b93bdc62e191a24c8e6923ac370bd1350005` completes successfully on
+Windows x86_64 and aarch64. On each target the initial and exactly restored
+test builds pass all eight original native observations, including isolated
+account stores, matching-normal-exit account reopen with persistent Cookie,
+ordinary live DOM/storage preservation and native history back/forward.
+Deliberately reusing the previous account context fails with
+`context-b-inherited-storage`; deliberately reloading the ordinary page fails
+with `ordinary-document-reloaded`. Neither negative is a timeout/build failure.
+Each target also retains 15 protocol passes and 11 actual assertion RED controls.
+
+The local audit is
+`target-six/v0.2.23-provider/ci-7a18b93-native/verification-index.json`.
+It verifies every qualification-run receipt hash and each receipt's listed
+artifact byte count/hash, all eight positive predicates, intended negative
+results, exact source restoration, canonical product byte preservation and
+owned-Job cleanup. The public artifacts contain synthetic fixtures only.
+This closes the integrated Windows development persistence replay at this
+source; it does not qualify real provider authorization or final signed bytes.
+The uploaded receipts do not record a runtime version, so a specifically named
+newer-runtime claim remains unproved rather than inferred from runner age.

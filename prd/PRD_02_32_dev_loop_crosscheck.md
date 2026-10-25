@@ -35,11 +35,16 @@ dev-loop-crosscheck — agent cross-arch dev/test loop
 │   │   evidence: qualification receipt, eight engine observations and two actual counterexamples
 │   │   safe failure: preserve BLOCKED/failed result; do not count compilation or timeout as RED
 │   │   dependency: canonical browser/helper and isolated desktop; non-goal: release/provider/visibility proof
-│   ├── [_] separate Windows native-input readiness observation
+│   ├── [v] separate Windows native-input readiness observation
 │   │   invariant: read-only window-station/desktop and installed/loaded Pinyin facts stay distinct from actual input
 │   │   evidence: exact-source input-readiness.json on both hosted Windows targets
 │   │   safe failure: unavailable/absent prerequisites are BLOCKED or SETUP_REQUIRED, never native-input PASS
 │   │   dependency: disposable hosted Windows desktop; non-goal: foreground, keyboard, clipboard, language installation or product qualification
+│   ├── [_] isolated Windows physical browser/Harness controls court
+│   │   invariant: actual foreground-owned SendInput, native Pinyin and exact clipboard restoration retain distinct provenance
+│   │   evidence: current default product image, public editor/page observations and bounded owned-client PNGs on each selected target
+│   │   safe failure: missing IME, lost foreground, failed restoration or forced cleanup is BLOCKED/failure
+│   │   dependency: observed hosted desktop, isolated synthetic profile and existing native fixture; non-goal: owner-desktop input, provider login, other scales or release qualification
 │   ├── [-] explicit Windows fixture ACL comparison → PRD 28.01
 │   │   invariant: diagnostic entry requires exactly win-x86_64 and native_auth_context=false
 │   │   evidence: real workflow-plan consumer and separate diagnostic aggregate
@@ -81,6 +86,8 @@ flowchart LR
     W -->|explicit private_publication| PP[Private native files / publication / errno / platform access controls]
     PP -->|actual tests + RED controls + exact restore| L
     INPUT[Separate read-only Windows input-readiness workflow] -->|prerequisites only; no input qualification| L
+    INPUT --> NC[Separate isolated Windows physical controls court]
+    NC -->|actual native input and cleanup; retain failures| L
     W -. never .-> R["release / GHCR / tag / version"]
 ```
 
@@ -949,5 +956,61 @@ process architecture. `READY_TO_ATTEMPT` means only observed prerequisites;
 installed but not loaded is `SETUP_REQUIRED`; absent or unavailable prerequisites
 are `BLOCKED`. Both non-ready statuses exit2, and all receipts upload even on
 failure. None of these statuses is an actual SendInput/preedit/commit, native
-scale or signed-artifact result. The initial hosted observation is still open;
-local validation parses the YAML/Python without executing native calls.
+scale or signed-artifact result. Local validation parses the YAML/Python
+without executing native calls; hosted observations are recorded below.
+
+[Run 40237967143](https://github.com/partnernetsoftware/minicon/actions/runs/40237967143)
+at exact `3960e721d5f893e2257bcf3bbeb7c5613fb9bc8b` is terminal
+`SETUP_REQUIRED` on both Windows architectures. Both report a visible station,
+the current input desktop, a closed owned desktop handle and the installed
+Microsoft Pinyin profile; neither has a Simplified Chinese layout loaded.
+No input, foreground change or clipboard access occurs. The nonzero jobs
+correctly preserve that prerequisite outcome. Native input remains unqualified.
+
+### Successful integrated Windows replay
+
+[Run 40236848290](https://github.com/partnernetsoftware/minicon/actions/runs/40236848290)
+at `7a18b93bdc62e191a24c8e6923ac370bd1350005` is terminal SUCCESS on both
+Windows architectures. Both execute all27 selected suites and retain their
+native authorization-context positive/negative/restored results under
+[PRD 28.01](PRD_02_28_01_browser_context_lifecycle.md). The x86_64 standard
+workspace/owned-fork gate records2020 passes and87 explicit ignored instances;
+its twelve actual profile-key/handoff checks also pass. The collector uploads
+eight bounded console traces on x86_64 and four on aarch64, closing the hosted
+replay of the corrected eight-file bound. The prior red job stays red.
+The audited local index is
+`target-six/v0.2.23-provider/ci-7a18b93-native/verification-index.json`.
+This is development evidence, not six-cell/signing/release qualification.
+
+### Physical controls court preparation
+
+Reuse the retained native-controls fixture's actual page echo, Ctrl+L/menu
+traversal, three browser editors' native clipboard and Pinyin journeys, and
+Harness port/model drafts and private-key redaction. Migrate its obsolete
+blanket `client_key` field-name ban to the current metadata-only public contract;
+the generated synthetic key must still be absent from every public snapshot.
+Run only on disposable hosted Windows desktops. Register the already installed
+Pinyin profile for the court if needed, preserve its setup/cleanup outcome,
+and do not install a language pack or execute native calls on the owner desktop.
+Source/image, actual scale, native observations and exact clipboard cleanup
+must be recorded separately from PNG human review and final signed qualification.
+Shared prerequisites are the public snapshot contract and existing contained
+launch/clipboard fixture. Hot files are the new isolated workflow/fixture and
+their PRD owners; no production Rust or Cargo change is selected here.
+
+`.github/workflows/windows-native-controls.yml` builds each target's default
+product and runs `scripts/native-controls/run.py` sequentially on its own hosted
+desktop. `scripts/native-controls/clipboard_snapshot.py` retains bounded text
+formats in memory, refuses unknown formats before mutation and checks exact
+restoration before the owned GUI closes. Public observations, owned-client PNGs
+and setup/restoration booleans upload; synthetic private profiles and saved
+clipboard bytes do not. The native fixture refuses ordinary local execution
+before loading any native DLL or accessing desktop state.
+
+Local guard evidence:
+`target-six/v0.2.23-provider/native-input-local-refusal/verification.json`.
+The complete fixture returns BLOCKED without native access, removing its
+hosted-only guard breaks the original refusal assertion (the attempted DLL
+call is trapped before execution), and exact restoration passes again. No
+window, process or clipboard operation occurs in this local control. Hosted
+physical execution and human PNG review remain open until actual receipts.
