@@ -224,8 +224,16 @@ The lifecycle experiment, original oracle and interpretation belong to
 [PRD 28.01](PRD_02_28_01_browser_context_lifecycle.md#direct-wry-lifetime-comparison-planned-diagnostic).
 The job retains the actual comparison exit code and uploads an explicit public
 allowlist even on failure. The broad failure upload excludes this entire private
-output namespace. This entry has not yet run on CI and grants no native/product/
-release qualification.
+output namespace. Actual lifecycle observations and interpretation remain owned
+by the linked module; this diagnostic entry grants no native/product/release
+qualification.
+
+For the pre-close metadata integration, explicitly run
+`python -B scripts/native-auth-context/lifetime_metadata_selfcheck.py` under the
+root's serialized gate, or invoke it once in the existing build coordinator.
+Retain a matching-source receipt before native replay. Source-map membership
+alone is not execution evidence. Candidate counts, safety boundaries and old/new
+diagnostic status remain in [PRD 28.01](PRD_02_28_01_browser_context_lifecycle.md#next-diagnostic-one-a-live-file-metadata-sample).
 
 ### Opt-in native authorization-context court
 

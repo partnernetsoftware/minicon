@@ -31,6 +31,7 @@ INPUTS=tuple(dict.fromkeys((*qualification.INPUTS,
     "crates/minicon-web/examples/windows-cookie-lifetime.rs",
     "crates/minicon-web/examples/windows_cookie_lifetime/host.rs",
     "scripts/native-auth-context/lifetime.py",
+    "scripts/native-auth-context/lifetime_metadata_selfcheck.py",
     *(p.relative_to(ROOT).as_posix() for p in sorted((ROOT/"crates/minicon-web/src").rglob("*.rs"))),
     *(p.relative_to(ROOT).as_posix() for p in sorted((ROOT/"crates/minicon-platform/src").rglob("*.rs"))),
     *(p.relative_to(ROOT).as_posix() for p in sorted((ROOT/"crates/minicon-core/src").rglob("*.rs"))),
@@ -49,6 +50,50 @@ def pe_x64(p):
         if offset>16*1024*1024:return False
         stream.seek(offset);return stream.read(6)==b"PE\0\0d\x86"
 
+class BeforeReleaseFiles:
+    """One exact pending B handoff; filesystem work uses the existing HTTP worker."""
+    def __init__(self, state, manifest, output):
+        self.state, self.manifest, self.output = state, manifest, output
+        self.used = False
+
+    def observe(self, body):
+        unavailable = {"status": "unavailable"}
+        try:
+            with self.state.lock:
+                if time.monotonic() >= self.state.deadline:
+                    return unavailable
+                expected = self.state.status()["action"]
+                if (self.used or set(body) != {"run", "action", "locator"}
+                        or body["run"] != self.state.run
+                        or expected is None or expected["seq"] != 2
+                        or expected["phase"] != "b" or expected["kind"] != "present-auth"
+                        or body["action"] != expected or 1 not in self.state.acked):
+                    return unavailable
+                self.used = True
+            deadline = min(self.state.deadline, time.monotonic() + 1.5)
+            result = native.before_release_file_metadata(self.manifest, self.output, body["locator"], deadline)
+            with self.state.lock:
+                if time.monotonic() >= deadline or self.state.status()["action"] != expected:
+                    return unavailable
+            return result
+        except (OSError, ValueError, KeyError, TypeError, fixture.Rejected):
+            return unavailable
+
+
+class LifetimeMetadataHandler(fixture.Handler):
+    def route(self):
+        if self.path != "/driver/lifetime-before-release":
+            return super().route()
+        self.driver()
+        if self.command != "POST":
+            raise fixture.Rejected(405, "method-rejected")
+        # At most one admitted diagnostic; do not change original request-count
+        # or deadline failure state merely to observe optional file metadata.
+        observation = self.server.before_release_files.observe(self.body())
+        self.respond(200, {"run": self.server.state.run, "seq": 2,
+                           "phase": "a-before-context-release", "observation": observation})
+
+
 def arm(binary,mode,output,timeout,identity,expected_source):
     output.mkdir(mode=0o700,exist_ok=False)
     receipt={"kind":"direct-wry-lifetime-arm","test_only":True,"mode":mode,
@@ -60,6 +105,8 @@ def arm(binary,mode,output,timeout,identity,expected_source):
         if sha(binary)!=identity or source()!=expected_source:raise native.CourtError("lifetime-source-image-changed")
         with fixture.Fixture(timeout) as court:
             manifest=court.manifest(output);write(output/"manifest.private.json",manifest)
+            court.server.before_release_files=BeforeReleaseFiles(court.state,manifest,output)
+            court.server.RequestHandlerClass=LifetimeMetadataHandler
             env=dict(os.environ)
             for name in manifest["clear_environment"]:env.pop(name,None)
             env.update(manifest["launch_environment"])
@@ -114,7 +161,7 @@ def arm(binary,mode,output,timeout,identity,expected_source):
         if manifest is not None:
             diagnostics.append(native.windows_cookie_snapshot(manifest,output,"after-owned-job-cleanup",clock))
         write(output/"windows-cookie-diagnostics.json",{"kind":"owned-fresh-windows-cookie-diagnostics","status":"diagnostics-only","changes_court_verdict":False,"snapshots":diagnostics,
-              "limitations":["Only exact fresh manifest A/B and verified ProfilePath fixed slots; no discovery/decryption/WAL writes.","Post-exit observations cannot reconstruct pre-close disk contents; normal exit is not a flush acknowledgment."]})
+              "limitations":["Only exact fresh manifest A/B and verified ProfilePath fixed slots; no discovery/decryption/WAL writes.","Post-exit observations cannot reconstruct pre-close disk contents; normal exit is not a flush acknowledgment.","One extra pre-close causal HTTP handoff may affect timing; accepted metadata is not Cookie contents or a persistence fix."]})
         receipt["source_unchanged"]=source()==expected_source;receipt["binary_unchanged"]=sha(binary)==identity
         if not receipt["source_unchanged"] or not receipt["binary_unchanged"]:receipt.update(status="BLOCKED",failure_code="lifetime-source-image-changed")
         receipt["artifacts"]={name:{"sha256":sha(output/name),"bytes":(output/name).stat().st_size} for name in
@@ -165,10 +212,12 @@ def build_and_run(args):
                   "keeper_and_pending_owned_exit_are_both_required_at_the_real_reopen_gate",
                   "matched_exit_is_insufficient_until_both_old_keeper_and_environment_are_released",
                   "only_the_two_finite_lifetime_modes_are_executable",
-                  "actual_dispatch_authority_refuses_changed_url_phase_kind_and_sequence"}
+                  "actual_dispatch_authority_refuses_changed_url_phase_kind_and_sequence",
+                  "preclose_metadata_requires_one_persistent_future_sdk_cookie",
+                  "preclose_metadata_rejects_late_wrong_run_and_nonfinite_classification"}
         names=re.findall(r"^test host::tests::([^ ]+) \.\.\. ok$",text,re.M)
         counts=re.findall(r"^test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored;",text,re.M)
-        if code or counts!=[("ok","5","0","0")] or set(names)!=expected or len(names)!=5:
+        if code or counts!=[("ok","7","0","0")] or set(names)!=expected or len(names)!=7:
             raise native.CourtError("lifetime-example-tests-failed-or-zero")
         code,text=run_step("dedicated-build",[bash,str(ROOT/"scripts/build.sh"),"dev",*suffix,"--message-format=json-render-diagnostics"],900)
         if code:raise native.CourtError("lifetime-dedicated-build-failed")

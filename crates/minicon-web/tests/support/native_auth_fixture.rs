@@ -279,7 +279,7 @@ pub(crate) enum Notice {
 }
 
 // All HTTP runs on this owned worker. GUI callbacks never do socket I/O.
-fn request(
+pub(crate) fn request(
     address: SocketAddr,
     token: &str,
     path: &str,

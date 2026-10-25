@@ -7,6 +7,8 @@ use std::{
     collections::BTreeMap,
     path::Path,
     rc::Rc,
+    sync::mpsc::{self, Receiver},
+    thread::JoinHandle,
     time::{Duration, Instant},
 };
 use tao::{
@@ -183,6 +185,129 @@ fn browser_pid(view: &WebView) -> Result<u32> {
     }
 }
 
+const FILE_SLOTS: [&str; 6] = [
+    "network",
+    "network-wal",
+    "network-shm",
+    "legacy",
+    "legacy-wal",
+    "legacy-shm",
+];
+fn file_metadata_eligible(summary: cookies::NativeCookieMetadataSummary) -> bool {
+    summary.status == cookies::NativeCookieMetadataStatus::Observed
+        && summary.counts.is_some_and(|c| {
+            c.total == 1
+                && c.persistent == 1
+                && c.session == 0
+                && c.expiry_future == 1
+                && c.expiry_elapsed == 0
+                && c.expiry_unknown == 0
+        })
+}
+fn accepted_file_metadata(response: &Value, run: &str, deadline: Instant, now: Instant) -> Value {
+    let unavailable = || json!({"status":"unavailable"});
+    if now >= deadline
+        || response["run"].as_str() != Some(run)
+        || response["seq"] != 2
+        || response["phase"] != "a-before-context-release"
+        || response["observation"]["status"] != "observed"
+    {
+        return unavailable();
+    }
+    let Some(slots) = response["observation"]["slots"].as_object() else {
+        return unavailable();
+    };
+    if slots.len() != FILE_SLOTS.len()
+        || !FILE_SLOTS.iter().all(|key| {
+            slots
+                .get(*key)
+                .and_then(Value::as_str)
+                .is_some_and(|value| {
+                    matches!(
+                        value,
+                        "absent"
+                            | "regular-empty"
+                            | "regular-nonempty"
+                            | "unavailable"
+                            | "refused-link"
+                    )
+                })
+        })
+    {
+        return unavailable();
+    }
+    // Reconstruct only the finite public fields. Never echo private payloads.
+    json!({"status":"observed", "slots":FILE_SLOTS.iter().map(|key| ((*key).to_owned(), slots[*key].clone())).collect::<serde_json::Map<_,_>>()})
+}
+struct PrecloseFiles {
+    result: Receiver<Value>,
+    handle: Option<JoinHandle<()>>,
+    deadline: Instant,
+    run: String,
+}
+impl PrecloseFiles {
+    fn start(
+        recipe: &Recipe,
+        action: &Action,
+        relative: &Path,
+        global_deadline: Instant,
+    ) -> Option<Self> {
+        let deadline = global_deadline.min(Instant::now() + Duration::from_secs(2));
+        let payload = serde_json::to_vec(&json!({"run":recipe.run,
+            "action":{"seq":action.seq,"kind":action.kind,"phase":action.phase,"url":action.url},
+            "locator":{"schema":1,"test_only":true,"run":recipe.run,"phases":{"a":{
+                "relative_directory":relative,"store_identifier":recipe.a.profile.store_identifier}}}})).ok()?;
+        if payload.len() > 8192 || Instant::now() >= deadline {
+            return None;
+        }
+        let (send, result) = mpsc::sync_channel(1);
+        let address = recipe.address;
+        let token = recipe.token.clone();
+        // Only the existing bounded HTTP client runs here. No COM or filesystem
+        // I/O and no detached worker. One invocation, no retries.
+        let handle = std::thread::Builder::new()
+            .name("preclose-file-metadata".into())
+            .spawn(move || {
+                let response = fixture_protocol::request(
+                    address,
+                    &token,
+                    "/driver/lifetime-before-release",
+                    Some(&payload),
+                )
+                .unwrap_or(Value::Null);
+                let _ = send.try_send(response);
+            })
+            .ok()?;
+        Some(Self {
+            result,
+            handle: Some(handle),
+            deadline,
+            run: recipe.run.clone(),
+        })
+    }
+    fn poll(&mut self, now: Instant) -> Option<Value> {
+        if let Ok(response) = self.result.try_recv() {
+            return Some(accepted_file_metadata(
+                &response,
+                &self.run,
+                self.deadline,
+                Instant::now(),
+            ));
+        }
+        if now >= self.deadline || self.handle.as_ref().is_some_and(|h| h.is_finished()) {
+            return Some(json!({"status":"unavailable"}));
+        }
+        None
+    }
+}
+impl Drop for PrecloseFiles {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
 struct Page {
     view: WebView,
     _context: WebContext,
@@ -264,6 +389,7 @@ impl Page {
 enum Stage {
     Home,
     BeforeRelease,
+    BeforeFileMetadata,
     AwaitExit,
     BeforeNavigation,
     Navigating,
@@ -294,6 +420,8 @@ struct Host {
     pending: Option<Action>,
     stage: Stage,
     probe: Option<PendingProbe>,
+    preclose_files: Option<PrecloseFiles>,
+    file_metadata: Value,
     exit_deadline: Option<Instant>,
     last_ack: Option<u64>,
     fixture: Option<Value>,
@@ -661,6 +789,26 @@ impl Host {
                     return Ok(());
                 };
                 self.metadata(summary, "a", "before-context-release")?;
+                let action = self.check_pending()?.clone();
+                if file_metadata_eligible(summary) {
+                    let page = self.active.as_ref().ok_or("lifetime-a-missing")?;
+                    self.preclose_files =
+                        PrecloseFiles::start(&self.recipe, &action, &page.relative, self.deadline);
+                }
+                self.stage = Stage::BeforeFileMetadata;
+            }
+            Stage::BeforeFileMetadata => {
+                if self.check_pending()?.seq != 2 || self.last_ack != Some(1) {
+                    return Err("lifetime-release-action-invalid");
+                }
+                self.file_metadata = if let Some(probe) = self.preclose_files.as_mut() {
+                    let Some(result) = probe.poll(now) else {
+                        return Ok(());
+                    };
+                    result
+                } else {
+                    json!({"status":"unavailable"})
+                };
                 self.check_pending()?;
                 let page = self.active.take().ok_or("lifetime-a-missing")?;
                 self.a_monitor = Some(NativePageRelease::observe(&page.view, || {}));
@@ -822,6 +970,8 @@ fn run(manifest: &Path, mode: Mode) -> Result<i32> {
         pending: None,
         stage: Stage::Home,
         probe: None,
+        preclose_files: None,
+        file_metadata: json!({"status":"unavailable"}),
         exit_deadline: None,
         last_ack: None,
         fixture: None,
@@ -852,13 +1002,16 @@ fn run(manifest: &Path, mode: Mode) -> Result<i32> {
         }
     });
     host.worker = None;
+    // The bounded socket worker is joined after the pumping loop, never during
+    // the before-close observation. Late replies cannot publish observations.
+    host.preclose_files = None;
     let boundary = host.boundary_failure.is_none()
         && host.metadata.len() == 4
         && match mode {
             Mode::KeepBrowser => host.reopened_same_browser,
             Mode::NormalExit => host.matched_a_exit && host.environment_generation == 2,
         };
-    let receipt = json!({"kind":"windows-cookie-lifetime-direct-wry-diagnostic","test_only":true,"native_qualification":false,"production_repair":false,"mode":mode.name(),"wry_package":"0.56.1","diagnostic_features":[cookies::NativeCookieMetadataProbe::feature_name()],"profile_acl_mode":host.recipe.profile_acl_mode.as_str(),"runtime_version":host.runtime,"same_options":true,"original_eight_complete":host.original_complete,"boundary_valid":boundary,"failure_code":host.failure,"boundary_failure_code":host.boundary_failure,"fixture":host.fixture,"environment_generation":host.environment_generation,"keep_reopened_same_live_browser":host.reopened_same_browser,"exit_matched_normal_before_new_environment":host.matched_a_exit,"windows_context_observations":host.contexts,"windows_cookie_metadata_observations":host.metadata,"finite_phase_records":host.trace});
+    let receipt = json!({"kind":"windows-cookie-lifetime-direct-wry-diagnostic","test_only":true,"native_qualification":false,"production_repair":false,"mode":mode.name(),"wry_package":"0.56.1","diagnostic_features":[cookies::NativeCookieMetadataProbe::feature_name()],"profile_acl_mode":host.recipe.profile_acl_mode.as_str(),"runtime_version":host.runtime,"same_options":true,"original_eight_complete":host.original_complete,"boundary_valid":boundary,"failure_code":host.failure,"boundary_failure_code":host.boundary_failure,"fixture":host.fixture,"environment_generation":host.environment_generation,"keep_reopened_same_live_browser":host.reopened_same_browser,"exit_matched_normal_before_new_environment":host.matched_a_exit,"windows_context_observations":host.contexts,"windows_cookie_metadata_observations":host.metadata,"before_release_file_metadata":host.file_metadata,"finite_phase_records":host.trace});
     let bytes = serde_json::to_vec_pretty(&receipt).map_err(|_| "lifetime-receipt-encode")?;
     minicon_platform::filesystem::write_private_atomic(
         &output.join("native-driver-receipt.json"),
@@ -883,6 +1036,55 @@ fn run(manifest: &Path, mode: Mode) -> Result<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn preclose_metadata_requires_one_persistent_future_sdk_cookie() {
+        let summary = cookies::NativeCookieMetadataSummary {
+            status: cookies::NativeCookieMetadataStatus::Observed,
+            counts: Some(cookies::NativeCookieMetadataCounts {
+                total: 1,
+                persistent: 1,
+                expiry_future: 1,
+                ..Default::default()
+            }),
+        };
+        assert!(file_metadata_eligible(summary));
+        let mut session = summary;
+        session.counts.as_mut().unwrap().session = 1;
+        session.counts.as_mut().unwrap().persistent = 0;
+        session.counts.as_mut().unwrap().expiry_future = 0;
+        assert!(!file_metadata_eligible(session));
+        let mut expired = summary;
+        expired.counts.as_mut().unwrap().expiry_future = 0;
+        expired.counts.as_mut().unwrap().expiry_elapsed = 1;
+        assert!(!file_metadata_eligible(expired));
+        let mut failed = summary;
+        failed.status = cookies::NativeCookieMetadataStatus::TimedOut;
+        assert!(!file_metadata_eligible(failed));
+    }
+    #[test]
+    fn preclose_metadata_rejects_late_wrong_run_and_nonfinite_classification() {
+        let now = Instant::now();
+        let deadline = now + Duration::from_secs(1);
+        let mut response = json!({"run":"synthetic", "seq":2, "phase":"a-before-context-release", "observation":{
+            "status":"observed", "slots":FILE_SLOTS.iter().map(|key| ((*key).to_owned(), json!("absent"))).collect::<serde_json::Map<_,_>>()}});
+        assert_eq!(
+            accepted_file_metadata(&response, "synthetic", deadline, now)["status"],
+            "observed"
+        );
+        assert_eq!(
+            accepted_file_metadata(&response, "synthetic", deadline, deadline),
+            json!({"status":"unavailable"})
+        );
+        assert_eq!(
+            accepted_file_metadata(&response, "other", deadline, now),
+            json!({"status":"unavailable"})
+        );
+        response["observation"]["slots"]["network"] = json!("arbitrary-private-text");
+        assert_eq!(
+            accepted_file_metadata(&response, "synthetic", deadline, now),
+            json!({"status":"unavailable"})
+        );
+    }
     #[test]
     fn actual_load_ack_accepts_only_the_original_ordinary_history_query() {
         let expected = "http://127.0.0.1:1/page/run/ordinary/ticket";

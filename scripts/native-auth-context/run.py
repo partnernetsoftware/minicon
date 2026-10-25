@@ -255,6 +255,13 @@ def _verified_locator_directories(manifest, output, roots):
     if len(raw) > 16_384:
         raise ValueError("locator-size-bound")
     data = fixture.object_json(raw)
+    return _verified_locator_payload(manifest, output, roots, data)
+
+
+def _verified_locator_payload(manifest, output, roots, data):
+    # Shared private locator authority for post-exit carrier and pre-close HTTP.
+    for root in (output, *roots.values()):
+        _diagnostic_directory_ancestry(root)
     if (set(data) != {"schema", "test_only", "run", "phases"}
             or data["schema"] != 1 or data["test_only"] is not True
             or data["run"] != manifest["run"] or not isinstance(data["phases"], dict)
@@ -284,6 +291,42 @@ def _verified_locator_directories(manifest, output, roots):
     return locations
 
 
+# Fixed-slot metadata only: no file open, SQLite, values, raw size or path output.
+PRECLOSE_SLOTS = (("network", "Network/Cookies"), ("network-wal", "Network/Cookies-wal"),
+                  ("network-shm", "Network/Cookies-shm"), ("legacy", "Cookies"),
+                  ("legacy-wal", "Cookies-wal"), ("legacy-shm", "Cookies-shm"))
+
+
+def _fixed_slot_metadata(root, relative):
+    try:
+        _, metadata = _diagnostic_entry(root, relative)
+        return "regular-empty" if metadata.st_size == 0 else "regular-nonempty"
+    except FileNotFoundError:
+        return "absent"
+    except ValueError as error:
+        return "refused-link" if error.args == ("link-like-entry",) else "unavailable"
+    except OSError:
+        return "unavailable"
+
+
+def before_release_file_metadata(manifest, output, locator, deadline):
+    try:
+        roots = _fresh_diagnostic_roots(manifest, output)
+        locations = _verified_locator_payload(manifest, output, roots, locator)
+        if set(locations) != {"a"}:
+            raise ValueError("preclose-phase-invalid")
+        slots = {}
+        for name, relative in PRECLOSE_SLOTS:
+            if time.monotonic() >= deadline:
+                return {"status": "unavailable"}
+            slots[name] = _fixed_slot_metadata(locations["a"], relative)
+        if time.monotonic() >= deadline:
+            return {"status": "unavailable"}
+        return {"status": "observed", "slots": slots}
+    except (OSError, ValueError, KeyError, TypeError):
+        return {"status": "unavailable"}
+
+
 def _verified_locator_snapshot(manifest, output, roots, now):
     try:
         locations = _verified_locator_directories(manifest, output, roots)
@@ -299,29 +342,34 @@ def _verified_locator_snapshot(manifest, output, roots, now):
         return {"status": "private-locator-unavailable", "a_reopen_directory_relation": "unavailable"}
 
 
+def _fresh_diagnostic_roots(manifest, output):
+    # output was create-new before manifest creation. Bind BOTH profiles
+    # before reading any file; refuse links/reparse points and unexpected paths.
+    if manifest.get("schema") != 1 or manifest.get("test_only") is not True:
+        raise ValueError("not-owned-test-manifest")
+    roots = {}
+    for label in ("a", "b"):
+        root = output
+        for component in ("profiles", label):
+            root = root / component
+            metadata = root.lstat()
+            if (not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode)
+                    or getattr(metadata, "st_file_attributes", 0) & 0x400):
+                raise ValueError("profile-authority-refused")
+        if Path(manifest["profiles"][label]["directory"]) != root or root.resolve(strict=True) != root:
+            raise ValueError("profile-authority-refused")
+        roots[label] = root
+    # Shared authority gate precedes ALL carrier, fixed DB and Local State
+    # reads. A rejected ancestry must not become a locator-only warning.
+    for root in (output, *roots.values()):
+        _diagnostic_directory_ancestry(root)
+    return roots
+
+
 def windows_cookie_snapshot(manifest, output, stage, clock):
     result = {"stage": stage, "profiles": {}, "status": "diagnostics-only"}
     try:
-        # output was create-new before manifest creation. Bind BOTH profiles
-        # before reading any file; refuse links/reparse points and unexpected paths.
-        if manifest.get("schema") != 1 or manifest.get("test_only") is not True:
-            raise ValueError("not-owned-test-manifest")
-        roots = {}
-        for label in ("a", "b"):
-            root = output
-            for component in ("profiles", label):
-                root = root / component
-                metadata = root.lstat()
-                if (not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode)
-                        or getattr(metadata, "st_file_attributes", 0) & 0x400):
-                    raise ValueError("profile-authority-refused")
-            if Path(manifest["profiles"][label]["directory"]) != root or root.resolve(strict=True) != root:
-                raise ValueError("profile-authority-refused")
-            roots[label] = root
-        # Shared authority gate precedes ALL carrier, fixed DB and Local State
-        # reads. A rejected ancestry must not become a locator-only warning.
-        for root in (output, *roots.values()):
-            _diagnostic_directory_ancestry(root)
+        roots = _fresh_diagnostic_roots(manifest, output)
         wall = time.time()
         result["verified_profile_databases"] = _verified_locator_snapshot(manifest, output, roots, wall)
         drift = (wall - clock[0]) - (time.monotonic() - clock[1])

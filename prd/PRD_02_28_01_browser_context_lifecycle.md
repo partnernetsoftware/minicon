@@ -50,10 +50,15 @@ Outcome: reuse an account's browser context only after its previous native host 
 │   non-goal: production UDF/credential-policy changes, effective child-token access or a persistence repair
 ├── [-] LIFETIME CONTRAST — preserve all eight original checks across two explicit browser lifetimes
 │   invariant: KEEP proves a live same-environment keeper; EXIT proves matching normal exit before new environment
-│   evidence: LC-01 actual helper controls and LC-02 same-image Windows comparison, both unrun
+│   evidence: LC-01 helper controls and LC-02 actual same-image comparison; retained results below
 │   safe failure: retain each original failure; unavailable boundary is BLOCKED, never a persistence repair
 │   dependency: shared test-only fixture protocol and existing native observations
 │   non-goal: production behavior changes, forced-exit evidence or a new release gate
+├── [-] PRE-CLOSE FILE METADATA — sample six fixed fixture slots while A is still live
+│   invariant: exact pending B/run/store authority; finite metadata classes only, original oracle unchanged
+│   evidence: seven Rust host consumers, six Python checks and eight actual assertion controls; native replay open
+│   safe failure: unavailable/late metadata stays unavailable; never becomes Cookie content or durability truth
+│   dependency: existing fixture SDK summary and release ordering; non-goal: discovery, flush or a production repair
 └── [_] LATER DELETE — compose release with an explicitly authorized store deletion
     invariant: observation, deletion and durable completion are separate results
     evidence: future OS-specific deletion/retry courts; currently unavailable
@@ -84,6 +89,9 @@ flowchart TD
     QUERY --> META[Bounded status/counts; no names/values/raw expiry]
     META -. revalidate original action / bounded resume .-> CLOSE
     META --> STORE
+    META -. lifetime diagnostic only / original B still pending .-> PF[One A-live fixed-slot metadata sample]
+    PF --> CLASS[Six finite file classes / no content reads]
+    PF --> PU[Late or unavailable remains unavailable]
     IMAGE[One exact dedicated Windows test image] --> ACL[Two fresh permission-policy fixture arms]
     ACL --> STORE
     LIFE[Explicit direct-wry test image / original fixture protocol] --> K[KEEP: same live blank keeper and environment]
@@ -542,9 +550,68 @@ removed. All eleven original/restored example tests pass and source restores
 byte-exactly: `target-six/v0.2.23-provider/lifetime-helper-controls/receipt.json`.
 These are helper-consumer checks, not COM or browser-lifetime observations.
 
-The explicit CI build coordinator and expanded local-dependency source map are
-integrated but native execution remains unrun. LC-02 actual two-arm comparison
-has no observed browser result yet.
+The exact source `0ac018e5fcb2a559ba9ca9a68f6402a1adc6f1a4` executes the
+same-image LC-02 comparison in Windows x86_64 run `40199947999`, attempt 1.
+KEEP passes all eight original checks with the same live browser/environment.
+EXIT retains three true checks, one failed and four unobserved: reopened A's
+Cookie is missing while localStorage matches. The normal owned browser exit,
+new environment, persistent profile and runtime identity are observed; both
+arms use runtime `155.0.4283.62`. The aggregate and CI remain FAIL. KEEP supplies
+memory-reuse evidence; normal exit supplies lifetime evidence. Cause remains
+UNKNOWN, with no flush, DPAPI, permission or production-repair conclusion.
+
+The retained source, raw two-arm outcomes and archive audit are indexed in
+`target-six/v0.2.23-provider/ci-0ac018e-lifetime/verification-index.json`
+(SHA-256 `5f0c9eda07c6e138c874850af1a92de4441368d032fef529deacab51fa260777`).
+Later pre-close metadata code is absent from that image and cannot borrow its
+qualification. Original failed observations and older failed setup attempts stay
+retained; no new run or reclassification is implied.
+
+### Next diagnostic: one A-live file-metadata sample
+
+The frozen preview keeps the original fixture/page and all eight predicates.
+After the existing A-before-release SDK summary reports exactly one persistent,
+future Cookie, retain A and the exact pending B action, then sample only six
+fixed Cookie/legacy WAL/SHM slots under the already verified fresh A profile.
+The token-bound existing fixture worker validates run/store/locator ancestry and
+the original action before and after sampling. It returns only absent, regular
+empty/nonempty, unavailable or refused-link classes. It neither opens file
+contents nor enumerates other paths, and it acknowledges no new fixture action.
+
+The STA continues pumping. One owned bounded HTTP request runs off that thread;
+late/malformed/failed observations remain unavailable within the original court
+deadline. Revalidate pending B before the unchanged A-close path. Keep and join
+the worker after the loop. A metadata syscall itself is not hard-interruptible;
+this is not a new arbitrary-filesystem hard-time guarantee. No sleep, flush,
+retry, permission change or production path is added.
+
+Local integrated-source qualification executes all thirteen example tests
+(including seven host consumers: the original five unchanged plus two new),
+six new Python metadata/HTTP checks, fifteen original fixture protocol checks
+and eighteen alignment tests. Format and strict default/native-auth/example
+Clippy pass. The initial gate attempt retains FAIL because its fixture invocation
+omitted the required `--output`; supplying that argument completes the remaining
+gates without changing assertions or source. Receipts:
+`target-six/v0.2.23-provider/preclose-initial-gates/receipt.json` and
+`target-six/v0.2.23-provider/preclose-initial-gates-resume/receipt.json`.
+
+Eight serial source controls each reach the intended unchanged consumer
+assertion: SDK eligibility, deadline, nonempty classification, store identity,
+exact pending action, action change after sampling, reparse rejection and
+route-token authority. Initial/restored Python6 and Rust7 both pass; all mutated
+source bytes restore exactly. The deadline failure specifically returns observed
+six-slot data against the original unavailable expectation, not merely another
+equality failure. Receipt:
+`target-six/v0.2.23-provider/preclose-controls-attempt-1/receipt.json`
+(SHA-256 `0b5c13e2ac95e78a6d3e90c8b9ff6d0bc11b3762d0de30f1f6902ff72f9b02c6`).
+This is synthetic helper/HTTP qualification, with shared build cache; it proves
+no COM/browser persistence result. Matching-source native replay remains open.
+
+Pre-close presence versus post-exit absence only characterizes sampled file
+lifetime. It identifies neither Cookie contents nor a deleting actor; absence
+in both samples does not establish never-created or no alternate backend. The
+extra causal request can perturb timing and cannot repair or reinterpret the
+retained Cookie failure.
 
 Independent static review reproduces a receipt-classification defect with two
 actual original-assertion failures: driver exit 69 and invalid driver identity

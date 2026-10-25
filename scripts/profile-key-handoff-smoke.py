@@ -506,7 +506,7 @@ class Replay:
         self.check("actual_os_copy_targets_three_profiles", profiles=3)
         a, b = self.profiles[1:]
         self.switch(a)
-        self.row("model")
+        self.row("model_input")
         self.cli("send-ui-keys", "Ctrl+A")
         self.cli("send-ui-ime", "commit", "dirty-k3-model")
         self.row("connection_alias_0")
@@ -515,8 +515,15 @@ class Replay:
         def dirty_draft():
             state = self.state()
             form = next(form for form in state["connection_profiles"] if form["id"] == a)
-            return state if (state["model_editor"]["text"] == "dirty-k3-model"
-                             and any(row["alias"] == "dirty-k3-alias" for row in form["allocations"])) else None
+            model_matches = state["model_editor"]["text"] == "dirty-k3-model"
+            alias_matches = any(row["alias"] == "dirty-k3-alias" for row in form["allocations"])
+            # Preserve finite public failure context without exporting editor text.
+            self.receipt["dirty_draft_observation"] = {
+                "selected_profile_matches": state["connection_profile"] == a,
+                "model_matches": model_matches, "alias_matches": alias_matches,
+                "model_focused": state["model_editor"]["focused"],
+            }
+            return state if model_matches and alias_matches else None
         self.wait(dirty_draft, "public-dirty-model-alias-not-present")
         self.recipe("recipe", True)
         self.recipe("recipe_pi", True)

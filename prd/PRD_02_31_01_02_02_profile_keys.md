@@ -296,3 +296,25 @@ private protection call; production policy and all consumer assertions are
 unchanged. Native replay of this test-only repair remains pending. Evidence:
 `target-six/v0.2.23-provider/k2-macos-test-root-repair.json` and the original
 `../v0.2.23-window-half/ci-2133ce1-native/osx-aarch64/receipt/minicon-auth-settings.log`.
+
+
+### K3 retained native failure and public selector repair
+
+Exact-source `2d7c3e159f65f2bb5c926cefd04ef19bcf5f3f91`, native run
+`40217399944`, retains Windows x86_64 FAIL. Actual OS Copy succeeds for all
+three selected profiles; the subsequent dirty-model/alias precondition fails
+before recipes, contention/retry and close/reopen checks. Those later checks,
+shutdown and ordinary suites in that job are unobserved, not passes. The safe
+receipt is `ci-2d7c3e1-native`'s `profile-key-handoff.json` (SHA-256
+`d03f84d96fed1a731efe609932ff67091f9593aab520596bb85f00e2fe78fad1`).
+
+The runner clicked published `model` (profile chooser), instead of
+`model_input` (the model editor). A fresh owned-window comparison through the
+public CLI reproduces the unchanged dirty-draft assertion failure with the
+original selector, then passes with only that selector corrected; the original
+model text remains unchanged in the failing arm. Neither arm accesses the OS
+clipboard or a provider. Receipt:
+`target-six/v0.2.23-provider/k3-dirty-editor-reproduction/dirty-editor-comparison.json`.
+The integrated runner now selects `model_input` and preserves boolean-only
+precondition diagnostics. Actual Windows CI replay of the remaining clipboard
+and recipe checks remains open; this local repair is not their qualification.
