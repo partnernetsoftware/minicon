@@ -106,6 +106,35 @@ gap, never a claim of exact accounting. Statistics failure does not replay or
 silently block model work. Clear history is explicit and cannot imply provider
 balance reset. No new database runtime is required for the first slice.
 
+### Implementation join and read-only source inventory
+
+The existing `provider_server.rs` owns Binding, real BorrowedLease admission,
+`handle_model` and explicit `probe_candidate`; `provider_protocol.rs` owns the
+raw-body conversion and incremental SSE bridge. There are no separate
+`provider_schema.rs`/`provider_transport.rs` owners or existing durable usage/
+balance/health-summary APIs to reuse. Existing leases/active state are capacity
+and cancellation, not accounting history.
+
+Freeze attribution only after real lease success. Handler admission is checked
+both before body collection and at handling; recording each check would double
+count. Capture non-stream usage from the bounded upstream body before conversion
+and streamed usage from the existing decoded frame dispatch before shaping.
+Normalized downstream output may omit usage or discard billing extensions.
+Reuse that parser; do not add another SSE engine. A request-local once-only
+terminal guard distinguishes upstream completion from downstream delivery and
+keeps client/probe purposes separate. A stream completes only after the bridge's
+actual finish contract; terminal-looking frames followed by error/truncated EOF
+cannot claim complete billing. Missing RequestContext queue timing stays
+unavailable rather than renaming handler time.
+
+The terminal handoff must remain bounded/nonblocking and outside Gateway/Store
+locks. The later private writer/history and Runtime cached summaries consume it;
+they do not replay inference on accounting failure. Implement this seam before
+metadata scheduling. Read-only source research is frozen at
+`target-six/v0.2.23-provider/usage-feasibility/source-identity.json` with its
+primary-source note beside it; it ran no credentials, providers, tests or native
+courts and closes no UM acceptance item.
+
 ## Provider feasibility and snapshot contract
 
 Each adapter declares independent support for balance, quota windows, usage
@@ -120,10 +149,25 @@ read receipts:
 
 | Provider | Primary input and implementation consequence |
 | --- | --- |
-| DeepSeek account grant | The [pinned official account implementation](https://github.com/deepseek-ai/deepseek-harness/blob/22ddee3792402c3e70ec5f86a63c3e3e895a2f60/packages/credentials/deepseek-account-platform/README.md) describes grant-authenticated `getBalance` via `/api/v0/users/get_user_summary`, with wallet/bonus projection. Use the same issuer-bound account and metadata policy; validate the actual account read before claiming support |
+| DeepSeek account grant | The [pinned official account implementation](https://github.com/deepseek-ai/deepseek-harness/blob/22ddee3792402c3e70ec5f86a63c3e3e895a2f60/packages/credentials/deepseek-account-platform/README.md) defines a GET to the fixed Platform issuer's `/api/v0/users/get_user_summary`, using `x-dsh-auth-token` and the five existing client metadata headers. Its [typed projection](https://github.com/deepseek-ai/deepseek-harness/blob/22ddee3792402c3e70ec5f86a63c3e3e895a2f60/packages/credentials/deepseek-account-platform/src/details.ts) retains separate normal/bonus wallets with CNY/USD decimal strings, including scientific notation. This is a verified credential contract, not an actual MiniCon account read |
 | DeepSeek API-key balance | The [public balance API](https://api-docs.deepseek.com/api/get-user-balance/) reports currency and total/granted/topped-up amounts. Its existence alone does not prove an OAuth grant can call it; keep credential contracts distinct |
 | OpenCode Go allowance | The [official Go guide](https://opencode.ai/v2/docs/console/go/) describes rolling, weekly and monthly plan limits. An [official repository clarification](https://github.com/anomalyco/opencode/issues/52227) identifies Go usage/model metadata paths, but endpoint version, response schema, workspace and OAuth-token access still require actual adapter verification; do not import Console cookies or add an OpenCode agent dependency |
 | OpenCode response metadata | The [official inference reference](https://dev.opencode.ai/v2/docs/console/api/inference) distinguishes charge, billing source and Go allowance in usage metadata. Read them only where the selected endpoint really returns them; a zero charge does not mean no plan allowance was consumed |
+
+DeepSeek needs a narrow typed GET builder under its existing issuer/client
+metadata contract; the current auth POST builder is not interchangeable. Query
+under the account's captured service-network policy and CAS the exact credential,
+service and organization lifetime on acceptance. Metadata success is not model
+readiness. Only the contract's actual rejected-grant signals may change that
+credential's lifecycle; failures cannot invalidate a newer reconnect.
+
+The [OpenCode API reference](https://dev.opencode.ai/v2/docs/console/api/)
+distinguishes Models, Usage and Billing permissions. Current device-token/config/
+inference consumers expose no proven Usage/Billing audience. The Go endpoint's
+existence does not prove access, and absence of that proof is UNKNOWN rather than
+proof of unsupported. Verify metadata authorization independently; do not add an
+API-key auth method, borrow cookies, scrape billing or disable inference on a
+metadata-only 403/404 to obtain a green result.
 
 Balance and allowance are independent capabilities. If the exact OpenCode grant
 can read quota but not monetary credit, display quota with Balance unavailable;

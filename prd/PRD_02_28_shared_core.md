@@ -221,7 +221,9 @@ The [whole-profile workflow](PRD_02_31_01_02_01_01_profile_verification.md)
 reuses these consumers and adds one bounded product-private pending/active
 intent gate, one sequential worker and existing field-activity merge. Its quote,
 parent cancellation and commit-admission policy stay in MiniCon; they do not
-require a second queue, transport, shared publisher hook or permission engine.
+require a second queue, transport, shared publisher hook or permission engine. The private
+`provider_runtime/profile_batch.rs` hosts that Runtime policy; it is not a
+shared capability or a new orchestration service.
 Its [version-3 resolver/migration prerequisite](PRD_02_31_01_02_01_connection_selection.md#version-3-resolver-and-migration-prerequisite-in-progress)
 also keeps private provenance and compatibility resolution in these product
 modules; its production consumer does not promote the future paid-probe/draft

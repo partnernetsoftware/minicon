@@ -2,8 +2,9 @@
 
 Parent: [workspace and input](PRD_02_25_con_workspace.md). Sequence:
 [0.2.24 plan](../plan/plan-v0.2.24.md). Status: `[_]` scheduled for 0.2.24
-by the owner's next-0.2.x request and subsequent two-version release goal,
-2026-10-25. No implemented drag or rename-fix claim is made here.
+by the owner's next-0.2.x request, 2026-10-25. The active release goal remains
+0.2.23; these interactions are the next-version delivery scope. No implemented
+drag or rename-fix claim is made here.
 
 This module owns pointer interactions for moving tabs and editing their names.
 The parent retains tab identity, naming precedence, hierarchy/lifecycle rules

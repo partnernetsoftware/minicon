@@ -844,6 +844,7 @@ impl Verification {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct ProbeTicket {
     identity: CandidateIdentity,
     revision: u64,
@@ -1873,6 +1874,7 @@ impl DraftBook {
 }
 
 /// Immutable exact raw-form candidate. Never contains a grant or public route.
+#[derive(Clone)]
 pub(crate) struct FrozenCandidate {
     identity: CandidateIdentity,
     route: std::sync::Arc<ModelRoute>,
@@ -1977,7 +1979,6 @@ impl DraftBook {
             }
             FormSource::Applied(applied) => {
                 if applied.profile != profile
-                    || applied.alias != row.alias
                     || applied.account != account
                     || applied.route.model_id != row.model
                 {
@@ -2102,30 +2103,7 @@ impl DraftBook {
             }
             // Legacy is retained only from the actual previous applied object.
             // Neither account readiness nor a catalogue row can create it.
-            let retained_legacy = match &selected.source {
-                FormSource::Applied(reference) => previous
-                    .resolve_allocation(profile, Some(&row.alias))
-                    .ok()
-                    .filter(|prior| {
-                        reference.profile == profile
-                            && reference.alias == row.alias
-                            && reference.account == account
-                            && reference.route.model_id == row.model
-                            && prior.account == account
-                            && prior.route == reference.route.as_ref()
-                            && prior
-                                .evidence
-                                .is_some_and(|old| old.origin == reference.origin)
-                            && matches!(&reference.origin, AppliedOrigin::LegacyApplied { .. })
-                    })
-                    .map(|prior| {
-                        (
-                            prior.route.id.clone(),
-                            prior.evidence.unwrap().origin.clone(),
-                        )
-                    }),
-                FormSource::Selected(_) => None,
-            };
+            let retained_legacy = Self::retained_legacy(profile, row, selected, previous);
             let current = accounts.get(account).and_then(|entry| entry.as_ref().ok());
             let checked = current.and_then(|current| {
                 let (ticket, candidate) = self
@@ -2334,6 +2312,168 @@ impl DraftBook {
     }
 }
 
+#[derive(Clone)]
+pub(crate) struct ProfileVerificationStep {
+    pub slot: u8,
+    pub ticket: ProbeTicket,
+    pub candidate: FrozenCandidate,
+}
+#[derive(Clone)]
+pub(crate) struct ProfileVerificationPlan {
+    pub fingerprint: [u8; 32],
+    pub scope: [u8; 32],
+    pub steps: Vec<ProfileVerificationStep>,
+}
+impl DraftBook {
+    fn retained_legacy(
+        profile: &str,
+        row: &ConnectionAllocationInput,
+        selected: &FormSelection,
+        previous: &crate::provider_server::Config,
+    ) -> Option<(String, crate::provider_server::AppliedOrigin)> {
+        use crate::provider_server::AppliedOrigin;
+        let account = row.account.as_deref()?;
+        match &selected.source {
+            FormSource::Applied(reference) => previous
+                .resolve_allocation(profile, Some(&row.alias))
+                .ok()
+                .filter(|prior| {
+                    reference.profile == profile
+                        && reference.alias == row.alias
+                        && reference.account == account
+                        && reference.route.model_id == row.model
+                        && prior.account == account
+                        && prior.route == reference.route.as_ref()
+                        && prior
+                            .evidence
+                            .is_some_and(|old| old.origin == reference.origin)
+                        && matches!(&reference.origin, AppliedOrigin::LegacyApplied { .. })
+                })
+                .map(|prior| {
+                    (
+                        prior.route.id.clone(),
+                        prior.evidence.unwrap().origin.clone(),
+                    )
+                }),
+            FormSource::Selected(_) => None,
+        }
+    }
+
+    pub(crate) fn verification_plan(
+        &self,
+        profile: &str,
+        revision: u64,
+        previous: &crate::provider_server::Config,
+        accounts: &ConnectionAccounts,
+    ) -> Result<ProfileVerificationPlan, SelectionError> {
+        self.check_revision(profile, revision)?;
+        let form = self.form(profile)?;
+        if form.error.is_some() {
+            return Err(SelectionError::InvalidDraft);
+        }
+        let mut scope = Sha256::new();
+        scope.update(b"minicon.profile-verification.scope.v1\0");
+        for part in [profile, &form.input.label, &form.input.default_alias] {
+            framed(&mut scope, part.as_bytes());
+        }
+        scope.update(revision.to_be_bytes());
+        scope.update([u8::from(form.input.enabled)]);
+        let mut evidence = Sha256::new();
+        let mut steps = Vec::new();
+        for row in &form.input.allocations {
+            scope.update([row.slot]);
+            for part in [
+                row.alias.as_str(),
+                row.account.as_deref().ok_or(SelectionError::InvalidDraft)?,
+                row.model.as_str(),
+            ] {
+                framed(&mut scope, part.as_bytes());
+            }
+            let selected = form
+                .selections
+                .get(&row.slot)
+                .ok_or(SelectionError::MissingRoute)?;
+            if selected.text != row.model
+                || row.account.as_deref() != Some(selected.source.account())
+            {
+                return Err(SelectionError::DraftChanged);
+            }
+            let legacy = Self::retained_legacy(profile, row, selected, previous);
+            let current = row
+                .account
+                .as_ref()
+                .and_then(|account| accounts.get(account))
+                .and_then(|entry| entry.as_ref().ok());
+            let frozen = current
+                .and_then(|current| self.freeze_probe(profile, revision, row.slot, current).ok());
+            let proof = frozen.as_ref().and_then(|(ticket, _)| {
+                self.get(profile)
+                    .ok()?
+                    .proofs
+                    .get(&row.alias)
+                    .filter(|proof| proof.identity == ticket.identity && proof.checked_unix_ms != 0)
+            });
+            if let Some((ticket, candidate)) = frozen
+                .as_ref()
+                .filter(|_| proof.is_some() || legacy.is_none())
+            {
+                let authority = &ticket.identity.authority;
+                for part in [
+                    &authority.account,
+                    &authority.credential,
+                    &authority.service_generation,
+                    &authority.organization.epoch,
+                    &authority.organization.digest,
+                ] {
+                    framed(&mut scope, part.as_bytes());
+                }
+                scope.update([match authority.provider {
+                    Provider::DeepSeek => 0,
+                    Provider::OpenCode => 1,
+                }]);
+                match &authority.service {
+                    NetworkPolicy::Direct => scope.update([0]),
+                    NetworkPolicy::Proxy(endpoint) => {
+                        scope.update([1]);
+                        framed(&mut scope, endpoint.as_bytes());
+                    }
+                }
+                framed(&mut scope, &ticket.identity.wire.0);
+                if let Some(proof) = proof {
+                    evidence.update([1]);
+                    evidence.update(proof.checked_unix_ms.to_be_bytes());
+                } else {
+                    evidence.update([0]);
+                    steps.push(ProfileVerificationStep {
+                        slot: row.slot,
+                        ticket: ticket.clone(),
+                        candidate: candidate.clone(),
+                    });
+                }
+            } else if let Some((
+                _,
+                crate::provider_server::AppliedOrigin::LegacyApplied { snapshot_digest },
+            )) = legacy
+            {
+                scope.update([2]);
+                framed(&mut scope, snapshot_digest.as_bytes());
+                evidence.update([2]);
+            } else {
+                let current = current.ok_or(SelectionError::AuthorityChanged)?;
+                self.freeze_probe(profile, revision, row.slot, current)?;
+                return Err(SelectionError::VerificationRequired);
+            }
+        }
+        let scope: [u8; 32] = scope.finalize().into();
+        evidence.update(scope);
+        Ok(ProfileVerificationPlan {
+            fingerprint: evidence.finalize().into(),
+            scope,
+            steps,
+        })
+    }
+}
+
 fn verification_bytes(proof: &Verification) -> usize {
     size_of::<(String, Verification)>()
         + proof.identity.profile.capacity()
@@ -2431,7 +2571,7 @@ mod tests {
             ConnectionAccounts::from([(current.summary.id.clone(), Ok(current.clone()))]);
         assert!(matches!(
             book.prepare_apply(&profile, revision, &config, &accounts),
-            Err(SelectionError::DraftChanged)
+            Err(SelectionError::VerificationRequired)
         ));
         let route = config.models[0].clone();
         let revision = book

@@ -20,7 +20,7 @@ minicon control protocol and public CLI
 ├── Transport and bounds (ATC1 frame; local pipe/socket; process-lifetime)
 │   └── [-] Bounded completion of active replies during shutdown
 ├── JSON contract
-│   └── [_] Harness settings observations → behavior in PRD 31.01
+│   └── [-] Harness settings observations → behavior in PRD 31.01
 └── Evidence publication (snapshots, screenshots)
     └── [-] Visible Harness capture versus explicit tab capture; restore any live tab kind
 ```
@@ -32,7 +32,7 @@ flowchart LR
     H --> V["visible GUI<br/>capture · screenshot · ui-snapshot · send-*"]
     V --> SH["Screenshot: implicit visible host or explicit tab pane"]
     SH --> RESTORE["Discard scratch frame; retain latest tab and Harness destination"]
-    V -. planned redacted settings observation .-> G["PRD 31.01 Harness route<br/>separate inference listener"]
+    V -. development redacted settings observation .-> G["PRD 31.01 Harness route<br/>separate inference listener"]
     H --> D["shutdown: reject new work<br/>bounded active-response drain"]
     D -->|"complete transport response"| C
     D --> E["process exit by deadline"]
@@ -262,6 +262,23 @@ inside-click reproduction is an input baseline, not evidence of a repair.
   are the pointer authority. Behavior and the actual eight-form public replay
   remain with [connection selection](PRD_02_31_01_02_01_connection_selection.md#production-draft-form-join-in-progress);
   injected CLI input is not native physical-input qualification.
+- [-] The integrated profile-verification projection adds the following fields
+  under `geometry.harness_settings`. Compilation and public replay for these
+  additions are pending; [the workflow owner](PRD_02_31_01_02_01_01_profile_verification.md)
+  owns charging, cancellation, publication and acceptance rather than this schema.
+
+  | Field | Bounded shape and observation meaning |
+  | --- | --- |
+  | `connection_plans` | At most eight objects with `profile` opaque ID, `revision`/`id` unsigned integers, ordered distinct `paid_slots` (at most 32, each 0..31), nullable typed `error`; no private fingerprint, grant, URL or headers |
+  | check `scope` | `Single` or `Profile` in existing active/last-terminal objects; no additional operation history |
+  | check `completed`, `total` | Unsigned counts of accepted checks within the quoted paid plan, each at most 32; existing `slot` remains a sparse allocation identity |
+  | check `applied_revision` | Nullable unsigned revision of an actually published profile; separate from the initiating draft revision |
+  | check `phase`, `warning` | Existing finite strings additionally allow `Applying`/`Applied` and `ReadinessStale`; Applying alone does not claim publication |
+
+  Missing active/terminal objects remain null. These additions do not create a
+  model-HTTP management API, automatic Verify, a tenth edit receipt or native
+  input qualification. Named evidence remains with the workflow owner.
+
 - [v] `send-wheel` reports the route actually taken (`zoom`, application mouse,
   alternate-screen cursor keys, or local scrollback), the notch count actually
   applied after bounds/clamps, and whether observable state or terminal input

@@ -491,6 +491,12 @@ fn merge_later_fields(
     result
 }
 
+struct PublicationBaseline {
+    request: u64,
+    profile: String,
+    input: ConnectionDraftInput,
+    fields: BTreeMap<EditField, u64>,
+}
 #[derive(Default)]
 pub(super) struct ConnectionForms {
     pub forms: BTreeMap<String, ProfileEditors>,
@@ -498,8 +504,12 @@ pub(super) struct ConnectionForms {
     pub create_request: Option<u64>,
     pub error: Option<String>,
     sequence: u64,
+    publication: Option<PublicationBaseline>,
 }
 impl ConnectionForms {
+    pub fn publication_request(&self) -> Option<u64> {
+        self.publication.as_ref().map(|baseline| baseline.request)
+    }
     pub fn current(&self) -> Option<&ProfileEditors> {
         self.selected.as_ref().and_then(|id| self.forms.get(id))
     }
@@ -531,6 +541,7 @@ impl ConnectionForms {
         Some(self.sequence)
     }
     pub fn sync(&mut self, view: &View) {
+        self.consume_publication(view);
         if let Some(receipt) = view.connection_receipts.iter().find(|r| {
             self.create_request == Some(r.request) && r.change == ConnectionChange::Create
         }) {
@@ -645,6 +656,97 @@ impl ConnectionForms {
                 })
         })
     }
+    // Independent of edit receipts: this baseline must not block later edits.
+    pub fn verify_profile(&mut self, plan: &runtime::ConnectionPlanView) -> Option<Action> {
+        let id = self.selected.clone()?;
+        if self.publication.is_some() {
+            return None;
+        }
+        let form = self.current_mut()?;
+        if form.waiting()
+            || form.unsent()
+            || form.input() != form.view.input
+            || form.view.error.is_some()
+            || form
+                .allocations
+                .values()
+                .any(|row| row.model.text.len() > OWNER_MODEL_BYTES)
+            || plan.error.is_some()
+            || plan.id == 0
+            || plan.profile != id
+            || plan.revision != form.revision
+            || plan.paid_slots.is_empty()
+        {
+            form.local_error = Some(
+                "Acknowledge valid input and the current complete-profile quote before verifying."
+                    .into(),
+            );
+            return None;
+        }
+        let baseline = PublicationBaseline {
+            request: 0,
+            profile: id.clone(),
+            input: form.input(),
+            fields: form.fields.clone(),
+        };
+        let request = self.request()?;
+        self.publication = Some(PublicationBaseline {
+            request,
+            ..baseline
+        });
+        Some(Action::VerifyAndApplyConnectionProfile {
+            request,
+            profile: id,
+            expected_revision: plan.revision,
+            plan_id: plan.id,
+            paid_slots: plan.paid_slots.clone(),
+        })
+    }
+    fn consume_publication(&mut self, view: &View) {
+        let Some(baseline) = self.publication.as_ref() else {
+            return;
+        };
+        let Some(terminal) = view
+            .connection_check_last_terminal
+            .as_ref()
+            .filter(|terminal| {
+                terminal.scope == runtime::ConnectionCheckScope::Profile
+                    && terminal.request == baseline.request
+                    && terminal.profile == baseline.profile
+            })
+        else {
+            return;
+        };
+        if terminal.phase == runtime::ConnectionCheckPhase::Applied {
+            let Some(authoritative) = view.connection_profiles.iter().find(|profile| {
+                profile.id == baseline.profile
+                    && Some(profile.revision) == terminal.applied_revision
+            }) else {
+                return;
+            };
+            if let Some(form) = self.forms.get_mut(&baseline.profile) {
+                let rebased = merge_later_fields(
+                    &baseline.input,
+                    &form.input(),
+                    &authoritative.input,
+                    &|field| form.fields.get(&field) != baseline.fields.get(&field),
+                );
+                form.replace_input(&rebased);
+                form.revision = authoritative.revision;
+                form.unsent = form.input() != authoritative.input;
+                form.view = authoritative.clone();
+                form.blocked_epoch = None;
+                form.local_error = None;
+            }
+        } else if !matches!(
+            terminal.phase,
+            runtime::ConnectionCheckPhase::Failed | runtime::ConnectionCheckPhase::Cancelled
+        ) {
+            return;
+        }
+        self.publication = None;
+    }
+
     pub fn verify(&mut self) -> Option<Action> {
         let id = self.selected.clone()?;
         let form = self.current_mut()?;
@@ -775,6 +877,19 @@ impl ConnectionForms {
         }
     }
     pub fn send_failed(&mut self, action: &Action, error: RuntimeError) {
+        if let Action::VerifyAndApplyConnectionProfile { request, .. } = action {
+            if self
+                .publication
+                .as_ref()
+                .is_some_and(|baseline| baseline.request == *request)
+            {
+                let baseline = self.publication.take().unwrap();
+                if let Some(form) = self.forms.get_mut(&baseline.profile) {
+                    form.local_error = Some(error.to_string());
+                }
+            }
+            return;
+        }
         let request = match action {
             Action::CreateConnectionProfile { request }
             | Action::ApplyConnectionProfile { request, .. }
@@ -801,6 +916,106 @@ impl ConnectionForms {
 
 #[cfg(test)]
 mod tests {
+    fn cs05_plan() -> runtime::ConnectionPlanView {
+        runtime::ConnectionPlanView {
+            profile: "default".into(),
+            revision: 1,
+            id: 10,
+            paid_slots: vec![0],
+            error: None,
+        }
+    }
+    fn cs05_terminal(view: &mut View, request: u64, phase: runtime::ConnectionCheckPhase) {
+        view.connection_check_last_terminal = Some(runtime::ConnectionCheckView {
+            scope: runtime::ConnectionCheckScope::Profile,
+            total: 1,
+            completed: u8::from(phase == runtime::ConnectionCheckPhase::Applied),
+            applied_revision: (phase == runtime::ConnectionCheckPhase::Applied).then_some(3),
+            request,
+            profile: "default".into(),
+            revision: 1,
+            slot: 0,
+            phase,
+            error: None,
+            checked_unix_ms: None,
+            warning: None,
+        });
+    }
+    #[test]
+    fn cs05_profile_result_uses_nonblocking_baseline_and_keeps_later_text_aba_and_caret() {
+        let mut view = loaded(vec![profile("default"), profile("other")]);
+        let mut forms = ConnectionForms::default();
+        forms.sync(&view);
+        let action = forms.verify_profile(&cs05_plan()).unwrap();
+        let request = match action {
+            Action::VerifyAndApplyConnectionProfile { request, .. } => request,
+            _ => panic!("profile action required"),
+        };
+        assert!(
+            !forms.current().unwrap().waiting(),
+            "batch must not occupy an edit receipt"
+        );
+        let form = forms.current_mut().unwrap();
+        form.label = editor("changed");
+        form.edit_field(ProfileField::Label);
+        form.label = editor("default");
+        form.edit_field(ProfileField::Label);
+        form.label.caret = 3;
+        form.label.anchor = Some(1);
+        assert!(
+            forms.next_edit().is_some(),
+            "data edits must remain sendable during a batch"
+        );
+        view.connection_profiles[0].revision = 3;
+        view.connection_profiles[0].input.label = "published normalization".into();
+        cs05_terminal(
+            &mut view,
+            request + 1,
+            runtime::ConnectionCheckPhase::Failed,
+        );
+        forms.sync(&view);
+        assert!(forms.publication.is_some());
+        cs05_terminal(&mut view, request, runtime::ConnectionCheckPhase::Applied);
+        forms.sync(&view);
+        let form = forms.current().unwrap();
+        assert_eq!(form.label.text, "default");
+        assert_eq!((form.label.caret, form.label.anchor), (3, Some(1)));
+        assert_eq!(form.revision, 3);
+        assert!(forms.publication.is_none());
+        assert_eq!(forms.forms["other"].label.text, "other");
+    }
+    #[test]
+    fn cs05_profile_ack_requires_exact_applied_revision_and_failure_retains_input_without_retry() {
+        let mut view = loaded(vec![profile("default")]);
+        let mut forms = ConnectionForms::default();
+        forms.sync(&view);
+        let action = forms.verify_profile(&cs05_plan()).unwrap();
+        let request = match action {
+            Action::VerifyAndApplyConnectionProfile { request, .. } => request,
+            _ => unreachable!(),
+        };
+        cs05_terminal(&mut view, request, runtime::ConnectionCheckPhase::Applied);
+        forms.sync(&view);
+        assert!(
+            forms.publication.is_some(),
+            "stale projection cannot acknowledge publication"
+        );
+        cs05_terminal(&mut view, request, runtime::ConnectionCheckPhase::Failed);
+        forms.sync(&view);
+        assert!(forms.publication.is_none());
+        assert!(forms.next_edit().is_none());
+        let action = forms.verify_profile(&cs05_plan()).unwrap();
+        forms.send_failed(&action, RuntimeError::Busy);
+        assert!(forms.publication.is_none());
+        assert!(!forms.current().unwrap().waiting());
+        assert!(forms.next_edit().is_none());
+        forms.current_mut().unwrap().model_mut().text = "x".repeat(201);
+        forms.current_mut().unwrap().edit_model();
+        let caret = forms.current().unwrap().model().caret;
+        assert!(forms.verify_profile(&cs05_plan()).is_none());
+        assert_eq!(forms.current().unwrap().model().text.len(), 201);
+        assert_eq!(forms.current().unwrap().model().caret, caret);
+    }
 
     fn cs04_apply_view() -> View {
         let mut view = loaded(vec![profile("default"), profile("other")]);

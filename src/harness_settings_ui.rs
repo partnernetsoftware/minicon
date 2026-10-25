@@ -76,6 +76,7 @@ enum Row {
     AllocationAccount,
     AllocationAccountChoice(usize),
     ProfileCommands,
+    ProfileVerification,
     Connect,
     KeyState,
     KeyActions,
@@ -506,6 +507,7 @@ impl HarnessSettings {
                 rows.extend((0..catalogue.models.len()).map(Row::ModelChoice));
             }
             rows.push(Row::ProfileCommands);
+            rows.push(Row::ProfileVerification);
         } else {
             // Loading/unavailable does not invent an authoritative default form.
             rows.extend([Row::ProfileState, Row::ModelInput]);
@@ -929,6 +931,44 @@ impl HarnessSettings {
         });
     }
 
+    fn connection_text_changed(&mut self, field: Field) {
+        self.invalidate_connection_data();
+        if let Some(id) = self.forms.selected.clone()
+            && let Some(form) = self.forms.current_mut()
+        {
+            match field {
+                Field::Model => {
+                    form.commit_model_edit(&id);
+                }
+                Field::Profile(field) => {
+                    form.edit_field(field);
+                }
+                _ => {}
+            }
+        }
+        self.flush_connection_edits();
+    }
+    fn invalidate_connection_data(&self) {
+        if let Some(profile) = self.forms.selected.as_deref()
+            && let Some(runtime) = &self.runtime
+        {
+            runtime.invalidate_connection_profile(profile);
+        }
+    }
+    fn connection_input(&self) -> Option<provider_runtime::ConnectionDraftInput> {
+        self.forms.current().map(|form| form.input())
+    }
+    fn invalidate_changed_input(&self, before: Option<provider_runtime::ConnectionDraftInput>) {
+        if before != self.connection_input() {
+            self.invalidate_connection_data();
+        }
+    }
+    fn profile_plan(&self) -> Option<&provider_runtime::ConnectionPlanView> {
+        self.view
+            .connection_plans
+            .iter()
+            .find(|plan| Some(&plan.profile) == self.forms.selected.as_ref())
+    }
     fn submit(&mut self, field: Field) {
         match field {
             Field::Port if self.port_editable() => {
@@ -1056,9 +1096,11 @@ impl HarnessSettings {
                 }
             }
             Row::ProfileToggle => {
+                let before = self.connection_input();
                 if let Some(form) = self.forms.current_mut() {
                     form.toggle_enabled();
                 }
+                self.invalidate_changed_input(before);
                 self.flush_connection_edits();
             }
             Row::Allocation(slot) => {
@@ -1069,11 +1111,13 @@ impl HarnessSettings {
                 }
             }
             Row::AllocationActions if column == 0 => {
+                let before = self.connection_input();
                 if let Some(id) = self.forms.selected.clone()
                     && let Some(form) = self.forms.current_mut()
                 {
                     form.add_slot(&id);
                 }
+                self.invalidate_changed_input(before);
                 self.flush_connection_edits();
             }
             Row::AllocationActions => self.connection_command(ConnectionChange::Remove, None),
@@ -1083,10 +1127,12 @@ impl HarnessSettings {
                 }
             }
             Row::AllocationAccountChoice(index) => {
+                let before = self.connection_input();
                 let account = self.view.accounts[index].id.clone();
                 if let Some(form) = self.forms.current_mut() {
                     form.assign_account(&account);
                 }
+                self.invalidate_changed_input(before);
                 self.flush_connection_edits();
             }
             Row::ModelInput if column == 1 => self.submit(Field::Model),
@@ -1109,14 +1155,34 @@ impl HarnessSettings {
                 self.forms.retry();
                 self.flush_connection_edits();
             }
+            Row::ProfileVerification => {
+                self.flush_connection_edits();
+                if self.view.busy || self.view.login_active {
+                    self.error =
+                        Some("Wait for the active operation before verifying a profile.".into());
+                } else if let Some(plan) = self.profile_plan().cloned() {
+                    if plan.error.is_some() {
+                        self.error = plan.error.map(|error| error.to_string());
+                    } else if plan.paid_slots.is_empty() {
+                        self.connection_command(ConnectionChange::Apply, None);
+                    } else if let Some(action) = self.forms.verify_profile(&plan) {
+                        self.act(action);
+                    }
+                }
+            }
             Row::VerificationActions => {
                 if let Some(action) = self.forms.verify() {
                     self.act(action);
                 }
             }
             Row::VerificationCancel => {
-                if let Some(active) = &self.view.connection_check_active {
-                    let request = active.request;
+                let request = if let Some(active) = &self.view.connection_check_active {
+                    (active.phase != provider_runtime::ConnectionCheckPhase::Applying)
+                        .then_some(active.request)
+                } else {
+                    self.forms.publication_request()
+                };
+                if let Some(request) = request {
                     self.act(Action::CancelConnectionVerification { request });
                 }
             }
@@ -1265,6 +1331,7 @@ fn row_id(row: Row) -> String {
         Row::AllocationAccount => "connection_allocation_account",
         Row::AllocationAccountChoice(index) => return format!("connection_account_{index}"),
         Row::ProfileCommands => "connection_profile_commands",
+        Row::ProfileVerification => "profile_verification",
     }
     .to_owned()
 }
@@ -1943,6 +2010,11 @@ impl ConApp {
                         false,
                     );
                 }
+                Row::ProfileVerification => {
+                    let caption =
+                        profile_verification_label(self.ui_language, settings.profile_plan());
+                    paint_cost_button(surface, cell(0, 1), &caption, &theme, size, scale);
+                }
                 Row::VerificationActions => {
                     paint_verification_button(
                         surface,
@@ -1959,7 +2031,14 @@ impl ConApp {
                         cell(0, 1),
                         &settings.view.connection_check_active.as_ref().map_or_else(
                             || "No active model check".into(),
-                            |active| format!("Cancel check #{}", active.request),
+                            |active| {
+                                if active.phase == provider_runtime::ConnectionCheckPhase::Applying
+                                {
+                                    "Applying; commit admitted (cannot cancel)".into()
+                                } else {
+                                    format!("Cancel check #{}", active.request)
+                                }
+                            },
                         ),
                         false,
                     );
@@ -1990,10 +2069,13 @@ impl ConApp {
                                 || "No model check requested.".into(),
                                 |check| {
                                     format!(
-                                        "Check #{} / {} / slot {}: {:?}{}",
+                                        "Check #{} / {} / slot {}: {:?} {}/{} {:?}{}",
                                         check.request,
                                         check.profile,
                                         check.slot,
+                                        check.scope,
+                                        check.completed,
+                                        check.total,
                                         check.phase,
                                         check.error.map_or_else(String::new, |error| format!(
                                             " / {error}"
@@ -2285,6 +2367,10 @@ impl ConApp {
             ("connection_profile",settings.forms.selected.as_deref().map_or(json::JsonValue::Null,Into::into)),
             ("connection_profile_navigation",settings.profile_navigation.map_or(json::JsonValue::Null,Into::into)),
             ("connection_picker_focused",(active&&settings.focused==Some(Field::ProfileChooser)).into()),
+            ("connection_plans",json::JsonValue::Array(settings.view.connection_plans.iter().map(|plan|json::object(vec![
+                ("profile",plan.profile.as_str().into()),("revision",plan.revision.into()),("id",plan.id.into()),
+                ("paid_slots",json::JsonValue::Array(plan.paid_slots.iter().map(|slot|u32::from(*slot).into()).collect())),
+                ("error",plan.error.map_or(json::JsonValue::Null,|error|format!("{error:?}").into()))])).collect())),
             ("connection_check_active",check_observation(settings.view.connection_check_active.as_ref())),
             ("connection_check_last_terminal",check_observation(settings.view.connection_check_last_terminal.as_ref())),
             ("connection_profiles",json::JsonValue::Array(settings.view.connection_profiles.iter().map(|profile|{
@@ -2736,14 +2822,27 @@ impl ConApp {
                             window.focus();
                         } else {
                             settings.blur();
-                            if matches!(row, Row::VerificationActions)
-                                && verification_button_font(
+                            let profile_caption = profile_verification_label(
+                                self.ui_language,
+                                settings.profile_plan(),
+                            );
+                            let unreadable_profile = matches!(row, Row::ProfileVerification)
+                                && cost_button_font(
                                     geometry.cell(index, column, columns, scale),
-                                    self.ui_language,
+                                    &profile_caption,
                                     size,
                                     scale,
                                 )
-                                .is_none()
+                                .is_none();
+                            if unreadable_profile
+                                || (matches!(row, Row::VerificationActions)
+                                    && verification_button_font(
+                                        geometry.cell(index, column, columns, scale),
+                                        self.ui_language,
+                                        size,
+                                        scale,
+                                    )
+                                    .is_none())
                             {
                                 settings.error=Some("Enlarge the window to read the complete model-check cost notice before verifying.".into());
                             } else {
@@ -2857,20 +2956,9 @@ impl ConApp {
                             if before != settings.editor(field).text
                                 && matches!(field, Field::Model | Field::Profile(_))
                             {
-                                if let Some(id) = settings.forms.selected.clone()
-                                    && let Some(form) = settings.forms.current_mut()
-                                {
-                                    match field {
-                                        Field::Model => {
-                                            form.commit_model_edit(&id);
-                                        }
-                                        Field::Profile(field) => {
-                                            form.edit_field(field);
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                                settings.flush_connection_edits();
+                                // This exact raw change revokes Pending as well as Active,
+                                // before a bounded edit send can fail.
+                                settings.connection_text_changed(field);
                             } else if outcome.changed && !outcome.rejected {
                                 settings.note_connection_activity(field);
                             }
@@ -2942,6 +3030,13 @@ fn check_observation(
             ("request", check.request.into()),
             ("profile", check.profile.as_str().into()),
             ("revision", check.revision.into()),
+            ("scope", format!("{:?}", check.scope).into()),
+            ("completed", u32::from(check.completed).into()),
+            ("total", u32::from(check.total).into()),
+            (
+                "applied_revision",
+                check.applied_revision.map_or(JsonValue::Null, Into::into),
+            ),
             ("slot", u32::from(check.slot).into()),
             ("phase", format!("{:?}", check.phase).into()),
             (
@@ -2980,11 +3075,13 @@ fn verification_button_font(
     size: u16,
     scale: f64,
 ) -> Option<u16> {
+    cost_button_font(rect, verification_button_label(language), size, scale)
+}
+fn cost_button_font(rect: ui::Rect, label: &str, size: u16, scale: f64) -> Option<u16> {
     let inset = (16.0 * scale) as u32;
     let minimum = (7.0 * scale).ceil().clamp(1.0, f64::from(u16::MAX)) as u16;
     (minimum..=size.max(minimum)).rev().find(|&font_size| {
-        host_ui::host_ui_text_width(verification_button_label(language), font_size)
-            <= rect.width.saturating_sub(inset)
+        host_ui::host_ui_text_width(label, font_size) <= rect.width.saturating_sub(inset)
             && font::cell_metrics(font_size).height <= rect.height
     })
 }
@@ -2997,6 +3094,50 @@ fn paint_verification_button(
     size: u16,
     scale: f64,
 ) {
+    paint_cost_button(
+        surface,
+        rect,
+        verification_button_label(language),
+        theme,
+        size,
+        scale,
+    );
+}
+fn profile_verification_label(
+    language: ui::UiLanguage,
+    plan: Option<&provider_runtime::ConnectionPlanView>,
+) -> String {
+    let Some(plan) = plan.filter(|plan| plan.error.is_none() && plan.id != 0) else {
+        return "Profile verification unavailable".into();
+    };
+    let n = plan.paid_slots.len();
+    if n == 0 {
+        return match language {
+            ui::UiLanguage::English => "Apply: 0 paid checks".into(),
+            ui::UiLanguage::ChineseSimplified => "应用：0次收费验证".into(),
+            ui::UiLanguage::ChineseTraditional => "套用：0次收費驗證".into(),
+        };
+    }
+    match language {
+        ui::UiLanguage::English => {
+            format!("Verify & Apply: {n} calls; may charge; output ≤8 tokens/call")
+        }
+        ui::UiLanguage::ChineseSimplified => {
+            format!("验证并应用：{n}次；可能收费；每次输出≤8 tokens")
+        }
+        ui::UiLanguage::ChineseTraditional => {
+            format!("驗證並套用：{n}次；可能收費；每次輸出≤8 tokens")
+        }
+    }
+}
+fn paint_cost_button(
+    surface: &mut Surface<'_>,
+    rect: ui::Rect,
+    caption: &str,
+    theme: &theme::Theme,
+    size: u16,
+    scale: f64,
+) {
     surface.fill_rect(
         rect.x,
         rect.y,
@@ -3004,10 +3145,8 @@ fn paint_verification_button(
         rect.height,
         theme.surface.to_xrgb(),
     );
-    let (label, size) = verification_button_font(rect, language, size, scale)
-        .map_or(("Enlarge to verify", size), |size| {
-            (verification_button_label(language), size)
-        });
+    let (label, size) = cost_button_font(rect, caption, size, scale)
+        .map_or(("Enlarge to verify", size), |size| (caption, size));
     paint_host_ui_text(
         surface,
         rect.x + (8.0 * scale) as u32,
@@ -3021,6 +3160,269 @@ fn paint_verification_button(
 
 #[cfg(test)]
 mod tests {
+    fn cs05_pending_ui(test: impl FnOnce(&mut HarnessSettings)) {
+        use std::sync::{Arc, Mutex, mpsc};
+        let root = std::env::temp_dir().join(format!(
+            "minicon-cs05-ui-{}",
+            crate::provider_server::random_id().unwrap()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let root = root.canonicalize().unwrap();
+        let (ready, wait_ready) = mpsc::channel();
+        let (release, wait_release) = mpsc::channel();
+        let wait = Arc::new(Mutex::new(Some(wait_release)));
+        let notify: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            if let Some(wait) = wait.lock().unwrap().take() {
+                ready.send(()).unwrap();
+                wait.recv_timeout(std::time::Duration::from_secs(5))
+                    .unwrap();
+            }
+        });
+        let runtime = provider_runtime::Runtime::new(
+            root.clone(),
+            provider_login::LoginMetadata {
+                version: "synthetic-ui".into(),
+                locale: "en".into(),
+                timezone_offset_seconds: 0,
+            },
+            notify,
+        )
+        .unwrap();
+        let mut settings = HarnessSettings {
+            runtime: Some(runtime),
+            ..Default::default()
+        };
+        struct Unblock(Option<mpsc::Sender<()>>);
+        impl Drop for Unblock {
+            fn drop(&mut self) {
+                if let Some(sender) = self.0.take() {
+                    let _ = sender.send(());
+                }
+            }
+        }
+        let unblock = Unblock(Some(release));
+        wait_ready
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        settings.view.load_state = provider_runtime::LoadState::Loaded;
+        settings.view.busy = false;
+        settings.view.connection_profile = "default".into();
+        settings.view.connection_profiles = vec![connection_profile("default", &"a".repeat(32))];
+        settings.view.connection_plans = vec![provider_runtime::ConnectionPlanView {
+            profile: "default".into(),
+            revision: 1,
+            id: 1,
+            paid_slots: vec![0],
+            error: None,
+        }];
+        settings.forms.sync(&settings.view);
+        settings.activate(Row::ProfileVerification, 0);
+        assert!(settings.forms.publication_request().is_some());
+        test(&mut settings);
+        drop(unblock);
+        drop(settings);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn cs05_real_ui_data_aba_revokes_pending_batch_even_when_edit_queue_is_full() {
+        cs05_pending_ui(|settings| {
+            let request = settings.forms.publication_request().unwrap();
+            for _ in 0..15 {
+                settings
+                    .runtime
+                    .as_mut()
+                    .unwrap()
+                    .act(Action::RefreshAccounts)
+                    .unwrap();
+            }
+            assert_eq!(
+                settings
+                    .runtime
+                    .as_mut()
+                    .unwrap()
+                    .act(Action::RefreshAccounts),
+                Err(provider_runtime::RuntimeError::Busy)
+            );
+            let original = settings.forms.current().unwrap().label.text.clone();
+            settings.forms.current_mut().unwrap().label.text = "B".into();
+            settings.connection_text_changed(Field::Profile(ProfileField::Label));
+            settings.forms.current_mut().unwrap().label.text = original.clone();
+            settings.connection_text_changed(Field::Profile(ProfileField::Label));
+            assert_eq!(
+                settings
+                    .runtime
+                    .as_mut()
+                    .unwrap()
+                    .act(Action::CancelConnectionVerification { request }),
+                Err(provider_runtime::RuntimeError::InvalidAction),
+                "actual first data intent must have already revoked Pending despite queue failure and value ABA"
+            );
+            assert_eq!(settings.forms.current().unwrap().label.text, original);
+            assert!(!settings.forms.current().unwrap().waiting());
+        });
+    }
+    #[test]
+    fn cs05_real_ui_caret_activity_does_not_revoke_pending_but_oversized_committed_model_does() {
+        cs05_pending_ui(|settings| {
+            let request = settings.forms.publication_request().unwrap();
+            settings.forms.current_mut().unwrap().label.caret = 1;
+            settings.note_connection_activity(Field::Profile(ProfileField::Label));
+            assert_eq!(
+                settings
+                    .runtime
+                    .as_mut()
+                    .unwrap()
+                    .act(Action::CancelConnectionVerification { request }),
+                Ok(()),
+                "caret-only activity must leave exact cancellation available"
+            );
+        });
+        cs05_pending_ui(|settings| {
+            let request = settings.forms.publication_request().unwrap();
+            settings.forms.current_mut().unwrap().model_mut().text = "x".repeat(201);
+            settings.connection_text_changed(Field::Model);
+            assert_eq!(
+                settings
+                    .runtime
+                    .as_mut()
+                    .unwrap()
+                    .act(Action::CancelConnectionVerification { request }),
+                Err(provider_runtime::RuntimeError::InvalidAction)
+            );
+            assert_eq!(settings.forms.current().unwrap().model().text.len(), 201);
+            assert!(!settings.forms.current().unwrap().waiting());
+        });
+    }
+    #[test]
+    fn cs05_actual_profile_action_paints_exact_cost_in_supported_short_viewports_and_dispatches() {
+        let mut settings = HarnessSettings::default();
+        settings.view.load_state = provider_runtime::LoadState::Loaded;
+        settings.view.busy = false;
+        settings.view.connection_profile = "default".into();
+        settings.view.connection_profiles = vec![connection_profile("default", "account-a")];
+        settings.view.connection_plans = vec![provider_runtime::ConnectionPlanView {
+            profile: "default".into(),
+            revision: 1,
+            id: 10,
+            paid_slots: vec![0, 7],
+            error: None,
+        }];
+        settings.forms.sync(&settings.view);
+        settings.forms.current_mut().unwrap().local_error = Some("unrelated field error".into());
+        let rows = settings.rows();
+        let index = rows
+            .iter()
+            .position(|row| matches!(row, Row::ProfileVerification))
+            .unwrap();
+        for (width, height) in [(420u32, 300u32), (760, 420)] {
+            let layout = ui::Layout::new(width, height, 1.0);
+            let initial = layout.harness_settings(1.0, rows.len(), 0);
+            let geometry = layout.harness_settings(1.0, rows.len(), initial.rows.reveal(index));
+            let rect = geometry.cell(index, 0, row_columns(rows[index]), 1.0);
+            assert_eq!(
+                geometry
+                    .rows
+                    .hit(rect.x + rect.width / 2, rect.y + rect.height / 2),
+                Some(index)
+            );
+            let theme = theme::Theme::for_choice(theme::ThemeChoice::Neutral);
+            for (language, expected) in [
+                (
+                    ui::UiLanguage::English,
+                    "Verify & Apply: 2 calls; may charge; output ≤8 tokens/call",
+                ),
+                (
+                    ui::UiLanguage::ChineseSimplified,
+                    "验证并应用：2次；可能收费；每次输出≤8 tokens",
+                ),
+                (
+                    ui::UiLanguage::ChineseTraditional,
+                    "驗證並套用：2次；可能收費；每次輸出≤8 tokens",
+                ),
+            ] {
+                let caption = profile_verification_label(language, settings.profile_plan());
+                assert_eq!(caption, expected);
+                let size = cost_button_font(rect, &caption, 14, 1.0)
+                    .expect("supported full-width profile control must show complete N and cost");
+                let mut actual = vec![theme.canvas_bg.to_xrgb(); (width * height) as usize];
+                let mut expected_image = actual.clone();
+                let mut blank = actual.clone();
+                Surface::new(&mut blank, width, height).fill_rect(
+                    rect.x,
+                    rect.y,
+                    rect.width,
+                    rect.height,
+                    theme.surface.to_xrgb(),
+                );
+                expected_image.clone_from(&blank);
+                paint_cost_button(
+                    &mut Surface::new(&mut actual, width, height),
+                    rect,
+                    &caption,
+                    &theme,
+                    14,
+                    1.0,
+                );
+                paint_host_ui_text(
+                    &mut Surface::new(&mut expected_image, width, height),
+                    rect.x + 8,
+                    rect.y + rect.height.saturating_sub(font::cell_metrics(size).height) / 2,
+                    expected,
+                    theme.text,
+                    size,
+                    rect.width.saturating_sub(16),
+                );
+                assert_eq!(
+                    actual, expected_image,
+                    "actual paid action painter must use the exact displayed quote"
+                );
+                assert_ne!(actual, blank);
+            }
+        }
+        settings.activate(Row::ProfileVerification, 0);
+        assert_eq!(
+            settings.forms.current().unwrap().local_error,
+            Some(provider_runtime::RuntimeError::WorkerUnavailable.to_string())
+        );
+        assert!(!settings.forms.current().unwrap().waiting());
+    }
+    #[test]
+    fn cs05_zero_call_profile_button_uses_existing_plain_apply_and_no_batch_baseline() {
+        let mut settings = HarnessSettings::default();
+        settings.view.load_state = provider_runtime::LoadState::Loaded;
+        settings.view.busy = false;
+        settings.view.connection_profile = "default".into();
+        let mut profile = connection_profile("default", "account-a");
+        profile.allocations = profile
+            .input
+            .allocations
+            .iter()
+            .map(|row| crate::provider_selection::ConnectionAllocationView {
+                slot: row.slot,
+                upstream_model: Some("wire".into()),
+                protocol: Some(crate::provider_server::WireProtocol::Chat),
+                availability: provider_runtime::ConnectionAvailability::MissingAccount,
+                evidence: provider_runtime::ConnectionEvidence::LegacyApplied,
+                checked_unix_ms: None,
+            })
+            .collect();
+        settings.view.connection_profiles = vec![profile];
+        settings.view.connection_plans = vec![provider_runtime::ConnectionPlanView {
+            profile: "default".into(),
+            revision: 1,
+            id: 1,
+            paid_slots: vec![],
+            error: None,
+        }];
+        settings.forms.sync(&settings.view);
+        settings.activate(Row::ProfileVerification, 0);
+        assert_eq!(
+            settings.forms.current().unwrap().local_error,
+            Some(provider_runtime::RuntimeError::WorkerUnavailable.to_string())
+        );
+        assert!(settings.forms.publication_request().is_none());
+        assert!(!settings.forms.current().unwrap().waiting());
+    }
 
     #[test]
     fn cs04_actual_apply_column_is_reachable_and_dispatches_only_an_acknowledged_request() {

@@ -512,3 +512,14 @@ connect -> verify/apply -> explicitly enable -> configure a tool -> complete a
 real tool task -> stop -> reopen and recover. Observe state, actual effects and
 pixels. Prove new critical guards with runtime counterexamples; a passing layout
 fixture alone does not certify usability or authorization.
+
+### Scoped profile-verification visual observation
+
+The [whole-profile checkpoint](PRD_02_31_01_02_01_01_profile_verification.md#public-zero-call-and-unknown-plan-checkpoint)
+records complete N=0/unavailable action captions. Separate actual image
+inspection at English/scale1000 also observes the surrounding long verification
+explanation truncated in the narrow Settings pane. Receipt:
+`target-six/v0.2.23-provider/cs05-final-gates/visual-review.json`.
+HU-08 remains open: the complete explanatory text must be readable through a
+bounded layout/wrapping treatment before claiming overall narrow-view usability.
+The button observation is not human-owner acceptance or physical-input evidence.

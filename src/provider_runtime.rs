@@ -10,12 +10,14 @@ use crate::provider_selection::{
     CatalogueCache, CatalogueRequest, ConnectionAccounts, DraftBook, SelectionError,
 };
 pub use crate::provider_selection::{CatalogueModel, CatalogueStatus};
+mod profile_batch;
 use crate::provider_server::CatalogueResult;
 use crate::{
     provider_accounts::AccountStore,
     provider_auth::Secret,
     provider_login::{LoginChallenge, LoginCoordinator, LoginEvent, LoginMetadata},
 };
+use profile_batch::{Batch, BatchGate, PendingReadiness, ProgressSink, Quote};
 use std::{
     collections::VecDeque,
     path::PathBuf,
@@ -99,13 +101,33 @@ pub enum ConnectionCheckPhase {
     Verified,
     Cancelled,
     Failed,
+    Applying,
+    Applied,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConnectionCheckWarning {
     ReadinessStorage,
+    ReadinessStale,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConnectionCheckScope {
+    Single,
+    Profile,
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConnectionPlanView {
+    pub profile: String,
+    pub revision: u64,
+    pub id: u64,
+    pub paid_slots: Vec<u8>,
+    pub error: Option<RuntimeError>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConnectionCheckView {
+    pub scope: ConnectionCheckScope,
+    pub total: u8,
+    pub completed: u8,
+    pub applied_revision: Option<u64>,
     pub request: u64,
     pub profile: String,
     pub revision: u64,
@@ -129,6 +151,7 @@ pub struct View {
     pub models: Vec<String>,
     pub catalogues: Vec<AccountCatalogueView>,
     pub catalogue_bytes: usize,
+    pub connection_plans: Vec<ConnectionPlanView>,
     pub connection_profile: String,
     pub connection_profiles: Vec<ConnectionProfileView>,
     pub connection_receipts: Vec<ConnectionEditReceipt>,
@@ -158,6 +181,7 @@ impl Default for View {
             models: Vec::new(),
             catalogues: Vec::new(),
             catalogue_bytes: 0,
+            connection_plans: Vec::new(),
             connection_profile: String::new(),
             connection_profiles: Vec::new(),
             connection_receipts: Vec::new(),
@@ -177,6 +201,13 @@ impl Default for View {
 
 #[derive(Clone, Debug)]
 pub enum Action {
+    VerifyAndApplyConnectionProfile {
+        request: u64,
+        profile: String,
+        expected_revision: u64,
+        plan_id: u64,
+        paid_slots: Vec<u8>,
+    },
     ApplyConnectionProfile {
         request: u64,
         profile: String,
@@ -285,6 +316,8 @@ pub enum RuntimeError {
     MissingModel,
     VerificationRequired,
     DraftChanged,
+    PlanChanged,
+    DeadlineExceeded,
     Cancelled,
     AccountChanged,
     MissingClientKey,
@@ -301,6 +334,7 @@ impl std::error::Error for RuntimeError {}
 
 #[derive(Default)]
 struct Pending {
+    batch_gate: BatchGate,
     view: Option<View>,
     effects: VecDeque<Effect>,
     last_view: Option<View>,
@@ -364,6 +398,25 @@ impl Runtime {
     pub fn act(&mut self, action: Action) -> Result<(), RuntimeError> {
         let profile_id = |id: &str| id == "default" || crate::provider_server::opaque_id(id);
         let invalid = match &action {
+            Action::VerifyAndApplyConnectionProfile {
+                request,
+                profile,
+                plan_id,
+                paid_slots,
+                ..
+            } => {
+                *request == 0
+                    || !profile_id(profile)
+                    || *plan_id == 0
+                    || paid_slots.is_empty()
+                    || paid_slots.len() > 32
+                    || paid_slots.iter().any(|slot| *slot >= 32)
+                    || paid_slots
+                        .iter()
+                        .collect::<std::collections::BTreeSet<_>>()
+                        .len()
+                        != paid_slots.len()
+            }
             Action::ApplyConnectionProfile {
                 request, profile, ..
             } => *request == 0 || !profile_id(profile),
@@ -437,11 +490,28 @@ impl Runtime {
             _ => None,
         };
         let ordered_request = match &action {
-            Action::VerifyConnectionAllocation { request, .. } => Some(*request),
+            Action::VerifyConnectionAllocation { request, .. }
+            | Action::VerifyAndApplyConnectionProfile { request, .. } => Some(*request),
             _ => connection.as_ref().map(|(request, _)| *request),
         };
         if ordered_request.is_some_and(|request| request <= self.last_connection_request) {
             return Err(RuntimeError::InvalidAction);
+        }
+        let gate = self
+            .pending
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .batch_gate
+            .clone();
+        match &action {
+            Action::EditConnectionProfile { profile, .. }
+            | Action::ChooseConnectionModel { profile, .. }
+            | Action::RemoveConnectionAllocation { profile, .. }
+            | Action::RevertConnectionProfile { profile, .. }
+            | Action::DiscardUnappliedProfile { profile, .. } => {
+                gate.invalidate_profile(profile);
+            }
+            _ => {}
         }
         if let Some((request, profile)) = &connection {
             if *request <= self.last_connection_request {
@@ -457,7 +527,7 @@ impl Runtime {
             }
         }
         if matches!(action, Action::Stop) {
-            self.stop_requested.fetch_add(1, Ordering::AcqRel);
+            gate.stop(&self.stop_requested);
             return Ok(());
         }
         if let Action::SetPort(port) = &action
@@ -469,6 +539,11 @@ impl Runtime {
         {
             return Err(RuntimeError::InvalidAction);
         }
+        if let Action::CancelConnectionVerification { request } = &action
+            && gate.reserved()
+        {
+            return gate.cancel_exact(*request);
+        }
         // Only receipts delivered by poll are acknowledged. Merely accepting
         // a command does not grant the owner permission to drop its response.
         let delivered = self
@@ -477,7 +552,28 @@ impl Runtime {
             .iter()
             .map(|receipt| receipt.request)
             .collect();
-        self.commands
+        let registration = if let Action::VerifyAndApplyConnectionProfile {
+            request,
+            profile,
+            expected_revision,
+            plan_id,
+            ..
+        } = &action
+        {
+            let id = profile_batch::BatchIdentity {
+                request: *request,
+                profile: profile.clone(),
+                revision: *expected_revision,
+                plan: *plan_id,
+                epoch: self.stop_requested.load(Ordering::Acquire),
+            };
+            gate.register(id.clone())?;
+            Some(id)
+        } else {
+            None
+        };
+        let sent = self
+            .commands
             .try_send((
                 self.stop_requested.load(Ordering::Acquire),
                 delivered,
@@ -486,7 +582,13 @@ impl Runtime {
             .map_err(|error| match error {
                 TrySendError::Full(_) => RuntimeError::Busy,
                 TrySendError::Disconnected(_) => RuntimeError::WorkerUnavailable,
-            })?;
+            });
+        if let Err(error) = sent {
+            if let Some(id) = &registration {
+                gate.withdraw(id);
+            }
+            return Err(error);
+        }
         if let Some((request, profile)) = connection {
             self.connection_inflight.insert(request, profile);
         }
@@ -498,17 +600,38 @@ impl Runtime {
 
     /// Applies already-produced metadata/effects. No store or transport calls.
     pub fn poll(&mut self) -> Vec<Effect> {
-        let mut pending = self
+        let (effects, gate) = {
+            let mut pending = self
+                .pending
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if let Some(view) = pending.view.take() {
+                for receipt in &view.connection_receipts {
+                    self.connection_inflight.remove(&receipt.request);
+                }
+                self.view = view;
+            }
+            (
+                pending.effects.drain(..).collect(),
+                pending.batch_gate.clone(),
+            )
+        };
+        if let Some(view) = &self.view.connection_check_last_terminal
+            && view.scope == ConnectionCheckScope::Profile
+        {
+            gate.acknowledge(view.request);
+        }
+        effects
+    }
+
+    pub fn invalidate_connection_profile(&self, profile: &str) -> bool {
+        let gate = self
             .pending
             .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        if let Some(view) = pending.view.take() {
-            for receipt in &view.connection_receipts {
-                self.connection_inflight.remove(&receipt.request);
-            }
-            self.view = view;
-        }
-        pending.effects.drain(..).collect()
+            .unwrap_or_else(|error| error.into_inner())
+            .batch_gate
+            .clone();
+        gate.invalidate_profile(profile)
     }
 
     pub fn view(&self) -> &View {
@@ -518,6 +641,13 @@ impl Runtime {
 
 impl Drop for Runtime {
     fn drop(&mut self) {
+        let gate = self
+            .pending
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .batch_gate
+            .clone();
+        gate.invalidate_all();
         self.exit.store(true, Ordering::Release);
         if let Some(worker) = self.worker.take() {
             let _ = worker.join();
@@ -667,7 +797,13 @@ struct Owner {
     gateway: Arc<Gateway>,
     server: Option<Server>,
     operation: Option<Operation>,
-    readiness_pending: Option<(u64, crate::provider_accounts::AccountSnapshot)>,
+    readiness_pending: Option<PendingReadiness>,
+    batch_gate: BatchGate,
+    stop_epoch: Arc<AtomicU64>,
+    batch: Option<Batch>,
+    quotes: std::collections::BTreeMap<String, Quote>,
+    quote_sequence: u64,
+    progress: Option<ProgressSink>,
     catalogues: CatalogueCache,
     drafts: DraftBook,
     connection_accounts: ConnectionAccounts,
@@ -712,6 +848,12 @@ impl Owner {
             server: None,
             operation: None,
             readiness_pending: None,
+            batch_gate: BatchGate::default(),
+            stop_epoch: Arc::new(AtomicU64::new(0)),
+            batch: None,
+            quotes: Default::default(),
+            quote_sequence: 0,
+            progress: None,
             catalogues: CatalogueCache::default(),
             drafts,
             connection_accounts: ConnectionAccounts::new(),
@@ -766,6 +908,7 @@ impl Owner {
     fn project_connection_drafts(&mut self) {
         self.view.connection_profile = self.drafts.selected().into();
         self.view.connection_profiles = self.drafts.views(&self.connection_accounts);
+        self.refresh_profile_plans();
     }
 
     fn connection_receipt(
@@ -1018,7 +1161,14 @@ impl Owner {
         self.view.catalogue_bytes = self.catalogues.retained_bytes();
         self.project_connection_drafts();
         self.view.local_key_exists = self.key.is_some();
-        self.view.busy = self.operation.is_some() || self.view.login_active;
+        self.view.busy = self.operation.is_some()
+            || self.view.login_active
+            || self.batch.is_some()
+            || self
+                .view
+                .connection_check_active
+                .as_ref()
+                .is_some_and(|view| view.scope == ConnectionCheckScope::Profile);
     }
     fn save(&mut self, config: Config) -> Result<(), RuntimeError> {
         self.save_with(config, |path, bytes| {
@@ -1072,7 +1222,7 @@ impl Owner {
         revision: u64,
         publish: impl FnOnce(&Path, &[u8]) -> Result<ConfigPublication, ServerError>,
     ) -> Result<(), RuntimeError> {
-        if self.operation.is_some() || self.view.login_active {
+        if self.operation.is_some() || self.view.login_active || self.batch.is_some() {
             return Err(RuntimeError::Busy);
         }
         // Reads/projection can fail; complete them before touching routing or
@@ -1098,6 +1248,10 @@ impl Owner {
     }
 
     fn cancel_operation(&mut self) {
+        if self.batch.is_some() {
+            self.abort_batch(RuntimeError::Cancelled);
+            return;
+        }
         if let Some(operation) = self.operation.take() {
             if let OperationKind::Probe { permit, .. } = &operation.kind {
                 permit.invalidate();
@@ -1183,6 +1337,14 @@ impl Owner {
                     }
                 }
             }
+            OperationKind::Probe { ticket, permit } if self.batch.is_some() => self
+                .finish_batch_check(
+                    ticket,
+                    permit,
+                    &operation.account,
+                    result,
+                    operation.cancel.is_cancelled(),
+                ),
             OperationKind::Probe { ticket, permit } => self.finish_check(
                 ticket,
                 permit,
@@ -1195,8 +1357,110 @@ impl Owner {
             self.view.status = Some(error.to_string());
         }
     }
+
+    fn spawn_probe_operation(
+        &self,
+        ticket: crate::provider_selection::ProbeTicket,
+        candidate: crate::provider_selection::FrozenCandidate,
+        cancel: Arc<NetworkHttpCancel>,
+        deadline: Instant,
+        batch: Option<&profile_batch::BatchIdentity>,
+    ) -> Result<Operation, RuntimeError> {
+        let permit = crate::provider_selection::ProbePermit::new();
+        if let Some(batch) = batch {
+            self.batch_gate.child(
+                batch,
+                self.stop_epoch.load(Ordering::Acquire),
+                permit.clone(),
+            )?;
+        }
+        let worker_permit = permit.clone();
+        let network = cancel.clone();
+        let gateway = self.gateway.clone();
+        let identity = self.config.identity.clone();
+        let account = candidate.account().to_owned();
+        let worker = std::thread::Builder::new()
+            .name("minicon-candidate-check".into())
+            .spawn(move || {
+                gateway
+                    .probe_candidate(&candidate, &worker_permit, &identity, &network, deadline)
+                    .map(OperationResult::Probe)
+                    .map_err(map_server)
+            })
+            .map_err(|_| RuntimeError::WorkerUnavailable)?;
+        Ok(Operation {
+            cancel,
+            worker,
+            account,
+            kind: OperationKind::Probe { ticket, permit },
+        })
+    }
+
+    fn accept_check_result(
+        &mut self,
+        ticket: crate::provider_selection::ProbeTicket,
+        permit: crate::provider_selection::ProbePermit,
+        account: &str,
+        result: Result<OperationResult, RuntimeError>,
+        cancelled: bool,
+        parent: Option<(
+            &profile_batch::BatchGate,
+            &profile_batch::BatchIdentity,
+            u64,
+        )>,
+    ) -> Result<crate::provider_accounts::AccountSnapshot, RuntimeError> {
+        if let Some((gate, id, epoch)) = parent {
+            gate.with_active(id, epoch, || Ok(()))?;
+        }
+        if cancelled {
+            return Err(RuntimeError::Cancelled);
+        }
+        match result {
+            Ok(OperationResult::Probe(observation)) => {
+                let store = self.store.clone();
+                store
+                    .with_snapshot(account, |current| {
+                        let accept = || {
+                            self.drafts
+                                .accept_probe_observation(ticket, observation, &current, &permit)
+                                .map(|()| current)
+                                .map_err(map_selection)
+                        };
+                        if let Some((gate, id, epoch)) = parent {
+                            gate.with_active(id, epoch, accept)
+                        } else {
+                            accept()
+                        }
+                    })
+                    .map_err(|error| map_login(crate::provider_login::LoginError::Store(error)))?
+            }
+            Ok(OperationResult::Catalog(_)) => Err(RuntimeError::InvalidAction),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn set_check_terminal(&mut self, view: ConnectionCheckView) {
+        if self
+            .view
+            .connection_check_last_terminal
+            .as_ref()
+            .is_some_and(|old| {
+                old.request != view.request
+                    && old.scope == ConnectionCheckScope::Profile
+                    && self.batch_gate.protects_terminal(old.request)
+            })
+        {
+            return;
+        }
+        self.view.connection_check_last_terminal = Some(view);
+    }
+
     fn check_view(request: u64, profile: String, revision: u64, slot: u8) -> ConnectionCheckView {
         ConnectionCheckView {
+            scope: ConnectionCheckScope::Single,
+            total: 1,
+            completed: 0,
+            applied_revision: None,
             request,
             profile,
             revision,
@@ -1215,13 +1479,13 @@ impl Owner {
             ConnectionCheckPhase::Failed
         };
         view.error = Some(error);
-        self.view.connection_check_last_terminal = Some(view);
+        self.set_check_terminal(view);
     }
 
     fn begin_check(&mut self, request: u64, profile: String, revision: u64, slot: u8) {
         let view = Self::check_view(request, profile.clone(), revision, slot);
         let prepared = (|| {
-            if self.operation.is_some() || self.view.login_active {
+            if self.operation.is_some() || self.view.login_active || self.batch_gate.reserved() {
                 return Err(RuntimeError::Busy);
             }
             let account = self
@@ -1237,28 +1501,13 @@ impl Owner {
                 .drafts
                 .freeze_probe(&profile, revision, slot, &snapshot)
                 .map_err(map_selection)?;
-            let permit = crate::provider_selection::ProbePermit::new();
-            let worker_permit = permit.clone();
-            let cancel = Arc::new(NetworkHttpCancel::new());
-            let network = cancel.clone();
-            let gateway = self.gateway.clone();
-            let identity = self.config.identity.clone();
-            let deadline = Instant::now() + Duration::from_secs(60);
-            let worker = std::thread::Builder::new()
-                .name("minicon-candidate-check".into())
-                .spawn(move || {
-                    gateway
-                        .probe_candidate(&candidate, &worker_permit, &identity, &network, deadline)
-                        .map(OperationResult::Probe)
-                        .map_err(map_server)
-                })
-                .map_err(|_| RuntimeError::WorkerUnavailable)?;
-            Ok(Operation {
-                cancel,
-                worker,
-                account,
-                kind: OperationKind::Probe { ticket, permit },
-            })
+            self.spawn_probe_operation(
+                ticket,
+                candidate,
+                Arc::new(NetworkHttpCancel::new()),
+                Instant::now() + Duration::from_secs(60),
+                None,
+            )
         })();
         match prepared {
             Ok(operation) => {
@@ -1284,41 +1533,68 @@ impl Owner {
     }
 
     fn retry_readiness(&mut self, request: u64) -> Result<(), RuntimeError> {
-        let Some((pending_request, snapshot)) = self.readiness_pending.as_ref() else {
+        let Some(pending) = self
+            .readiness_pending
+            .as_ref()
+            .filter(|pending| pending.request == request)
+        else {
             return Err(RuntimeError::InvalidAction);
         };
-        if *pending_request != request {
-            return Err(RuntimeError::InvalidAction);
+        let snapshots: Vec<_> = pending.snapshots.values().cloned().collect();
+        let mut first_error = None;
+        let mut stale = false;
+        for snapshot in snapshots {
+            match self.store.mark_ready_for_snapshot(&snapshot) {
+                Ok(_) => {
+                    self.readiness_pending
+                        .as_mut()
+                        .unwrap()
+                        .snapshots
+                        .remove(&snapshot.summary.id);
+                }
+                Err(crate::provider_accounts::ReadinessError::Persist) => {
+                    first_error.get_or_insert(RuntimeError::Storage);
+                }
+                Err(crate::provider_accounts::ReadinessError::Authority(error)) => {
+                    self.readiness_pending
+                        .as_mut()
+                        .unwrap()
+                        .snapshots
+                        .remove(&snapshot.summary.id);
+                    first_error
+                        .get_or_insert(map_login(crate::provider_login::LoginError::Store(error)));
+                    stale = true;
+                }
+            }
         }
-        let snapshot = snapshot.clone();
-        let result = self.store.mark_ready_for_snapshot(&snapshot);
-        match result {
-            Ok(_) => {
-                self.readiness_pending = None;
-                if let Some(terminal) = &mut self.view.connection_check_last_terminal
-                    && terminal.request == request
-                {
-                    terminal.warning = None;
-                }
-                self.refresh_view()?;
-                Ok(())
+        if self
+            .readiness_pending
+            .as_ref()
+            .is_some_and(|pending| pending.snapshots.is_empty())
+        {
+            self.readiness_pending = None;
+        }
+        if let Some(terminal) = &mut self.view.connection_check_last_terminal
+            && terminal.request == request
+        {
+            terminal.warning = if stale {
+                Some(ConnectionCheckWarning::ReadinessStale)
+            } else {
+                self.readiness_pending
+                    .as_ref()
+                    .map(|_| ConnectionCheckWarning::ReadinessStorage)
+            };
+            if stale && terminal.phase != ConnectionCheckPhase::Applied {
+                terminal.phase = ConnectionCheckPhase::Failed;
+                terminal.error = first_error;
             }
-            Err(crate::provider_accounts::ReadinessError::Persist) => Err(RuntimeError::Storage),
-            Err(crate::provider_accounts::ReadinessError::Authority(error)) => {
-                self.readiness_pending = None;
-                if let Some(mut terminal) = self.view.connection_check_last_terminal.take() {
-                    if terminal.request == request {
-                        terminal.warning = None;
-                        terminal.phase = ConnectionCheckPhase::Failed;
-                        terminal.error =
-                            Some(map_login(crate::provider_login::LoginError::Store(error)));
-                    }
-                    self.view.connection_check_last_terminal = Some(terminal);
-                }
-                self.observe_connection_accounts(false);
-                self.project_connection_drafts();
-                Err(map_login(crate::provider_login::LoginError::Store(error)))
-            }
+        }
+        self.observe_connection_accounts(true);
+        self.project_connection_drafts();
+        if let Some(error) = first_error {
+            Err(error)
+        } else {
+            self.refresh_view()
         }
     }
 
@@ -1333,26 +1609,7 @@ impl Owner {
         let Some(mut view) = self.view.connection_check_active.take() else {
             return;
         };
-        let result = if cancelled {
-            Err(RuntimeError::Cancelled)
-        } else {
-            match result {
-                Ok(OperationResult::Probe(observation)) => {
-                    let store = self.store.clone();
-                    store
-                        .with_snapshot(account, |current| {
-                            self.drafts
-                                .accept_probe_observation(ticket, observation, &current, &permit)
-                                .map(|()| current)
-                                .map_err(map_selection)
-                        })
-                        .map_err(|error| map_login(crate::provider_login::LoginError::Store(error)))
-                        .and_then(|result| result)
-                }
-                Ok(OperationResult::Catalog(_)) => Err(RuntimeError::InvalidAction),
-                Err(error) => Err(error),
-            }
-        };
+        let result = self.accept_check_result(ticket, permit, account, result, cancelled, None);
         match result {
             Ok(snapshot) => {
                 self.connection_accounts
@@ -1372,27 +1629,24 @@ impl Owner {
                     })
                     .and_then(|row| row.checked_unix_ms);
                 view.phase = ConnectionCheckPhase::Verified;
+                view.completed = 1;
                 self.readiness_pending = None;
-                match self.store.mark_ready_for_snapshot(&snapshot) {
-                    Ok(_) => {}
-                    Err(crate::provider_accounts::ReadinessError::Persist) => {
-                        view.warning = Some(ConnectionCheckWarning::ReadinessStorage);
-                        self.readiness_pending = Some((view.request, snapshot));
-                    }
-                    Err(crate::provider_accounts::ReadinessError::Authority(error)) => {
-                        view.phase = ConnectionCheckPhase::Failed;
-                        view.error =
-                            Some(map_login(crate::provider_login::LoginError::Store(error)));
-                    }
+                if let Err(error) = self.record_readiness(view.request, snapshot) {
+                    view.phase = ConnectionCheckPhase::Failed;
+                    view.error = Some(error);
                 }
-                self.view.connection_check_last_terminal = Some(view);
+                view.warning = self
+                    .readiness_pending
+                    .as_ref()
+                    .map(|_| ConnectionCheckWarning::ReadinessStorage);
+                self.set_check_terminal(view);
             }
             Err(error) => self.reject_check(view, error),
         }
     }
 
     fn begin_catalogue(&mut self, account: String) -> Result<(), RuntimeError> {
-        if self.operation.is_some() || self.view.login_active {
+        if self.operation.is_some() || self.view.login_active || self.batch.is_some() {
             return Err(RuntimeError::Busy);
         }
         let snapshot = self.store.snapshot(&account);
@@ -1487,6 +1741,20 @@ impl Owner {
             return Ok(None);
         };
         match action {
+            Action::VerifyAndApplyConnectionProfile {
+                request,
+                profile,
+                expected_revision,
+                plan_id,
+                paid_slots,
+            } => self.begin_profile_check(
+                request,
+                profile,
+                expected_revision,
+                plan_id,
+                paid_slots,
+                self.stop_epoch.load(Ordering::Acquire),
+            ),
             Action::VerifyConnectionAllocation {
                 request,
                 profile,
@@ -1507,7 +1775,7 @@ impl Owner {
                 login: login_network,
                 service,
             } => {
-                if self.operation.is_some() {
+                if self.operation.is_some() || self.batch.is_some() {
                     return Err(RuntimeError::Busy);
                 }
                 let preferences = AccountPreferences::pending(login_network, service)
@@ -1532,7 +1800,7 @@ impl Owner {
                 self.view.auth_result = None;
             }
             Action::Reconnect(account) => {
-                if self.operation.is_some() || self.view.login_active {
+                if self.operation.is_some() || self.view.login_active || self.batch.is_some() {
                     return Err(RuntimeError::Busy);
                 }
                 let snapshot = self
@@ -1602,7 +1870,7 @@ impl Owner {
             | Action::RevertConnectionProfile { .. }
             | Action::DiscardUnappliedProfile { .. } => return Err(RuntimeError::InvalidAction),
             Action::Start => {
-                if self.server.is_some() || self.operation.is_some() {
+                if self.server.is_some() || self.operation.is_some() || self.batch.is_some() {
                     return Err(RuntimeError::Busy);
                 }
                 self.view.listener = ListenerState::Starting;
@@ -1726,6 +1994,16 @@ fn run_loaded_owner(
     stop_requested: Arc<AtomicU64>,
     incoming: mpsc::Receiver<(u64, Vec<u64>, Action)>,
 ) {
+    owner.batch_gate = pending
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .batch_gate
+        .clone();
+    owner.stop_epoch = stop_requested.clone();
+    owner.progress = Some(ProgressSink {
+        pending: pending.clone(),
+        notify: notify.clone(),
+    });
     let mut login = LoginCoordinator::new(owner.store.clone(), metadata);
     publish(&pending, &notify, owner.view.clone(), None);
     let mut last_stop = 0;
@@ -1736,6 +2014,7 @@ fn run_loaded_owner(
             last_stop = current_stop;
         }
         owner.poll_operation();
+        owner.drive_batch();
         while let Some(event) = login.poll() {
             let effect = owner.login_event(event);
             publish(&pending, &notify, owner.view.clone(), effect);
@@ -1752,8 +2031,28 @@ fn run_loaded_owner(
                         | Action::RefreshAccountModels(_)
                         | Action::VerifyConnectionAllocation { .. }
                         | Action::ApplyConnectionProfile { .. }
+                        | Action::VerifyAndApplyConnectionProfile { .. }
                 );
                 if epoch != stop_requested.load(Ordering::Acquire) && stale_network_action {
+                    if let Action::VerifyAndApplyConnectionProfile {
+                        request,
+                        profile,
+                        expected_revision,
+                        paid_slots,
+                        ..
+                    } = &action
+                    {
+                        let mut view = Owner::check_view(
+                            *request,
+                            profile.clone(),
+                            *expected_revision,
+                            paid_slots.first().copied().unwrap_or(0),
+                        );
+                        view.scope = ConnectionCheckScope::Profile;
+                        view.total = paid_slots.len() as u8;
+                        owner.finish_rejected_profile(view, RuntimeError::Cancelled);
+                        publish(&pending, &notify, owner.view.clone(), None);
+                    }
                     if let Action::ApplyConnectionProfile {
                         request, profile, ..
                     } = &action
@@ -1896,6 +2195,893 @@ fn map_server(error: ServerError) -> RuntimeError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cs05_real_poll_observes_admitted_applying_while_actual_writer_is_blocked() {
+        let (_root, mut owner) = cs05_one_checked_batch();
+        let pending = Arc::new(Mutex::new(Pending::default()));
+        pending.lock().unwrap().batch_gate = owner.batch_gate.clone();
+        owner.progress = Some(ProgressSink {
+            pending: pending.clone(),
+            notify: Arc::new(|| {}),
+        });
+        let (entered, wait_entered) = mpsc::channel();
+        let (release, wait_release) = mpsc::channel();
+        let output = pending.clone();
+        let worker = std::thread::spawn(move || {
+            owner.commit_profile_check_with(|path, bytes| {
+                entered.send(()).unwrap();
+                wait_release.recv_timeout(Duration::from_secs(5)).unwrap();
+                minicon_platform::filesystem_publish::write_private_atomic(path, bytes).unwrap();
+                Ok(ConfigPublication::Durable)
+            });
+            let notify: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+            publish(&output, &notify, owner.view.clone(), None);
+            owner
+        });
+        let (commands, _incoming) = mpsc::sync_channel(1);
+        let mut runtime = Runtime {
+            commands,
+            connection_inflight: Default::default(),
+            last_connection_request: 0,
+            pending,
+            view: View::default(),
+            exit: Arc::new(AtomicBool::new(false)),
+            stop_requested: Arc::new(AtomicU64::new(0)),
+            worker: None,
+        };
+        wait_entered.recv_timeout(Duration::from_secs(5)).unwrap();
+        let _ = runtime.poll();
+        assert_eq!(
+            runtime
+                .view
+                .connection_check_active
+                .as_ref()
+                .map(|check| check.phase),
+            Some(ConnectionCheckPhase::Applying),
+            "poll must observe admission before synchronous publication returns"
+        );
+        assert_eq!(
+            runtime.act(Action::CancelConnectionVerification { request: 30 }),
+            Err(RuntimeError::InvalidAction)
+        );
+        release.send(()).unwrap();
+        let owner = worker.join().unwrap();
+        let _ = runtime.poll();
+        assert_eq!(
+            runtime
+                .view
+                .connection_check_last_terminal
+                .as_ref()
+                .unwrap()
+                .phase,
+            ConnectionCheckPhase::Applied
+        );
+        assert_eq!(
+            runtime
+                .view
+                .connection_check_last_terminal
+                .as_ref()
+                .unwrap()
+                .applied_revision,
+            owner.drafts.revision("default")
+        );
+    }
+
+    #[test]
+    fn cs05_data_intent_between_children_prevents_second_real_post_and_partial_apply() {
+        let (root, mut owner, accounts) = catalogue_owner();
+        let profile = cs05_prepare_sparse(&mut owner, &accounts);
+        let disk = std::fs::read(root.0.join("gateway.json")).unwrap();
+        let paid = Arc::new(AtomicU64::new(0));
+        let first = paid.clone();
+        let second = paid.clone();
+        let peer = Cs03Peer::observing(vec![
+            Box::new(move |body| {
+                first.fetch_add(1, Ordering::AcqRel);
+                cs03_reply(body)
+            }),
+            Box::new(move |body| {
+                second.fetch_add(1, Ordering::AcqRel);
+                cs03_reply(body)
+            }),
+        ]);
+        owner.gateway.fixture_catalogue_upstream(peer.url.clone());
+        cs05_begin(&mut owner, &profile, 40);
+        owner.drive_batch();
+        cs03_wait_finished_without_poll(&owner);
+        owner.poll_operation();
+        assert_eq!(
+            owner
+                .view
+                .connection_check_active
+                .as_ref()
+                .unwrap()
+                .completed,
+            1
+        );
+        assert!(owner.batch_gate.invalidate_profile(&profile));
+        cs05_finish(&mut owner);
+        assert_eq!(
+            paid.load(Ordering::Acquire),
+            1,
+            "data intent dispatched another paid child"
+        );
+        assert_eq!(
+            owner
+                .view
+                .connection_check_last_terminal
+                .as_ref()
+                .unwrap()
+                .error,
+            Some(RuntimeError::DraftChanged)
+        );
+        assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), disk);
+        assert_eq!(
+            owner
+                .view
+                .connection_plans
+                .iter()
+                .find(|plan| plan.profile == profile)
+                .unwrap()
+                .paid_slots,
+            vec![7]
+        );
+    }
+    fn cs05_one_checked_batch() -> (Root, Owner) {
+        let (root, mut owner, accounts) = catalogue_owner();
+        cs04_choose_synthetic_catalogue(&mut owner, "default", 0, &accounts[0], "new", "new-wire");
+        let peer = Cs03Peer::new(cs03_reply);
+        owner.gateway.fixture_catalogue_upstream(peer.url.clone());
+        cs05_begin(&mut owner, "default", 30);
+        owner.drive_batch();
+        cs03_wait_finished_without_poll(&owner);
+        owner.poll_operation();
+        drop(peer);
+        assert_eq!(
+            owner
+                .view
+                .connection_check_active
+                .as_ref()
+                .unwrap()
+                .completed,
+            1
+        );
+        assert!(owner.operation.is_none());
+        (root, owner)
+    }
+    #[test]
+    fn cs05_pre_admission_cancel_prevents_actual_publication_and_keeps_successful_proof() {
+        let (root, mut owner) = cs05_one_checked_batch();
+        let before = std::fs::read(root.0.join("gateway.json")).unwrap();
+        owner.batch_gate.cancel_exact(30).unwrap();
+        let called = AtomicBool::new(false);
+        owner.commit_profile_check_with(|_, _| {
+            called.store(true, Ordering::Release);
+            Err(ServerError::Storage)
+        });
+        assert!(
+            !called.load(Ordering::Acquire),
+            "revoked parent reached the actual publication callback"
+        );
+        assert_eq!(
+            owner
+                .view
+                .connection_check_last_terminal
+                .as_ref()
+                .unwrap()
+                .error,
+            Some(RuntimeError::Cancelled)
+        );
+        assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), before);
+        assert_eq!(
+            owner
+                .view
+                .connection_plans
+                .iter()
+                .find(|plan| plan.profile == "default")
+                .unwrap()
+                .paid_slots,
+            Vec::<u8>::new()
+        );
+    }
+    #[test]
+    fn cs05_commit_admitted_late_cancel_cannot_undo_actual_published_warning() {
+        let (root, mut owner) = cs05_one_checked_batch();
+        let gate = owner.batch_gate.clone();
+        let called = AtomicBool::new(false);
+        owner.commit_profile_check_with(|path, bytes| {
+            called.store(true, Ordering::Release);
+            assert_eq!(
+                gate.cancel_exact(30),
+                Err(RuntimeError::InvalidAction),
+                "late Cancel must be rejected at real prewrite admission"
+            );
+            assert!(!gate.invalidate_profile("default"));
+            minicon_platform::filesystem_publish::write_private_atomic(path, bytes).unwrap();
+            Ok(ConfigPublication::DurabilityUnconfirmed)
+        });
+        assert!(called.load(Ordering::Acquire));
+        let result = owner.view.connection_check_last_terminal.as_ref().unwrap();
+        assert_eq!(result.phase, ConnectionCheckPhase::Applied);
+        assert!(result.applied_revision.is_some());
+        assert!(owner.view.config_durability_unconfirmed);
+        assert_eq!(Owner::load(root.0.clone()).unwrap().config, owner.config);
+    }
+    #[test]
+    fn cs05_unpublished_write_failure_is_failed_and_retry_is_zero_paid_plain_apply() {
+        let (root, mut owner) = cs05_one_checked_batch();
+        let before = std::fs::read(root.0.join("gateway.json")).unwrap();
+        let called = AtomicBool::new(false);
+        owner.commit_profile_check_with(|_, _| {
+            called.store(true, Ordering::Release);
+            Err(ServerError::Storage)
+        });
+        assert!(called.load(Ordering::Acquire));
+        let result = owner.view.connection_check_last_terminal.as_ref().unwrap();
+        assert_eq!(
+            (result.phase, result.error, result.applied_revision),
+            (
+                ConnectionCheckPhase::Failed,
+                Some(RuntimeError::Storage),
+                None
+            )
+        );
+        assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), before);
+        let plan = owner
+            .view
+            .connection_plans
+            .iter()
+            .find(|plan| plan.profile == "default")
+            .unwrap()
+            .clone();
+        assert!(plan.paid_slots.is_empty());
+        assert_eq!(
+            owner.apply_connection_profile("default", plan.revision),
+            Ok(())
+        );
+        assert!(owner.operation.is_none());
+    }
+    fn cs05_prepare_sparse(owner: &mut Owner, accounts: &[String; 2]) -> String {
+        let profile = "b".repeat(32);
+        let form = owner
+            .view
+            .connection_profiles
+            .iter()
+            .find(|form| form.id == profile)
+            .unwrap()
+            .clone();
+        let mut input = form.input;
+        input.allocations.push(ConnectionAllocationInput {
+            slot: 7,
+            alias: "second".into(),
+            account: Some(accounts[0].clone()),
+            model: "second-wire".into(),
+        });
+        owner
+            .drafts
+            .edit_input(&profile, form.revision, input)
+            .unwrap();
+        cs04_choose_synthetic_catalogue(owner, &profile, 0, &accounts[1], "first", "first-wire");
+        cs04_choose_synthetic_catalogue(owner, &profile, 7, &accounts[0], "second", "second-wire");
+        profile
+    }
+    fn cs05_begin(owner: &mut Owner, profile: &str, request: u64) -> ConnectionPlanView {
+        owner.refresh_view().unwrap();
+        let plan = owner
+            .view
+            .connection_plans
+            .iter()
+            .find(|plan| plan.profile == profile)
+            .unwrap()
+            .clone();
+        assert_eq!(
+            plan.error, None,
+            "a complete controlled candidate must produce a quote"
+        );
+        owner
+            .batch_gate
+            .register(profile_batch::BatchIdentity {
+                request,
+                profile: profile.into(),
+                revision: plan.revision,
+                plan: plan.id,
+                epoch: owner.stop_epoch.load(Ordering::Acquire),
+            })
+            .unwrap();
+        owner.begin_profile_check(
+            request,
+            profile.into(),
+            plan.revision,
+            plan.id,
+            plan.paid_slots.clone(),
+            owner.stop_epoch.load(Ordering::Acquire),
+        );
+        assert!(
+            owner.batch.is_some(),
+            "{plan:?} / {:?}",
+            owner.view.connection_check_last_terminal
+        );
+        plan
+    }
+    fn cs05_finish(owner: &mut Owner) {
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while owner.batch.is_some() || owner.operation.is_some() {
+            owner.poll_operation();
+            owner.drive_batch();
+            assert!(
+                Instant::now() < deadline,
+                "profile operation did not terminate"
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+
+    #[test]
+    fn cs05_sparse_two_account_plan_orders_actual_posts_and_publishes_one_profile() {
+        let (root, mut owner, accounts) = catalogue_owner();
+        let profile = cs05_prepare_sparse(&mut owner, &accounts);
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let seen = requests.clone();
+        let peer = Cs03Peer::sequence(vec![
+            Box::new(move |body| {
+                seen.lock()
+                    .unwrap()
+                    .push(body["model"].as_str().unwrap().to_owned());
+                cs03_reply(body)
+            }),
+            {
+                let seen = requests.clone();
+                Box::new(move |body| {
+                    seen.lock()
+                        .unwrap()
+                        .push(body["model"].as_str().unwrap().to_owned());
+                    cs03_reply(body)
+                })
+            },
+        ]);
+        owner.gateway.fixture_catalogue_upstream(peer.url.clone());
+        let before_default = owner
+            .config
+            .resolve_allocation("default", None)
+            .unwrap()
+            .route
+            .clone();
+        let plan = cs05_begin(&mut owner, &profile, 10);
+        assert_eq!(plan.paid_slots, vec![0, 7]);
+        cs05_finish(&mut owner);
+        assert_eq!(*requests.lock().unwrap(), vec!["first-wire", "second-wire"]);
+        let result = owner.view.connection_check_last_terminal.as_ref().unwrap();
+        assert_eq!(
+            (result.scope, result.phase, result.completed, result.total),
+            (
+                ConnectionCheckScope::Profile,
+                ConnectionCheckPhase::Applied,
+                2,
+                2
+            )
+        );
+        assert!(result.applied_revision.unwrap() > plan.revision);
+        assert_eq!(
+            owner
+                .config
+                .resolve_allocation("default", None)
+                .unwrap()
+                .route,
+            &before_default
+        );
+        assert_eq!(Owner::load(root.0.clone()).unwrap().config, owner.config);
+        assert_eq!(owner.view.listener, ListenerState::Stopped);
+        for alias in ["work", "second"] {
+            assert!(matches!(
+                owner
+                    .config
+                    .resolve_allocation(&profile, Some(alias))
+                    .unwrap()
+                    .evidence
+                    .unwrap()
+                    .origin,
+                crate::provider_server::AppliedOrigin::Inference { .. }
+            ));
+        }
+    }
+
+    #[test]
+    fn cs05_partial_failure_retains_first_real_proof_and_explicit_retry_pays_only_missing_slot() {
+        let (root, mut owner, accounts) = catalogue_owner();
+        let profile = cs05_prepare_sparse(&mut owner, &accounts);
+        let before = std::fs::read(root.0.join("gateway.json")).unwrap();
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let seen = requests.clone();
+        let peer = Cs03Peer::sequence(vec![
+            Box::new(move |body| {
+                seen.lock()
+                    .unwrap()
+                    .push(body["model"].as_str().unwrap().to_owned());
+                cs03_reply(body)
+            }),
+            {
+                let seen = requests.clone();
+                Box::new(move |body| {
+                    seen.lock()
+                        .unwrap()
+                        .push(body["model"].as_str().unwrap().to_owned());
+                    serde_json::json!({"invalid":"not an inference response"})
+                })
+            },
+        ]);
+        owner.gateway.fixture_catalogue_upstream(peer.url.clone());
+        let plan = cs05_begin(&mut owner, &profile, 11);
+        cs05_finish(&mut owner);
+        drop(peer);
+        assert_eq!(
+            owner
+                .view
+                .connection_check_last_terminal
+                .as_ref()
+                .unwrap()
+                .phase,
+            ConnectionCheckPhase::Failed
+        );
+        assert_eq!(
+            owner
+                .view
+                .connection_check_last_terminal
+                .as_ref()
+                .unwrap()
+                .completed,
+            1
+        );
+        assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), before);
+        assert_eq!(*requests.lock().unwrap(), vec!["first-wire", "second-wire"]);
+        let next = owner
+            .view
+            .connection_plans
+            .iter()
+            .find(|p| p.profile == profile)
+            .unwrap()
+            .clone();
+        assert_eq!(next.paid_slots, vec![7]);
+        assert_ne!(next.id, plan.id);
+        owner.batch_gate.acknowledge(11);
+        let retry = Cs03Peer::new(|body| {
+            assert_eq!(body["model"], "second-wire");
+            cs03_reply(body)
+        });
+        owner.gateway.fixture_catalogue_upstream(retry.url.clone());
+        cs05_begin(&mut owner, &profile, 12);
+        cs05_finish(&mut owner);
+        assert_eq!(
+            owner
+                .view
+                .connection_check_last_terminal
+                .as_ref()
+                .unwrap()
+                .phase,
+            ConnectionCheckPhase::Applied
+        );
+    }
+
+    #[test]
+    fn cs05_same_count_stale_authority_quote_is_refused_before_any_paid_worker() {
+        let (_root, mut owner, accounts) = catalogue_owner();
+        cs04_choose_synthetic_catalogue(&mut owner, "default", 0, &accounts[0], "new", "new-wire");
+        let plan = owner
+            .view
+            .connection_plans
+            .iter()
+            .find(|p| p.profile == "default")
+            .unwrap()
+            .clone();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        owner.gateway.fixture_catalogue_upstream(format!(
+            "http://{}/candidate",
+            listener.local_addr().unwrap()
+        ));
+        let snapshot = owner.store.snapshot(&accounts[0]).unwrap();
+        let mut preferences = snapshot.preferences;
+        preferences.service = NetworkPolicy::Proxy("http://127.0.0.1:9".into());
+        owner
+            .store
+            .update_preferences(&accounts[0], "Changed transport", preferences)
+            .unwrap();
+        owner
+            .batch_gate
+            .register(profile_batch::BatchIdentity {
+                request: 13,
+                profile: "default".into(),
+                revision: plan.revision,
+                plan: plan.id,
+                epoch: 0,
+            })
+            .unwrap();
+        owner.begin_profile_check(
+            13,
+            "default".into(),
+            plan.revision,
+            plan.id,
+            plan.paid_slots,
+            0,
+        );
+        assert!(owner.operation.is_none() && owner.batch.is_none());
+        assert_eq!(
+            owner
+                .view
+                .connection_check_last_terminal
+                .as_ref()
+                .unwrap()
+                .error,
+            Some(RuntimeError::PlanChanged)
+        );
+        assert!(
+            matches!(listener.accept(),Err(error)if error.kind()==std::io::ErrorKind::WouldBlock)
+        );
+        // Isolate quote identity from availability/refusal redundancy: both
+        // candidates are valid and cost one call, but the caller combines the
+        // current raw revision with an old quote ID. That must not reserve work.
+        let (_second_root, mut second, accounts) = catalogue_owner();
+        cs04_choose_synthetic_catalogue(
+            &mut second,
+            "default",
+            0,
+            &accounts[0],
+            "first",
+            "first-wire",
+        );
+        let old = second
+            .view
+            .connection_plans
+            .iter()
+            .find(|plan| plan.profile == "default")
+            .unwrap()
+            .clone();
+        cs04_choose_synthetic_catalogue(
+            &mut second,
+            "default",
+            0,
+            &accounts[0],
+            "second",
+            "second-wire",
+        );
+        let current = second
+            .view
+            .connection_plans
+            .iter()
+            .find(|plan| plan.profile == "default")
+            .unwrap()
+            .clone();
+        assert_eq!((old.error, current.error), (None, None));
+        assert_eq!(old.paid_slots, current.paid_slots);
+        assert_eq!(current.paid_slots.len(), 1);
+        assert_ne!(old.id, current.id);
+        assert!(current.revision > old.revision);
+        second
+            .batch_gate
+            .register(profile_batch::BatchIdentity {
+                request: 14,
+                profile: "default".into(),
+                revision: current.revision,
+                plan: old.id,
+                epoch: 0,
+            })
+            .unwrap();
+        second.begin_profile_check(
+            14,
+            "default".into(),
+            current.revision,
+            old.id,
+            current.paid_slots,
+            0,
+        );
+        assert!(
+            second.operation.is_none() && second.batch.is_none(),
+            "same-count valid candidate with stale quote must not reserve paid work"
+        );
+        assert_eq!(
+            second
+                .view
+                .connection_check_last_terminal
+                .as_ref()
+                .unwrap()
+                .error,
+            Some(RuntimeError::PlanChanged)
+        );
+    }
+
+    #[test]
+    fn cs05_zero_call_missing_legacy_uses_plain_apply_without_creating_a_check() {
+        let (root, mut owner, accounts) = catalogue_owner();
+        owner.store.remove(&accounts[0]).unwrap();
+        owner.refresh_view().unwrap();
+        let plan = owner
+            .view
+            .connection_plans
+            .iter()
+            .find(|p| p.profile == "default")
+            .unwrap()
+            .clone();
+        assert_eq!((plan.error, plan.paid_slots.len()), (None, 0));
+        // Loading a legacy file upgrades only memory. Explicit plain Apply
+        // may publish v3 provenance; it must not invent inference evidence.
+        let before =
+            Config::decode_applied(&std::fs::read(root.0.join("gateway.json")).unwrap()).unwrap();
+        assert_eq!(
+            owner.apply_connection_profile("default", plan.revision),
+            Ok(())
+        );
+        assert!(
+            owner.view.connection_check_active.is_none()
+                && owner.view.connection_check_last_terminal.is_none()
+        );
+        assert!(owner.operation.is_none());
+        assert_eq!(owner.view.listener, ListenerState::Stopped);
+        let bytes = std::fs::read(root.0.join("gateway.json")).unwrap();
+        let disk: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(disk["version"], 3, "Apply must publish the migrated file");
+        let persisted = Config::decode_applied(&bytes).unwrap();
+        assert_eq!(persisted, owner.config);
+        assert_eq!(persisted.port, before.port);
+        assert_eq!(persisted.identity, before.identity);
+        assert_eq!(persisted.selected_account, before.selected_account);
+        assert_eq!(persisted.model, before.model);
+        assert_eq!(persisted.models, before.models);
+        assert_eq!(persisted.profiles, before.profiles);
+        assert_eq!(
+            persisted.applied_evidence.len(),
+            before.applied_evidence.len()
+        );
+        for evidence in &before.applied_evidence {
+            assert!(persisted.applied_evidence.contains(evidence));
+        }
+        let row = persisted.resolve_allocation("default", None).unwrap();
+        let previous = before.resolve_allocation("default", None).unwrap();
+        assert_eq!(
+            (row.account, row.alias, row.route),
+            (previous.account, previous.alias, previous.route)
+        );
+        assert!(matches!(
+            row.evidence.unwrap().origin,
+            crate::provider_server::AppliedOrigin::LegacyApplied { .. }
+        ));
+        let form = owner
+            .view
+            .connection_profiles
+            .iter()
+            .find(|form| form.id == "default")
+            .unwrap();
+        assert_eq!(form.allocations[0].checked_unix_ms, None);
+        assert_eq!(
+            form.allocations[0].availability,
+            ConnectionAvailability::MissingAccount
+        );
+    }
+
+    #[test]
+    fn cs05_new_alias_on_retained_wire_needs_real_new_identity_proof_then_applies() {
+        let (root, mut owner, _) = catalogue_owner();
+        let profile = "b".repeat(32);
+        let before = std::fs::read(root.0.join("gateway.json")).unwrap();
+        let form = owner
+            .view
+            .connection_profiles
+            .iter()
+            .find(|form| form.id == profile)
+            .unwrap()
+            .clone();
+        let mut input = form.input;
+        input.allocations[0].alias = "renamed".into();
+        input.default_alias = "renamed".into();
+        let revision = owner
+            .drafts
+            .edit_input(&profile, form.revision, input)
+            .unwrap();
+        owner.refresh_view().unwrap();
+        assert_eq!(
+            owner.apply_connection_profile(&profile, revision),
+            Err(RuntimeError::VerificationRequired)
+        );
+        assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), before);
+        cs04_real_check(&mut owner, &profile, 0, 14);
+        assert_eq!(owner.apply_connection_profile(&profile, revision), Ok(()));
+        let row = owner
+            .config
+            .resolve_allocation(&profile, Some("renamed"))
+            .unwrap();
+        assert_eq!(row.route.model_id, "legacy-wire");
+        assert!(matches!(
+            row.evidence.unwrap().origin,
+            crate::provider_server::AppliedOrigin::Inference { .. }
+        ));
+        assert!(
+            owner
+                .config
+                .resolve_allocation(&profile, Some("work"))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn cs05_pending_gate_precedes_enqueue_and_queue_full_retracts_only_its_parent() {
+        let (commands, incoming) = mpsc::sync_channel(1);
+        let pending = Arc::new(Mutex::new(Pending::default()));
+        let mut runtime = Runtime {
+            commands,
+            connection_inflight: Default::default(),
+            last_connection_request: 0,
+            pending: pending.clone(),
+            view: View::default(),
+            exit: Arc::new(AtomicBool::new(false)),
+            stop_requested: Arc::new(AtomicU64::new(0)),
+            worker: None,
+        };
+        runtime.act(Action::RefreshAccounts).unwrap();
+        let action = |request| Action::VerifyAndApplyConnectionProfile {
+            request,
+            profile: "default".into(),
+            expected_revision: 1,
+            plan_id: 1,
+            paid_slots: vec![0],
+        };
+        assert_eq!(runtime.act(action(1)), Err(RuntimeError::Busy));
+        let gate = pending.lock().unwrap().batch_gate.clone();
+        assert!(!gate.reserved());
+        assert_eq!(runtime.last_connection_request, 0);
+        incoming.recv().unwrap();
+        assert_eq!(runtime.act(action(1)), Ok(()));
+        assert!(gate.reserved());
+        assert!(runtime.invalidate_connection_profile("default"));
+        let id = profile_batch::BatchIdentity {
+            request: 1,
+            profile: "default".into(),
+            revision: 1,
+            plan: 1,
+            epoch: 0,
+        };
+        assert!(matches!(
+            gate.activate(&id, Instant::now() + Duration::from_secs(3), 0),
+            Err(RuntimeError::DraftChanged)
+        ));
+        assert_eq!(
+            runtime.act(Action::CancelConnectionVerification { request: 999 }),
+            Err(RuntimeError::InvalidAction)
+        );
+    }
+
+    #[test]
+    fn cs05_runtime_queued_batch_stop_cancels_without_post_and_fresh_explicit_batch_still_works() {
+        let (_root, mut owner, accounts) = catalogue_owner();
+        cs04_choose_synthetic_catalogue(&mut owner, "default", 0, &accounts[0], "new", "new-wire");
+        let paid = Arc::new(AtomicU64::new(0));
+        let observed = paid.clone();
+        let peer = Cs03Peer::new(move |body| {
+            observed.fetch_add(1, Ordering::AcqRel);
+            cs03_reply(body)
+        });
+        owner.gateway.fixture_catalogue_upstream(peer.url.clone());
+        let (ready, wait_ready) = mpsc::channel();
+        let (release, wait_release) = mpsc::channel();
+        let wait = Arc::new(Mutex::new(Some(wait_release)));
+        let notify: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            if let Some(wait) = wait.lock().unwrap().take() {
+                ready.send(()).unwrap();
+                wait.recv_timeout(Duration::from_secs(5)).unwrap();
+            }
+        });
+        let (commands, incoming) = mpsc::sync_channel(16);
+        let pending = Arc::new(Mutex::new(Pending::default()));
+        let exit = Arc::new(AtomicBool::new(false));
+        let stop_requested = Arc::new(AtomicU64::new(0));
+        let (outgoing, stopping, stop) = (pending.clone(), exit.clone(), stop_requested.clone());
+        let worker = std::thread::spawn(move || {
+            run_loaded_owner(
+                owner,
+                LoginMetadata {
+                    version: "synthetic".into(),
+                    locale: "en".into(),
+                    timezone_offset_seconds: 0,
+                },
+                notify,
+                outgoing,
+                stopping,
+                stop,
+                incoming,
+            )
+        });
+        let mut runtime = Runtime {
+            commands,
+            connection_inflight: Default::default(),
+            last_connection_request: 0,
+            pending,
+            view: View::default(),
+            exit,
+            stop_requested,
+            worker: Some(worker),
+        };
+        wait_ready.recv_timeout(Duration::from_secs(5)).unwrap();
+        let _ = runtime.poll();
+        let plan = runtime
+            .view
+            .connection_plans
+            .iter()
+            .find(|p| p.profile == "default")
+            .unwrap()
+            .clone();
+        let action = |request| Action::VerifyAndApplyConnectionProfile {
+            request,
+            profile: "default".into(),
+            expected_revision: plan.revision,
+            plan_id: plan.id,
+            paid_slots: plan.paid_slots.clone(),
+        };
+        runtime.act(action(1)).unwrap();
+        runtime.act(Action::Stop).unwrap();
+        release.send(()).unwrap();
+        until(&mut runtime, |view| {
+            view.connection_check_last_terminal
+                .as_ref()
+                .is_some_and(|check| check.request == 1)
+        });
+        assert_eq!(
+            paid.load(Ordering::Acquire),
+            0,
+            "queued batch paid after Stop"
+        );
+        assert_eq!(
+            runtime
+                .view
+                .connection_check_last_terminal
+                .as_ref()
+                .unwrap()
+                .phase,
+            ConnectionCheckPhase::Cancelled
+        );
+        runtime.act(action(2)).unwrap();
+        until(&mut runtime, |view| {
+            view.connection_check_last_terminal
+                .as_ref()
+                .is_some_and(|check| check.request == 2)
+        });
+        let result = runtime
+            .view
+            .connection_check_last_terminal
+            .as_ref()
+            .unwrap();
+        assert_eq!(result.phase, ConnectionCheckPhase::Applied, "{result:?}");
+        assert_eq!(paid.load(Ordering::Acquire), 1);
+        assert_eq!(runtime.view.listener, ListenerState::Stopped);
+    }
+
+    #[test]
+    fn cs05_multiple_health_failures_are_local_and_stale_retry_cannot_undo_applied() {
+        let (_root, mut owner, accounts) = catalogue_owner();
+        let profile = cs05_prepare_sparse(&mut owner, &accounts);
+        let peer = Cs03Peer::sequence(vec![Box::new(cs03_reply), Box::new(cs03_reply)]);
+        owner.gateway.fixture_catalogue_upstream(peer.url.clone());
+        let plan = cs05_begin(&mut owner, &profile, 20);
+        owner.drive_batch();
+        cs03_wait_finished_without_poll(&owner);
+        owner.store.fixture_fail_readiness_once();
+        owner.poll_operation();
+        owner.drive_batch();
+        cs03_wait_finished_without_poll(&owner);
+        owner.store.fixture_fail_readiness_once();
+        owner.poll_operation();
+        assert_eq!(owner.readiness_pending.as_ref().unwrap().snapshots.len(), 2);
+        owner.drive_batch();
+        let before = owner.view.connection_check_last_terminal.clone().unwrap();
+        assert_eq!(before.phase, ConnectionCheckPhase::Applied);
+        assert!(before.applied_revision.unwrap() > plan.revision);
+        owner.store.remove(&accounts[0]).unwrap();
+        assert!(owner.retry_readiness(20).is_err());
+        let after = owner.view.connection_check_last_terminal.as_ref().unwrap();
+        assert_eq!(
+            (after.phase, after.applied_revision),
+            (ConnectionCheckPhase::Applied, before.applied_revision)
+        );
+        assert_eq!(after.warning, Some(ConnectionCheckWarning::ReadinessStale));
+        assert!(owner.operation.is_none());
+        assert!(owner.readiness_pending.is_none());
+    }
 
     #[test]
     fn cs04_real_runtime_rejects_old_queued_apply_after_stop_but_accepts_new_explicit_apply() {
@@ -2596,79 +3782,100 @@ mod tests {
         assert_eq!(runtime.view().actual_port, None);
     }
 
+    type Cs03Reply = Box<dyn FnOnce(serde_json::Value) -> serde_json::Value + Send>;
     struct Cs03Peer {
         url: String,
+        stopping: Arc<AtomicBool>,
         worker: Option<std::thread::JoinHandle<()>>,
     }
     impl Cs03Peer {
         fn new(
             reply: impl FnOnce(serde_json::Value) -> serde_json::Value + Send + 'static,
         ) -> Self {
+            Self::sequence(vec![Box::new(reply)])
+        }
+        fn sequence(replies: Vec<Cs03Reply>) -> Self {
+            Self::bounded(replies, true)
+        }
+        fn observing(replies: Vec<Cs03Reply>) -> Self {
+            Self::bounded(replies, false)
+        }
+        fn bounded(replies: Vec<Cs03Reply>, require_all: bool) -> Self {
+            assert!(!replies.is_empty() && replies.len() <= 32);
             use std::io::{Read, Write};
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
             let url = format!("http://{}/candidate", listener.local_addr().unwrap());
             listener.set_nonblocking(true).unwrap();
+            let stopping = Arc::new(AtomicBool::new(false));
+            let stop = stopping.clone();
             let worker = std::thread::spawn(move || {
-                let deadline = Instant::now() + Duration::from_secs(5);
-                let mut stream = loop {
-                    match listener.accept() {
-                        Ok((stream, _)) => break stream,
-                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                            assert!(
-                                Instant::now() < deadline,
-                                "candidate fixture request did not arrive"
-                            );
-                            std::thread::sleep(Duration::from_millis(2));
+                for reply in replies {
+                    let deadline = Instant::now() + Duration::from_secs(5);
+                    let mut stream = loop {
+                        match listener.accept() {
+                            Ok((stream, _)) => break stream,
+                            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                                if !require_all && stop.load(Ordering::Acquire) {
+                                    return;
+                                }
+                                assert!(
+                                    Instant::now() < deadline,
+                                    "candidate fixture request did not arrive"
+                                );
+                                std::thread::sleep(Duration::from_millis(2));
+                            }
+                            Err(error) => panic!("candidate fixture accept: {error}"),
                         }
-                        Err(error) => panic!("candidate fixture accept: {error}"),
+                    };
+                    stream.set_nonblocking(false).unwrap();
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(3)))
+                        .unwrap();
+                    stream
+                        .set_write_timeout(Some(Duration::from_secs(3)))
+                        .unwrap();
+                    let mut head = Vec::new();
+                    while !head.ends_with(b"\r\n\r\n") {
+                        assert!(head.len() < 16384);
+                        let mut byte = [0];
+                        stream.read_exact(&mut byte).unwrap();
+                        head.push(byte[0]);
                     }
-                };
-                stream.set_nonblocking(false).unwrap();
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(3)))
-                    .unwrap();
-                stream
-                    .set_write_timeout(Some(Duration::from_secs(3)))
-                    .unwrap();
-                let mut head = Vec::new();
-                while !head.ends_with(b"\r\n\r\n") {
-                    assert!(head.len() < 16384);
-                    let mut byte = [0];
-                    stream.read_exact(&mut byte).unwrap();
-                    head.push(byte[0]);
+                    let head = String::from_utf8(head).unwrap();
+                    assert!(head.starts_with("POST /candidate "));
+                    let length: usize = head
+                        .lines()
+                        .find_map(|line| {
+                            line.split_once(':')
+                                .filter(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                                .map(|(_, value)| value.trim().parse().unwrap())
+                        })
+                        .unwrap();
+                    assert!(length <= 16384);
+                    let mut body = vec![0; length];
+                    stream.read_exact(&mut body).unwrap();
+                    let body = reply(serde_json::from_slice(&body).unwrap()).to_string();
+                    let header = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    );
+                    // Cancellation is allowed to close this actual client; the
+                    // request/body assertions above must still run and be joined.
+                    let _ = stream
+                        .write_all(header.as_bytes())
+                        .and_then(|()| stream.write_all(body.as_bytes()));
                 }
-                let head = String::from_utf8(head).unwrap();
-                assert!(head.starts_with("POST /candidate "));
-                let length: usize = head
-                    .lines()
-                    .find_map(|line| {
-                        line.split_once(':')
-                            .filter(|(name, _)| name.eq_ignore_ascii_case("content-length"))
-                            .map(|(_, value)| value.trim().parse().unwrap())
-                    })
-                    .unwrap();
-                assert!(length <= 16384);
-                let mut body = vec![0; length];
-                stream.read_exact(&mut body).unwrap();
-                let body = reply(serde_json::from_slice(&body).unwrap()).to_string();
-                let header = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                    body.len()
-                );
-                // Cancellation is allowed to close this actual client; the
-                // request/body assertions above must still run and be joined.
-                let _ = stream
-                    .write_all(header.as_bytes())
-                    .and_then(|()| stream.write_all(body.as_bytes()));
             });
             Self {
                 url,
+                stopping,
                 worker: Some(worker),
             }
         }
     }
     impl Drop for Cs03Peer {
         fn drop(&mut self) {
+            self.stopping.store(true, Ordering::Release);
             if let Some(worker) = self.worker.take() {
                 let result = worker.join();
                 if !std::thread::panicking() {

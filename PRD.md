@@ -53,7 +53,7 @@ MiniCon — one-file local terminal
 │           ├── [_] Guided connection experience and recovery → prd/PRD_02_31_01_01_harness_experience.md
 │           ├── [-] Multi-account pool / account networks / client allocation → prd/PRD_02_31_01_02_provider_pool.md
 │           │   └── [-] Account catalogues / drafts / verified atomic apply → prd/PRD_02_31_01_02_01_connection_selection.md
-│           │       └── [_] Whole-profile Verify and apply → prd/PRD_02_31_01_02_01_01_profile_verification.md
+│           │       └── [-] Whole-profile Verify and apply → prd/PRD_02_31_01_02_01_01_profile_verification.md
 │           └── [_] Usage statistics / balance and allowance monitoring → prd/PRD_02_31_01_03_usage_monitoring.md
 ├── Reusable foundations → prd/PRD_02_28_shared_core.md
 │   ├── [-] Commit-aware private publication → prd/PRD_02_28_02_private_publication.md
@@ -185,7 +185,7 @@ flowchart LR
   Settings forms, the provider pool and monitoring retain their existing owners;
   Console/Web maintenance and qualification continue.
 - [_] **Next 0.2.x: tab-tree drag and reliable inline rename.** The owner
-  selects this for 0.2.24 under the two-version development/publication goal.
+  retains this as selected 0.2.24 scope; current delivery is 0.2.23.
   [PRD 25.03](prd/PRD_02_25_03_tab_tree_interactions.md) owns the reproduced
   inside-click failure and proposed subtree/gesture contract;
   [the plan](plan/plan-v0.2.24.md) sequences rename repair before drag integration.
