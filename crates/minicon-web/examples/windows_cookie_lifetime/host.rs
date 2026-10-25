@@ -327,7 +327,10 @@ impl Page {
         recipe: &Recipe,
         wake: impl Fn() + 'static,
     ) -> Result<Self> {
-        let mut context = WebContext::new(Some(profile.data_directory.clone()));
+        let folder = profile
+            .webview2_user_data_folder()
+            .map_err(|_| "lifetime-sdk-user-data-folder-unavailable")?;
+        let mut context = WebContext::new(Some(folder));
         let loaded = Rc::new(RefCell::new(None));
         let completion = loaded.clone();
         let pages: Vec<_> = recipe.pages.values().cloned().collect();

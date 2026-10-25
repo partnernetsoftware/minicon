@@ -1948,6 +1948,7 @@ name = "minicon-web"
 version = "0.1.0"
 dependencies = [
  "block2 0.6.2",
+ "dunce",
  "gtk",
  "minicon-platform",
  "objc2 0.6.4",

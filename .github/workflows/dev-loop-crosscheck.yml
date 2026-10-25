@@ -602,8 +602,9 @@ jobs:
           from pathlib import Path
           output = Path('probe-logs/console-lifecycle')
           output.mkdir(parents=True, exist_ok=True)
+          # Include both normal suite invocations; evidence ownership: PRD 32.
           for index, source in enumerate(Path('target/conhost-research').glob('*/result.console-trace')):
-              if index >= 4 or source.stat().st_size > 256 * 1024:
+              if index >= 8 or source.stat().st_size > 256 * 1024:
                   raise SystemExit('console lifecycle trace exceeded its evidence bound')
               (output / f'{source.parent.name}.log').write_bytes(source.read_bytes())
           PY

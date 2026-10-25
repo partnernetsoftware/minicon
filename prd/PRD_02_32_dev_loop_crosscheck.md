@@ -894,3 +894,33 @@ suite receipt's `job_status: success` describes only those suites; it does not
 override the standard workspace failure or certify an overall green job.
 Cookie persistence, physical native input and exact-source release gates
 retain their separate owners and remain open.
+
+### Terminal 46cb175 replay: product gates pass, trace collection fails
+
+[Run 40233835091](https://github.com/partnernetsoftware/minicon/actions/runs/40233835091)
+at exact `46cb17594a2e89ef30822813c3061fd04b720348` passes the complete
+standard workspace/owned-fork test command, including both new native rasteriser
+subjects and the retained measurement/drawing subject. It also passes all27
+selected suites, canonical browser and bounded shutdown courts, and the actual
+twelve profile-key/handoff checks with zero proxy requests/provider POSTs and
+no cleanup errors. These results are scoped developer evidence, not release
+qualification. Raw standard output and public receipts are retained under
+`target-six/v0.2.23-provider/ci-46cb175-native/`; the full job log is
+`ci-46cb175-windows-job.log` beside that directory.
+
+The job remains terminal FAIL: the final console-lifecycle collector rejects
+its fifth trace. Four traces were uploaded before this rejection. The ordinary
+native PTY producer retains one admitted-reader and three deferred-API traces
+per invocation; this workflow now executes that producer through both the
+standard workspace and its selected suite. The old four-file collector bound
+therefore does not cover the two expected invocations. The correction admits
+eight files, still at most256KiB each (2MiB total); a ninth file or any oversized
+file remains a hard failure. No product assertion, test selection or failure
+retention changes.
+
+`target-six/v0.2.23-provider/console-trace-collector-controls/receipt.json`
+executes the actual old/current workflow Python bodies against fresh synthetic
+files. The original body fails after four of eight; the corrected body copies
+all eight; the corrected ninth-file and256KiB+1 cases both fail with the exact
+bound error. Hosted replay of this collector correction remains open. Do not
+relabel the existing red job green from its passing product suites.

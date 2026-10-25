@@ -70,6 +70,17 @@ Outcome: reuse an account's browser context only after its previous native host 
 │   evidence: SF-01 cookie-sdk-default-factory-attempt-1/experiment-receipt.json; original EXIT failure retained
 │   safe failure: creation/identity/deadline failures are inconclusive; original persistence failure stays open
 │   dependency: LIFETIME CONTRAST and explicit fresh UDF; non-goal: production flags, controller replacement or a repair claim
+├── [v] SDK HOST CONTRAST — compare minimal managed SDK and direct-wry synthetic hosts
+│   invariant: one fresh synthetic local origin/profile, real persistent Cookie, verified normal exit and same-profile reopen
+│   evidence: managed SDK variants pass; minimal wry / direct Rust SDK variants fail; named receipts below
+│   safe failure: setup/permission/exit/profile uncertainty stays inconclusive; original eight-oracle gate remains required
+│   dependency: SDK FACTORY CONTRAST and bounded owned hidden host; non-goal: a replacement production host, full original qualification or private-profile access
+├── [-] SDK UDF PATH — pass an identity-preserving ordinary Windows path to WebView2
+│   invariant: canonical paths retain store identity; only the native SDK parameter uses compatible drive spelling
+│   evidence: original KEEP/EXIT eight checks both pass with path-only prototype; shared production join/native replay pending
+│   safe failure: a path requiring an incompatible namespace is explicitly unsupported before creation; no alternate store
+│   dependency: verified profile, existing pinned dunce compatibility helper and SDK HOST CONTRAST
+│   non-goal: changing ACLs, persistence delays/flush, credential paths or replacing the browser host
 └── [_] LATER DELETE — compose release with an explicitly authorized store deletion
     invariant: observation, deletion and durable completion are separate results
     evidence: future OS-specific deletion/retry courts; currently unavailable
@@ -94,6 +105,7 @@ flowchart TD
     R --> OPEN[Reopen same isolated context]
     OPEN --> STORE[Independent cookie/localStorage persistence observations]
     OPEN --> SDK[Recheck actual UDF / persistent ProfilePath]
+    DOS[SDK UDF parameter: compatible drive spelling / canonical identity retained] --> OPEN
     SDK --> FINITE[Public finite layout class]
     SDK --> PRIVATE[Feature-only private run/store/phase locator]
     V -. dedicated fixture feature only .-> QUERY[Exact localhost URI / owning STA CookieManager]
@@ -108,6 +120,7 @@ flowchart TD
     LIFE[Explicit direct-wry test image / original fixture protocol] --> K[KEEP: same live blank keeper and environment]
     LIFE --> X[EXIT: Close all A controllers / matched NORMAL exit / release old environment]
     FACTORY[Optional test-only default SDK environment / same wry controller] -. compare factory and options bundle .-> LIFE
+    SDKHOST[Independent managed SDK minimal host / fresh synthetic Cookie] -. separate diagnostic; never replaces original eight .-> STORE
     K & X --> STORE
     K & X -. two fixed phases / optional diagnostic .-> HIST[Two bounded numeric Cookie problem histograms]
     HIST --> UNKNOWN[Missing / empty / unsupported / late remains unknown]
@@ -829,3 +842,127 @@ not shipped. This is not a same-image comparison with the earlier wry-built
 baseline. It establishes that the observed loss also occurs with null SDK
 environment options; it does not identify a Cookie cause, exclude the shared
 wry controller path, or justify a production environment/flag change.
+
+### Next discriminator: an independent minimal managed SDK host
+
+Use the installed .NET 8 desktop runtime and pinned official WebView2 SDK
+`1.0.3537.50` in an ignored standalone diagnostic. It does not depend on wry,
+tao, MiniCon's Rust callbacks or private-directory helpers. One never-shown
+owned form hosts a controller against an explicit fresh inherited-permission
+UDF. A localhost-only synthetic page sets one `Path=/; Max-Age=600;
+SameSite=Strict` Cookie and one localStorage item. Observe the exact origin's
+SDK count/non-session/future-expiry and page booleans, subscribe before Close,
+require matching normal browser exit, recreate against the same verified
+non-InPrivate ProfilePath, and check both stores without rewriting them.
+
+Only fixed classifications/counts and SDK/source/image identities are retained;
+no Cookie names/values, raw SDK errors, arbitrary file discovery, clipboard,
+foreground activation or real accounts. One private owned Job and a 120-second
+deadline bound the process; setup or exit uncertainty cannot become a missing
+Cookie verdict. Shared prerequisites are the already observed native runtime,
+official managed SDK and the existing owned-process runner. Hot files stay
+entirely in the ignored experiment directory; no product or Cargo changes.
+The narrower journey is a diagnostic discriminator only, never a substitute
+for the original eight checks, other native targets or release qualification.
+
+The managed minimal journey actually passes on Runtime `152.0.4191.66`:
+`cookie-managed-sdk/attempt-1/receipt.json` under the ignored provider evidence
+root. Subsequent same-image fresh-UDF policy variants both pass, with initial
+and final finite DACL observations distinguishing nine inherited ACEs from one
+protected current-user ACE. Same-image owner-only controller variants also
+both pass: legacy factory and explicit non-InPrivate controller options.
+Receipts are `policy-inherit-default/`, `policy-owner-only/`,
+`controller-legacy/` and `controller-with-options/` under that same experiment
+root. They retain exact source/SDK/image hashes, same-profile/new-browser
+validation, matching normal exits, persistent-future Cookie counts and actual
+page Cookie/localStorage matches. All owned Jobs close. Initial and policy
+sources/images are archived before modifying their diagnostic successors.
+
+This demonstrates persistence in those minimal managed journeys; neither a
+runtime-wide failure nor either isolated policy/controller choice explains all
+observations. It does not establish effective access for the original fixture
+or identify its failure. Next, compare a minimal direct-wry host using the same
+blank local page, explicit script write/read, Cookie attributes and normal-exit
+boundary. Retain its temporary Rust example's exact source and Cargo artifact
+in ignored evidence, remove only that newly created temporary source after
+execution, and keep all pre-existing source/canonical product bytes unchanged.
+
+The minimal Rust comparison now executes. All these narrower journeys retain
+one persistent future Cookie before close, verify the same non-InPrivate
+profile and a new browser after matching normal exit, and observe both stores
+after reopening. Results under the same `cookie-managed-sdk/` evidence root:
+
+| Exact experiment | Observed result | Scope |
+| --- | --- | --- |
+| `minimal-wry-attempt-1/receipt.json` | Cookie absent after reopening; localStorage matches | Minimal pinned-wry child controller; blank page and explicit script; not the original page/polling fixture |
+| `minimal-wry-parent-attempt-1/receipt.json` | Same Cookie failure | Changes only the minimal source's `build_as_child` to `build`; removing that extra child-window destruction is insufficient |
+| `minimal-rust-sdk-attempt-2/receipt.json` | Same Cookie failure | Direct SDK environment/controller/navigation/script/Cookie/release calls with Tao supplying only the hidden parent; no wry view or callbacks |
+| `minimal-rust-win32-sdk-attempt-1/receipt.json` | Same Cookie failure | Replaces Tao setup with a hidden no-activate native STATIC window and explicit STA COM initialization; no wry or Tao runtime operations |
+| `minimal-rust-dynamic-sdk-attempt-1/receipt.json` | Same Cookie failure | The Win32 Rust host resolves the environment factory from the exact local managed SDK 1.0.3537.50 loader DLL, verifies its loaded path, and records its SHA-256; changing that loader/entry-call bundle alone is insufficient |
+
+Each executed Rust variant retains its actual source, compiler artifact, target/
+features and pinned image hash, closes its owned Job, removes only its newly
+created temporary example source, and preserves HEAD/index/canonical product
+bytes. The first direct-SDK Rust attempt fails compilation because CookieManager
+belongs to `ICoreWebView2_2`; its receipt/log remain separate and contain no
+runtime observation. The corrected attempt performs that explicit cast.
+Managed runs record Runtime `152.0.4191.66`; these minimal Rust receipts do not
+serialize runtime version, so they are not standalone exact-runtime evidence.
+
+The failure therefore does not require the original eight-step page protocol,
+wry view initialization/destruction or Tao window setup. The managed successes
+and native failures still vary in SDK/loader/COM interop and host artifacts;
+they do not identify one of those as the cause. In particular, do not replace
+the product host, change its ACL/security, add flush/delay behavior, or mark the
+original persistence requirement complete from these narrower observations.
+
+### Path-only discriminator: original eight checks pass in both lifetime arms
+
+The managed/native contrast exposes a concrete path difference: Rust
+`canonicalize` produces a Windows verbatim-disk prefix while the managed
+minimal host passes ordinary drive spelling. Changing only that native UDF
+parameter in the minimal wry host produces a passing reopened Cookie and
+localStorage journey (`cookie-managed-sdk/minimal-wry-dos-path-attempt-1/receipt.json`).
+Canonical profile verification and the normal-exit/new-browser boundary remain.
+
+The same path-only change then runs the original direct-wry eight-check fixture:
+`target-six/v0.2.23-provider/cookie-original-dos-path-attempt-1/experiment-receipt.json`.
+Both KEEP and EXIT pass all eight original predicates on Runtime `152.0.4191.66`;
+the fixed Network/Cookies slot is now regular-nonempty before close. The exact
+prototype image is `2aab2bb316b935baccc9f3df81c08f317d9c4f0882fb5117b6802c37122eed09`.
+Twenty retained strict subjects pass, all input bytes/index/HEAD/canonical
+product bytes are restored, and both owned Jobs close. This is a source-bound
+prototype result, not production or cross-runtime qualification. No SQLite or
+encryption root cause is asserted from these observations.
+
+Integrate one SDK-path conversion in `minicon-web`, shared by explicit account
+contexts, ordinary Windows contexts and the diagnostic example. Keep canonical
+directory validation and SDK-returned identity comparison unchanged. Reuse the
+already pinned `dunce` compatibility implementation rather than stripping every
+namespace prefix: ambiguous/reserved/long verbatim spellings must not select a
+different store. Windows native browser creation admits compatible ordinary
+drive paths; unrepresentable namespaces fail with a typed unsupported result
+before construction. This does not alter private filesystem storage/ACL policy.
+The shared hot files are the web crate's Cargo feature/dependency declaration,
+lock entry, profile conversion, native context creation and lifetime example;
+one integrator owns these joins. Production guard controls and the original
+native court remain required after integration, including a newer-runtime replay.
+
+The shared implementation now exposes Windows/native-page-host
+`PageProfile::webview2_user_data_folder`, consumed by the actual explicit-context
+constructor and the lifetime example. Ordinary Windows contexts use the same
+internal conversion. It validates the explicit profile, uses the existing
+locked `dunce`1.0.5 compatibility conversion, refuses a remaining non-drive
+namespace, and rechecks canonical identity before returning the SDK argument.
+Canonical store paths and post-create SDK identity verification stay unchanged.
+No provider/credential policy, extra runtime, Windows ACL or arbitrary wait is
+introduced; other native adapters do not compile this Windows-only conversion.
+
+Local wrapper evidence under `target-six/v0.2.23-provider/`:
+`sdk-udf-path-all-web-tests.log` records38 library passes, including two added
+required subjects; `sdk-udf-path-example-tests.log` retains20 strict example
+passes. `sdk-udf-path-controls/receipt.json` records actual original assertion
+failures when the canonical verbatim path is returned or incompatible paths
+are accepted; each exact restoration passes both subjects. These are conversion
+and refusal checks. The actual product/native authorization court and newer
+runtime must still replay the integrated source before closing persistence.

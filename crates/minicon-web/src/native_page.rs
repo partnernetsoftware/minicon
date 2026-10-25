@@ -367,7 +367,9 @@ impl NativePageHost {
         };
         #[cfg(windows)]
         let mut windows_context = if let Some(profile) = profile {
-            Some(wry::WebContext::new(Some(profile.data_directory.clone())))
+            Some(wry::WebContext::new(Some(
+                profile.webview2_user_data_folder()?,
+            )))
         } else {
             windows_page_context(windows_arguments.as_deref())?
         };
@@ -928,6 +930,8 @@ fn windows_page_context(arguments: Option<&str>) -> Result<Option<wry::WebContex
         },
     };
     std::fs::create_dir_all(&path).map_err(|_| "browser-native-profile-unavailable".to_owned())?;
+    let path = crate::profile::windows_sdk_user_data_folder(&path)
+        .map_err(|error| error.code().to_owned())?;
     Ok(Some(wry::WebContext::new(Some(path))))
 }
 

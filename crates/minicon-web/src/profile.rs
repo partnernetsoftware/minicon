@@ -12,6 +12,55 @@ pub struct PageProfile {
     pub store_identifier: [u8; 16],
 }
 
+#[cfg(all(windows, feature = "native-page-host"))]
+impl PageProfile {
+    /// WebView2's UDF argument, distinct from the canonical store identity.
+    /// Unsupported verbatim namespaces fail before native creation. PRD 28.01.
+    pub fn webview2_user_data_folder(&self) -> Result<PathBuf, PageContextError> {
+        PageContext {
+            profile: self.clone(),
+            proxy: BrowserProxy::default(),
+        }
+        .validate()?;
+        windows_sdk_user_data_folder(&self.data_directory)
+    }
+}
+
+#[cfg(all(windows, feature = "native-page-host"))]
+fn windows_sdk_path_spelling(path: &std::path::Path) -> Result<PathBuf, PageContextError> {
+    use std::path::{Component, Prefix};
+    let compatible = dunce::simplified(path);
+    if !compatible.is_absolute()
+        || !matches!(
+            compatible.components().next(),
+            Some(Component::Prefix(prefix)) if matches!(prefix.kind(), Prefix::Disk(_))
+        )
+    {
+        return Err(PageContextError::Unsupported(
+            "browser-context-profile-path-unsupported",
+        ));
+    }
+    Ok(compatible.to_path_buf())
+}
+
+#[cfg(all(windows, feature = "native-page-host"))]
+pub(crate) fn windows_sdk_user_data_folder(
+    path: &std::path::Path,
+) -> Result<PathBuf, PageContextError> {
+    let canonical = path
+        .canonicalize()
+        .map_err(|_| PageContextError::ProfileUnavailable)?;
+    let compatible = windows_sdk_path_spelling(&canonical)?;
+    if compatible
+        .canonicalize()
+        .map_err(|_| PageContextError::ProfileUnavailable)?
+        != canonical
+    {
+        return Err(PageContextError::InvalidProfile);
+    }
+    Ok(compatible)
+}
+
 /// An explicit context never resolves network settings from the environment.
 #[derive(Clone, Eq, PartialEq)]
 pub struct PageContext {
@@ -276,6 +325,48 @@ fn unhex(value: &str) -> Result<Vec<u8>, PageContextError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(all(windows, feature = "native-page-host"))]
+    #[test]
+    fn webview2_udf_spelling_preserves_the_real_profile_without_a_verbatim_prefix() {
+        let root = Fixture::new();
+        let profile = root.context().profile;
+        let folder = profile.webview2_user_data_folder().unwrap();
+        assert!(folder.is_absolute());
+        assert!(matches!(
+            folder.components().next(),
+            Some(std::path::Component::Prefix(prefix))
+                if matches!(prefix.kind(), std::path::Prefix::Disk(_))
+        ));
+        assert_eq!(folder.canonicalize().unwrap(), profile.data_directory);
+        assert_eq!(root.context().profile, profile);
+    }
+
+    #[cfg(all(windows, feature = "native-page-host"))]
+    #[test]
+    fn webview2_udf_spelling_refuses_names_that_cannot_keep_ordinary_drive_meaning() {
+        use std::path::Path;
+        assert_eq!(
+            windows_sdk_path_spelling(Path::new(r"\\?\C:\Temp\目录 name")).unwrap(),
+            Path::new(r"C:\Temp\目录 name")
+        );
+        for path in [
+            r"C:relative",
+            r"relative",
+            r"\\.\pipe\fixture",
+            r"\\?\UNC\fixture.invalid\share\folder",
+            r"\\?\C:\Temp\CON.txt",
+            r"\\?\C:\Temp\trailing.",
+            r"\\?\C:\Temp\trailing ",
+        ] {
+            assert_eq!(
+                windows_sdk_path_spelling(Path::new(path)),
+                Err(PageContextError::Unsupported(
+                    "browser-context-profile-path-unsupported"
+                ))
+            );
+        }
+    }
 
     struct Fixture(PathBuf);
     impl Fixture {
