@@ -35,6 +35,11 @@ dev-loop-crosscheck — agent cross-arch dev/test loop
 │   │   evidence: qualification receipt, eight engine observations and two actual counterexamples
 │   │   safe failure: preserve BLOCKED/failed result; do not count compilation or timeout as RED
 │   │   dependency: canonical browser/helper and isolated desktop; non-goal: release/provider/visibility proof
+│   ├── [_] separate Windows native-input readiness observation
+│   │   invariant: read-only window-station/desktop and installed/loaded Pinyin facts stay distinct from actual input
+│   │   evidence: exact-source input-readiness.json on both hosted Windows targets
+│   │   safe failure: unavailable/absent prerequisites are BLOCKED or SETUP_REQUIRED, never native-input PASS
+│   │   dependency: disposable hosted Windows desktop; non-goal: foreground, keyboard, clipboard, language installation or product qualification
 │   ├── [-] explicit Windows fixture ACL comparison → PRD 28.01
 │   │   invariant: diagnostic entry requires exactly win-x86_64 and native_auth_context=false
 │   │   evidence: real workflow-plan consumer and separate diagnostic aggregate
@@ -75,6 +80,7 @@ flowchart LR
     LC --> L
     W -->|explicit private_publication| PP[Private native files / publication / errno / platform access controls]
     PP -->|actual tests + RED controls + exact restore| L
+    INPUT[Separate read-only Windows input-readiness workflow] -->|prerequisites only; no input qualification| L
     W -. never .-> R["release / GHCR / tag / version"]
 ```
 
@@ -924,3 +930,24 @@ files. The original body fails after four of eight; the corrected body copies
 all eight; the corrected ninth-file and256KiB+1 cases both fail with the exact
 bound error. Hosted replay of this collector correction remains open. Do not
 relabel the existing red job green from its passing product suites.
+
+### Read-only Windows native-input prerequisites
+
+The separate `windows-input-readiness.yml` workflow observes both hosted
+Windows targets without building Rust or touching a human desktop. It uses
+bounded Win32 queries for a visible process window station, a read-only opened
+input desktop and its equality with the current thread's desktop; the desktop
+names remain in memory and its owned handle closes. It also checks the exact
+installed Microsoft Pinyin TIP/profile registry key and at most128 loaded
+keyboard layouts, recording only the presence of Simplified Chinese. It sends
+no input, activates no layout/window, accesses no clipboard and installs no
+language component. The owning native-input court remains PRD 25.02.
+
+Each `input-readiness.json` binds actual checkout SHA, selected cell and probe
+process architecture. `READY_TO_ATTEMPT` means only observed prerequisites;
+`native_input_qualified` remains false. An otherwise usable desktop with Pinyin
+installed but not loaded is `SETUP_REQUIRED`; absent or unavailable prerequisites
+are `BLOCKED`. Both non-ready statuses exit2, and all receipts upload even on
+failure. None of these statuses is an actual SendInput/preedit/commit, native
+scale or signed-artifact result. The initial hosted observation is still open;
+local validation parses the YAML/Python without executing native calls.

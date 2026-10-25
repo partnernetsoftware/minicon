@@ -319,3 +319,24 @@ This establishes one real DeepSeek manual-read/report/cache acknowledgement
 journey. It does not close UM-03/04: the second DeepSeek account and its explicit
 proxy, real OpenCode Go allowance, cross-account isolation, automatic monitoring
 lifecycle and final exact-source release evidence remain required.
+
+### Current-image retained-cache restart checkpoint
+
+At exact source `7a18b93bdc62e191a24c8e6923ac370bd1350005`, the default
+developer image SHA-256
+`ac78e0682d5b28479928d4325e041b45dc2618846fc864c70432a68771c902f6`
+completes two newly owned GUI processes against the original real-account roots.
+`target-six/v0.2.23-provider/real-account-cache-restart-current-attempt-1/receipt.json`
+records48 public CLI calls, two retained official DeepSeek wallet rows, saved
+cache, an existing attempt and Stale presentation in both processes. Automatic
+monitoring is observed off; the verifier changes no policy and requests no
+metadata refresh, model check, login or inference. The two processes' public
+reading/source/time/policy presentations compare equal in memory; their raw
+values, labels and account IDs are never retained. Only booleans/enums/counts
+are written to evidence.
+
+Each directly owned GUI exits normally with zero and its private Job closes;
+the original real roots remain intact. Image and frozen handover-support hashes
+remain unchanged. This is a current-image, one-account retained-cache/restart
+journey, not fresh real-provider authorization, full UM-05 retention/failure
+qualification, or automatic/multi-account monitoring evidence.

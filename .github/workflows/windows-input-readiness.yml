@@ -1,0 +1,120 @@
+name: windows-input-readiness
+
+# Read-only prerequisites for the native input court; owner: PRD 32.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Exact source SHA to inspect; empty uses the dispatched source"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  observe:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cell: win-x86_64
+            runner: windows-2025
+          - cell: win-aarch64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - name: Observe input prerequisites without changing desktop state
+        env:
+          CELL: ${{ matrix.cell }}
+        shell: python
+        run: |
+          import ctypes as c
+          from ctypes import wintypes as w
+          import json, os, subprocess, sys
+          from pathlib import Path
+          import winreg
+          assert os.environ.get('GITHUB_ACTIONS') == 'true' and os.name == 'nt'
+          u = c.WinDLL('user32', use_last_error=True)
+          k = c.WinDLL('kernel32', use_last_error=True)
+          class Flags(c.Structure):
+              _fields_ = [('inherit', w.BOOL), ('reserved', w.BOOL), ('flags', w.DWORD)]
+          for dll, name, result, args in (
+              (u, 'GetProcessWindowStation', w.HANDLE, []),
+              (u, 'GetUserObjectInformationW', w.BOOL, [w.HANDLE, c.c_int, c.c_void_p, w.DWORD, c.POINTER(w.DWORD)]),
+              (u, 'OpenInputDesktop', w.HANDLE, [w.DWORD, w.BOOL, w.DWORD]),
+              (u, 'CloseDesktop', w.BOOL, [w.HANDLE]),
+              (u, 'GetThreadDesktop', w.HANDLE, [w.DWORD]),
+              (u, 'GetForegroundWindow', w.HWND, []),
+              (u, 'GetKeyboardLayoutList', c.c_int, [c.c_int, c.POINTER(c.c_void_p)]),
+              (k, 'GetCurrentThreadId', w.DWORD, []),
+          ):
+              f = getattr(dll, name); f.restype = result; f.argtypes = args
+          def object_name(handle):
+              size = w.DWORD()
+              u.GetUserObjectInformationW(handle, 2, None, 0, c.byref(size))
+              if not 0 < size.value <= 1024:
+                  return None
+              value = c.create_unicode_buffer(512)
+              if not u.GetUserObjectInformationW(handle, 2, value, c.sizeof(value), c.byref(size)):
+                  return None
+              return value.value  # Compared only in memory; never written.
+          station = u.GetProcessWindowStation()
+          flags = Flags(); needed = w.DWORD()
+          visible = bool(flags.flags & 1) if station and u.GetUserObjectInformationW(station, 1, c.byref(flags), c.sizeof(flags), c.byref(needed)) else None
+          desktop = u.OpenInputDesktop(0, False, 1)
+          desktop_error = None if desktop else c.get_last_error()
+          same_desktop = None
+          closed = None
+          if desktop:
+              try:
+                  current_name = object_name(u.GetThreadDesktop(k.GetCurrentThreadId()))
+                  input_name = object_name(desktop)
+                  if current_name and input_name:
+                      same_desktop = current_name == input_name
+              finally:
+                  closed = bool(u.CloseDesktop(desktop))
+          tip = (r'SOFTWARE\Microsoft\CTF\TIP\{81D4E9C9-1D3B-41BC-9E6C-4B40BF79E35E}'
+                 r'\LanguageProfile\0x00000804\{FA550B04-5AD7-411F-A5AC-CA038EC515D7}')
+          installed = None
+          try:
+              with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, tip, 0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY):
+                  installed = True
+          except FileNotFoundError:
+              installed = False
+          except OSError:
+              pass
+          count = u.GetKeyboardLayoutList(0, None)
+          loaded = None
+          if 0 < count <= 128:
+              layouts = (c.c_void_p * count)()
+              actual = u.GetKeyboardLayoutList(count, layouts)
+              if 0 < actual <= count:
+                  loaded = any(value and value & 0xffff == 0x804 for value in layouts[:actual])
+          ready_desktop = visible is True and same_desktop is True and closed is True
+          status = ('READY_TO_ATTEMPT' if ready_desktop and installed is True and loaded is True
+                    else 'SETUP_REQUIRED' if ready_desktop and installed is True else 'BLOCKED')
+          report = dict(kind='windows-native-input-prerequisites', status=status,
+              source_sha=subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+              cell=os.environ['CELL'], runner_arch=os.environ.get('RUNNER_ARCH'),
+              python_bits=c.sizeof(c.c_void_p)*8, native_input_qualified=False,
+              visible_window_station=visible, input_desktop_opened=bool(desktop),
+              input_desktop_error=desktop_error, current_desktop_is_input=same_desktop,
+              owned_desktop_handle_closed=closed, foreground_window_present=bool(u.GetForegroundWindow()),
+              microsoft_pinyin_profile_installed=installed, simplified_chinese_layout_loaded=loaded,
+              input_sent=False, foreground_changed=False, clipboard_accessed=False,
+              language_installed_or_activated=False)
+          Path('input-readiness.json').write_text(json.dumps(report, indent=2)+'\n', encoding='utf-8')
+          print(json.dumps(report))
+          sys.exit(0 if status == 'READY_TO_ATTEMPT' else 2)
+      - name: Upload finite prerequisite receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: input-readiness-${{ matrix.cell }}
+          path: input-readiness.json
+          if-no-files-found: error
