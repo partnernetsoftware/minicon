@@ -1885,6 +1885,12 @@ impl fmt::Debug for FrozenCandidate {
     }
 }
 impl FrozenCandidate {
+    pub(crate) fn profile(&self) -> &str {
+        &self.identity.profile
+    }
+    pub(crate) fn alias(&self) -> &str {
+        &self.identity.alias
+    }
     pub(crate) fn account(&self) -> &str {
         self.identity.authority.account()
     }

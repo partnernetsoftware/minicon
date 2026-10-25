@@ -4,9 +4,11 @@
 //! preserves thinking/signature continuation; a route must honor the advertised
 //! non-thinking requirement before dispatching a converted request.
 
+pub(crate) mod usage;
 use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{SystemTime, UNIX_EPOCH};
+use usage::{BillingDialect, UsageObserver, UsageSnapshot};
 
 pub const MAX_EVENT_BYTES: usize = 1024 * 1024;
 pub const MAX_STREAM_BYTES: usize = 32 * 1024 * 1024;
@@ -485,14 +487,32 @@ fn text_blocks(value: Option<&Value>) -> Result<Vec<Value>, ProtocolError> {
     }
 }
 
+#[cfg(test)]
 pub fn convert_response(
     downstream: Protocol,
     upstream: Protocol,
     body: &[u8],
     model: &str,
 ) -> Result<Vec<u8>, ProtocolError> {
+    convert_response_observed(
+        downstream,
+        upstream,
+        body,
+        model,
+        &mut UsageObserver::new(upstream),
+    )
+}
+pub(crate) fn convert_response_observed(
+    downstream: Protocol,
+    upstream: Protocol,
+    body: &[u8],
+    model: &str,
+    observation: &mut UsageObserver,
+) -> Result<Vec<u8>, ProtocolError> {
     model_id(model)?;
+    observation.observe_raw(body);
     let value = parse(body, MAX_STREAM_BYTES)?;
+    observation.observe_value(&value);
     let object = as_object(&value, ProtocolError::InvalidResponse)?;
     if object.contains_key("error") {
         return Err(ProtocolError::UpstreamError);
@@ -680,6 +700,7 @@ pub struct SseBridge {
     tools: usize,
     usage: Usage,
     include_usage: bool,
+    observation: UsageObserver,
 }
 
 impl SseBridge {
@@ -716,7 +737,17 @@ impl SseBridge {
             tools: 0,
             usage: Usage::default(),
             include_usage: false,
+            observation: UsageObserver::new(upstream),
         })
+    }
+
+    #[must_use]
+    pub(crate) fn with_usage_billing(mut self, dialect: BillingDialect) -> Self {
+        self.observation.set_billing(dialect);
+        self
+    }
+    pub(crate) fn usage_snapshot(&self) -> UsageSnapshot {
+        self.observation.snapshot()
     }
 
     /// Only cross-protocol Chat output is shaped by this option. Native
@@ -846,7 +877,9 @@ impl SseBridge {
             self.stopped = true;
             return Ok(vec![b"data: [DONE]\n\n".to_vec()]);
         }
+        self.observation.observe_raw(&data);
         let value = parse(&data, MAX_EVENT_BYTES).map_err(|_| ProtocolError::InvalidStream)?;
+        self.observation.observe_value(&value);
         if value.get("error").is_some()
             || event.as_deref() == Some("error")
             || value["type"] == "error"
@@ -1309,6 +1342,128 @@ fn output_limit(object: &Map<String, Value>) -> Result<Option<u64>, ProtocolErro
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn um_nonstream_raw_billing_keeps_exact_decimal_and_distinct_plan_allowance() {
+        let raw = br#"{"id":"synthetic","model":"upstream","choices":[{"message":{"role":"assistant","content":"OK"},"finish_reason":"stop","index":0}],"usage":{"prompt_tokens":9,"completion_tokens":3,"total_tokens":12,"prompt_tokens_details":{"cached_tokens":4},"completion_tokens_details":{"reasoning_tokens":2},"cost":0,"opencode":{"billing_source":"go","estimated":false,"list_cost":0.12345678901234567890123456789,"allowance":1.250e-4,"tokens":{"input":5,"output":3,"reasoning":2,"cache_read":4}}}}"#;
+        let mut observation = UsageObserver::new(CHAT);
+        observation.set_billing(BillingDialect::OpenCode);
+        let output = convert_response_observed(CHAT, CHAT, raw, MODEL, &mut observation).unwrap();
+        let response: Value = serde_json::from_slice(&output).unwrap();
+        assert_eq!(output, raw);
+        assert_eq!(response["choices"][0]["message"]["content"], "OK");
+        let usage = observation.snapshot();
+        assert_eq!(
+            (
+                usage.tokens.input,
+                usage.tokens.output,
+                usage.tokens.cache_read,
+                usage.tokens.reasoning
+            ),
+            (Some(9), Some(3), Some(4), Some(2))
+        );
+        let billing = usage.billing.unwrap();
+        assert_eq!(billing.cost_usd.unwrap().as_str(), "0");
+        assert_eq!(
+            billing.list_cost_usd.unwrap().as_str(),
+            "0.12345678901234567890123456789"
+        );
+        assert_eq!(billing.allowance_plan_usd.unwrap().as_str(), "1.250e-4");
+        assert_eq!(
+            (
+                billing.billed_input,
+                billing.billed_output,
+                billing.cache_read
+            ),
+            (Some(5), Some(3), Some(4))
+        );
+    }
+    #[test]
+    fn um_messages_cumulative_usage_is_captured_when_client_usage_is_disabled() {
+        let mut bridge = SseBridge::new(CHAT, MESSAGES, MODEL)
+            .unwrap()
+            .with_include_usage(false)
+            .with_usage_billing(BillingDialect::OpenCode);
+        let mut output = bridge.push(&text_stream()).unwrap();
+        output.extend(bridge.finish().unwrap());
+        let usage = bridge.usage_snapshot();
+        assert_eq!(
+            (
+                usage.tokens.input,
+                usage.tokens.output,
+                usage.tokens.cache_read
+            ),
+            (Some(4), Some(3), Some(2))
+        );
+        assert_eq!(
+            usage.tokens.semantics,
+            usage::InputSemantics::MessagesBasePlusCache
+        );
+        assert!(!usage.tokens.non_monotonic);
+        assert!(usage.text_seen);
+        assert!(
+            !json_frames(&output)
+                .iter()
+                .any(|frame| frame.get("usage").is_some())
+        );
+    }
+    #[test]
+    fn um_native_chat_cumulative_chunks_replace_and_do_not_add_subsets() {
+        let mut bridge = SseBridge::new(CHAT, CHAT, MODEL).unwrap();
+        let first = br#"data: {"id":"synthetic","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}],"usage":{"prompt_tokens":7,"completion_tokens":1,"prompt_tokens_details":{"cached_tokens":3}}}
+
+data: {"id":"synthetic","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":7,"completion_tokens":4,"completion_tokens_details":{"reasoning_tokens":2}}}
+
+data: [DONE]
+
+"#;
+        assert!(bridge.push(first).is_ok());
+        assert!(bridge.finish().is_ok());
+        let usage = bridge.usage_snapshot();
+        assert_eq!(
+            (
+                usage.tokens.input,
+                usage.tokens.output,
+                usage.tokens.cache_read,
+                usage.tokens.reasoning
+            ),
+            (Some(7), Some(4), Some(3), Some(2))
+        );
+        assert!(!usage.tokens.non_monotonic);
+    }
+    #[test]
+    fn um_partial_error_and_decreasing_usage_never_manufacture_stream_success() {
+        let mut bridge = SseBridge::new(CHAT, CHAT, MODEL).unwrap();
+        let first = br#"data: {"id":"synthetic","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":4}}
+
+data: {"id":"synthetic","choices":[],"usage":{"completion_tokens":2}}
+
+data: {"error":{"message":"synthetic failure","type":"synthetic"}}
+
+data: [DONE]
+
+"#;
+        let _ = bridge.push(first);
+        assert_eq!(bridge.finish(), Err(ProtocolError::UpstreamError));
+        let usage = bridge.usage_snapshot();
+        assert_eq!(
+            (usage.tokens.input, usage.tokens.output),
+            (Some(10), Some(2))
+        );
+        assert!(usage.tokens.non_monotonic);
+        let mut truncated = SseBridge::new(CHAT, CHAT, MODEL).unwrap();
+        assert!(
+            truncated
+                .push(
+                    br#"data: {"id":"synthetic","choices":[],"usage":{"prompt_tokens":3}}
+
+"#
+                )
+                .is_ok()
+        );
+        assert_eq!(truncated.finish(), Err(ProtocolError::TruncatedStream));
+        assert_eq!(truncated.usage_snapshot().tokens.output, None);
+    }
+
     const CHAT: Protocol = Protocol::OpenAiChat;
     const MESSAGES: Protocol = Protocol::AnthropicMessages;
     const MODEL: &str = "synthetic-model";

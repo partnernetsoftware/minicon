@@ -269,3 +269,30 @@ GUI roots exit normally and are removed. Evidence:
 `target-six/v0.2.23-provider/k2-final-gates/completion.json` and its linked
 original/child receipts. This is regression evidence, not the new K3 selected
 key/OS clipboard journey, real provider authorization or release qualification.
+
+K3's public selected-key journey now has an integrated runner,
+`scripts/profile-key-handoff-smoke.py`. Its seven nonclipboard observations use
+fresh synthetic ready-state injection and local metadata GET only; the twelve
+Windows CI observations add actual clipboard/key/recipe/failure consumers on a
+disposable desktop. Existing developer CI selects that clipboard scope only on
+Windows x64 normal runs and uploads only its safe receipt, never the private
+fixture carrier. The Windows CI scope remains UNRUN; the local scope has named evidence below;
+synthetic ready state does not establish OAuth, paid inference or Pi execution.
+The actual public sequence does not establish a pending Copy or independent
+main-hook counterexample; the existing K2 boundary receipts retain that scope.
+
+The current integrated default Windows image also passes K3's seven public
+nonclipboard observations, with 26 real local metadata GETs, zero rejecting-proxy
+connections and clean owned-process shutdown. Evidence:
+`target-six/v0.2.23-provider/k3-original-nonclipboard/build-replay.json` and its
+linked safe replay receipt. The build records exact dirty source and pinned bytes;
+it does not claim a clean release, real provider grant or clipboard qualification.
+
+Exact `2133ce1` native run `40214712657` exposes a separate macOS ARM test-fixture
+failure: nine K2 child cases fail private-root setup before their consumer
+assertions because the temporary path retains a symbolic-link ancestor. The
+fixture now canonicalizes its own newly created directory before the unchanged
+private protection call; production policy and all consumer assertions are
+unchanged. Native replay of this test-only repair remains pending. Evidence:
+`target-six/v0.2.23-provider/k2-macos-test-root-repair.json` and the original
+`../v0.2.23-window-half/ci-2133ce1-native/osx-aarch64/receipt/minicon-auth-settings.log`.

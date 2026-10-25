@@ -190,6 +190,35 @@ jobs:
             2>&1 | tee probe-logs/browser-workspace-test.log
           python3 scripts/browser-workspace-smoke.py "$binary" --output probe-logs/browser-workspace
 
+      - name: Qualify profile keys and handoff on an isolated Windows desktop
+        if: matrix.cell == 'win-x86_64' && !inputs.windows_cookie_lifetime_contrast && !inputs.windows_profile_acl_contrast
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary=$(cygpath -w "$PWD/target/browser-canonical/minicon.exe")
+          repo=$(cygpath -w "$PWD")
+          output=$(cygpath -w "$PWD/target/profile-key-handoff")
+          digest=$(python3 -c 'import hashlib,sys;from pathlib import Path;print(hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest())' "$binary")
+          status=0
+          python3 -B scripts/profile-key-handoff-smoke.py --repo "$repo" \
+            --binary "$binary" --binary-sha256 "$digest" --output "$output" \
+            --execute --allow-owned-background-gui --isolated-ci-clipboard || status=$?
+          # The private carrier contains synthetic keys and is never uploaded.
+          # Only this explicit safe receipt belongs in the existing log artifact.
+          if [ -f target/profile-key-handoff/receipt.json ]; then
+            cp target/profile-key-handoff/receipt.json probe-logs/profile-key-handoff.json
+          fi
+          if [ "$status" -ne 0 ]; then exit "$status"; fi
+          python3 - <<'PYVERIFY'
+          import json
+          from pathlib import Path
+          r = json.loads(Path('target/profile-key-handoff/receipt.json').read_bytes())
+          assert r['status'] == 'PASS' and r['actual_public_checks'] == 12
+          assert r['clipboard_mode'] and r['rejecting_proxy_requests'] == 0
+          assert not r['cleanup_errors'] and r['public_upload_allowlist'] == ['receipt.json']
+          PYVERIFY
+
       - name: Qualify native authorization contexts and parked ordinary page
         if: inputs.native_auth_context
         shell: bash
@@ -603,6 +632,7 @@ jobs:
           name: crosscheck-receipt-${{ matrix.cell }}-attempt-${{ github.run_attempt }}
           path: |
             probe-logs/test-receipt.json
+            probe-logs/profile-key-handoff.json
             probe-logs/browser-workspace-test.log
             probe-logs/control-shutdown-response.log
             probe-logs/macos-snap-half-driver.log

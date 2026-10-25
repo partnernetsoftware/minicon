@@ -4,7 +4,7 @@ Parent: [provider gateway](PRD_02_31_01_provider_gateway.md). Account/allocation
 identity: [provider pool](PRD_02_31_01_02_provider_pool.md). Presentation:
 [Harness experience](PRD_02_31_01_01_harness_experience.md). Sequence:
 [0.2.23 plan](../plan/plan-v0.2.23.md#harness-product-redesign-before-publication).
-Status: `[_]` selected design after the owner's 2026-10-25 clarification.
+Status: `[-]` request-accounting implementation in progress after the owner's 2026-10-25 clarification.
 Protocol usage forwarding already exists; a durable statistics/monitoring
 product has not been delivered.
 
@@ -58,6 +58,14 @@ flowchart LR
     SNAP --> WARN[Known low balance / quota / stale state]
     WARN --> ACT[User refreshes, reconnects or changes allocation explicitly]
 ```
+
+## Local request-accounting owner
+
+[Request accounting and retention](PRD_02_31_01_03_01_request_accounting.md)
+owns the accepted UM01/02 capture/observer/writer/summary implementation branch.
+Its execution frontier is recorded there; this parent retains provider metadata,
+monitoring, report product scope and retention ceilings. Do not treat the new
+branch as real-provider, financial-settlement, UI or complete UM acceptance.
 
 ## What the product measures
 

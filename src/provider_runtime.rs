@@ -145,6 +145,7 @@ pub struct ConnectionCheckView {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct View {
     pub load_state: LoadState,
+    pub usage: Arc<crate::provider_server::usage::UsageSummary>,
     pub port: u16,
     pub actual_port: Option<u16>,
     pub accounts: Vec<AccountSummary>,
@@ -177,6 +178,7 @@ impl Default for View {
     fn default() -> Self {
         Self {
             load_state: LoadState::Loading,
+            usage: Default::default(),
             port: 28789,
             actual_port: None,
             accounts: Vec::new(),
@@ -2032,6 +2034,9 @@ fn run_loaded_owner(
     stop_requested: Arc<AtomicU64>,
     incoming: mpsc::Receiver<(u64, Vec<u64>, Action)>,
 ) {
+    // Start the accounting lifetime only for the actual background Owner loop,
+    // not while constructing a non-running Owner value.
+    owner.gateway.install_usage(owner.root.join("usage"));
     owner.batch_gate = pending
         .lock()
         .unwrap_or_else(|error| error.into_inner())
@@ -2053,6 +2058,9 @@ fn run_loaded_owner(
         }
         owner.poll_operation();
         owner.drive_batch();
+        if let Some(summary) = owner.gateway.usage_summary() {
+            owner.view.usage = summary;
+        }
         while let Some(event) = login.poll() {
             let effect = owner.login_event(event);
             publish(&pending, &notify, owner.view.clone(), effect);
@@ -2173,6 +2181,12 @@ fn run_loaded_owner(
     }
     owner.stop();
     let _ = login.shutdown(Duration::from_secs(5));
+    let usage_close = owner.gateway.usage_close_handle();
+    drop(login);
+    drop(owner);
+    if let Some(close) = usage_close {
+        let _ = close.wait_owner();
+    }
 }
 fn clone_secret(secret: Option<&Secret>) -> Result<Option<Secret>, RuntimeError> {
     secret
@@ -2258,6 +2272,34 @@ fn map_server(error: ServerError) -> RuntimeError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn um_actual_runtime_projects_read_only_history_without_start_or_paid_work() {
+        let root = Root::new();
+        let mut runtime = root.runtime();
+        until(&mut runtime, |view| view.usage.revision > 0);
+        assert_eq!(format!("{:?}", runtime.view().usage.state), "Ready");
+        assert_eq!(format!("{:?}", runtime.view().usage.timezone_basis), "Utc");
+        assert_eq!(runtime.view().listener, ListenerState::Stopped);
+        assert_eq!(runtime.view().usage.run_admitted, 0);
+        assert_eq!(runtime.view().usage.windows[2].client.requests, 0);
+        assert!(!root.0.join("client-key").exists());
+        assert!(!root.0.join("gateway.json").exists());
+        drop(runtime);
+        let stored: serde_json::Value = serde_json::from_slice(
+            &filesystem::read_private_bounded(
+                &root.0.join("usage/history.json"),
+                24 * 1024 * 1024 + 65536,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(stored["version"], 1);
+        assert_eq!(
+            stored["open_run"], false,
+            "background Owner final shutdown must drop all producing handles before waiting for actual close"
+        );
+        assert!(stored["details"].as_array().unwrap().is_empty());
+    }
     #[test]
     fn k1_owner_batch_and_stop_gates_refuse_before_key_publication_without_replay() {
         let (root, mut owner, _) = k1_fixture();

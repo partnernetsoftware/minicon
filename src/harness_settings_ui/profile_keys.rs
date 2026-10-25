@@ -644,6 +644,7 @@ mod tests {
             crate::provider_server::random_id().unwrap()
         ));
         std::fs::create_dir(&root).unwrap();
+        let root = std::fs::canonicalize(&root).unwrap();
         minicon_platform::filesystem::protect_private_directory(&root).unwrap();
         let mut config = Config::fresh().unwrap();
         config.version = 2;

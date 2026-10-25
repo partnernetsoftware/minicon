@@ -1,5 +1,7 @@
 //! Product-owned local model routing. This module never executes model tools.
 
+pub(crate) mod usage;
+use crate::provider_protocol::usage::{BillingDialect, UsageObserver};
 use crate::{
     provider_accounts::{
         AccountEdit, AccountPreferences, AccountState, AccountStore, NetworkPolicy,
@@ -565,6 +567,7 @@ pub struct Gateway {
     executable: PathBuf,
     state: Mutex<State>,
     refresh: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    usage: std::sync::OnceLock<usage::UsageHistory>,
     #[cfg(test)]
     fixture_upstream: Mutex<Option<String>>,
     #[cfg(test)]
@@ -572,6 +575,15 @@ pub struct Gateway {
 }
 
 impl Gateway {
+    pub(crate) fn install_usage(&self, root: PathBuf) {
+        let _ = self.usage.get_or_init(|| usage::UsageHistory::open(root));
+    }
+    pub(crate) fn usage_close_handle(&self) -> Option<usage::UsageClose> {
+        self.usage.get().map(usage::UsageHistory::close_handle)
+    }
+    pub(crate) fn usage_summary(&self) -> Option<Arc<usage::UsageSummary>> {
+        self.usage.get().and_then(usage::UsageHistory::summary)
+    }
     pub fn new(
         store: Arc<AccountStore>,
         config: Config,
@@ -611,6 +623,7 @@ impl Gateway {
                 generation: random_id()?,
             }),
             refresh: Mutex::new(HashMap::new()),
+            usage: std::sync::OnceLock::new(),
             #[cfg(test)]
             fixture_upstream: Mutex::new(None),
             #[cfg(test)]
@@ -1427,32 +1440,41 @@ impl Gateway {
 
 impl Handler for Gateway {
     fn admit(&self, head: &RequestHead) -> Result<(), Response> {
-        let state = self
-            .state
-            .lock()
-            .map_err(|_| error_response(None, 503, "internal_error"))?;
-        if state.draining {
-            return Err(error_response(protocol_for(head), 503, "listener_stopping"));
-        }
-        let port = state.config.port;
-        drop(state);
-        if head.header("host").ok().flatten() != Some(format!("127.0.0.1:{port}").as_str())
-            || !matches!(head.header("origin"), Ok(None))
+        let result = (|| {
+            let state = self
+                .state
+                .lock()
+                .map_err(|_| error_response(None, 503, "internal_error"))?;
+            if state.draining {
+                return Err(error_response(protocol_for(head), 503, "listener_stopping"));
+            }
+            let port = state.config.port;
+            drop(state);
+            if head.header("host").ok().flatten() != Some(format!("127.0.0.1:{port}").as_str())
+                || !matches!(head.header("origin"), Ok(None))
+            {
+                return Err(error_response(protocol_for(head), 403, "invalid_origin"));
+            }
+            if !self.authorized(head) {
+                return Err(error_response(
+                    protocol_for(head),
+                    401,
+                    "authentication_error",
+                ));
+            }
+            match (head.method.as_str(), head.path.as_str()) {
+                ("GET", "/v1/models" | "/v1/minicon/binding") if head.content_length == 0 => Ok(()),
+                ("POST", "/v1/chat/completions" | "/v1/messages") => Ok(()),
+                _ => Err(error_response(protocol_for(head), 404, "not_found")),
+            }
+        })();
+        if result.is_err()
+            && model_path(&head.path)
+            && let Some(history) = self.usage.get()
         {
-            return Err(error_response(protocol_for(head), 403, "invalid_origin"));
+            history.reject();
         }
-        if !self.authorized(head) {
-            return Err(error_response(
-                protocol_for(head),
-                401,
-                "authentication_error",
-            ));
-        }
-        match (head.method.as_str(), head.path.as_str()) {
-            ("GET", "/v1/models" | "/v1/minicon/binding") if head.content_length == 0 => Ok(()),
-            ("POST", "/v1/chat/completions" | "/v1/messages") => Ok(()),
-            _ => Err(error_response(protocol_for(head), 404, "not_found")),
-        }
+        result
     }
 
     fn handle(
@@ -1467,16 +1489,42 @@ impl Handler for Gateway {
             return reply.send(response);
         }
         let downstream = protocol_for(&request.head);
-        let result = self.handle_model(request, context, reply);
-        if let Err(error) = result {
-            if reply.started() {
-                let event = stream_error(downstream, error);
-                reply.write(event.as_bytes())?;
-            } else {
-                reply.send(server_error_response(downstream, error))?;
-            }
+        let model_request = model_path(&request.head.path);
+        let mut capture = usage::Capture::unbound();
+        let result = self.handle_model(request, context, reply, &mut capture);
+        // handle_model has now dropped its actual BorrowedLease, before any
+        // additional local error-response write can extend that measurement.
+        capture.lease_released();
+        if model_request
+            && result.is_err()
+            && !capture.bound()
+            && let Some(history) = self.usage.get()
+        {
+            history.reject();
         }
-        Ok(())
+        let delivery = (|| {
+            if let Err(error) = result {
+                if reply.started() {
+                    let event = stream_error(downstream, error);
+                    reply.write(event.as_bytes())?;
+                } else {
+                    reply.send(server_error_response(downstream, error))?;
+                }
+            }
+            Ok(())
+        })();
+        if delivery.is_err() {
+            capture.delivery_failed();
+        }
+        capture.finish(
+            result,
+            if delivery.is_ok() {
+                usage::Delivery::LocalWritesAccepted
+            } else {
+                usage::Delivery::Failed
+            },
+        );
+        delivery
     }
 
     fn failure(&self, failure: local::Failure) -> Response {
@@ -1495,6 +1543,7 @@ impl Gateway {
         request: Request,
         context: &RequestContext,
         reply: &mut Reply,
+        capture: &mut usage::Capture,
     ) -> Result<(), ServerError> {
         if request.head.path == "/v1/models" {
             let state = self.state.lock().map_err(|_| ServerError::Storage)?;
@@ -1574,6 +1623,11 @@ impl Gateway {
             &cancel,
             Some((&request.head, &binding)),
         )?;
+        capture.activate(
+            self.usage.get(),
+            usage::Purpose::Client,
+            usage::Attribution::client(&binding, &lease, &route),
+        );
         let network = &lease.preferences.service;
         // Refresh may legitimately resolve a new organization at the same
         // credential generation. It cannot retarget this bound conversation.
@@ -1601,35 +1655,56 @@ impl Gateway {
             upstream.body = serde_json::to_vec(&body).map_err(|_| ServerError::InvalidConfig)?;
         }
         if !prepared.streaming {
+            capture.dispatched();
             let response = self.collect(upstream, &cancel, NON_STREAM_BYTES, network)?;
+            capture.transport_complete();
+            let mut observation = UsageObserver::new(route.protocol.protocol());
+            observation.set_billing(billing_dialect(route.provider));
+            observation.observe_raw(&response.body);
+            capture.observe(observation.snapshot());
             check_status(response.status)?;
-            let body = protocol::convert_response(
+            let converted = protocol::convert_response_observed(
                 downstream,
                 route.protocol.protocol(),
                 &response.body,
                 &binding.alias,
-            )
-            .map_err(ServerError::Protocol)?;
+                &mut observation,
+            );
+            capture.observe(observation.snapshot());
+            let body = converted.map_err(ServerError::Protocol)?;
+            capture.semantic_complete();
             return reply
                 .send(Response {
                     status: 200,
                     content_type: "application/json",
                     body,
                 })
-                .map_err(|_| ServerError::Cancelled);
+                .map_err(|_| {
+                    capture.delivery_failed();
+                    ServerError::Cancelled
+                });
         }
         upstream.max_response_bytes = protocol::MAX_STREAM_BYTES;
         let mut bridge = SseBridge::new(downstream, route.protocol.protocol(), &binding.alias)
             .map_err(ServerError::Protocol)?
-            .with_include_usage(prepared.include_usage);
+            .with_include_usage(prepared.include_usage)
+            .with_usage_billing(billing_dialect(route.provider));
         let mut error = None;
         let mut status = 0;
+        let timing_offset = capture.elapsed();
+        let started = Instant::now();
+        let first_response = std::cell::Cell::new(None);
+        let first_text = std::cell::Cell::new(None);
+        capture.dispatched();
         // Headers are published only after the first successfully decoded event,
         // keeping early semantic failures in the protocol's ordinary error shape.
         let result = http::request_stream(
             &self.stream_request(upstream),
             &cancel,
             |head| {
+                if first_response.get().is_none() {
+                    first_response.set(Some(timing_offset.saturating_add(started.elapsed())));
+                }
                 status = head.status;
                 if !(200..300).contains(&head.status) {
                     Control::Stop
@@ -1638,7 +1713,11 @@ impl Gateway {
                 }
             },
             |bytes| {
-                match bridge.push(bytes) {
+                let decoded = bridge.push(bytes);
+                if first_text.get().is_none() && bridge.usage_snapshot().text_seen {
+                    first_text.set(Some(timing_offset.saturating_add(started.elapsed())));
+                }
+                match decoded {
                     Ok(events) => {
                         for event in events {
                             if !reply.started() && reply.start(200, "text/event-stream").is_err() {
@@ -1659,7 +1738,12 @@ impl Gateway {
                 Control::Continue
             },
         );
+        capture.observe(bridge.usage_snapshot());
+        capture.timings(first_response.get(), first_text.get());
         if let Some(error) = error {
+            if error == ServerError::Cancelled {
+                capture.delivery_failed();
+            }
             return Err(error);
         }
         result.map_err(|error| match error {
@@ -1667,15 +1751,34 @@ impl Gateway {
             _ => ServerError::Upstream,
         })?;
         check_status(status)?;
-        for event in bridge.finish().map_err(ServerError::Protocol)? {
+        capture.transport_complete();
+        let finished = bridge.finish();
+        capture.observe(bridge.usage_snapshot());
+        let events = finished.map_err(ServerError::Protocol)?;
+        capture.semantic_complete();
+        for event in events {
             if !reply.started() {
-                reply
-                    .start(200, "text/event-stream")
-                    .map_err(|_| ServerError::Cancelled)?;
+                reply.start(200, "text/event-stream").map_err(|_| {
+                    capture.delivery_failed();
+                    ServerError::Cancelled
+                })?;
             }
-            reply.write(&event).map_err(|_| ServerError::Cancelled)?;
+            reply.write(&event).map_err(|_| {
+                capture.delivery_failed();
+                ServerError::Cancelled
+            })?;
         }
         Ok(())
+    }
+}
+
+fn model_path(path: &str) -> bool {
+    matches!(path, "/v1/chat/completions" | "/v1/messages")
+}
+fn billing_dialect(provider: Provider) -> BillingDialect {
+    match provider {
+        Provider::OpenCode => BillingDialect::OpenCode,
+        Provider::DeepSeek => BillingDialect::None,
     }
 }
 
@@ -2184,100 +2287,414 @@ impl Gateway {
         let route = candidate.route();
         validate_route(route)?;
         let lease = BorrowedLease::acquire(self, account, cancel, None)?;
-        let initial = self.store.snapshot(account).map_err(credential_error)?;
-        if !candidate.matches_current(&initial)
-            || initial.generation != lease.generation
-            || initial.preferences.service_generation != lease.preferences.service_generation
-            || initial.preferences.service != lease.preferences.service
-        {
-            return Err(ServerError::BindingChanged);
-        }
-        let mut budget = CatalogueBudget {
-            deadline: deadline.min(Instant::now() + Duration::from_secs(60)),
-            response_bytes: 0,
-        };
-        let network = &lease.preferences.service;
-        self.grant_budgeted(
-            account,
-            cancel,
-            network,
-            &lease.generation,
-            Some(&mut budget),
-        )?;
-        // A same-generation refresh may change organization. Never attach its
-        // new scope to the old exact candidate or send a paid request for it.
-        let refreshed = self.store.snapshot(account).map_err(credential_error)?;
-        if !candidate.matches_current(&refreshed) {
-            return Err(ServerError::BindingChanged);
-        }
-        let grant = self
-            .store
-            .load_grant_for_authority(account, &refreshed.generation, &refreshed.organization)
-            .map_err(credential_error)?;
-        if grant.provider != route.provider {
-            return Err(ServerError::BindingChanged);
-        }
-        let body = match route.protocol {
-            WireProtocol::Chat => {
-                json!({"model":route.model_id,"messages":[{"role":"user","content":"Reply OK."}],"max_tokens":8,"stream":false})
+        let mut capture = usage::Capture::unbound();
+        capture.activate(
+            self.usage.get(),
+            usage::Purpose::Probe,
+            usage::Attribution::probe(candidate.profile(), candidate.alias(), &lease, route),
+        );
+        let mut observation = UsageObserver::new(route.protocol.protocol());
+        observation.set_billing(billing_dialect(route.provider));
+        let result = (|| {
+            let initial = self.store.snapshot(account).map_err(credential_error)?;
+            if !candidate.matches_current(&initial)
+                || initial.generation != lease.generation
+                || initial.preferences.service_generation != lease.preferences.service_generation
+                || initial.preferences.service != lease.preferences.service
+            {
+                return Err(ServerError::BindingChanged);
             }
-            WireProtocol::Messages => {
-                json!({"model":route.model_id,"messages":[{"role":"user","content":"Reply OK."}],"max_tokens":8,"stream":false,"thinking":{"type":"disabled"}})
+            let mut budget = CatalogueBudget {
+                deadline: deadline.min(Instant::now() + Duration::from_secs(60)),
+                response_bytes: 0,
+            };
+            let network = &lease.preferences.service;
+            self.grant_budgeted(
+                account,
+                cancel,
+                network,
+                &lease.generation,
+                Some(&mut budget),
+            )?;
+            // A same-generation refresh may change organization. Never attach its
+            // new scope to the old exact candidate or send a paid request for it.
+            let refreshed = self.store.snapshot(account).map_err(credential_error)?;
+            if !candidate.matches_current(&refreshed) {
+                return Err(ServerError::BindingChanged);
             }
-        };
-        let mut request = route_request(route, &grant, identity, &random_id()?);
-        request.body = serde_json::to_vec(&body).map_err(|_| ServerError::InvalidConfig)?;
-        {
-            // Admission is a linearization point, not a promise that a later
-            // UI edit can retract a byte already handed to the native engine.
-            let state = self.state.lock().map_err(|_| ServerError::Storage)?;
-            self.store
-                .with_snapshot(account, |current| {
-                    if state.disabled.contains(account) || !candidate.matches_current(&current) {
-                        return Err(ServerError::BindingChanged);
-                    }
-                    if cancel.is_cancelled() || !permit.try_admit() {
-                        return Err(ServerError::Cancelled);
-                    }
-                    Ok(())
-                })
-                .map_err(credential_error)??;
-        }
-        let response = budget.collect(self, request, cancel, CATALOG_BYTES, network)?;
-        let _ = budget.remaining()?;
-        check_status(response.status)?;
-        protocol::convert_response(
-            route.protocol.protocol(),
-            route.protocol.protocol(),
-            &response.body,
-            &route.model_id,
-        )
-        .map_err(ServerError::Protocol)?;
-        if cancel.is_cancelled() || !permit.is_admitted() {
-            return Err(ServerError::Cancelled);
-        }
-        let current = self.store.snapshot(account).map_err(credential_error)?;
-        if !candidate.matches_current(&current) {
-            return Err(ServerError::BindingChanged);
-        }
-        let checked_unix_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|_| ServerError::Storage)?
-            .as_millis()
-            .try_into()
-            .map_err(|_| ServerError::Storage)?;
-        if checked_unix_ms == 0 {
-            return Err(ServerError::Storage);
-        }
-        Ok(ProbeObservation {
-            identity: candidate.identity().clone(),
-            checked_unix_ms,
-        })
+            let grant = self
+                .store
+                .load_grant_for_authority(account, &refreshed.generation, &refreshed.organization)
+                .map_err(credential_error)?;
+            if grant.provider != route.provider {
+                return Err(ServerError::BindingChanged);
+            }
+            let body = match route.protocol {
+                WireProtocol::Chat => {
+                    json!({"model":route.model_id,"messages":[{"role":"user","content":"Reply OK."}],"max_tokens":8,"stream":false})
+                }
+                WireProtocol::Messages => {
+                    json!({"model":route.model_id,"messages":[{"role":"user","content":"Reply OK."}],"max_tokens":8,"stream":false,"thinking":{"type":"disabled"}})
+                }
+            };
+            let mut request = route_request(route, &grant, identity, &random_id()?);
+            request.body = serde_json::to_vec(&body).map_err(|_| ServerError::InvalidConfig)?;
+            {
+                // Admission is a linearization point, not a promise that a later
+                // UI edit can retract a byte already handed to the native engine.
+                let state = self.state.lock().map_err(|_| ServerError::Storage)?;
+                self.store
+                    .with_snapshot(account, |current| {
+                        if state.disabled.contains(account) || !candidate.matches_current(&current)
+                        {
+                            return Err(ServerError::BindingChanged);
+                        }
+                        if cancel.is_cancelled() || !permit.try_admit() {
+                            return Err(ServerError::Cancelled);
+                        }
+                        Ok(())
+                    })
+                    .map_err(credential_error)??;
+            }
+            capture.dispatched();
+            let response = budget.collect(self, request, cancel, CATALOG_BYTES, network)?;
+            capture.transport_complete();
+            observation.observe_raw(&response.body);
+            let _ = budget.remaining()?;
+            check_status(response.status)?;
+            protocol::convert_response_observed(
+                route.protocol.protocol(),
+                route.protocol.protocol(),
+                &response.body,
+                &route.model_id,
+                &mut observation,
+            )
+            .map_err(ServerError::Protocol)?;
+            capture.semantic_complete();
+            if cancel.is_cancelled() || !permit.is_admitted() {
+                return Err(ServerError::Cancelled);
+            }
+            let current = self.store.snapshot(account).map_err(credential_error)?;
+            if !candidate.matches_current(&current) {
+                return Err(ServerError::BindingChanged);
+            }
+            let checked_unix_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| ServerError::Storage)?
+                .as_millis()
+                .try_into()
+                .map_err(|_| ServerError::Storage)?;
+            if checked_unix_ms == 0 {
+                return Err(ServerError::Storage);
+            }
+            Ok(ProbeObservation {
+                identity: candidate.identity().clone(),
+                checked_unix_ms,
+            })
+        })();
+        capture.observe(observation.snapshot());
+        drop(lease);
+        capture.lease_released();
+        capture.finish(
+            result.as_ref().map(|_| ()).map_err(|error| *error),
+            usage::Delivery::NotApplicable,
+        );
+        result
     }
 }
 
 #[cfg(test)]
 mod tests {
+    fn um_await_summary(gateway: &Gateway, terminal: u64) -> Arc<usage::UsageSummary> {
+        let deadline = Instant::now() + Duration::from_secs(4);
+        loop {
+            if let Some(summary) = gateway.usage_summary()
+                && summary.run_terminals == terminal
+                && summary.windows[2].client.requests + summary.windows[2].probe.requests
+                    == terminal
+            {
+                return summary;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "actual post-lease usage terminal did not reach the private writer"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+    #[test]
+    fn um_actual_stop_cancels_admitted_probe_without_replay_or_synthetic_final_usage() {
+        let fixture = Fixture::new();
+        let usage_root = fixture.root.with_extension("usage");
+        fixture.gateway.install_usage(usage_root.clone());
+        let (_, _, candidate) = cs03_candidate(&fixture);
+        let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
+        fixture.gateway.fixture_catalogue_upstream(format!(
+            "http://{}/accounting",
+            upstream.local_addr().unwrap()
+        ));
+        let gateway = fixture.gateway.clone();
+        let worker = thread::spawn(move || {
+            gateway.probe_candidate(
+                &candidate,
+                &crate::provider_selection::ProbePermit::new(),
+                "synthetic-accounting",
+                &Arc::new(NetworkHttpCancel::new()),
+                Instant::now() + Duration::from_secs(5),
+            )
+        });
+        let (peer, _, body) = controlled_peer_request(&upstream);
+        assert_eq!(body["max_tokens"], 8);
+        fixture.gateway.begin_stop();
+        assert!(matches!(
+            worker.join().unwrap(),
+            Err(ServerError::Cancelled)
+        ));
+        drop(peer);
+        let summary = um_await_summary(&fixture.gateway, 1);
+        assert_eq!(summary.windows[2].probe.cancelled, 1);
+        assert_eq!(summary.windows[2].probe.coverage, [1, 0, 0, 0]);
+        assert_eq!(summary.windows[2].probe.tokens_final[0].known, [0; 6]);
+        upstream.set_nonblocking(true).unwrap();
+        assert!(
+            matches!(upstream.accept(),Err(error) if error.kind()==std::io::ErrorKind::WouldBlock),
+            "usage recording must never replay a cancelled paid request"
+        );
+        let close = fixture.gateway.usage_close_handle().unwrap();
+        drop(fixture);
+        assert!(close.wait_owner());
+        let _ = std::fs::remove_dir_all(usage_root);
+    }
+    #[test]
+    fn um_actual_client_two_admissions_capture_one_immutable_lease_and_no_metadata_usage() {
+        let fixture = Fixture::new();
+        let mut preferences = fixture
+            .gateway
+            .store
+            .snapshot(&fixture.account)
+            .unwrap()
+            .preferences;
+        preferences.service_generation = "d".repeat(32);
+        fixture
+            .gateway
+            .store
+            .update_preferences(&fixture.account, "Synthetic distinct service", preferences)
+            .unwrap();
+        let usage_root = fixture.root.with_extension("usage");
+        fixture.gateway.install_usage(usage_root.clone());
+        let server = fixture.server();
+        assert!(server.get("/v1/models", "").starts_with("HTTP/1.1 200"));
+        let mut rejected = server.request_key(
+            "/v1/chat/completions",
+            "synthetic-wrong",
+            "",
+            Some(r#"{"messages":[{"role":"user","content":"synthetic"}]}"#),
+        );
+        let mut denied = String::new();
+        rejected.read_to_string(&mut denied).unwrap();
+        assert!(denied.starts_with("HTTP/1.1 401"));
+        let before = fixture.gateway.store.snapshot(&fixture.account).unwrap();
+        let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
+        fixture.gateway.fixture_catalogue_upstream(format!(
+            "http://{}/accounting",
+            upstream.local_addr().unwrap()
+        ));
+        let mut client = server.request(
+            "/v1/chat/completions",
+            "",
+            Some(r#"{"messages":[{"role":"user","content":"synthetic"}]}"#),
+        );
+        let (peer, _, body) = controlled_peer_request(&upstream);
+        assert_eq!(body["model"], "fixture-wire");
+        let mut changed = before.preferences.clone();
+        changed.service_generation = "e".repeat(32);
+        fixture
+            .gateway
+            .store
+            .update_preferences(&fixture.account, "Synthetic changed preference", changed)
+            .unwrap();
+        let mut response = cs03_completion();
+        response["usage"] = json!({"prompt_tokens":7,"completion_tokens":3,"total_tokens":10,"cost":0,"opencode":{"billing_source":"go","allowance":0.25}});
+        reply_controlled_peer(peer, response);
+        let mut output = String::new();
+        client.read_to_string(&mut output).unwrap();
+        assert!(output.starts_with("HTTP/1.1 200"), "{output}");
+        let summary = um_await_summary(&fixture.gateway, 1);
+        assert_eq!(
+            (
+                summary.run_admitted,
+                summary.run_terminals,
+                summary.run_rejected
+            ),
+            (1, 1, 1),
+            "header/body admission and metadata must not manufacture model receipts"
+        );
+        assert_eq!(
+            (
+                summary.windows[2].client.requests,
+                summary.windows[2].probe.requests
+            ),
+            (1, 0)
+        );
+        assert_eq!(summary.windows[2].client.tokens_final[0].sum[0], 7);
+        assert_eq!(
+            summary.windows[2]
+                .client
+                .billing_final
+                .allowance_plan_usd
+                .exact,
+            "0.25"
+        );
+        let history: Value = serde_json::from_slice(
+            &minicon_platform::filesystem::read_private_bounded(
+                &usage_root.join("history.json"),
+                24 * 1024 * 1024 + 65536,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            history["details"][0]["attribution"]["authority"]["service"],
+            before.preferences.service_generation,
+            "terminal attribution must retain the admitted lease, not the later account snapshot"
+        );
+        assert_eq!(history["details"].as_array().unwrap().len(), 1);
+        drop(server);
+        let close = fixture.gateway.usage_close_handle().unwrap();
+        drop(fixture);
+        assert!(
+            close.wait_owner(),
+            "owned usage writer still active; do not delete its root"
+        );
+        let _ = std::fs::remove_dir_all(usage_root);
+    }
+    #[test]
+    fn um_actual_paid_probe_retains_remote_usage_after_post_response_authority_rejection() {
+        let fixture = Fixture::new();
+        let usage_root = fixture.root.with_extension("usage");
+        fixture.gateway.install_usage(usage_root.clone());
+        let (_, _, candidate) = cs03_candidate(&fixture);
+        let before = fixture.gateway.store.snapshot(&fixture.account).unwrap();
+        let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
+        fixture.gateway.fixture_catalogue_upstream(format!(
+            "http://{}/accounting",
+            upstream.local_addr().unwrap()
+        ));
+        let gateway = fixture.gateway.clone();
+        let worker = thread::spawn(move || {
+            gateway.probe_candidate(
+                &candidate,
+                &crate::provider_selection::ProbePermit::new(),
+                "synthetic-accounting",
+                &Arc::new(NetworkHttpCancel::new()),
+                Instant::now() + Duration::from_secs(5),
+            )
+        });
+        let (peer, _, body) = controlled_peer_request(&upstream);
+        assert_eq!(body["max_tokens"], 8);
+        let mut changed = before.preferences.clone();
+        changed.service_generation = "e".repeat(32);
+        fixture
+            .gateway
+            .store
+            .update_preferences(&fixture.account, "Synthetic changed preference", changed)
+            .unwrap();
+        let mut response = cs03_completion();
+        response["usage"] = json!({"prompt_tokens":5,"completion_tokens":2,"cost":0.125,"opencode":{"billing_source":"balance"}});
+        reply_controlled_peer(peer, response);
+        assert!(matches!(
+            worker.join().unwrap(),
+            Err(ServerError::BindingChanged)
+        ));
+        let summary = um_await_summary(&fixture.gateway, 1);
+        assert_eq!(
+            (
+                summary.windows[2].client.requests,
+                summary.windows[2].probe.requests
+            ),
+            (0, 1)
+        );
+        assert_eq!(summary.windows[2].probe.failed, 1);
+        assert_eq!(
+            summary.windows[2].probe.tokens_final[0].sum[1], 2,
+            "stale proof must not erase real already-consumed upstream usage"
+        );
+        assert_eq!(
+            summary.windows[2]
+                .probe
+                .billing_final
+                .reported_cost_usd
+                .exact,
+            "0.125"
+        );
+        let history: Value = serde_json::from_slice(
+            &minicon_platform::filesystem::read_private_bounded(
+                &usage_root.join("history.json"),
+                24 * 1024 * 1024 + 65536,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(history["details"][0]["outcome"], "AuthorityChanged");
+        assert_eq!(
+            history["details"][0]["attribution"]["authority"]["service"],
+            before.preferences.service_generation
+        );
+        let close = fixture.gateway.usage_close_handle().unwrap();
+        drop(fixture);
+        assert!(
+            close.wait_owner(),
+            "owned usage writer still active; do not delete its root"
+        );
+        let _ = std::fs::remove_dir_all(usage_root);
+    }
+    #[test]
+    fn um_actual_stream_eof_keeps_partial_usage_without_changing_error_delivery() {
+        let fixture = Fixture::new();
+        let usage_root = fixture.root.with_extension("usage");
+        fixture.gateway.install_usage(usage_root.clone());
+        let server = fixture.server();
+        let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
+        fixture.gateway.fixture_catalogue_upstream(format!(
+            "http://{}/accounting",
+            upstream.local_addr().unwrap()
+        ));
+        let mut client = server.request(
+            "/v1/chat/completions",
+            "",
+            Some(r#"{"messages":[{"role":"user","content":"synthetic"}],"stream":true}"#),
+        );
+        let (mut peer, _, _) = controlled_peer_request(&upstream);
+        let body = "data: {\"id\":\"synthetic\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"partial\"},\"finish_reason\":null}],\"usage\":{\"prompt_tokens\":8,\"completion_tokens\":2}}\n\n";
+        write!(peer,"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+        peer.flush().unwrap();
+        drop(peer);
+        let mut output = String::new();
+        client.read_to_string(&mut output).unwrap();
+        assert!(output.starts_with("HTTP/1.1 200"));
+        assert!(output.contains("partial"));
+        assert!(output.contains(
+            "data: {\"error\":{\"type\":\"api_error\",\"message\":\"model_stream_failed\"}}\n\n"
+        ));
+        assert!(!output.contains("data: [DONE]"));
+        let summary = um_await_summary(&fixture.gateway, 1);
+        assert_eq!(summary.windows[2].client.coverage, [0, 1, 0, 0]);
+        assert_eq!(summary.windows[2].client.tokens_partial[0].sum[0], 8);
+        assert_eq!(
+            summary.windows[2].client.tokens_partial[0].sum[1], 2,
+            "reported output before EOF remains partial, not a synthetic Final"
+        );
+        assert_eq!(summary.windows[2].client.failed, 1);
+        drop(server);
+        let close = fixture.gateway.usage_close_handle().unwrap();
+        drop(fixture);
+        assert!(
+            close.wait_owner(),
+            "owned usage writer still active; do not delete its root"
+        );
+        let _ = std::fs::remove_dir_all(usage_root);
+    }
+
     #[test]
     fn k1_gateway_generation_failure_precedes_actual_disk_callback_and_live_swap() {
         let fixture = Fixture::new();

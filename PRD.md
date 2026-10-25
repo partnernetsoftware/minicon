@@ -57,7 +57,8 @@ MiniCon — one-file local terminal
 │           │   ├── [-] Applied-profile private keys → prd/PRD_02_31_01_02_02_profile_keys.md
 │           │   └── [-] Account catalogues / drafts / verified atomic apply → prd/PRD_02_31_01_02_01_connection_selection.md
 │           │       └── [-] Whole-profile Verify and apply → prd/PRD_02_31_01_02_01_01_profile_verification.md
-│           └── [_] Usage statistics / balance and allowance monitoring → prd/PRD_02_31_01_03_usage_monitoring.md
+│           └── [-] Usage statistics / balance and allowance monitoring → prd/PRD_02_31_01_03_usage_monitoring.md
+│               └── [-] Exact request accounting / private retention → prd/PRD_02_31_01_03_01_request_accounting.md
 ├── Reusable foundations → prd/PRD_02_28_shared_core.md
 │   ├── [-] Commit-aware private publication → prd/PRD_02_28_02_private_publication.md
 │   ├── minicon-core — shared rules; not a complete terminal engine
@@ -109,6 +110,7 @@ flowchart LR
     POOL["PRD 31.01.02: account networks / keyed client allocations"] --> GW
     KEYS["PRD 31.01.02.02: exact profile-key publication / finite secret delivery"] --> POOL
     GW --> MON["PRD 31.01.03: attributed usage / provider balances and quota"]
+    ACCT["PRD 31.01.03.01: once-only terminal / exact source usage / bounded history"] --> MON
     ROB["PRD 36: robot beside Settings / visual Harness workspace"] --> HX
     POOL & MON --> ROB
     BV["PRD 31.01.02.01.01: quoted profile checks / explicit commit cutoff"] --> POOL

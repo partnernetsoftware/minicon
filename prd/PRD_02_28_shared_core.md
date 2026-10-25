@@ -45,7 +45,7 @@ Outcome: maintain one terminal implementation with explicit reusable boundaries
 │       └── [-] product-private model gateway / manual account selection → PRD 31.01
 │           ├── [_] connection journey / state projection / recovery → PRD 31.01.01
 │           ├── [-] account-specific networks / keyed client allocation → PRD 31.01.02
-│           └── [_] usage receipts / balance and allowance monitoring → PRD 31.01.03
+│           └── [-] usage receipts / balance and allowance monitoring → PRD 31.01.03
 ├── [_] Future CU product library / optional CLI — reserved crates/minicon-cu; PRD 38
 │   └── target/admission/observation/action meaning; native mechanisms stay in platform
 ├── Reusable rules — crates/minicon-core
@@ -789,3 +789,12 @@ belongs to PRD 38, host-control meaning to PRD 26 and owned-window shortcuts to
 PRD 25.04. Do not import AgenTerm product owners, grants or receipts, duplicate
 native adapters, or infer native availability from a shared API. CU's proposed
 external CLI and later service decisions are owned by PRD 38, not this map.
+
+### Local request-accounting join (implementation in progress)
+
+[The accounting owner](PRD_02_31_01_03_01_request_accounting.md) owns product
+attribution, exact usage/billing, retention and cached summaries. It reuses the
+existing minicon-platform HTTP/SSE transport and typed private publication;
+it adds no shared OS/ISA API or accounting policy to the platform. RawValue is
+an existing serde_json feature, not a new SSE/transport engine. Execution status is owned by that module; this reuse map does not confer
+provider or native qualification.
