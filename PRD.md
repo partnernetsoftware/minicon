@@ -55,6 +55,7 @@ MiniCon — one-file local terminal
 │           │   └── [-] Account catalogues / drafts / verified atomic apply → prd/PRD_02_31_01_02_01_connection_selection.md
 │           └── [_] Usage statistics / balance and allowance monitoring → prd/PRD_02_31_01_03_usage_monitoring.md
 ├── Reusable foundations → prd/PRD_02_28_shared_core.md
+│   ├── [-] Commit-aware private publication → prd/PRD_02_28_02_private_publication.md
 │   ├── minicon-core — shared rules; not a complete terminal engine
 │   ├── minicon-ui-core — host-neutral UI mechanisms with internal ISA kernels
 │   ├── minicon-platform — capability contracts and native OS/ISA/ABI adapters

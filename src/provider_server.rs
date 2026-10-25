@@ -121,6 +121,14 @@ pub struct Config {
     pub profiles: Vec<ClientProfile>,
 }
 
+/// Both outcomes have installed the complete configuration. A durability
+/// warning must not leave live routing behind already-published disk state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConfigPublication {
+    Durable,
+    DurabilityUnconfirmed,
+}
+
 impl Config {
     pub fn fresh() -> Result<Self, ServerError> {
         Ok(Self {
@@ -294,14 +302,15 @@ impl Gateway {
 
     #[cfg(test)]
     pub fn update(&self, config: Config) -> Result<(), ServerError> {
-        self.update_and_publish(config, || Ok(()))
+        self.update_and_publish(config, || Ok(ConfigPublication::Durable))
+            .map(|_| ())
     }
 
     pub fn update_and_publish(
         &self,
         config: Config,
-        publish: impl FnOnce() -> Result<(), ServerError>,
-    ) -> Result<(), ServerError> {
+        publish: impl FnOnce() -> Result<ConfigPublication, ServerError>,
+    ) -> Result<ConfigPublication, ServerError> {
         config.validate()?;
         #[cfg(test)]
         if self
@@ -353,7 +362,7 @@ impl Gateway {
         }
         // Validation, locking and entropy can fail; finish them before the
         // runtime publishes bytes. No fallible preparation follows publication.
-        publish()?;
+        let publication = publish()?;
         state.generation = generation;
         state.route_generations = generations;
         state.sessions.retain(|session| {
@@ -381,7 +390,7 @@ impl Gateway {
         state.config = config;
         // Keep existing mappings: their old generation must produce 409 rather
         // than silently starting a replacement upstream conversation.
-        Ok(())
+        Ok(publication)
     }
 
     #[cfg(test)]

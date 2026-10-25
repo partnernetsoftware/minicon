@@ -115,7 +115,21 @@ with matching localStorage; their owner and receipts remain in PRD 28. The
 shutdown/flush hypothesis is unproven. The release-boundary change must run the
 same native oracle before its persistence effect can be claimed.
 
-NR-01..03 remain open until actual native execution. Pure event reducers and
+Run `40169994716` at `51a3894c0d7263ab179ddc07f3f3385f96b77683` actually
+retested both Windows ISAs. Both still fail the initial native journey at
+reopened A: cookie `missing`, localStorage `matches`, after the three ordinary/A/B
+checks pass. The failure is not a reported release timeout or unsupported
+subscription; the reopened page actually loads and reports. There is no separate
+raw matching-exit event trace yet, so page arrival alone does not qualify the
+native observation. The two deliberate native faults and restored variant do
+not execute after the initial failure. Independent artifact, source, protocol
+and restoration verification is retained in
+`target-six/v0.2.23-provider/ci-51a3894-native-release/verification-index.json`.
+The release ordering change has not repaired cookie persistence. Keep the same
+oracle while investigating actual profile mode, persistence and bounded fixture
+diagnostics; do not add arbitrary delay or claim the event guarantees a flush.
+
+NR-01..03 remain open until their actual native checks and event evidence pass. Pure event reducers and
 injected pending/cancel tests cannot certify SDK callback delivery or cookie
 persistence. Linux helper release and macOS identified-store deletion require
 their own native mechanisms; Windows success cannot qualify them.

@@ -5,10 +5,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 #[cfg(feature = "filesystem")]
 use std::{
-    ffi::OsString,
     fs::OpenOptions,
-    io::{self, Read as _, Write as _},
-    sync::atomic::{AtomicU64, Ordering},
+    io::{self, Read as _},
 };
 
 use crate::selected;
@@ -174,77 +172,12 @@ pub fn private_create_new_options() -> OpenOptions {
 /// created exclusively with owner-only Unix mode or the protected Windows
 /// parent ACL, flushed, atomically promoted on the same volume, and removed on
 /// failure. An error from the final parent sync may occur after publication.
+/// Use [`crate::filesystem_publish::write_private_atomic`] when the caller must
+/// distinguish completed publication from a pre-publication failure.
 #[cfg(feature = "filesystem")]
 pub fn write_private_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    static NEXT_TEMPORARY: AtomicU64 = AtomicU64::new(1);
-
-    let parent = path.parent().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "private atomic target requires a parent directory",
-        )
-    })?;
-    let file_name = path.file_name().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "private atomic target requires a file name",
-        )
-    })?;
-    match std::fs::symlink_metadata(path) {
-        Ok(metadata)
-            if !crate::filesystem_entry::metadata_entry_facts(&metadata).is_real_file() =>
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "private atomic target must be a real regular file entry",
-            ));
-        }
-        Ok(_) => {}
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error),
-    }
-    let mut created = None;
-    for _ in 0..32 {
-        let mut temporary_name = OsString::from(".");
-        temporary_name.push(file_name);
-        temporary_name.push(format!(
-            ".platform-private-{}-{}",
-            std::process::id(),
-            NEXT_TEMPORARY.fetch_add(1, Ordering::Relaxed)
-        ));
-        let temporary = parent.join(temporary_name);
-        match private_create_new_options().open(&temporary) {
-            Ok(file) => {
-                created = Some((temporary, file));
-                break;
-            }
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-            Err(error) => return Err(error),
-        }
-    }
-    let (temporary, mut file) = created.ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            "private atomic temporary name attempts exhausted",
-        )
-    })?;
-    let mut cleanup = TemporaryFile::new(temporary.clone());
-    // Name the step in every error. The caller reports `error.kind()`, and
-    // three different operations here can answer `PermissionDenied` -- creating
-    // the temporary, replacing the destination, or syncing the directory. One
-    // release gate cost several rounds to a wrong guess about which.
-    let step = |what: &str, error: io::Error| {
-        io::Error::new(
-            error.kind(),
-            format!("private atomic publish failed at {what}: {error}"),
-        )
-    };
-    file.write_all(bytes).map_err(|e| step("write", e))?;
-    file.sync_all().map_err(|e| step("sync", e))?;
-    drop(file);
-    replace_file(&temporary, path).map_err(|e| step("replace", e))?;
-    cleanup.disarm();
-    sync_parent(parent).map_err(|e| step("sync-parent", e))
+    crate::filesystem_publish::write_private_atomic(path, bytes)
+        .map_err(crate::filesystem_publish::FilePublishError::into_private_io)
 }
 
 /// Read an owner-private regular file without following link-like path entries.
@@ -274,32 +207,6 @@ pub fn read_private_bounded(path: &Path, max_bytes: usize) -> io::Result<Vec<u8>
         ));
     }
     Ok(bytes)
-}
-
-#[cfg(feature = "filesystem")]
-struct TemporaryFile {
-    path: PathBuf,
-    armed: bool,
-}
-
-#[cfg(feature = "filesystem")]
-impl TemporaryFile {
-    fn new(path: PathBuf) -> Self {
-        Self { path, armed: true }
-    }
-
-    fn disarm(&mut self) {
-        self.armed = false;
-    }
-}
-
-#[cfg(feature = "filesystem")]
-impl Drop for TemporaryFile {
-    fn drop(&mut self) {
-        if self.armed {
-            let _ = std::fs::remove_file(&self.path);
-        }
-    }
 }
 
 #[cfg(test)]

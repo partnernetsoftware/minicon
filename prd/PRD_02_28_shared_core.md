@@ -204,14 +204,10 @@ keeps catalogue ownership, per-profile drafts, verification identities and
 applied-route migration in product-owned `provider_*` modules. Reuse shared
 private atomic publication, bounded HTTP and cancellation mechanisms; do not
 move provider organization or allocation policy into shared native adapters.
-That join requires a commit-aware private-publication result: distinguish a
-failure before replacement from a completed replacement with an unconfirmed
-durability barrier. Preserve the existing private temporary/file permissions,
-regular-entry checks and meaningful I/O error categories. The generic
-`filesystem_publish::write_file_atomic` staging helper alone does not establish
-the private-file contract; reuse the shared publication mechanism with private
-creation, rather than adding product-owned OS permission/rename code. This
-private result seam is planned, not implemented by the selection design.
+The [commit-aware private-publication owner](PRD_02_28_02_private_publication.md)
+owns the shared result, privacy, compatibility and consumer-alignment contracts.
+Its development join is a prerequisite; it does not complete catalogue/draft/
+verification or profile application.
 
 The [cluster horizon](PRD_02_37_cluster_horizon.md) reserves product-owned node
 identity, pairing/authority, origin-scoped projection and operation reconciliation.

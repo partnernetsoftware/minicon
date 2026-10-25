@@ -27,6 +27,7 @@ pub struct FilePublishError {
     kind: FilePublishErrorKind,
     detail: String,
     published: bool,
+    source: Option<io::Error>,
 }
 
 impl FilePublishError {
@@ -50,7 +51,47 @@ impl FilePublishError {
             kind,
             detail: detail.into(),
             published: false,
+            source: None,
         }
+    }
+
+    /// Original I/O category when an operation supplied one. Logical input
+    /// errors retain InvalidInput; other errors without an I/O source use Other.
+    pub fn io_kind(&self) -> io::ErrorKind {
+        self.source.as_ref().map_or_else(
+            || {
+                if self.kind == FilePublishErrorKind::InvalidInput {
+                    io::ErrorKind::InvalidInput
+                } else {
+                    io::ErrorKind::Other
+                }
+            },
+            io::Error::kind,
+        )
+    }
+
+    fn from_io(kind: FilePublishErrorKind, step: &str, error: io::Error) -> Self {
+        Self {
+            kind,
+            detail: format!("{step}: {error}"),
+            published: false,
+            source: Some(error),
+        }
+    }
+
+    // Legacy private writes returned inspection/create OS errors directly.
+    // Keep raw_os_error for those steps, and retain the typed boundary on
+    // wrapped write/sync/install/durability failures.
+    #[cfg(feature = "filesystem")]
+    pub(crate) fn into_private_io(mut self) -> io::Error {
+        if matches!(
+            self.kind,
+            FilePublishErrorKind::Inspect | FilePublishErrorKind::Create
+        ) && let Some(source) = self.source.take()
+        {
+            return source;
+        }
+        self.into()
     }
 
     fn after_publish(mut self) -> Self {
@@ -65,16 +106,17 @@ impl fmt::Display for FilePublishError {
     }
 }
 
-impl std::error::Error for FilePublishError {}
+impl std::error::Error for FilePublishError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.source
+            .as_ref()
+            .map(|error| error as &dyn std::error::Error)
+    }
+}
 
 impl From<FilePublishError> for io::Error {
     fn from(error: FilePublishError) -> Self {
-        let kind = if error.kind == FilePublishErrorKind::InvalidInput {
-            io::ErrorKind::InvalidInput
-        } else {
-            io::ErrorKind::Other
-        };
-        Self::new(kind, error)
+        Self::new(error.io_kind(), error)
     }
 }
 
@@ -222,6 +264,127 @@ pub fn write_file_atomic<T>(
     Ok(value)
 }
 
+/// Atomically publish private bytes with an explicit publication boundary.
+///
+/// The caller creates and protects the parent with
+/// [`crate::filesystem::protect_private_directory`]. Exclusive staging requests
+/// Unix 0600 or inherits the protected Windows parent ACL. Real regular entries,
+/// file synchronization, replacement and parent synchronization are checked.
+/// A failure with `published() == true` means the complete new bytes are already
+/// installed but the parent durability barrier failed; do not roll back live
+/// state as if the old bytes remained. False means this call did not publish,
+/// without making a claim about independent writers. Ownership:
+/// `prd/PRD_02_28_shared_core.md`.
+#[cfg(feature = "filesystem")]
+pub fn write_private_atomic(destination: &Path, bytes: &[u8]) -> Result<(), FilePublishError> {
+    write_private_atomic_with(
+        destination,
+        bytes,
+        crate::selected::filesystem_publish::replace_file,
+        crate::selected::filesystem_publish::sync_parent,
+    )
+}
+
+#[cfg(feature = "filesystem")]
+fn write_private_atomic_with<R, S>(
+    destination: &Path,
+    bytes: &[u8],
+    replace: R,
+    sync_parent: S,
+) -> Result<(), FilePublishError>
+where
+    R: FnOnce(&Path, &Path) -> io::Result<()>,
+    S: FnOnce(&Path) -> io::Result<()>,
+{
+    static NEXT_TEMPORARY: AtomicU64 = AtomicU64::new(1);
+
+    let parent = destination.parent().ok_or_else(|| {
+        FilePublishError::new(
+            FilePublishErrorKind::InvalidInput,
+            "private atomic target requires a parent directory",
+        )
+    })?;
+    let name = destination.file_name().ok_or_else(|| {
+        FilePublishError::new(
+            FilePublishErrorKind::InvalidInput,
+            "private atomic target requires a file name",
+        )
+    })?;
+    match fs::symlink_metadata(destination) {
+        Ok(metadata)
+            if !crate::filesystem_entry::metadata_entry_facts(&metadata).is_real_file() =>
+        {
+            return Err(FilePublishError::new(
+                FilePublishErrorKind::InvalidInput,
+                "private atomic target must be a real regular file entry",
+            ));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(FilePublishError::from_io(
+                FilePublishErrorKind::Inspect,
+                "inspect private atomic target failed",
+                error,
+            ));
+        }
+    }
+    let mut created = None;
+    for _ in 0..32 {
+        let mut temporary_name = OsString::from(".");
+        temporary_name.push(name);
+        temporary_name.push(format!(
+            ".platform-private-{}-{}",
+            std::process::id(),
+            NEXT_TEMPORARY.fetch_add(1, Ordering::Relaxed)
+        ));
+        let temporary = parent.join(temporary_name);
+        match crate::filesystem::private_create_new_options().open(&temporary) {
+            Ok(file) => {
+                created = Some((temporary, file));
+                break;
+            }
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(error) => {
+                return Err(FilePublishError::from_io(
+                    FilePublishErrorKind::Create,
+                    "create private atomic temporary failed",
+                    error,
+                ));
+            }
+        }
+    }
+    let (temporary, mut file) = created.ok_or_else(|| {
+        FilePublishError::from_io(
+            FilePublishErrorKind::Create,
+            "create private atomic temporary failed",
+            io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "private temporary name attempts exhausted",
+            ),
+        )
+    })?;
+    let mut cleanup = TemporaryFile::new(temporary.clone());
+    io::Write::write_all(&mut file, bytes).map_err(|error| {
+        FilePublishError::from_io(
+            FilePublishErrorKind::Write,
+            "write private atomic temporary failed",
+            error,
+        )
+    })?;
+    file.sync_all().map_err(|error| {
+        FilePublishError::from_io(
+            FilePublishErrorKind::SyncFile,
+            "sync private atomic temporary failed",
+            error,
+        )
+    })?;
+    drop(file);
+    publish_reserved_sibling_with(&temporary, destination, replace, sync_parent)?;
+    cleanup.disarm();
+    Ok(())
+}
+
 /// Lets a path-oriented encoder fill a reserved sibling temporary, then
 /// synchronizes and atomically publishes that complete file.
 ///
@@ -342,20 +505,39 @@ fn publish_reserved_sibling(
     staging: &Path,
     destination: &Path,
 ) -> Result<FilePublishOutcome, FilePublishError> {
+    publish_reserved_sibling_with(
+        staging,
+        destination,
+        crate::selected::filesystem_publish::replace_file,
+        crate::selected::filesystem_publish::sync_parent,
+    )
+}
+
+fn publish_reserved_sibling_with<R, S>(
+    staging: &Path,
+    destination: &Path,
+    replace: R,
+    sync_parent: S,
+) -> Result<FilePublishOutcome, FilePublishError>
+where
+    R: FnOnce(&Path, &Path) -> io::Result<()>,
+    S: FnOnce(&Path) -> io::Result<()>,
+{
     let staging_metadata = fs::symlink_metadata(staging).map_err(|error| {
-        FilePublishError::new(
+        FilePublishError::from_io(
             FilePublishErrorKind::Inspect,
-            format!("inspect prepared file failed: {error}"),
+            "inspect prepared file failed",
+            error,
         )
     })?;
-    if !staging_metadata.file_type().is_file() || staging_metadata.file_type().is_symlink() {
+    if !crate::filesystem_entry::metadata_entry_facts(&staging_metadata).is_real_file() {
         return Err(FilePublishError::new(
             FilePublishErrorKind::InvalidInput,
             "prepared path must remain a real regular file entry",
         ));
     }
     let replaced_existing = match fs::symlink_metadata(destination) {
-        Ok(metadata) if metadata.file_type().is_file() && !metadata.file_type().is_symlink() => {
+        Ok(metadata) if crate::filesystem_entry::metadata_entry_facts(&metadata).is_real_file() => {
             true
         }
         Ok(_) => {
@@ -366,9 +548,10 @@ fn publish_reserved_sibling(
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => false,
         Err(error) => {
-            return Err(FilePublishError::new(
+            return Err(FilePublishError::from_io(
                 FilePublishErrorKind::Inspect,
-                format!("inspect destination file failed: {error}"),
+                "inspect destination file failed",
+                error,
             ));
         }
     };
@@ -378,8 +561,8 @@ fn publish_reserved_sibling(
         destination,
         parent,
         replaced_existing,
-        crate::selected::filesystem_publish::replace_file,
-        crate::selected::filesystem_publish::sync_parent,
+        replace,
+        sync_parent,
     )
 }
 
@@ -462,15 +645,17 @@ where
     S: FnOnce(&Path) -> io::Result<()>,
 {
     replace(staging, destination).map_err(|error| {
-        FilePublishError::new(
+        FilePublishError::from_io(
             FilePublishErrorKind::Install,
-            format!("install prepared file failed: {error}"),
+            "install prepared file failed",
+            error,
         )
     })?;
     sync_parent(parent).map_err(|error| {
-        FilePublishError::new(
+        FilePublishError::from_io(
             FilePublishErrorKind::Durability,
-            format!("sync published file parent failed: {error}"),
+            "sync published file parent failed",
+            error,
         )
         .after_publish()
     })?;
@@ -811,6 +996,262 @@ mod tests {
         fs::create_dir(&staging).expect("create staging");
         fs::write(staging.join("value"), value).expect("write staging value");
         staging
+    }
+
+    #[cfg(feature = "filesystem")]
+    fn private_fixture(label: &str) -> PathBuf {
+        let root = fixture(label);
+        fs::create_dir(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        crate::filesystem::protect_private_directory(&root).unwrap();
+        root
+    }
+
+    #[cfg(all(feature = "filesystem", unix))]
+    fn assert_private_access(path: &Path) {
+        use std::os::unix::fs::PermissionsExt as _;
+        assert_eq!(
+            fs::metadata(path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+
+    #[cfg(all(feature = "filesystem", windows))]
+    fn assert_private_access(path: &Path) {
+        use std::os::windows::ffi::OsStrExt as _;
+        use std::ptr::null_mut;
+        use windows_sys::Win32::{
+            Foundation::LocalFree,
+            Security::{
+                ACCESS_ALLOWED_ACE, ACE_HEADER, ACL_SIZE_INFORMATION, AclSizeInformation,
+                Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT},
+                DACL_SECURITY_INFORMATION, EqualSid, GetAce, GetAclInformation,
+            },
+            System::SystemServices::ACCESS_ALLOWED_ACE_TYPE,
+        };
+        struct Descriptor(*mut std::ffi::c_void);
+        impl Drop for Descriptor {
+            fn drop(&mut self) {
+                unsafe {
+                    LocalFree(self.0);
+                }
+            }
+        }
+        let wide: Vec<u16> = fs::canonicalize(path)
+            .unwrap()
+            .as_os_str()
+            .encode_wide()
+            .chain(Some(0))
+            .collect();
+        let mut dacl = null_mut();
+        let mut descriptor = null_mut();
+        assert_eq!(
+            unsafe {
+                GetNamedSecurityInfoW(
+                    wide.as_ptr(),
+                    SE_FILE_OBJECT,
+                    DACL_SECURITY_INFORMATION,
+                    null_mut(),
+                    null_mut(),
+                    &mut dacl,
+                    null_mut(),
+                    &mut descriptor,
+                )
+            },
+            0
+        );
+        let _descriptor = Descriptor(descriptor);
+        assert!(!dacl.is_null(), "private file has a null DACL");
+        let identity = crate::user_identity::current_user_identity().unwrap();
+        let sid = identity.windows_sid().unwrap();
+        let mut aligned_sid = vec![0_usize; sid.len().div_ceil(std::mem::size_of::<usize>())];
+        unsafe {
+            std::ptr::copy_nonoverlapping(sid.as_ptr(), aligned_sid.as_mut_ptr().cast(), sid.len());
+        }
+        let mut size = ACL_SIZE_INFORMATION {
+            AceCount: 0,
+            AclBytesInUse: 0,
+            AclBytesFree: 0,
+        };
+        assert_ne!(
+            unsafe {
+                GetAclInformation(
+                    dacl,
+                    (&mut size as *mut ACL_SIZE_INFORMATION).cast(),
+                    std::mem::size_of::<ACL_SIZE_INFORMATION>() as u32,
+                    AclSizeInformation,
+                )
+            },
+            0
+        );
+        assert!(size.AceCount > 0, "private file has an empty DACL");
+        for index in 0..size.AceCount {
+            let mut ace = null_mut();
+            assert_ne!(unsafe { GetAce(dacl, index, &mut ace) }, 0);
+            let header = unsafe { &*ace.cast::<ACE_HEADER>() };
+            assert_eq!(u32::from(header.AceType), ACCESS_ALLOWED_ACE_TYPE);
+            let allowed = unsafe { &*ace.cast::<ACCESS_ALLOWED_ACE>() };
+            assert_ne!(allowed.Mask, 0);
+            assert_ne!(
+                unsafe {
+                    EqualSid(
+                        (&allowed.SidStart as *const u32).cast_mut().cast(),
+                        aligned_sid.as_mut_ptr().cast(),
+                    )
+                },
+                0,
+                "private file grants access to another trustee"
+            );
+        }
+    }
+
+    #[cfg(feature = "filesystem")]
+    #[test]
+    fn private_publication_distinguishes_precommit_and_postcommit_failures() {
+        let root = private_fixture("private-boundary");
+        let destination = root.join("state");
+        write_private_atomic(&destination, b"old").unwrap();
+        let before = write_private_atomic_with(
+            &destination,
+            b"new",
+            |staging, _| {
+                assert_eq!(
+                    crate::filesystem::read_private_bounded(staging, 3).unwrap(),
+                    b"new"
+                );
+                assert_private_access(staging);
+                Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "injected before replacement",
+                ))
+            },
+            |_| panic!("failed replacement must not synchronize a publication"),
+        )
+        .unwrap_err();
+        assert_eq!(before.kind(), FilePublishErrorKind::Install);
+        assert_eq!(before.io_kind(), io::ErrorKind::PermissionDenied);
+        assert!(!before.published());
+        assert_eq!(
+            crate::filesystem::read_private_bounded(&destination, 3).unwrap(),
+            b"old"
+        );
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+        let compatibility: io::Error = before.into();
+        assert_eq!(compatibility.kind(), io::ErrorKind::PermissionDenied);
+
+        let after = write_private_atomic_with(
+            &destination,
+            b"new",
+            crate::selected::filesystem_publish::replace_file,
+            |_| {
+                assert_eq!(
+                    crate::filesystem::read_private_bounded(&destination, 3).unwrap(),
+                    b"new"
+                );
+                Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "injected parent barrier failure",
+                ))
+            },
+        )
+        .unwrap_err();
+        assert_eq!(after.kind(), FilePublishErrorKind::Durability);
+        assert!(after.published());
+        assert_eq!(after.io_kind(), io::ErrorKind::TimedOut);
+        assert_eq!(
+            std::error::Error::source(&after)
+                .unwrap()
+                .downcast_ref::<io::Error>()
+                .unwrap()
+                .kind(),
+            io::ErrorKind::TimedOut
+        );
+        assert_eq!(
+            crate::filesystem::read_private_bounded(&destination, 3).unwrap(),
+            b"new"
+        );
+        assert_private_access(&destination);
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+        let compatibility: io::Error = after.into();
+        assert_eq!(compatibility.kind(), io::ErrorKind::TimedOut);
+        assert!(
+            compatibility
+                .get_ref()
+                .unwrap()
+                .downcast_ref::<FilePublishError>()
+                .unwrap()
+                .published()
+        );
+        crate::filesystem_cleanup::remove_tree(&root).unwrap();
+    }
+
+    #[cfg(feature = "filesystem")]
+    #[test]
+    fn private_publication_keeps_staging_and_legacy_replacement_private() {
+        let root = private_fixture("private-access");
+        let destination = root.join("state");
+        write_private_atomic_with(
+            &destination,
+            b"first",
+            |staging, target| {
+                assert_private_access(staging);
+                assert_eq!(
+                    crate::filesystem::read_private_bounded(staging, 5).unwrap(),
+                    b"first"
+                );
+                crate::selected::filesystem_publish::replace_file(staging, target)
+            },
+            crate::selected::filesystem_publish::sync_parent,
+        )
+        .unwrap();
+        assert_private_access(&destination);
+        crate::filesystem::write_private_atomic(&destination, b"second").unwrap();
+        assert_private_access(&destination);
+        assert_eq!(
+            crate::filesystem::read_private_bounded(&destination, 6).unwrap(),
+            b"second"
+        );
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+        crate::filesystem_cleanup::remove_tree(&root).unwrap();
+    }
+
+    #[cfg(feature = "filesystem")]
+    #[test]
+    fn private_publication_refuses_nonregular_targets_and_preserves_io_category() {
+        let root = private_fixture("private-refusal");
+        let directory = root.join("directory");
+        fs::create_dir(&directory).unwrap();
+        let outside = root.join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("sentinel"), b"unchanged").unwrap();
+        let link = root.join("link");
+        directory_link(&outside, &link);
+        for destination in [&directory, &link] {
+            let error = write_private_atomic(destination, b"secret").unwrap_err();
+            assert_eq!(error.kind(), FilePublishErrorKind::InvalidInput);
+            assert!(!error.published());
+            assert_eq!(error.io_kind(), io::ErrorKind::InvalidInput);
+            assert_eq!(
+                crate::filesystem::write_private_atomic(destination, b"secret")
+                    .unwrap_err()
+                    .kind(),
+                io::ErrorKind::InvalidInput
+            );
+        }
+        assert_eq!(fs::read(outside.join("sentinel")).unwrap(), b"unchanged");
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 3);
+        let error = write_private_atomic(&root.join("missing/state"), b"secret").unwrap_err();
+        assert_eq!(error.kind(), FilePublishErrorKind::Create);
+        assert!(!error.published());
+        assert_eq!(error.io_kind(), io::ErrorKind::NotFound);
+        let legacy =
+            crate::filesystem::write_private_atomic(&root.join("missing/state"), b"secret")
+                .unwrap_err();
+        assert_eq!(legacy.kind(), io::ErrorKind::NotFound);
+        let native = fs::File::create(root.join("missing/probe")).unwrap_err();
+        assert!(native.raw_os_error().is_some());
+        assert_eq!(legacy.raw_os_error(), native.raw_os_error());
+        crate::filesystem_cleanup::remove_tree(&root).unwrap();
     }
 
     #[test]

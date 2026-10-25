@@ -492,6 +492,11 @@ impl HarnessSettings {
             .clone()
             .or_else(|| self.auth_error.as_ref().map(|(_, message)| message.clone()))
             .or_else(|| self.account_draft.save_error.map(|error| error.to_string()))
+            .or_else(|| {
+                self.view
+                    .config_durability_unconfirmed
+                    .then(|| provider_runtime::CONFIG_DURABILITY_WARNING.to_owned())
+            })
             .or_else(|| self.view.status.clone())
     }
 
@@ -1826,6 +1831,25 @@ mod tests {
         settings.view.auth_attempt = Some(provider_runtime::AttemptId(43));
         settings.reconcile_auth_result();
         assert!(settings.auth_error.is_none());
+    }
+
+    #[test]
+    fn published_config_warning_survives_metadata_status_until_a_confirmed_save() {
+        let mut settings = HarnessSettings::default();
+        settings.view.config_durability_unconfirmed = true;
+        settings.view.status = Some("Accounts refreshed.".into());
+        assert_eq!(
+            settings.status().as_deref(),
+            Some(provider_runtime::CONFIG_DURABILITY_WARNING)
+        );
+        settings.error = Some("Unrelated invalid draft".into());
+        assert_eq!(
+            settings.status().as_deref(),
+            Some("Unrelated invalid draft")
+        );
+        settings.error = None;
+        settings.view.config_durability_unconfirmed = false;
+        assert_eq!(settings.status().as_deref(), Some("Accounts refreshed."));
     }
 
     #[test]

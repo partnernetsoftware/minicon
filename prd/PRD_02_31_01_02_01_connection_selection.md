@@ -135,6 +135,9 @@ replacement followed by a failed durability barrier is already published: keep
 disk/live state aligned and report the durability warning truthfully. Reuse the
 shared publication result's committed/published distinction; a generic I/O error
 cannot prove that old bytes remain. Never claim rollback after replacement.
+The [private-publication owner](PRD_02_28_02_private_publication.md) records the
+shared typed result and current gateway-save consumer checkpoint. That
+prerequisite does not qualify verified atomic profile Apply on its own.
 
 Change only affected profile/alias generations when effective routing changes.
 Unrelated live streams and sessions survive catalogue reads and another

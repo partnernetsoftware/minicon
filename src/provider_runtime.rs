@@ -62,6 +62,7 @@ pub struct View {
     pub auth_attempt: Option<AttemptId>,
     pub auth_result: Option<(AttemptId, AuthOutcome)>,
     pub local_key_exists: bool,
+    pub config_durability_unconfirmed: bool,
     pub status: Option<String>,
 }
 
@@ -82,6 +83,7 @@ impl Default for View {
             auth_attempt: None,
             auth_result: None,
             local_key_exists: false,
+            config_durability_unconfirmed: false,
             status: None,
         }
     }
@@ -369,7 +371,7 @@ fn login_event(event: LoginEvent, view: &mut View, store: &AccountStore) -> Opti
     Some(Effect::AuthFinished(attempt))
 }
 
-use crate::provider_server::{Config, Gateway, ModelRoute, ServerError};
+use crate::provider_server::{Config, ConfigPublication, Gateway, ModelRoute, ServerError};
 use minicon_platform::{
     filesystem, network_http_stream::NetworkHttpCancel, network_loopback::Server,
 };
@@ -379,6 +381,8 @@ enum OperationResult {
     Catalog(Vec<ModelRoute>),
     Tested,
 }
+
+pub const CONFIG_DURABILITY_WARNING: &str = "Settings saved and applied; disk durability could not be confirmed. Save again when storage is available.";
 struct Operation {
     cancel: Arc<NetworkHttpCancel>,
     worker: JoinHandle<Result<OperationResult, RuntimeError>>,
@@ -452,6 +456,11 @@ impl Owner {
             .retain(|receipt| accounts.iter().any(|account| account.id == receipt.account));
         self.view.accounts = accounts;
         self.view.account_preferences = preferences;
+        self.refresh_connection_view();
+        Ok(())
+    }
+
+    fn refresh_connection_view(&mut self) {
         let provider = self
             .view
             .accounts
@@ -470,19 +479,38 @@ impl Owner {
             .collect();
         self.view.local_key_exists = self.key.is_some();
         self.view.busy = self.operation.is_some() || self.view.login_active;
-        Ok(())
     }
     fn save(&mut self, config: Config) -> Result<(), RuntimeError> {
+        self.save_with(config, |path, bytes| {
+            match minicon_platform::filesystem_publish::write_private_atomic(path, bytes) {
+                Ok(()) => Ok(ConfigPublication::Durable),
+                Err(error) if error.published() => Ok(ConfigPublication::DurabilityUnconfirmed),
+                Err(_) => Err(ServerError::Storage),
+            }
+        })
+    }
+
+    fn save_with(
+        &mut self,
+        config: Config,
+        publish: impl FnOnce(&Path, &[u8]) -> Result<ConfigPublication, ServerError>,
+    ) -> Result<(), RuntimeError> {
         config.validate().map_err(map_server)?;
         let bytes = serde_json::to_vec(&config).map_err(|_| RuntimeError::Corrupt)?;
-        self.gateway
+        // Account reads may fail. Finish them before publication so a later
+        // metadata read cannot turn an already-applied save into a false error.
+        self.refresh_view()?;
+        let publication = self
+            .gateway
             .update_and_publish(config.clone(), || {
-                filesystem::write_private_atomic(&self.root.join("gateway.json"), &bytes)
-                    .map_err(|_| ServerError::Storage)
+                publish(&self.root.join("gateway.json"), &bytes)
             })
             .map_err(map_server)?;
         self.config = config;
-        self.refresh_view()
+        self.view.config_durability_unconfirmed =
+            publication == ConfigPublication::DurabilityUnconfirmed;
+        self.refresh_connection_view();
+        Ok(())
     }
     fn cancel_operation(&mut self) {
         if let Some(operation) = self.operation.take() {
@@ -1578,6 +1606,79 @@ mod tests {
         assert_eq!(owner.view.port, port);
         assert_eq!(Owner::load(root.0.clone()).unwrap().config.port, port);
     }
+
+    #[test]
+    fn published_configuration_warning_keeps_disk_gateway_owner_and_view_aligned() {
+        let root = Root::new();
+        let (mut owner, _) = seed_ready(&root);
+        let mut server = owner.gateway.start(owner.config.port).unwrap();
+        let transport = |session: &str| crate::harness_gateway::GatewayTransport {
+            base: format!("http://{}/v1", server.address()),
+            session: session.into(),
+            cancelled: Arc::new(AtomicBool::new(false)),
+        };
+        let old = transport("before-publication")
+            .binding("synthetic-client", Duration::from_secs(4))
+            .unwrap();
+        let mut changed = owner.config.clone();
+        changed.models[0].model_id = "published-wire-model".into();
+        let registry = root.0.join("accounts/accounts.json");
+        let account_bytes = filesystem::read_private_bounded(&registry, 1024 * 1024).unwrap();
+        let result = owner.save_with(changed.clone(), |path, bytes| {
+            minicon_platform::filesystem_publish::write_private_atomic(path, bytes).unwrap();
+            // Declared consumer fault: the bytes really changed, then an
+            // unconfirmed barrier outcome is supplied. The shared writer's
+            // independent test supplies the actual replace/barrier failure.
+            // Also make a post-publication metadata read genuinely fail.
+            filesystem::write_private_atomic(&registry, b"unavailable metadata").unwrap();
+            Ok(ConfigPublication::DurabilityUnconfirmed)
+        });
+        filesystem::write_private_atomic(&registry, &account_bytes).unwrap();
+        assert_eq!(result, Ok(()));
+        assert_eq!(owner.config, changed);
+        assert!(owner.view.config_durability_unconfirmed);
+        assert_eq!(owner.view.model, changed.model);
+        assert_eq!(Owner::load(root.0.clone()).unwrap().config, changed);
+        let after = transport("after-publication")
+            .binding("synthetic-client", Duration::from_secs(4))
+            .unwrap();
+        assert_eq!(after.model, "published-wire-model");
+        assert_ne!(after.generation, old.generation);
+        assert!(
+            transport("before-publication")
+                .binding("synthetic-client", Duration::from_secs(4))
+                .is_err()
+        );
+
+        let applied =
+            filesystem::read_private_bounded(&root.0.join("gateway.json"), 1024 * 1024).unwrap();
+        let mut rejected = changed.clone();
+        rejected.models[0].model_id = "must-not-apply".into();
+        assert_eq!(
+            owner.save_with(rejected, |_, _| Err(ServerError::Storage)),
+            Err(RuntimeError::Storage)
+        );
+        assert_eq!(owner.config, changed);
+        assert!(owner.view.config_durability_unconfirmed);
+        assert_eq!(std::fs::read(root.0.join("gateway.json")).unwrap(), applied);
+        assert_eq!(
+            transport("after-publication")
+                .binding("synthetic-client", Duration::from_secs(4))
+                .unwrap(),
+            after
+        );
+
+        owner.save(changed).unwrap();
+        assert!(!owner.view.config_durability_unconfirmed);
+        assert_eq!(
+            transport("after-publication")
+                .binding("synthetic-client", Duration::from_secs(4))
+                .unwrap(),
+            after
+        );
+        server.stop();
+    }
+
     #[test]
     fn private_client_key_creation_copy_and_explicit_revocation_persist() {
         let root = Root::new();
