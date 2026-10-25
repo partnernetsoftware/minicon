@@ -87,12 +87,13 @@ def metadata(path, binary_hash, helper_hash):
             or not isinstance(data.get("features"), list)
             or "native-auth-court" not in data["features"]
             or not all(isinstance(item, str) and re.fullmatch(r"[a-z0-9_-]{1,64}", item) for item in data["features"])
+            or data.get("diagnostic_features") != (["minicon-web/native-profile-diagnostics"] if host_os() == "windows" else [])
             or data.get("os") != host_os()
             or data.get("isa") not in ("x86_64", "aarch64")):
         raise CourtError("build-metadata-invalid")
     if data.get("binary_sha256") != binary_hash or data.get("helper_sha256") != helper_hash:
         raise CourtError("build-metadata-byte-identity-mismatch")
-    return {name: data[name] for name in ("source_commit", "features", "os", "isa", "binary_sha256")} | {
+    return {name: data[name] for name in ("source_commit", "features", "diagnostic_features", "os", "isa", "binary_sha256")} | {
         "helper_sha256": helper_hash,
         "build_metadata_verified_byte_identity": True,
         "source_authority": "external-build-declaration-bound-to-measured-bytes",
@@ -485,6 +486,7 @@ def validate(driver, observed, build, driver_snapshot):
     if (driver.get("kind") != "native-auth-court-test-build"
             or driver.get("test_only") is not True or driver.get("production_test_build") is not True
             or driver.get("features") != build["features"]
+            or driver.get("diagnostic_features") != build["diagnostic_features"]
             or driver.get("os") != build["os"] or driver.get("isa") != build["isa"]):
         raise CourtError("driver-test-build-identity-mismatch")
     if driver.get("status") == "BLOCKED" and driver.get("failure_code") == "native-court-native-host-unsupported":

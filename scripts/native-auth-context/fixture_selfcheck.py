@@ -195,6 +195,39 @@ class ProtocolChecks(unittest.TestCase):
         self.assertEqual(state.failure, "fixture-deadline-expired")
 
 
+    def test_cookie_diagnostic_feature_identity_is_bound_before_accepting_driver_result(self):
+        import run as native_runner
+
+        declared_features = ["default", "experimental-rust-console", "native-auth-court"]
+        diagnostic = ["minicon-web/native-profile-diagnostics"]
+        declaration = dict(schema=1, source_commit="a" * 40, test_only=True,
+                           features=declared_features, diagnostic_features=diagnostic,
+                           os="windows", isa="x86_64", binary_sha256="b" * 64,
+                           helper_sha256=None)
+        observed = dict(checks={name: True for name in native_runner.CHECKS},
+                        run_sha256="c" * 64,
+                        page_get_counts={name: 1 for name in fixture.PHASES},
+                        report_count=8, report_hashes={}, observation_status="complete",
+                        failure=None)
+        driver = dict(kind="native-auth-court-test-build", test_only=True,
+                      production_test_build=True, features=declared_features,
+                      diagnostic_features=diagnostic, os="windows", isa="x86_64",
+                      status="native-observations-complete", fixture=observed)
+        with tempfile.TemporaryDirectory() as scratch, patch.object(native_runner, "host_os", return_value="windows"):
+            path = Path(scratch) / "build.json"
+            fixture.private_json(path, declaration)
+            build = native_runner.metadata(path, "b" * 64, None)
+            self.assertEqual(build["diagnostic_features"], diagnostic)
+            self.assertIsNone(native_runner.validate(driver, observed, build, observed))
+            for changed in [[], ["other"], diagnostic + ["undeclared"]]:
+                fixture.private_json(path, dict(declaration, diagnostic_features=changed))
+                with self.assertRaisesRegex(native_runner.CourtError, "build-metadata-invalid"):
+                    native_runner.metadata(path, "b" * 64, None)
+                for status in ["native-observations-complete", "FAIL"]:
+                    mismatched = dict(driver, diagnostic_features=changed, status=status)
+                    with self.assertRaisesRegex(native_runner.CourtError, "driver-test-build-identity-mismatch"):
+                        native_runner.validate(mismatched, observed, build, observed)
+
     def test_common_diagnostic_root_guard_blocks_all_reads_but_missing_carrier_does_not(self):
         import run as native_runner
         from types import SimpleNamespace

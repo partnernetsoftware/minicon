@@ -906,6 +906,8 @@ struct ConApp {
     /// terminal sessions, and only present when the node kind is Browser.
     browsers: SessionStore<browser::BrowserTab>,
     browser_auth: Option<harness_auth_ui::AuthPresentation>,
+    #[cfg(all(windows, feature = "native-auth-court"))]
+    native_auth_cookie_probe: Option<harness_auth_court::PreNavigationCookieProbe>,
     #[cfg(windows)]
     auth_context_lifecycle: harness_auth_ui::AuthContextLifecycle,
     dismissed_auth_attempt: Option<provider_runtime::AttemptId>,
@@ -1435,6 +1437,8 @@ impl ConApp {
             sessions,
             browsers: SessionStore::default(),
             browser_auth: None,
+            #[cfg(all(windows, feature = "native-auth-court"))]
+            native_auth_cookie_probe: None,
             #[cfg(windows)]
             auth_context_lifecycle: Default::default(),
             dismissed_auth_attempt: None,
@@ -2553,6 +2557,10 @@ impl ConApp {
             return;
         }
         self.ensure_native_page(window);
+        #[cfg(all(windows, feature = "native-auth-court"))]
+        if self.defer_native_court_cookie_navigation(window, url) {
+            return;
+        }
         let result = self
             .native_browser_page
             .as_ref()

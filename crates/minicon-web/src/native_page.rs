@@ -21,6 +21,13 @@ use wry::{
 
 use crate::{BrowserProxy, PageContext, PageContextError, PageProfile, PanelSlot};
 use std::{cell::RefCell, rc::Rc};
+#[cfg(all(windows, feature = "native-profile-diagnostics"))]
+mod windows_cookie_diagnostics;
+#[cfg(all(windows, feature = "native-profile-diagnostics"))]
+pub use windows_cookie_diagnostics::{
+    NativeCookieMetadataCounts, NativeCookieMetadataProbe, NativeCookieMetadataStatus,
+    NativeCookieMetadataSummary,
+};
 
 #[cfg(target_os = "macos")]
 fn macos_proxy_endpoint(
@@ -281,6 +288,26 @@ impl NativePageHost {
         }
         .validate()?;
         Ok(relative.to_path_buf())
+    }
+
+    /// Value-free, exact-URI observation for a dedicated test artifact only.
+    /// Start/poll/drop solely on this host's owning STA; never logs the URI.
+    #[cfg(all(windows, feature = "native-profile-diagnostics"))]
+    pub fn cookie_metadata_for_diagnostics(
+        &self,
+        profile: &PageProfile,
+        uri: &str,
+        generation: u64,
+        deadline: std::time::Instant,
+        wake: impl Fn() + 'static,
+    ) -> NativeCookieMetadataProbe {
+        if verify_windows_profile(&self.webview, profile).is_err() {
+            return NativeCookieMetadataProbe::unavailable(
+                NativeCookieMetadataStatus::ContextUnavailable,
+                deadline,
+            );
+        }
+        NativeCookieMetadataProbe::start(&self.webview, uri, generation, deadline, wake)
     }
 
     /// Create the visible, bounded first-party home surface.

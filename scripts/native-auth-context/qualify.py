@@ -26,6 +26,7 @@ INPUTS = (
     "crates/minicon-web/Cargo.toml",
     "crates/minicon-web/src/lib.rs", "crates/minicon-web/src/native_page.rs",
     "crates/minicon-web/src/native_page/windows_release.rs",
+    "crates/minicon-web/src/native_page/windows_cookie_diagnostics.rs",
     "crates/minicon-web/src/profile.rs", "crates/minicon-web/src/wry_host.rs",
     "scripts/native-auth-context/fixture.py", "scripts/native-auth-context/page.js",
     "scripts/native-auth-context/fixture_selfcheck.py", "scripts/native-auth-context/verify_protocol.py",
@@ -112,7 +113,9 @@ def main():
         if command(build, build_log, env, 900) != 0:
             raise RuntimeError(f"{label}: build failed; this is not a runtime counterexample")
         metadata = dict(schema=1, source_commit=source, test_only=True,
-                        features=["default", "experimental-rust-console", "native-auth-court"], binary_sha256=sha(binary),
+                        features=["default", "experimental-rust-console", "native-auth-court"],
+                        diagnostic_features=["minicon-web/native-profile-diagnostics"] if system == "windows" else [],
+                        binary_sha256=sha(binary),
                         helper_sha256=sha(helper) if helper else None,
                         os=system, isa=isa, source_sha256=hashes(),
                         source_tree_clean=not negative, variant=label,

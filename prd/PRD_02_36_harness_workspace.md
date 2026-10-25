@@ -436,16 +436,21 @@ unchanged. The repaired public journey passes locally; removing the actual
 production pane-capture guard makes its explicit Console pixel assertion fail,
 then the same journey passes after byte-exact restoration:
 `target-six/v0.2.23-provider/h0-visible-sampling-controls/receipt.json`.
-New matching-source Mac feedback remains open; neither failed run is a release
-six-cell or native physical-input pass.
+That local repair required subsequent matching-source Mac feedback; neither
+failed run is a release six-cell or native physical-input pass.
 
 The subsequent restored-source local integration passes both public H0/menu
 journeys and all 22 canonical native-browser checks with default executable
 SHA-256 `d7957c21b78d1d19e4b59148f0e52ab5529527f122c8c15df5de345ba32a34bc`.
 Receipt: `target-six/v0.2.23-provider/cs02-final-gate-receipt.json`; native host
 PNGs and fresh live-document reports are under `cs02-artifact-local-final/` in
-that output root. This remains Windows local development evidence; new-source
-Mac feedback and physical-input/artifact qualification retain the boundary above.
+that output root. This remains Windows local development evidence.
+The subsequent matching-source native development run at `5411903` passes the
+H0 public journey on Mac ARM and the other selected cells;
+[PRD 32](PRD_02_32_dev_loop_crosscheck.md#version-3-compatibility-and-h0-native-feedback)
+owns the exact run/source/archive audit. This closes the earlier development
+sampler regression; physical-input/scales and release-artifact qualification
+remain open.
 
 Sixteen actual runtime assertion failures cover projection, attempt identity,
 geometry, loading, host/pane capture, Browser restoration, scratch-frame discard,

@@ -708,3 +708,30 @@ Full narrative and the owner-correction history that led here:
 `plan/plan-carried-debt.md`'s G1 leaf (not archived — this module records
 the accepted, standing mechanism; the plan leaf keeps the exploration
 history that produced it).
+
+### Version-3 compatibility and H0 native feedback
+
+The exact source `54119037581cfc023eb0c30eeb4ea4011713e2da` completes all six
+provider-filtered native development cells in
+[`40182929017`](https://github.com/partnernetsoftware/minicon/actions/runs/40182929017),
+attempt 1. The single-job API, source identity, raw test logs, six artifact ZIP
+digests/sizes and screenshots are independently audited in
+`target-six/v0.2.23-provider/ci-5411903-native/verification-index.json`
+(SHA-256 `f1443a66245d95c3d65e7d6f8a3c9c7daf29c3eeebec8e1274b68ddaed282333`).
+
+There are 1730 passing Rust execution instances, six unselected Pi opt-in ignores
+and no unexpected failures. Four deliberate retained-group assertion failures
+are counted separately; both macOS cells also retain their initial/restored
+passing checks and exact restored source. Each cell actually executes all ten
+new configuration/resolver consumers and one H0 public journey. Canonical
+ordinary-browser smoke passes 22 checks per cell; auth/settings/profile/process,
+geometry and pending-control suites have nonzero execution. In particular,
+the repaired sampler passes on Mac ARM after the two retained failed sources
+recorded by [the H0 owner](PRD_02_36_harness_workspace.md).
+
+This run selects neither dedicated native authorization nor private-publication
+fault qualification. Native Cookie persistence, real provider entitlement,
+physical keyboard/IME/scales and release six-cell/signing/Promotion remain
+separate obligations. Uploaded receipts contain no product executable for an
+independent PE/ELF/Mach-O header reread; that particular check stays BLOCKED.
+The audit uses only exact-commit Git blobs, not later local diagnostic changes.

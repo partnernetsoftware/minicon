@@ -570,6 +570,11 @@ Those native journeys and the product integration remain open.
 [Native context lifecycle](PRD_02_28_01_browser_context_lifecycle.md) owns the
 release observation and same-context reuse boundary. The court below retains
 the independent storage/live-page oracle; a release callback does not replace it.
+Its [feature-only CookieManager diagnostic](PRD_02_28_01_browser_context_lifecycle.md#feature-only-cookiemanager-metadata-diagnostic-in-progress)
+keeps the owning-STA native query/status/cancellation mechanism inside
+`minicon-web`, with fixture/action authority in the product's dedicated driver.
+The default product does not expose this diagnostic API; its finite observations
+and scoped evidence remain with that owner.
 
 The next development join exercises the existing product auth presentation and
 shared native hosts through a non-default `native-auth-court` test build. The

@@ -25,7 +25,7 @@ Outcome: reuse an account's browser context only after its previous native host 
 │   evidence: NR-02 A -> B -> A native storage journey and bounded pending-state regression
 │   safe failure: deadline/cancel leaves the ordinary live page and other accounts intact
 │   dependency: OBSERVE and serial auth presentation; non-goal: sleeping or blocking the GUI thread
-├── [_] QUALIFY — distinguish release ordering from persistence and visibility claims
+├── [-] QUALIFY — distinguish release ordering from persistence and visibility claims
 │   invariant: close callback alone does not establish cookie persistence or successful OAuth
 │   evidence: NR-03 unchanged cookie/localStorage oracle, source identity and actual failure control
 │   safe failure: preserve the failed observation and investigate its actual cause
@@ -36,6 +36,12 @@ Outcome: reuse an account's browser context only after its previous native host 
 │   safe failure: unavailable locator leaves the storage verdict unchanged
 │   dependency: mandatory profile verification and non-default diagnostics feature
 │   non-goal: recursive discovery, cookie values, decryption or production profile export
+├── [-] COOKIE METADATA — observe finite fixture-origin native metadata before navigation/release
+│   invariant: exact live attempt/context/action/recipe and one owned queued action
+│   evidence: new feature-only mechanism/driver assertions and matching-source Windows SDK court
+│   safe failure: finite unavailable within the original deadline; stale/cancelled actions never resume
+│   dependency: verified native host, dedicated court and unchanged storage oracle
+│   non-goal: cookie values, provider profiles, persistence waits/flush/repair or changing the oracle
 └── [_] LATER DELETE — compose release with an explicitly authorized store deletion
     invariant: observation, deletion and durable completion are separate results
     evidence: future OS-specific deletion/retry courts; currently unavailable
@@ -62,6 +68,10 @@ flowchart TD
     OPEN --> SDK[Recheck actual UDF / persistent ProfilePath]
     SDK --> FINITE[Public finite layout class]
     SDK --> PRIVATE[Feature-only private run/store/phase locator]
+    V -. dedicated fixture feature only .-> QUERY[Exact localhost URI / owning STA CookieManager]
+    QUERY --> META[Bounded status/counts; no names/values/raw expiry]
+    META -. revalidate original action / bounded resume .-> CLOSE
+    META --> STORE
     PRIVATE --> ROOTS{Fresh roots and every ancestor valid?}
     ROOTS -->|yes| DB[Bounded immutable value-free DB counts]
     ROOTS -->|no| UNAVAILABLE[No diagnostic file reads / unchanged court verdict]
@@ -272,5 +282,72 @@ binary hash are independently checked in
 `target-six/v0.2.23-provider/ci-5344921-auth-diagnosis/verification-index.json`.
 No executable was downloaded for an independent PE-header reread. The ordinary
 browser smoke's 22 checks pass; they do not substitute for failed authorization
-cookie persistence. A further feature-only exact-origin, pre-navigation cookie
-metadata observation is under design, not implemented or qualified here.
+cookie persistence. The next finite metadata diagnostic is specified below;
+its runtime and matching-source SDK qualification remain open.
+
+### Feature-only CookieManager metadata diagnostic (in progress)
+
+The dedicated Windows court adds a shared `native-profile-diagnostics` query,
+using the existing actual verified host on its owning STA. It accepts only the
+exact fixture localhost URI, never an empty query or a provider profile scan.
+At most 64 cookies contribute finite total/session/persistent/expiry buckets.
+Names, values, domain/path strings, raw expiry values, URI, COM interfaces and
+HRESULT text are absent from its public result. Unsupported/failed/timed-out
+reads have unavailable counts, never invented zeros. Callback state is weak,
+generation-owned and non-Send; callback bodies/wake cannot unwind across COM,
+and cancel/drop never waits for a callback.
+
+There are at most four public observations: A, B and reopened A before their
+original target navigation, plus live A immediately before its context release.
+Each contains only phase, stage, finite status and counts. A query has at most
+two seconds from actual begin and cannot extend the court deadline. Before
+navigation release and Ready/ack, the product rechecks the current pending
+Action's kind/sequence/phase/full URI against the immutable recipe and actual
+attempt/context; captured URI equality alone cannot authorize another action.
+
+The extra live-A sample begins only when a valid B notice follows A's actual
+fixture report and acknowledgment. B stays in one separate owned slot; normal
+pending is empty so old A/HOME Ready cannot acknowledge B. On completion or
+finite unavailable, recheck old A, queued B, last acknowledgment and empty normal
+pending; drop query references on the STA, then dispatch that original B once.
+Close, exit, replacement, overlap and late callbacks cannot dispatch stale work.
+
+Original page/fixture bytes and all eight storage-oracle checks are unchanged.
+This extra asynchronous observation perturbs close timing even without sleeps,
+retries or forced flushes. A later unchanged-oracle PASS alone cannot establish
+a production persistence repair. SDK metadata, fixture cookie identity, normal
+profile release, disk observations and durable persistence stay distinct facts.
+
+The integrated Windows checks pass three shared reducers and four driver
+consumers in `target-six/v0.2.23-provider/cookie-v2-preflight-receipt.json`,
+including actual pinned SDK API compilation and strict default/dedicated-feature
+Clippy. The default main inventory remains 679; the dedicated feature adds four
+driver tests. These reducers do not instantiate a native view or deliver a COM
+callback. Its bounded pending-action/queued-B static review is retained in
+`target-six/v0.2.23-provider/windows-cookie-manager-v2-readonly-review.json`.
+
+Ten actual Rust runtime assertion controls cover bounds, generation, URI
+restriction, independent pending action, cancellation/deadline, Ready gating
+and the single causally authorized B slot. The chain is
+`target-six/v0.2.23-provider/cookie-v2-runtime-controls-remaining/receipt.json`:
+four accepted controls reuse matching source hashes from the first failed
+receipt, six complete afterward, and all seven tests pass after exact restore.
+The first cancellation classifier expected the preceding return-value assertion
+but the mutant actually failed the Cancelled-result assertion. That failed
+classification remains retained; the corrected consumer assertion is rerun,
+never counted as a setup failure or silently relabelled PASS.
+
+The Python receipt consumer additionally checks that the declared diagnostic
+feature matches the actual driver even on driver failure. Its new test passes
+with the fourteen existing fixture checks. Removing each build/driver identity
+condition produces an actual assertion RED, then restores byte-exactly and
+passes: `target-six/v0.2.23-provider/cookie-v2-feature-identity-controls/receipt.json`.
+Original fixture/page sources and the eight native oracle conditions remain
+unchanged; synthetic protocol outcomes cannot establish those native results.
+
+The frozen local join passes 46 Rust executions, fifteen Python checks and all
+22 default ordinary-browser checks, with formatting and both strict Clippy
+profiles: `target-six/v0.2.23-provider/cookie-v2-final-gate-receipt.json`.
+Only this owning PRD's evidence is updated afterward. Independent postcommit
+verification and a new matching-source Windows SDK/cookie court remain open.
+The old verified-directory storage failure remains the current native verdict.

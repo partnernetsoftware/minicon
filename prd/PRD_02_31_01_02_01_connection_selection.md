@@ -445,5 +445,10 @@ the retained failed attempt is `cs02-final-attempt1/receipt.json`. Only that PRD
 pointer is corrected to its output directory. The final receipt explicitly
 reuses the six passing compiled gates with unchanged source bytes and reruns
 the full documentation alignment and remaining gates. No failed attempt is
-relabelled as PASS. Matching-source native feedback, independent postcommit
-verification, complete CS-02..07 and release qualification remain open.
+relabelled as PASS. Independent postcommit verification subsequently passes
+269 Rust executions with one unselected Pi opt-in ignored in
+`target-six/v0.2.23-provider/cs02-independent-5411903/receipt.json`.
+It uses a shared Cargo cache (`isolated=false`); the verifier is distinct from
+the source producers. The later matching-source native development followup
+is owned by [PRD 32](PRD_02_32_dev_loop_crosscheck.md#version-3-compatibility-and-h0-native-feedback).
+Complete CS-02..07 and release qualification remain open.
