@@ -748,6 +748,28 @@ def main():
         before = browser()
         options = geo()["web_proxy_options_count"]
         native.ime(True)
+        def chinese_mode():
+            state = snapshot()["ime_status"]
+            return state if state["known"] and state["available"] and state["open"] and state["native_mode"] else None
+        # IMM requests are not activation evidence for a modern TSF profile.
+        # Give the public mode observation time to reflect the request before
+        # using the documented physical mode switch exactly once.
+        mode_deadline = min(deadline, time.monotonic() + 1)
+        activated = chinese_mode()
+        while not activated and time.monotonic() < mode_deadline:
+            time.sleep(0.04)
+            activated = chinese_mode()
+        method = "IMM-request-with-public-readback"
+        if not activated:
+            native.chord(0x10)  # Microsoft Pinyin Chinese/English mode switch.
+            method = "one-owned-physical-Shift-with-public-readback"
+            activated = wait(chinese_mode, name + " Chinese IME mode activation", 2, unavailable=True)
+        receipt.setdefault("ime_mode_activations", []).append({
+            "editor": name, "method": method,
+            "known": activated["known"], "available": activated["available"],
+            "open": activated["open"], "native_mode": activated["native_mode"],
+        })
+        save()
         for key in "nihao":
             native.chord(ord(key.upper()))
         def complete_preedit():

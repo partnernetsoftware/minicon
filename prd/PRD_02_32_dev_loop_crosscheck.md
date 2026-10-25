@@ -1256,3 +1256,15 @@ retain the original complete-preedit/Space-commit assertions and refuse any
 unowned foreground input. Artifacts:
 `target-six/v0.2.23-provider/native-controls-ci-f4acbab/`. No further unchanged
 default-desktop retry is justified by this result.
+
+The next mode setup observes public known/available/open/native-mode state
+after its existing IMM request. If that state does not become Chinese mode
+within one second, it sends exactly one owned physical Shift and waits at most
+two seconds for the same public readback. Microsoft documents
+[Shift as the Pinyin Chinese/English mode switch](https://support.microsoft.com/en-us/windows/hardware/input-devices/microsoft-simplified-chinese-ime).
+All key admissions still require the exact owned foreground; mode activation
+is a prerequisite, not a replacement for actual complete `nihao` preedit and
+Space commit. The original four-second composition oracle, final Chinese text
+and no-submit predicates remain unchanged. Retain finite method/readback facts
+per editor; an unavailable modern TSF profile stays BLOCKED rather than accepting
+Latin input or enabling an unverified compatibility setting.
