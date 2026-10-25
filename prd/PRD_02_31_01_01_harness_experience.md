@@ -560,3 +560,15 @@ architectures in [run40243448527](https://github.com/partnernetsoftware/minicon/
 at `45a5165be999e3aed40cf806fe48f2a55f1e731c`, with Loaded-state setup and
 the actual corrected port checked before Submit. That earlier-source result
 does not qualify the subsequent focus/selection fix or physical input.
+
+The integrated fix is qualified for development on both Windows architectures
+by [run40244714076](https://github.com/partnernetsoftware/minicon/actions/runs/40244714076)
+at `fc26f165396b10b3b733c2b84dc863d213c75e57`. Each target's23 selected
+Harness suites reports success. A log/receipt audit verifies both new consumer
+subjects, the existing profile-return/navigation subject, the original public
+failed-save/draft/retry journey and the public H0 destination journey actually
+execute and pass on each target; repeated subjects in separate selected suites
+retain their actual execution counts. Audit:
+`target-six/v0.2.23-provider/harness-ci-fc26f16/verification-index.json`.
+This closes these two editing regressions at that source; it does not claim
+physical clipboard/IME input, another scale or final signed-artifact acceptance.

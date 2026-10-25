@@ -1083,9 +1083,9 @@ repair or a relaxed release criterion.
 
 The diagnostic [run40244581351](https://github.com/partnernetsoftware/minicon/actions/runs/40244581351)
 at `1207d2e2efd74efea9628b80b36e1af4c37385bd` is terminal FAIL on both Linux
-targets. The x86_64 retained trace proves both direct helpers receive the close
+targets. The retained traces prove both direct helpers receive the close
 command, never publish the additional close-signal stage, then time out and
-are killed/reaped as failures. Its seven mechanism subjects and all five
+are killed/reaped as failures. Each target's seven mechanism subjects and all five
 intended source mutation controls pass, with exact restoration. Local artifacts
 are `target-six/v0.2.23-provider/linux-release-ci-1207d2e/`. Do not infer a
 storage failure or successful native close from the command-stage observation.
