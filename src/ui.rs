@@ -1041,11 +1041,10 @@ impl UiLanguage {
     }
 
     #[must_use]
-    pub const fn help_lines(self) -> [&'static str; 16] {
-        // The clipboard keys are the only platform-native ones: Cmd on macOS,
-        // Ctrl elsewhere. The workspace shortcuts stay Ctrl+Shift on every
-        // platform, so only the clipboard line switches via `cfg`. Exactly one
-        // of the two `#[cfg]` variants is compiled in, keeping the length fixed.
+    pub const fn help_lines(self) -> [&'static str; SETTINGS_SHORTCUT_LINES as usize] {
+        // Workspace chords stay Ctrl+Shift. macOS also reserves Command arrows
+        // for its owned window; its extra row shares the layout's line count.
+        // The clipboard row uses the native modifier on each platform.
         match self {
             Self::English => [
                 "KEYBOARD",
@@ -1059,6 +1058,8 @@ impl UiLanguage {
                 "Ctrl+Shift+G   Crosshair",
                 "Ctrl+Shift+B   Collapse tabs",
                 "Ctrl+Shift+H   History panel",
+                #[cfg(target_os = "macos")]
+                "Cmd+Left/Right Window halves",
                 #[cfg(target_os = "macos")]
                 "Cmd+C/V/X      Copy/Paste/Cut",
                 #[cfg(not(target_os = "macos"))]
@@ -1081,6 +1082,8 @@ impl UiLanguage {
                 "Ctrl+Shift+B   收起标签",
                 "Ctrl+Shift+H   历史面板",
                 #[cfg(target_os = "macos")]
+                "Cmd+Left/Right 左右半屏",
+                #[cfg(target_os = "macos")]
                 "Cmd+C/V/X      复制/粘贴/剪切",
                 #[cfg(not(target_os = "macos"))]
                 "Ctrl+C/V/X     复制/粘贴/剪切",
@@ -1101,6 +1104,8 @@ impl UiLanguage {
                 "Ctrl+Shift+G   十字線",
                 "Ctrl+Shift+B   收起分頁",
                 "Ctrl+Shift+H   歷史面板",
+                #[cfg(target_os = "macos")]
+                "Cmd+Left/Right 左右半螢幕",
                 #[cfg(target_os = "macos")]
                 "Cmd+C/V/X      複製/貼上/剪下",
                 #[cfg(not(target_os = "macos"))]
@@ -1456,7 +1461,7 @@ pub fn status_hit(layout: Layout, x: u32, y: u32) -> StatusHit {
 /// The painter draws every entry of `UiLanguage::help_lines` — including its
 /// leading all-caps section row — so the reserved height is the array's own
 /// length. Reserving one less let the final line spill into whatever followed.
-pub const SETTINGS_SHORTCUT_LINES: u32 = 16;
+pub const SETTINGS_SHORTCUT_LINES: u32 = if cfg!(target_os = "macos") { 17 } else { 16 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum SettingsSection {

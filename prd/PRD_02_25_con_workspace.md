@@ -25,6 +25,7 @@ minicon workspace and input
 │       ├── [v] proxy editing and Console/Web preferences → PRD_02_25_01_browser_preferences.md
 │       └── [_] consistent browser control editing/menu operation → PRD_02_25_02_browser_controls.md
 │   [_] tab-tree drag and inline rename pointer ownership (0.2.24) → PRD 25.03
+├── [_] macOS owned-window half shortcuts → PRD_02_25_04_window_shortcuts.md
 ├── Host UI (host chrome around the active tab's content panel(s))
 │   ├── header tools: New · Settings · sidebar toggle · panel toggle
 │   │     (panel toggle = chrome sent-history column — not a content panel)

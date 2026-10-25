@@ -117,6 +117,7 @@ minicon --help                   # 其余全部
 | `Ctrl+Shift+[` / `]` | 切换标签页 |
 | `Ctrl+Shift+I` | 聚焦终端输入区或浏览器地址栏 |
 | `Ctrl+L` / `Cmd+L` | 浏览器标签页中编辑地址；Enter 导航，Escape 返回页面 |
+| `Cmd+Left` / `Right` | macOS 下将当前窗口移到当前屏幕的左／右半屏 |
 | `Ctrl+Shift+P` | 循环切换配色主题（Neutral / Docs / Paper） |
 | `Cmd+[` / `Cmd+]` / `Cmd+R` | 在 macOS 浏览器页中后退 / 前进 / 刷新 |
 | `Ctrl+Shift+,` | 打开或关闭设置面板 |

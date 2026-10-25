@@ -18,6 +18,8 @@ Outcome: improve daily use without losing open product obligations
 │   ├── C0 identity, trust and observation contract → next design milestone
 │   ├── C1 explicit pairing and read-only two-node dashboard → subsequent selected version
 │   └── C2 task handoff/cancel, then C3 model/capacity coordination → gated stages
+├── [_] Future selected-window computer use → PRD 38 / plan-minicon-cu.md
+│   └── observation, single action, Harness and paired-node gates → owning CU plan
 ├── [v] Public 0.2.22 → release history; exact artifact evidence only
 ├── [-] 0.2.23 browser controls and first harness connection → current version plan
 │   ├── browser control consistency → PRD 25.02
@@ -39,6 +41,8 @@ flowchart LR
     V --> L[Later bounded built-in task operation]
     CL[PRD 37 / C0 future cluster design] -. origin-scoped views .-> V
     CL --> CP[Subsequent C1 paired observation]
+    CU[PRD38 / CU plan: observation then action] -. explicit later tool selection .-> L
+    CP -. later remote CU authority .-> CU
     L --> CT[Later C2 deliberate task handoff]
     CP --> CT
     A --> Q
@@ -61,8 +65,8 @@ path, auth feasibility, manual pool and later selection seam are owned in
 implement the later dynamic scheduler.
 The newly selected [0.2.24 plan](plan-v0.2.24.md) owns the next tab-tree drag
 and inline-editing delivery, with behavior/evidence in
-[PRD 25.03](../prd/PRD_02_25_03_tab_tree_interactions.md). The active goal
-authorizes both named public releases; qualification remains source-specific.
+[PRD 25.03](../prd/PRD_02_25_03_tab_tree_interactions.md). Current delivery
+remains 0.2.23; 0.2.24 keeps its planned scope. Qualification is source-specific.
 The owner's 2026-10-25 direction makes the
 [visual Harness workspace](../prd/PRD_02_36_harness_workspace.md) a continuing
 core product track; [its plan](plan-harness-workspace.md) stages the robot
@@ -84,3 +88,8 @@ coordination. [PRD 37](../prd/PRD_02_37_cluster_horizon.md#未来构想) owns be
 [the cluster plan](plan-cluster-horizon.md) starts C0 with the local Harness
 foundation, then selects subsequent implementation versions from actual
 prerequisites. This is a first-class future track, not a current cluster claim.
+
+The owner's computer-use planning request is recorded in
+[PRD 38](../prd/PRD_02_38_computer_use.md). [The CU plan](plan-minicon-cu.md)
+is the sole owner of its candidate release placement and dependency gates;
+this roadmap does not select those future versions or expand today's worker.

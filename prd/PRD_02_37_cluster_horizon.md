@@ -168,3 +168,13 @@ explicit run lifetime and upgrade compatibility. Before C2, resolve durable
 operation receipts, project mapping and restart reconciliation. Name each missing
 prerequisite BLOCKED for its exact delivery; the future direction itself remains
 planned rather than silently expanding current release scope.
+
+## Future computer-use integration
+
+[PRD 38](PRD_02_38_computer_use.md) owns CU target, observation and effect
+semantics; [its plan](../plan/plan-minicon-cu.md) sequences local delivery.
+A later CU4 observer uses this module's origin/trust/transport contract; remote
+operation additionally needs CONTROL and execution-node admission/lifecycle.
+Pairing or observing a peer does not grant desktop input. Local CU delivery
+can proceed independently of cluster implementation; no CU remote version is
+selected here.

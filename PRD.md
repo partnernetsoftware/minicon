@@ -43,11 +43,13 @@ MiniCon — one-file local terminal
 │   │   └── prd/PRD_02_25_con_workspace.md
 │   │       ├── [v] Browser proxy preferences / Console-Web routes → prd/PRD_02_25_01_browser_preferences.md
 │   │       ├── [-] Consistent browser controls → prd/PRD_02_25_02_browser_controls.md
-│   │       └── [_] Tab-tree drag / reliable inline editing (0.2.24) → prd/PRD_02_25_03_tab_tree_interactions.md
+│   │       ├── [_] Tab-tree drag / reliable inline editing (0.2.24) → prd/PRD_02_25_03_tab_tree_interactions.md
+│   │       └── [_] macOS owned-window half shortcuts → prd/PRD_02_25_04_window_shortcuts.md
 │   ├── local CLI, waits, structured snapshots and screenshots
 │   │   └── prd/PRD_02_26_con_control_cli.md
 │   ├── [-] Robot entry / visual Harness operation and monitoring → prd/PRD_02_36_harness_workspace.md
 │   ├── [_] Future cluster / cross-machine coordination → prd/PRD_02_37_cluster_horizon.md
+│   ├── [_] Future selected-window computer use → prd/PRD_02_38_computer_use.md
 │   └── bounded mux/harness composition → prd/PRD_02_31_v0_2_horizon.md
 │       └── [-] Harness settings / provider-pool / model API → prd/PRD_02_31_01_provider_gateway.md
 │           ├── [_] Guided connection experience and recovery → prd/PRD_02_31_01_01_harness_experience.md
@@ -100,6 +102,7 @@ flowchart LR
     WWEB["Native browser adapters and per-OS qualification"] --> UX
     CTRL["PRD 25.02: browser control consistency"] --> UX
     TREE["PRD 25.03: next-version tree drag / rename pointer ownership"] --> MC
+    SNAP["PRD 25.04: macOS Command + arrows / owned-screen halves"] --> MC
     HX["PRD 31.01.01: account -> verified model -> local tool"] --> GW["PRD 31.01: local model API / manual account pool"]
     GW --> AUTH{Verified inference authorization?}
     POOL["PRD 31.01.02: account networks / keyed client allocations"] --> GW
@@ -109,6 +112,9 @@ flowchart LR
     BV["PRD 31.01.02.01.01: quoted profile checks / explicit commit cutoff"] --> POOL
     ROB -. later explicit task operation .-> HC
     CL["PRD 37: future paired nodes / cross-machine coordination"] -. origin-scoped observations .-> ROB
+    CU["PRD 38: future selected-window observation / single action"] -. separately selected tool and lifecycle .-> ROB
+    CU -. native mechanisms only .-> P
+    CL -. later explicit execution-node authority .-> CU
     AUTH -->|yes| HC[Existing worker and named external client]
     AUTH -->|no| BLOCK[BLOCKED auth claim]
     HC --> D
@@ -167,6 +173,7 @@ flowchart LR
 | Bounded mux/harness subcommands | [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md) | explicit provider/session contracts; no workbench authority inherited |
 | Connect model accounts to local harnesses | [Provider gateway](prd/PRD_02_31_01_provider_gateway.md), [connection experience](prd/PRD_02_31_01_01_harness_experience.md) | Development manual pool and model API; guided experience redesign specified after owner feedback, implementation and final qualification open; gateway cannot execute tools |
 | Operate and monitor local Harness work | [Harness workspace](prd/PRD_02_36_harness_workspace.md) | Development robot entry/cached overview and later bounded built-in task operation; stages and native evidence open |
+| Inspect and explicitly operate a selected application in future versions | [Computer use](prd/PRD_02_38_computer_use.md) | Planned same-repo product crate; observation before actions/Harness; native target/effect evidence remains open |
 | Coordinate personal machines in future versions | [Cluster horizon](prd/PRD_02_37_cluster_horizon.md) | Planned explicit pairing/observation, later deliberate task handoff; origin, trust, stale state and two-machine evidence remain open |
 | Embed a reusable terminal library | [Terminal library](prd/PRD_02_35_terminal_library.md) | common state/stream facade; OS/ISA runtime and session composition remain explicit |
 | Abstract and reuse existing mechanisms | [Module/reuse map](prd/PRD_02_28_shared_core.md) | feature graphs, type identity, source boundaries and kernel oracles; keep product policy local |
@@ -177,6 +184,11 @@ flowchart LR
 | Deferred portable logic / foundry directions | [qjswasm](prd/PRD_02_29_qjswasm_horizon.md), [foundry](prd/PRD_02_30_foundry_horizon.md) | independent complete-product decisions; no current-version implementation claim |
 
 ## Current frontier
+
+- [_] **Computer use is a future product track.** [PRD 38](prd/PRD_02_38_computer_use.md)
+  owns target-bound observation/action and the same-repo crate decision;
+  [its plan](plan/plan-minicon-cu.md) owns candidate version placement. This
+  design does not expand the current release or worker tool authority.
 
 - [-] **Visual Harness becomes a core product track.** The owner's 2026-10-25
   direction selects a robot entry/overview reservation with the current work,
@@ -250,6 +262,10 @@ flowchart LR
 
 ## 未来构想
 
+- [_] **Selected-window computer use.** [PRD 38](prd/PRD_02_38_computer_use.md)
+  owns this planned product branch; [the CU plan](plan/plan-minicon-cu.md)
+  owns candidate versions and selection gates. No current desktop/tool
+  authority follows from this reservation.
 - [_] **MiniCon 群集与跨机联动。** The owner selected this as an important
   subsequent-version direction on 2026-10-25. [PRD 37](prd/PRD_02_37_cluster_horizon.md#未来构想)
   owns identity/pairing, cross-node observation, deliberate task handoff and

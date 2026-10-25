@@ -249,6 +249,19 @@ jobs:
           print(f'control shutdown court: exactly {expected} passed, 0 failed/ignored')
           PY
 
+      - name: Qualify owned macOS half-screen placement and command mapping
+        # Native owned-window court is required on both macOS cells regardless
+        # of test_filter; this is not hardware/WK-focus or release qualification.
+        if: startsWith(matrix.cell, 'osx-')
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p probe-logs
+          python3 -B scripts/macos-snap-half-native-court.py --target '${{ matrix.triple }}' \
+            --output probe-logs/macos-snap-half \
+            2>&1 | tee probe-logs/macos-snap-half-driver.log
+
       - name: Run each suite, capturing every result before failing the job
         # These are Cargo integration/unit tests, not standalone binaries --
         # their real names on disk are hashed (target/<triple>/debug/deps/
@@ -592,6 +605,8 @@ jobs:
             probe-logs/test-receipt.json
             probe-logs/browser-workspace-test.log
             probe-logs/control-shutdown-response.log
+            probe-logs/macos-snap-half-driver.log
+            probe-logs/macos-snap-half/
             probe-logs/minicon-auth-presentation.log
             probe-logs/minicon-auth-settings.log
             probe-logs/minicon-web-context.log

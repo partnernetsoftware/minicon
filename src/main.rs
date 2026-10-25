@@ -1195,6 +1195,22 @@ const CLIPBOARD_MODIFIER: keymap::ClipboardModifier = keymap::ClipboardModifier:
 #[cfg(not(target_os = "macos"))]
 const CLIPBOARD_MODIFIER: keymap::ClipboardModifier = keymap::ClipboardModifier::ControlOnly;
 
+/// Reserve plain Command arrows for placement of the owned macOS window.
+#[cfg(any(target_os = "macos", test))]
+fn macos_window_half_key(
+    key: &NormalizedKeyEvent,
+) -> Option<minicon_platform::window_host::WindowHalf> {
+    use minicon_platform::window_host::WindowHalf;
+    if !key.modifiers.meta || key.modifiers.control || key.modifiers.alt || key.modifiers.shift {
+        return None;
+    }
+    match key.logical {
+        LogicalKey::Named(NamedKey::ArrowLeft) => Some(WindowHalf::Left),
+        LogicalKey::Named(NamedKey::ArrowRight) => Some(WindowHalf::Right),
+        _ => None,
+    }
+}
+
 /// Translate a host key event into the neutral chord the keymap understands.
 ///
 /// `None` means the table has no name for this key, which is not the same as
@@ -2906,6 +2922,16 @@ impl ConApp {
         }
     }
 
+    fn snap_window_half(
+        &mut self,
+        window: &PixelWindow,
+        half: minicon_platform::window_host::WindowHalf,
+    ) {
+        if let Err(error) = window.snap_to_half(half) {
+            self.note_host_notice(format!("Window placement: {error}"), window);
+        }
+    }
+
     fn handle_workspace_shortcut(
         &mut self,
         window: &PixelWindow,
@@ -3935,6 +3961,15 @@ impl PixelWindowApplication for ConApp {
     ) -> Result<PixelWindowDirective, PixelWindowError> {
         if self.exit {
             return Ok(PixelWindowDirective::Exit);
+        }
+        #[cfg(target_os = "macos")]
+        if let PixelWindowEvent::Keyboard(key) = &event
+            && let Some(half) = macos_window_half_key(key)
+        {
+            if key.state == KeyPressState::Pressed {
+                self.snap_window_half(window, half);
+            }
+            return Ok(PixelWindowDirective::Continue);
         }
         // The pointer decides which region owns paste; the keyboard must not,
         // or the paste chord would re-enable itself on the way in. A focus
@@ -5068,6 +5103,31 @@ fn candidate_bounds(candidate: DirtyRegion, width: u32, height: u32) -> PixelRec
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn macos_window_half_chords_reserve_only_plain_command_arrows() {
+        use minicon_platform::window_host::WindowHalf;
+        for (arrow, half) in [
+            (InjectedKey::Named(NamedKey::ArrowLeft), WindowHalf::Left),
+            (InjectedKey::Named(NamedKey::ArrowRight), WindowHalf::Right),
+        ] {
+            let mut key = injected_key_event(arrow, false, false, false);
+            assert_eq!(macos_window_half_key(&key), None);
+            key.modifiers.meta = true;
+            assert_eq!(macos_window_half_key(&key), Some(half));
+            key.state = KeyPressState::Released;
+            assert_eq!(macos_window_half_key(&key), Some(half));
+            for modifier in [0, 1, 2] {
+                let mut varied = key.clone();
+                match modifier {
+                    0 => varied.modifiers.shift = true,
+                    1 => varied.modifiers.alt = true,
+                    _ => varied.modifiers.control = true,
+                }
+                assert_eq!(macos_window_half_key(&varied), None);
+            }
+        }
+    }
 
     /// Ctrl+click http handoff: one browser content panel, reused, and a
     /// non-http token does not open a tab or call the OS.

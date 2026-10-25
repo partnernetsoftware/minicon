@@ -14,6 +14,11 @@ provider accounts and the future llm-gate seam. Legend: `[v]` shipped,
 `[-]` partial, `[_]` planned,
 `[no]` explicit non-goal.
 
+The future computer-use direction is owned by [PRD 38](PRD_02_38_computer_use.md).
+The current worker still has exactly file and exec. CU integration requires a
+new explicit tool-selection decision under this owner and PRD 36 lifecycle
+qualification; a future PRD or model API key supplies no desktop authority.
+
 ## Product outcome
 
 A MiniCon user can drive their own already-running tabs the way a `tmux` user

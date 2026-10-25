@@ -23,6 +23,7 @@ Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
 | 28 | [Shared core and reuse boundary](PRD_02_28_shared_core.md) | `minicon-core`、跨产品复用的可测边界、与 agenterm 的依赖方向分期 |
 | 36 | [Harness dashboard](PRD_02_36_harness_workspace.md) | Planned robot entry, visual local operation/monitoring and staged task lifecycle |
 | 37 | [Cluster horizon](PRD_02_37_cluster_horizon.md) | Future paired-node observation and explicit cross-machine coordination |
+| 38 | [Computer use](PRD_02_38_computer_use.md) | Future selected-window observation, explicit actions and staged Harness integration |
 
 ## Map
 
@@ -35,6 +36,7 @@ minicon — one-file local terminal (product root)
 │   ├── Explicit non-goals and the narrowed mux/harness exception
 │   └── [_] Explicit local model listener exception → PRD_02_31_01_provider_gateway.md
 │       [_] Visual Harness direction → PRD 36; future cluster direction → PRD 37
+│       [_] Future selected-window computer use → PRD 38; no current tool expansion
 ├── Governing invariants
 ├── Observable success evidence
 ├── Safe failure result
@@ -55,6 +57,8 @@ flowchart TB
     ROOT --> S["[28] Shared core and reuse boundary"]
     ROOT --> G["[31.01] Planned local model gateway<br/>no remote tool execution"]
     ROOT --> H["[36] Planned Harness dashboard"]
+    ROOT -. future explicitly selected desktop capability .-> CU["[38] Computer use"]
+    CU -. separate worker-tool decision .-> H
     FUT["[37] Future paired-node coordination"] -. separately staged authority .-> H
     ROOT -. "capability sinks into" .-> MC["MiniCon"]
     ROOT -. "plugin / app gathers in" .-> AG["agenterm (workbench)"]
@@ -195,6 +199,15 @@ turn a current endpoint into remote execution authority.
   Current loopback, GUI control and local file/exec authority do not widen merely
   because the future design exists; paired observation and remote task operation
   require their own selected contracts and real two-machine qualification.
+
+### Future computer-use design
+
+Owner direction, 2026-10-25: plan `minicon-cu` as a MiniCon-family capability.
+[PRD 38](PRD_02_38_computer_use.md) owns its product/repository decision;
+[the CU plan](../plan/plan-minicon-cu.md) owns candidate release sequencing.
+This is future design scope, not current desktop authority, a third worker
+tool, persistent service or remote-execution amendment. Selecting an executable
+CU slice requires its explicit scope and native evidence gates first.
 
 ## Governing invariants
 

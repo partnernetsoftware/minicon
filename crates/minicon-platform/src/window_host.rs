@@ -10,7 +10,7 @@ pub use crate::contract::window_host::{
     PixelFrameGeneration, PixelFrameInfo, PixelFrameWrite, PixelFrameWriteReceipt,
     PixelPointerCursor, PixelRect, PixelWindow, PixelWindowApplication, PixelWindowDirective,
     PixelWindowError, PixelWindowEvent, PixelWindowMetrics, PixelWindowOptions, PointerButton,
-    PointerButtonState, WheelDelta, WindowAttachment, WindowSemanticFlags, WindowWaker,
+    PointerButtonState, WheelDelta, WindowAttachment, WindowHalf, WindowSemanticFlags, WindowWaker,
     XrgbPixelFrame,
 };
 

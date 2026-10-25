@@ -52,6 +52,47 @@ impl LogicalRect {
     }
 }
 
+/// Fixed halves of an owned window's current usable screen; no key policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WindowHalf {
+    Left,
+    Right,
+}
+
+impl WindowHalf {
+    pub fn target(self, work_area: LogicalRect) -> Result<LogicalRect, PixelWindowError> {
+        let LogicalRect { origin, size } = work_area;
+        if !origin.x.is_finite()
+            || !origin.y.is_finite()
+            || !size.is_valid()
+            || !(origin.x + size.width).is_finite()
+            || !(origin.y + size.height).is_finite()
+        {
+            return Err(PixelWindowError::failed(
+                "window_work_area_invalid",
+                "usable screen geometry must be finite and positive",
+            ));
+        }
+        let left_width = size.width / 2.0;
+        let target = match self {
+            Self::Left => LogicalRect::new(origin.x, origin.y, left_width, size.height),
+            Self::Right => LogicalRect::new(
+                origin.x + left_width,
+                origin.y,
+                size.width - left_width,
+                size.height,
+            ),
+        };
+        if !target.size.is_valid() {
+            return Err(PixelWindowError::failed(
+                "window_work_area_invalid",
+                "half-screen extent underflow",
+            ));
+        }
+        Ok(target)
+    }
+}
+
 /// A host-neutral physical-pixel rectangle.
 ///
 /// Coordinates are half-open: `left <= x < right` and `top <= y < bottom`.
@@ -675,6 +716,13 @@ pub(crate) trait PixelWindowBackend {
         None
     }
 
+    fn snap_to_half(&self, half: WindowHalf) -> Result<(), PixelWindowError> {
+        let _ = half;
+        Err(PixelWindowError::unsupported(
+            "owned-window half placement is not implemented on this backend",
+        ))
+    }
+
     fn metrics(&self) -> Result<PixelWindowMetrics, PixelWindowError>;
     fn semantic_flags(&self) -> WindowSemanticFlags;
     fn set_minimized(&self, minimized: bool);
@@ -802,6 +850,12 @@ impl PixelWindow {
 
     pub fn set_title(&self, title: &str) {
         self.backend.set_title(title);
+    }
+
+    /// Places this window in a fixed half of its actual screen's usable area.
+    /// Other windows, global shortcuts and AX permissions are outside this API.
+    pub fn snap_to_half(&self, half: WindowHalf) -> Result<(), PixelWindowError> {
+        self.backend.snap_to_half(half)
     }
 
     pub fn request_logical_inner_size(&self, size: LogicalSize) -> Result<(), PixelWindowError> {
@@ -938,6 +992,38 @@ pub trait PixelWindowApplication: 'static {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn window_halves_keep_screen_origins_and_cover_odd_work_areas() {
+        let area = LogicalRect::new(-1513.0, 80.0, 1513.0, 900.0);
+        let left = WindowHalf::Left.target(area).unwrap();
+        let right = WindowHalf::Right.target(area).unwrap();
+        assert_eq!(left, LogicalRect::new(-1513.0, 80.0, 756.5, 900.0));
+        assert_eq!(right, LogicalRect::new(-756.5, 80.0, 756.5, 900.0));
+        assert_eq!(left.origin.x + left.size.width, right.origin.x);
+        assert_eq!(
+            right.origin.x + right.size.width,
+            area.origin.x + area.size.width
+        );
+    }
+
+    #[test]
+    fn window_halves_refuse_invalid_geometry_before_native_placement() {
+        for area in [
+            LogicalRect::new(f64::NAN, 0.0, 100.0, 100.0),
+            LogicalRect::new(0.0, f64::INFINITY, 100.0, 100.0),
+            LogicalRect::new(0.0, 0.0, 0.0, 100.0),
+            LogicalRect::new(0.0, 0.0, 100.0, -1.0),
+            LogicalRect::new(f64::MAX, 0.0, f64::MAX, 100.0),
+        ] {
+            for half in [WindowHalf::Left, WindowHalf::Right] {
+                assert!(
+                    half.target(area).is_err(),
+                    "invalid screen must not produce a placement: {area:?}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn options_and_drawable_metrics_are_platform_neutral() {

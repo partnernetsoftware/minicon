@@ -466,3 +466,13 @@ H0 no longer requests top-level window activation on entry, return or Settings
 close. Existing native child/parent focus and logical input owners retain their
 own duties. Actual physical focus/IME, other OS/ISA/scales, resource bounds and
 exact signed/public delivery remain separate open acceptance work.
+
+## Future computer-use presentation
+
+[PRD 38](PRD_02_38_computer_use.md) owns the future CU product contract and
+[its plan](../plan/plan-minicon-cu.md) owns candidate sequencing. When selected,
+this workspace owns the inspection/run presentation: target selection and age,
+capability/permission guidance, private observation preview, explicit operation/
+disclosure scope, actual step result and Stop. Reuse H2 run identity/events and
+return context; do not add another model loop or operate desktop tasks inside
+Settings / Harness forms. No CU navigation/action is executable in current H0.

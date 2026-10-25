@@ -46,6 +46,8 @@ Outcome: maintain one terminal implementation with explicit reusable boundaries
 │           ├── [_] connection journey / state projection / recovery → PRD 31.01.01
 │           ├── [-] account-specific networks / keyed client allocation → PRD 31.01.02
 │           └── [_] usage receipts / balance and allowance monitoring → PRD 31.01.03
+├── [_] Future CU product library / optional CLI — reserved crates/minicon-cu; PRD 38
+│   └── target/admission/observation/action meaning; native mechanisms stay in platform
 ├── Reusable rules — crates/minicon-core
 │   └── click / composer / json / keymap / numeric / tree / version
 │       no ISA branches or native backend dependency; one legacy OS helper
@@ -102,6 +104,8 @@ flowchart LR
     RESP["common response grammar / finite CPR query windows"]
     SB["owned softbuffer fork"]
     E["Exact source + enabled features + OS/ISA + build/runtime evidence"]
+    CU["PRD38 future minicon-cu product contract"] -. native mechanisms only .-> PLAT
+    CU -. typed later integration .-> MC
     MC --> CORE & UI & PLAT & VT
     MC -->|"common terminal query replies"| CON
     MC -.->|"browser content panel"| WEB
@@ -757,3 +761,24 @@ name the selector obligations. The latter must be selected explicitly; missing
 DISPLAY is Unavailable. Its synthetic child properties do not establish the
 actual GTK helper's publication, same-origin storage, delayed startup or live
 DOM preservation. Those actual-helper courts remain open for this new source.
+
+### Owned-window half placement seam
+
+[PRD 25.04](PRD_02_25_04_window_shortcuts.md) owns the MiniCon chords. The shared
+`window_host::WindowHalf` geometry and `PixelWindow::snap_to_half` operation own
+no shortcut policy. The macOS adapter uses its own NSView/NSWindow and screen;
+foreign-window AX placement is a separate capability. Other backends refuse
+unless explicitly implemented. Native evidence must name OS/ISA; pure geometry
+or another product's passes do not qualify macOS placement.
+
+## Future computer-use consumer boundary
+
+[PRD 38](PRD_02_38_computer_use.md) reserves a same-repository product crate;
+no crate is implemented by this design. Its future native dependencies remain
+`minicon-platform` capture/accessibility/input/window facades and selected OS
+adapters. Keep native fixes there, with feature/OS/ISA and actual runtime
+coverage recorded at selection. CU target/admission/observation/action meaning
+belongs to PRD 38, host-control meaning to PRD 26 and owned-window shortcuts to
+PRD 25.04. Do not import AgenTerm product owners, grants or receipts, duplicate
+native adapters, or infer native availability from a shared API. CU's proposed
+external CLI and later service decisions are owned by PRD 38, not this map.

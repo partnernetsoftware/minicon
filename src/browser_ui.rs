@@ -589,7 +589,13 @@ impl ConApp {
     }
 
     fn browser_host_shortcut(&mut self, window: &PixelWindow, shortcut: char) {
-        if shortcut == 'L' {
+        if let Some(half) = match shortcut {
+            '←' => Some(minicon_platform::window_host::WindowHalf::Left),
+            '→' => Some(minicon_platform::window_host::WindowHalf::Right),
+            _ => None,
+        } {
+            self.snap_window_half(window, half);
+        } else if shortcut == 'L' {
             self.focus_browser_address(window);
         } else if let Some(control) = match shortcut {
             '<' => Some(0),

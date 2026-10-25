@@ -132,6 +132,7 @@ service is unavailable, start it in the terminal and choose **Retry**; use
 | `Ctrl+Shift+[` / `]` | switch tabs |
 | `Ctrl+Shift+I` | focus terminal input, or the browser address field |
 | `Ctrl+L` / `Cmd+L` | in the browser tab, edit its address; Enter navigates and Escape returns to the page |
+| `Cmd+Left` / `Right` | on macOS, move this window to the current screen's left/right half |
 | `Ctrl+Shift+P` | cycle the color theme (Neutral / Docs / Paper) |
 | `Cmd+[` / `Cmd+]` / `Cmd+R` | on macOS, browser Back / Forward / Reload |
 | `Ctrl+Shift+,` | open or close the settings panel |

@@ -561,6 +561,7 @@ path: hover, click targets and focus all resolve exactly as with a real mouse.
   Ctrl+Shift+[ / ]   Switch tabs
   Ctrl+Shift+I       Focus terminal input or the browser address field
   Ctrl+L / Cmd+L     Edit the browser address; Enter navigates, Escape returns to page
+  Cmd+Left / Right  macOS: move this window to the current screen's left/right half
   Cmd+[ / ] / R     On macOS: browser Back / Forward / Reload
   Ctrl+Shift+P       Cycle the color theme (Neutral / Docs / Paper / Dark)
   Ctrl+Shift+,       Open or close the settings panel

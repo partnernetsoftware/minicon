@@ -11,6 +11,17 @@ use super::NativePageState;
 
 pub(super) struct ShortcutMonitor(Retained<AnyObject>);
 
+fn physical_shortcut_character(key_code: u16) -> Option<char> {
+    match key_code {
+        0x21 => Some('['),
+        0x1e => Some(']'),
+        0x2b => Some(','),
+        0x7b => Some('←'),
+        0x7c => Some('→'),
+        _ => None,
+    }
+}
+
 fn reserved_shortcut(
     character: char,
     control: bool,
@@ -26,6 +37,8 @@ fn reserved_shortcut(
     }
     if command && !control && !shift {
         return match character {
+            '←' => Some('←'),
+            '→' => Some('→'),
             '[' => Some('<'),
             ']' => Some('>'),
             'R' => Some('R'),
@@ -73,13 +86,9 @@ impl ShortcutMonitor {
                 let command = flags.contains(NSEventModifierFlags::Command);
                 let shift = flags.contains(NSEventModifierFlags::Shift);
                 let option = flags.contains(NSEventModifierFlags::Option);
-                let character = match event.keyCode() {
-                    // Shift changes these logical characters to {, } and <.
-                    // Keep the same physical punctuation as the host chords.
-                    0x21 => '[',
-                    0x1e => ']',
-                    0x2b => ',',
-                    _ => {
+                let character = match physical_shortcut_character(event.keyCode()) {
+                    Some(character) => character,
+                    None => {
                         let Some(text) = event.charactersIgnoringModifiers() else {
                             return original;
                         };
@@ -139,6 +148,31 @@ impl Drop for ShortcutMonitor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mac_window_half_arrows_have_distinct_exact_command_ownership() {
+        for (code, arrow) in [(0x7b, '←'), (0x7c, '→')] {
+            assert_eq!(physical_shortcut_character(code), Some(arrow));
+            let character = physical_shortcut_character(code).unwrap();
+            assert_eq!(
+                reserved_shortcut(character, false, true, false, false),
+                Some(arrow)
+            );
+            for (control, command, shift, option) in [
+                (false, false, false, false),
+                (true, true, false, false),
+                (false, true, true, false),
+                (false, true, false, true),
+            ] {
+                assert_eq!(
+                    reserved_shortcut(character, control, command, shift, option),
+                    None
+                );
+            }
+        }
+        assert_ne!(physical_shortcut_character(0x7b), Some('<'));
+        assert_ne!(physical_shortcut_character(0x7c), Some('>'));
+    }
 
     #[test]
     fn mac_navigation_keys_are_distinct_from_host_tab_shortcuts() {

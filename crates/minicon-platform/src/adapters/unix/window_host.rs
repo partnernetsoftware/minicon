@@ -228,6 +228,23 @@ impl PixelWindowBackend for NativeWindowBackend {
         }
     }
 
+    fn snap_to_half(
+        &self,
+        half: crate::contract::window_host::WindowHalf,
+    ) -> Result<(), PixelWindowError> {
+        #[cfg(target_os = "macos")]
+        {
+            snap_macos_owned_window(&self.window, half)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = half;
+            Err(PixelWindowError::unsupported(
+                "owned-window half placement is macOS-only",
+            ))
+        }
+    }
+
     fn metrics(&self) -> Result<PixelWindowMetrics, PixelWindowError> {
         native_metrics(&self.window)
     }
@@ -320,6 +337,101 @@ impl PixelWindowBackend for NativeWindowBackend {
     fn native_identity(&self) -> Option<i64> {
         native_pixel_window_identity(&self.window)
     }
+}
+
+#[cfg(target_os = "macos")]
+fn snap_macos_owned_window(
+    window: &Window,
+    half: crate::contract::window_host::WindowHalf,
+) -> Result<(), PixelWindowError> {
+    use objc2_app_kit::{NSView, NSWindowStyleMask};
+    use objc2_foundation::{MainThreadMarker, NSPoint, NSRect, NSSize};
+
+    let _main = MainThreadMarker::new().ok_or_else(|| {
+        PixelWindowError::unsupported("window placement requires AppKit's main thread")
+    })?;
+    let handle = window
+        .window_handle()
+        .map_err(|error| PixelWindowError::failed("window_handle_unavailable", error))?;
+    let RawWindowHandle::AppKit(handle) = handle.as_raw() else {
+        return Err(PixelWindowError::unsupported(
+            "owned AppKit window handle unavailable",
+        ));
+    };
+    // Winit owns this live NSView; it is borrowed only on AppKit's main thread.
+    let view = unsafe { &*handle.ns_view.as_ptr().cast::<NSView>() };
+    let native = view
+        .window()
+        .ok_or_else(|| PixelWindowError::unsupported("owned NSView has no window"))?;
+    let style = native.styleMask();
+    if style.contains(NSWindowStyleMask::FullScreen)
+        || !style.contains(NSWindowStyleMask::Resizable)
+    {
+        return Err(PixelWindowError::unsupported(
+            "half placement requires a resizable, non-fullscreen window",
+        ));
+    }
+    let screen = native
+        .screen()
+        .ok_or_else(|| PixelWindowError::unsupported("owned window has no current screen"))?;
+    let available = screen.visibleFrame();
+    let target = half.target(LogicalRect::new(
+        available.origin.x,
+        available.origin.y,
+        available.size.width,
+        available.size.height,
+    ))?;
+    // These are owned-window frame constraints, in the same AppKit point space.
+    let minimum = unsafe { native.minSize() };
+    let maximum = unsafe { native.maxSize() };
+    if target.size.width < minimum.width
+        || target.size.height < minimum.height
+        || target.size.width > maximum.width
+        || target.size.height > maximum.height
+    {
+        return Err(PixelWindowError::unsupported(
+            "window size constraints do not permit this screen half",
+        ));
+    }
+    let target_frame = NSRect::new(
+        NSPoint::new(target.origin.x, target.origin.y),
+        NSSize::new(target.size.width, target.size.height),
+    );
+    // Winit sets content constraints. setFrame:display: does not enforce them,
+    // so compare in content points before mutating this owned window.
+    let content = native.contentRectForFrameRect(target_frame);
+    let content_minimum = unsafe { native.contentMinSize() };
+    let content_maximum = unsafe { native.contentMaxSize() };
+    if !content.size.width.is_finite()
+        || !content.size.height.is_finite()
+        || content.size.width <= 0.0
+        || content.size.height <= 0.0
+        || content.size.width < content_minimum.width
+        || content.size.height < content_minimum.height
+        || content.size.width > content_maximum.width
+        || content.size.height > content_maximum.height
+    {
+        return Err(PixelWindowError::unsupported(
+            "window content constraints do not permit this screen half",
+        ));
+    }
+    native.setFrame_display(target_frame, false);
+    let actual = native.frame();
+    let tolerance = 1.0 / window.scale_factor().max(1.0);
+    for (observed, requested) in [
+        (actual.origin.x, target.origin.x),
+        (actual.origin.y, target.origin.y),
+        (actual.size.width, target.size.width),
+        (actual.size.height, target.size.height),
+    ] {
+        if !observed.is_finite() || (observed - requested).abs() > tolerance {
+            return Err(PixelWindowError::failed(
+                "window_half_not_applied",
+                "native window frame differs from the requested usable-screen half",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn native_pixel_window_identity(window: &Window) -> Option<i64> {

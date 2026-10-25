@@ -1,0 +1,82 @@
+# MiniCon computer-use sequence
+
+Status: `[_]` proposed future sequence following the owner's 2026-10-25 design
+request. Behavior and repository decision: [PRD 38](../prd/PRD_02_38_computer_use.md).
+This plan owns candidate release placement; candidates are not selected release
+scope, deadlines, implementation status or publish authority.
+
+## Outcome tree DAG
+
+```text
+Outcome: introduce useful computer use without delaying selected foundation work
+├── [_] CU0 — freeze contracts, native support inventory and same-repo ownership
+├── [_] CU1 — first observation preview after current release/tree obligations
+├── [_] CU2 — explicit single-operation preview after honest target/readback evidence
+├── [_] CU3 — existing Harness integration after tool/lifecycle decisions
+└── [_] CU4 — later paired-node observation, then separately authorized action
+```
+
+Delivery invariants, evidence, safe failures, dependencies and non-goals for
+these leaves are owned by the matching CU0..4 rows in PRD 38. This plan adds
+sequencing only.
+
+## Memory palace
+
+```mermaid
+flowchart LR
+    NOW[Selected current release] --> TREE[Selected tab-tree obligations]
+    DESIGN[CU0 contract / support inventory / ownership] --> OBS[CU1 observation preview]
+    TREE --> OBS
+    OBS --> ACT[CU2 single action and readback]
+    ACT --> RUN[CU3 existing Harness invocation]
+    TOOL[PRD31 explicit tool decision] --> RUN
+    LIFE[PRD36 H2 lifecycle / Stop] --> RUN
+    OBS --> REMOBS[CU4 paired observation]
+    RUN --> REMACT[CU4 paired operation]
+    CL[PRD37 trust / observation / control gates] --> REMOBS & REMACT
+    G[Exact native target evidence] --> OBS & ACT & RUN
+    M[Missing prerequisite] --> B[BLOCKED claim; no automatic scope expansion]
+```
+
+## Candidate version placement
+
+| Candidate | Smallest useful outcome | Selection gate |
+| --- | --- | --- |
+| Design alongside existing work | CU0 contract and actual platform inventory; no new runtime | Preserve the selected 0.2.23 release and 0.2.24 tab-tree obligations |
+| **0.2.25 observation preview** | CU1 optional CLI: select a window, obtain one bounded private PNG/accessibility observation, explain coverage/staleness/permission | CU0 frozen; at least one explicitly named OS/ISA has real end-to-end observation and failure evidence; unsupported targets stay explicit |
+| **0.2.26 or later single actions** | CU2 explicit invoke/text, then qualified pointer/key/scroll against the selected observation with actual readback | CU1 target/freshness contract and per-action native evidence; no autonomous loop |
+| **0.2.27 or later Harness integration** | CU3 selected scoped tool, bounded events, visible target/budget/disclosure/result and Stop | Explicit worker-tool amendment, CU2 and actual H2 lifecycle; no second model loop |
+| Later; version unassigned | CU4 paired observation first, remote operation after its own control gates | PRD 37 node/trust/transport authority and actual two-machine evidence |
+
+The first implementation should qualify a complete narrow journey on available
+macOS/Windows native courts, then expand targets from evidence. Do not make
+three-OS parity a reason to label an unqualified path supported. If CU1 misses
+its gate, keep it planned and reconsider the version rather than dilute the
+target or permission contract. CU planning does not add a release requirement
+to the current version or postpone ongoing Console/Web fixes.
+
+## Preparation and integration
+
+1. Resolve CU0's schema, target lifecycle, artifact retention/disclosure, actual
+   per-OS capability matrix and public CLI fixtures before implementation.
+   Validate existing native seams before inventing replacement abstractions.
+2. Reserve `crates/minicon-cu` only when the first vertical slice is selected.
+   Keep native adapters in platform and CU semantics in the new crate. Decide
+   optional CLI packaging and measured size/resource budgets then; no empty
+   scaffold, daemon or required extra runtime is needed for this plan.
+3. Name shared prerequisites and hot files before assigning independent work:
+   workspace Cargo/lock/features, shared platform capture/a11y/input contracts,
+   CU request/result schema, root CLI dispatch, Harness worker admission and
+   the PRD 36 task-view/Stop join. Freeze shared contracts first. Independent
+   native leaves may proceed only with exclusive files and evidence ownership;
+   one integrator performs runtime/authority joins and final gates serially.
+4. CU1 can ship through its public CLI before a GUI inspector is selected.
+   PRD 36 owns any visual integration; Settings remains configuration/guidance.
+   A model gateway profile key is never CU authority.
+5. Before CU3, upsert the accepted tool change in PRD 31 and select its complete
+   event/cancel/disclosure journey with PRD 36. A later local service or external
+   harness consumer requires a concrete transport/lifetime need, not a duplicate
+   OpenAI/Anthropic execution endpoint.
+6. At each selected version, update the owning PRD's status with named evidence,
+   then sequence qualification/release under existing delivery policy. Revisit
+   repository extraction only against PRD 38's real-consumer/cadence criteria.

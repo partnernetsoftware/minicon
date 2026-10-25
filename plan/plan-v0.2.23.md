@@ -429,3 +429,13 @@ remain under one controller and execute serially. Compile the example and
 retest the extracted protocol's actual existing consumer before selecting a
 matching-source Windows CI observation. A failed original oracle remains failed;
 a matching normal-exit trace is not a persistence fix or release qualification.
+
+## Urgent owned-window shortcut join
+
+The owner's 2026-10-25 temporary macOS request is sequenced before the remaining
+Harness work: [window shortcuts](../prd/PRD_02_25_04_window_shortcuts.md).
+Reuse one shared owned-window placement mechanism, then join host and native-page
+input routing and run the selected Mac courts. Hot files: platform window-host
+contract/Unix adapter, native Web shortcut monitor and MiniCon event dispatch.
+This does not import a foreign/global window manager or the future CU runtime.
+The independent key-lifecycle preview remains ignored until this join freezes.

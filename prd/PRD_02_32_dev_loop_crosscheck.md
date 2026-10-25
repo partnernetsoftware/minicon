@@ -25,6 +25,11 @@ dev-loop-crosscheck — agent cross-arch dev/test loop
 │   │   safe failure: fail that cell and retain logs; absent authorization stays unqualified
 │   │   dependency: first-gateway source and native build; non-goal: OAuth entitlement or release receipts
 │   ├── [v] mandatory browser artifact and shutdown-response courts, independent of test_filter
+│   ├── [-] mandatory macOS owned-window half placement → PRD 25.04
+│   │   invariant: actual owned frames and pure page-key mapping keep separate evidence scopes
+│   │   evidence: native example readback/refusal and actual source-guard RED/restored passes
+│   │   safe failure: unsupported/setup/compiler/timeout is not RED; restore exact bytes and retain failure
+│   │   dependency: current platform API, isolated Mac desktop and owned child; non-goal: hardware/WK-focus or release proof
 │   ├── [-] explicit native_auth_context test-build court → PRD 28
 │   │   invariant: exact test bytes/source and real observation failures, separately from default product
 │   │   evidence: qualification receipt, eight engine observations and two actual counterexamples
@@ -58,6 +63,8 @@ flowchart LR
     W --> C3["win / osx cells<br/>when requested"]
     C1 & C2 & C3 --> M["mandatory browser + shutdown courts<br/>independent of suite filter"]
     M --> L["real per-cell logs"]
+    C3 -->|macOS only; independent of filter| HALF[Owned half-frame native court / pure page-key mapping]
+    HALF -->|actual RED / exact restore / bounded owned cleanup| L
     C1 & C2 & C3 --> G["scoped provider / worker / HTTP + CLI gateway courts"]
     G --> L
     W -->|explicit native_auth_context| T[Separate test bytes / native context and live-DOM court]
@@ -148,6 +155,30 @@ grant or hosted inference entitlement. Those delivery claims remain with
 native receipts and their filtered scope are linked from
 [the pool owner](PRD_02_31_01_02_provider_pool.md); earlier six-cell receipts
 cannot qualify subsequent source.
+
+### Mandatory macOS owned-window half placement
+
+Both macOS cells run `scripts/macos-snap-half-native-court.py` independently
+of the ordinary test-name filter. Its explicit standalone platform example
+observes its own AppKit screen/frame for left, right and repeated-right
+placement, plus refusal without movement for an incompatible content minimum.
+The bounded driver binds the actual checkout/source, explicit Cargo example
+and features, thin native ISA and pinned executable hash. It removes the real
+frame application and content-constraint preflight guards separately, requires
+the unchanged original geometry/refusal assertions to fail, restores exact
+source bytes and replays the original consumer. Pure native-page physical-key
+mapping has a separate exact libtest PASS/guard-RED/restored-PASS sequence.
+
+The source driver reuses the existing owned-process boundary, with a 20-second
+native-child bound and finite build/log limits. Public logs and receipts are
+always retained; private temporary executable pins stay outside the upload
+paths. Unsupported capability, compilation failure, an unrelated panic or a
+timeout never counts as a counterexample. Missing native evidence remains open.
+This court proves the owned-window mechanism and pure mapping only; physical
+Command delivery, actual WK responder focus, preserved GUI drafts and signed/
+public artifacts require their own named evidence. Product behavior and the
+remaining acceptance frontier belong to
+[PRD 25.04](PRD_02_25_04_window_shortcuts.md).
 
 ### Opt-in private-publication source court
 
