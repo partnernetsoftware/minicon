@@ -169,6 +169,7 @@ class Native:
             (self.u, "SetForegroundWindow", w.BOOL, [w.HWND]),
             (self.u, "SetWindowPos", w.BOOL, [w.HWND, w.HWND, c.c_int, c.c_int, c.c_int, c.c_int, w.UINT]),
             (self.u, "IsWindowVisible", w.BOOL, [w.HWND]),
+            (self.u, "IsWindow", w.BOOL, [w.HWND]),
             (self.u, "IsChild", w.BOOL, [w.HWND, w.HWND]),
             (self.u, "GetWindowThreadProcessId", w.DWORD, [w.HWND, c.POINTER(w.DWORD)]),
             (self.u, "GetClassNameW", c.c_int, [w.HWND, w.LPWSTR, c.c_int]),
@@ -201,6 +202,7 @@ class Native:
             (self.k, "OpenProcess", w.HANDLE, [w.DWORD, w.BOOL, w.DWORD]),
             (self.k, "QueryFullProcessImageNameW", w.BOOL,
              [w.HANDLE, w.DWORD, w.LPWSTR, c.POINTER(w.DWORD)]),
+            (self.k, "IsProcessInJob", w.BOOL, [w.HANDLE, w.HANDLE, c.POINTER(w.BOOL)]),
             (self.k, "CloseHandle", w.BOOL, [w.HANDLE]),
             (self.g, "CreateCompatibleDC", w.HDC, [w.HDC]),
             (self.g, "CreateCompatibleBitmap", w.HBITMAP, [w.HDC, c.c_int, c.c_int]),
@@ -232,6 +234,10 @@ class Native:
         self.pointer = w.POINT()
         self.u.GetCursorPos(c.byref(self.pointer))
         self.hwnd = None
+        self.owned_pid = None
+        self.owned_job = None
+        self.presentation_topmost = False
+        self.presentation_restored = True
         self.focus_observations = []
         self.pressed = set()
         self.original_layout = None
@@ -240,7 +246,8 @@ class Native:
                (0x01, 0x02, 0x10, 0x11, 0x12, 0x5B, 0x5C)):
             raise Blocked("release mouse/modifier keys before starting court")
 
-    def attach(self, pid):
+    def attach(self, pid, job):
+        self.owned_pid, self.owned_job = pid, job
         handles = []
         callback_type = c.WINFUNCTYPE(w.BOOL, w.HWND, w.LPARAM)
 
@@ -281,9 +288,16 @@ class Native:
             if not self.u.SetCursorPos(point.x, point.y):
                 raise Blocked("owned activation pointer move unavailable")
             hit = self.u.WindowFromPoint(point)
-            owner = w.DWORD()
-            self.u.GetWindowThreadProcessId(hit, c.byref(owner))
-            if owner.value != pid or self.u.GetAncestor(hit, 2) != self.hwnd:
+            if not self.owned_hit(hit):
+                self.record_focus("normal-activation-point-obscured", hit, point)
+                # One owned-window presentation adjustment only. Do not close,
+                # activate or click the hosted image's overlapping setup UI.
+                if not self.u.SetWindowPos(self.hwnd, w.HWND(-1), 0, 0, 0, 0, 0x53):
+                    raise Blocked("owned topmost presentation unavailable; no input sent")
+                self.presentation_topmost = True
+                self.presentation_restored = False
+                hit = self.u.WindowFromPoint(point)
+            if not self.owned_hit(hit):
                 self.record_focus("activation-point-obscured", hit, point)
                 raise Blocked("owned activation point is obscured; no input sent")
             pair = (Input * 2)(Input(kind=0, mouse=MouseInput(flags=2)),
@@ -292,7 +306,8 @@ class Native:
                 release = Input(kind=0, mouse=MouseInput(flags=4))
                 self.u.SendInput(1, c.byref(release), c.sizeof(Input))
                 raise Blocked("owned activation click was not fully accepted")
-            self.activation = "single-verified-owned-client-click"
+            self.activation = ("single-verified-owned-client-click-topmost" if self.presentation_topmost
+                               else "single-verified-owned-client-click")
         end = time.monotonic() + 3
         while self.u.GetForegroundWindow() != self.hwnd:
             if time.monotonic() >= end:
@@ -300,6 +315,26 @@ class Native:
                 raise Blocked("owned GUI foreground activation unconfirmed after 3s "
                               f"(SetForegroundWindow requested={requested})")
             time.sleep(0.05)
+
+    def owned_hit(self, hwnd):
+        if not hwnd or self.u.GetAncestor(hwnd, 2) != self.hwnd:
+            return False
+        owner = w.DWORD()
+        self.u.GetWindowThreadProcessId(hwnd, c.byref(owner))
+        if owner.value == self.owned_pid:
+            return True
+        # WebView2 can host its actual child HWND in a renderer process. Both
+        # the native window ancestry and our private containment must match.
+        if not self.u.IsChild(self.hwnd, hwnd) or not self.owned_job:
+            return False
+        handle = self.k.OpenProcess(0x1000, False, owner.value)
+        if not handle:
+            return False
+        try:
+            member = w.BOOL()
+            return bool(self.k.IsProcessInJob(handle, self.owned_job, c.byref(member)) and member.value)
+        finally:
+            self.k.CloseHandle(handle)
 
     def window_fact(self, hwnd):
         """Finite hosted-court metadata; never titles, command lines or paths."""
@@ -314,9 +349,13 @@ class Native:
         rect = w.RECT()
         observed = bool(self.u.GetWindowRect(hwnd, c.byref(rect)))
         process_name = None
+        in_owned_job = None
         handle = self.k.OpenProcess(0x1000, False, owner.value)
         if handle:
             try:
+                member = w.BOOL()
+                if self.owned_job and self.k.IsProcessInJob(handle, self.owned_job, c.byref(member)):
+                    in_owned_job = bool(member.value)
                 image = c.create_unicode_buffer(32768)
                 length = w.DWORD(len(image))
                 if self.k.QueryFullProcessImageNameW(handle, 0, image, c.byref(length)):
@@ -325,6 +364,7 @@ class Native:
                 self.k.CloseHandle(handle)
         return {"present": True, "same_process_as_gui": owner.value == expected.value,
                 "owned_root": self.u.GetAncestor(hwnd, 2) == self.hwnd,
+                "in_owned_job": in_owned_job,
                 "class": name.value, "process_basename": process_name,
                 "bounds": [rect.left, rect.top, rect.right, rect.bottom] if observed else None}
 
@@ -333,6 +373,7 @@ class Native:
             return
         self.focus_observations.append({
             "stage": stage, "foreground": self.window_fact(self.u.GetForegroundWindow()),
+            "owned_topmost_presentation": self.presentation_topmost,
             "owned_gui": self.window_fact(self.hwnd),
             "hit": self.window_fact(hit),
             "point": [point.x, point.y] if point is not None else None,
@@ -379,11 +420,7 @@ class Native:
         assert self.u.ClientToScreen(self.hwnd, c.byref(point)), "ClientToScreen failed"
         assert self.u.SetCursorPos(point.x, point.y), "SetCursorPos failed"
         hit = self.u.WindowFromPoint(point)
-        owner = w.DWORD()
-        expected = w.DWORD()
-        self.u.GetWindowThreadProcessId(hit, c.byref(owner))
-        self.u.GetWindowThreadProcessId(self.hwnd, c.byref(expected))
-        if owner.value != expected.value or self.u.GetAncestor(hit, 2) != self.hwnd:
+        if not self.owned_hit(hit):
             self.record_focus("input-refused-obscured-hit-target", hit, point)
             raise Blocked("owned input point is obscured; no click sent")
         self.send(Input(kind=0, mouse=MouseInput(flags=2)))
@@ -545,6 +582,12 @@ class Native:
             self.clipboard_diagnostics.update(self.clipboard_snapshot.diagnostics)
             return True
         finally:
+            if self.presentation_topmost:
+                if self.u.IsWindow(self.hwnd) and self.owned_hit(self.hwnd):
+                    self.presentation_restored = bool(self.u.SetWindowPos(
+                        self.hwnd, w.HWND(-2), 0, 0, 0, 0, 0x13))
+                else:
+                    self.presentation_restored = not self.u.IsWindow(self.hwnd)
             self.u.SetCursorPos(self.pointer.x, self.pointer.y)
             if self.original_foreground:
                 self.u.SetForegroundWindow(self.original_foreground)
@@ -755,7 +798,7 @@ def main():
             except (RuntimeError, subprocess.TimeoutExpired, json.JSONDecodeError):
                 return None
         wait(ready, "owned control endpoint ready", 20, unavailable=True)
-        native.attach(child.pid)
+        native.attach(child.pid, child.job)
         receipt["owned_pid"] = child.pid
         receipt["native_activation"] = native.activation
         cli("resize-window", "--width", "1100", "--height", "800")
@@ -889,11 +932,13 @@ def main():
         cleanup = {}
         if native is not None:
             receipt["native_focus_observations"] = native.focus_observations
+            receipt["owned_topmost_for_presentation"] = native.presentation_topmost
             try:
                 cleanup["clipboard_restored"] = native.restore()
             except (OSError, Blocked):
                 cleanup["clipboard_restored"] = False
             cleanup["clipboard"] = native.clipboard_diagnostics
+            cleanup["owned_presentation_restored"] = native.presentation_restored
         if child is not None:
             if child.poll() is None:
                 try:

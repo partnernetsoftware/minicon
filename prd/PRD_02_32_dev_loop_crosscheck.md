@@ -1132,3 +1132,31 @@ ARM64 activation and x86_64 later-focus failures without reclaiming foreground,
 clicking setup windows or weakening the original native editor predicates.
 These observations remain hosted-court-only and do not qualify physical input
 until the actual replay succeeds.
+
+Actual page child HWNDs can belong to a WebView2 renderer rather than the host
+PID. Their admission requires both ancestry under the exact owned root and
+membership in the fixture's private kill-on-close Job; process ancestry alone
+or a renderer executable name grants nothing. The court queries that explicit
+Job with [IsProcessInJob](https://learn.microsoft.com/en-us/windows/win32/api/jobapi/nf-jobapi-isprocessinjob)
+using a limited-query process handle, closes it immediately and refuses failed
+queries. Foreground readback remains the original owned-root equality check.
+
+The exact `fc26f16` follow-up
+[run40244709831](https://github.com/partnernetsoftware/minicon/actions/runs/40244709831)
+is terminal BLOCKED on both architectures. The x86_64 hit is an actual
+`Chrome_RenderWidgetHostHWND` under the owned root, hosted by
+`msedgewebview2.exe`; a same-PID-only admission check incorrectly refuses it.
+The Job-and-root check above addresses that fixture boundary, pending replay.
+ARM64's actual obscuring hit and foreground are `Windows.UI.Core.CoreWindow`
+from `WWAHost.exe`; its purpose is not inferred from those names. Both GUI
+roots close normally and clipboard state is restored/unchanged. Local receipts:
+`target-six/v0.2.23-provider/native-controls-ci-fc26f16/`.
+
+For initial activation only, if ordinary NOACTIVATE presentation remains
+obscured, the disposable court may present its exact owned window as topmost
+once, re-resolve the actual hit and send the one click only if ownership is
+proved. Record this presentation condition and restore its window level during
+cleanup. Do not terminate or interact with the obscuring process. Subsequent
+foreground/point competition still stops input; there is no repeated raising
+or activation loop. This is fixture setup, not a claim of ordinary desktop
+z-order or another process's behavior.
