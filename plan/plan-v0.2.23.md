@@ -277,6 +277,14 @@ inputs are stable; runtime
 binding transactions and GUI callers join serially. No shared Cargo, desktop,
 clipboard or guard mutation runs concurrently.
 
+For slice 2, the [connection-selection contract](../prd/PRD_02_31_01_02_01_connection_selection.md)
+is the implementation join: account-resolved authority and independent catalogue
+ownership first, then draft/proof identity, migration/publication and GUI actions.
+The default and additional profiles join the same transaction; a default-only
+repair does not close HU-03/04 or PP-06. Catalogue loading and paid verification
+remain separate operations. Agree runtime/server/store APIs before assigning
+their hot files to different writers.
+
 Use focused assertions for each changed guard and the continuous public journey
 for product acceptance. Native IME/clipboard/scale and real provider grants keep
 their actual prerequisites; missing access stays BLOCKED. Reorganizing the UI

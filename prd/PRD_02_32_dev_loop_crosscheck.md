@@ -161,6 +161,29 @@ execution on the corrected source. The mechanism owner records the Windows
 reopen observation failure and the follow-up value-free diagnostics; do not
 relabel this terminal failure as a verified wait or a successful native join.
 
+The corrected invocation in run `40167727817` reached Python on macOS ARM,
+then the first protocol-control subprocess exceeded its 12-second deadline
+under the court's Python 3.14.7. No dedicated Rust driver build or native
+execution had started there. Its original log contains no child stack, so the
+cause is unproven. `verify_protocol.py` now requests a diagnostic thread dump
+before the unchanged deadline, preserves timed-out stdout/stderr and records
+an incomplete failed-control receipt after exact source restoration. Timeout
+is still a failure, never assertion RED. Local diagnostic handling and actual
+macOS execution must be verified separately.
+
+The loopback fixture also overrides Python HTTPServer's default bind path,
+which otherwise calls `socket.getfqdn` even for `127.0.0.1`, outside the fixture
+deadline. Literal loopback binding now uses a fixed server name without DNS.
+This removes a demonstrated unbounded prerequisite; it is not yet evidence
+that DNS caused either macOS timeout. Local protocol qualification executes
+eleven checks and eleven actual assertion-RED controls with exact restoration:
+`target-six/v0.2.23-provider/native-auth-bounded-startup-protocol/protocol-guard-receipt.json`.
+An actual deliberately stalled child in an isolated script copy hit the unchanged
+12-second deadline, retained its earlier thread dump, produced a failed-control
+receipt and restored that fixture exactly. Receipt:
+`target-six/v0.2.23-provider/native-auth-timeout-control/receipt.json`.
+Neither local check executes a native browser or qualifies macOS.
+
 **Local Windows x86_64 development gate (2026-10-25).**
 `build.sh test -- --test-threads=1` completed the workspace and both owned lexer
 forks with exit 0; the runner summaries reported 1691 passed and 82 ignored.

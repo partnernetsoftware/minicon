@@ -157,7 +157,7 @@ def main():
                            output / "protocol.log", env, 120)
         if protocol != 0 or hashes() != original_hashes:
             raise RuntimeError("fixture protocol controls failed or changed source")
-        receipt["protocol_gate"] = "10 checks and 10 actual assertion RED controls; exact source restored"
+        receipt["protocol_gate"] = "11 checks and 11 actual assertion RED controls; exact source restored"
         run("initial")
         # Reuse the previous account's explicit context in actual product
         # dispatch. Ordinary remains separate; B must observe A's storage.

@@ -13,6 +13,11 @@ client profiles and allocation. The parent retains protocol, admission,
 conversation-continuity and future selector contracts. No tool execution
 authority moves into the gateway.
 
+[Connection selection](PRD_02_31_01_02_01_connection_selection.md) owns the
+account catalogue, profile draft, exact verification and atomic route-publication
+contract used by ALLOCATE below. It also owns preservation of legacy applied
+connections during migration; this module retains profile/key lifecycle.
+
 ## Outcome tree DAG
 
 ```text

@@ -52,6 +52,7 @@ MiniCon — one-file local terminal
 │       └── [-] Harness settings / provider-pool / model API → prd/PRD_02_31_01_provider_gateway.md
 │           ├── [_] Guided connection experience and recovery → prd/PRD_02_31_01_01_harness_experience.md
 │           ├── [-] Multi-account pool / account networks / client allocation → prd/PRD_02_31_01_02_provider_pool.md
+│           │   └── [-] Account catalogues / drafts / verified atomic apply → prd/PRD_02_31_01_02_01_connection_selection.md
 │           └── [_] Usage statistics / balance and allowance monitoring → prd/PRD_02_31_01_03_usage_monitoring.md
 ├── Reusable foundations → prd/PRD_02_28_shared_core.md
 │   ├── minicon-core — shared rules; not a complete terminal engine

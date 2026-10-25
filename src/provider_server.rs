@@ -2,7 +2,8 @@
 
 use crate::{
     provider_accounts::{
-        AccountEdit, AccountPreferences, AccountState, AccountStore, NetworkPolicy, StoreError,
+        AccountEdit, AccountPreferences, AccountState, AccountStore, NetworkPolicy,
+        OrganizationAuthority, StoreError,
     },
     provider_auth::{self, AuthClient, Provider, Secret, TokenGrant, TokenLifecycle},
     provider_protocol::{self as protocol, Protocol, SseBridge},
@@ -653,8 +654,11 @@ impl Gateway {
                 account: account.clone(),
                 model: route.model_id.clone(),
                 generation: format!(
-                    "{generation}:{}:{}",
-                    preferences.service_generation, snapshot.generation
+                    "{generation}:{}:{}:{}:{}",
+                    preferences.service_generation,
+                    snapshot.generation,
+                    snapshot.organization.epoch,
+                    snapshot.organization.digest
                 ),
             },
             route,
@@ -1094,7 +1098,15 @@ impl Gateway {
             Some((&request.head, &binding)),
         )?;
         let network = &lease.preferences.service;
-        let grant = self.grant(&binding.account, &cancel, network, &lease.generation)?;
+        // Refresh may legitimately resolve a new organization at the same
+        // credential generation. It cannot retarget this bound conversation.
+        // Reacquire the exact bound authority before any model request; an
+        // already acquired grant remains valid for its admitted I/O lifetime.
+        let _ = self.grant(&binding.account, &cancel, network, &lease.generation)?;
+        let grant = self
+            .store
+            .load_grant_for_authority(&binding.account, &lease.generation, &lease.organization)
+            .map_err(credential_error)?;
         let identity = self
             .state
             .lock()
@@ -1204,6 +1216,7 @@ struct BorrowedLease<'a> {
     account: String,
     preferences: AccountPreferences,
     generation: String,
+    organization: OrganizationAuthority,
 }
 impl<'a> BorrowedLease<'a> {
     fn acquire(
@@ -1261,6 +1274,7 @@ impl<'a> BorrowedLease<'a> {
             account: account.to_owned(),
             preferences: snapshot.preferences,
             generation: snapshot.generation,
+            organization: snapshot.organization,
         })
     }
 }
@@ -2239,6 +2253,257 @@ mod tests {
             .set_client_key(&id, Some(Secret::new("synthetic-other").unwrap()))
             .unwrap();
         id
+    }
+
+    #[test]
+    fn organization_authority_aba_refuses_old_sessions_without_cancelling_admitted_sse_or_other_accounts()
+     {
+        let fixture = Fixture::new();
+        let snapshot = fixture.gateway.store.snapshot(&fixture.account).unwrap();
+        fixture
+            .gateway
+            .store
+            .set_organization_if_current(
+                &fixture.account,
+                &snapshot.generation,
+                Some("org_a".into()),
+            )
+            .unwrap();
+        let other = fixture
+            .gateway
+            .store
+            .insert(
+                "Unaffected",
+                TokenGrant {
+                    provider: Provider::OpenCode,
+                    access_token: Secret::new("synthetic-other-access").unwrap(),
+                    lifecycle: TokenLifecycle::ExpiringRefresh {
+                        refresh_token: Secret::new("synthetic-other-refresh").unwrap(),
+                        expires_at: Instant::now() + Duration::from_secs(3600),
+                    },
+                    organization: None,
+                },
+            )
+            .unwrap();
+        fixture.gateway.store.mark_ready(&other.id).unwrap();
+        add_profile(&fixture, &other.id);
+        let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
+        *fixture.gateway.fixture_upstream.lock().unwrap() =
+            Some(format!("http://{}/", upstream.local_addr().unwrap()));
+        let server = fixture.server();
+        let original =
+            read_binding(server.get("/v1/minicon/binding", "x-minicon-session: org-a\r\n"));
+        let independent = read_binding(server.get_key(
+            "/v1/minicon/binding",
+            "synthetic-other",
+            "x-minicon-session: independent\r\n",
+        ));
+        let mut ongoing = server.request(
+            "/v1/chat/completions",
+            "x-minicon-session: org-a\r\n",
+            Some(BODY),
+        );
+        let (mut peer, headers, body) = controlled_peer_request(&upstream);
+        assert!(headers.to_ascii_lowercase().contains("x-org-id: org_a\r\n"));
+        assert_eq!(body["model"], "fixture-wire");
+        write!(peer, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{FIRST}", FIRST.len() + END.len()).unwrap();
+        peer.flush().unwrap();
+        assert!(read_headers(&mut ongoing).starts_with("HTTP/1.1 200"));
+        assert_eq!(
+            sse_event(&mut ongoing)["choices"][0]["delta"]["content"],
+            "hello"
+        );
+
+        fixture
+            .gateway
+            .store
+            .set_organization_if_current(
+                &fixture.account,
+                &snapshot.generation,
+                Some("org_b".into()),
+            )
+            .unwrap();
+        assert!(
+            server
+                .get("/v1/minicon/binding", "x-minicon-session: org-a\r\n")
+                .starts_with("HTTP/1.1 409")
+        );
+        fixture
+            .gateway
+            .store
+            .set_organization_if_current(
+                &fixture.account,
+                &snapshot.generation,
+                Some("org_a".into()),
+            )
+            .unwrap();
+        assert!(
+            server
+                .get("/v1/minicon/binding", "x-minicon-session: org-a\r\n")
+                .starts_with("HTTP/1.1 409")
+        );
+        let fresh =
+            read_binding(server.get("/v1/minicon/binding", "x-minicon-session: org-a-new\r\n"));
+        assert_ne!(fresh["generation"], original["generation"]);
+        for field in ["profile", "alias", "provider", "account", "model"] {
+            assert_eq!(fresh[field], original[field]);
+        }
+        assert_eq!(
+            read_binding(server.get_key(
+                "/v1/minicon/binding",
+                "synthetic-other",
+                "x-minicon-session: independent\r\n"
+            )),
+            independent
+        );
+        assert_eq!(
+            fixture
+                .gateway
+                .store
+                .snapshot(&fixture.account)
+                .unwrap()
+                .generation,
+            snapshot.generation
+        );
+        peer.write_all(END.as_bytes()).unwrap();
+        peer.flush().unwrap();
+        drop(peer);
+        assert_eq!(
+            sse_event(&mut ongoing)["choices"][0]["finish_reason"],
+            "stop"
+        );
+        let mut tail = Vec::new();
+        ongoing.read_to_end(&mut tail).unwrap();
+        assert_eq!(tail, b"data: [DONE]\n\n");
+    }
+
+    #[test]
+    fn organization_authority_changed_by_refresh_is_refused_before_a_bound_model_request() {
+        let fixture = Fixture::new();
+        let snapshot = fixture.gateway.store.snapshot(&fixture.account).unwrap();
+        fixture
+            .gateway
+            .store
+            .replace_grant_if_current(
+                &fixture.account,
+                &snapshot.generation,
+                TokenGrant {
+                    provider: Provider::OpenCode,
+                    access_token: Secret::new("synthetic-expired-access").unwrap(),
+                    lifecycle: TokenLifecycle::ExpiringRefresh {
+                        refresh_token: Secret::new("synthetic-refresh").unwrap(),
+                        expires_at: Instant::now(),
+                    },
+                    organization: Some("org_a".into()),
+                },
+            )
+            .unwrap();
+        let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
+        *fixture.gateway.fixture_upstream.lock().unwrap() =
+            Some(format!("http://{}/", upstream.local_addr().unwrap()));
+        let server = fixture.server();
+        let original =
+            read_binding(server.get("/v1/minicon/binding", "x-minicon-session: refresh-org\r\n"));
+        let request = BODY.replace("true", "false");
+        let mut client = server.request(
+            "/v1/chat/completions",
+            "x-minicon-session: refresh-org\r\n",
+            Some(&request),
+        );
+        let (refresh, _, body) = controlled_peer_request(&upstream);
+        assert_eq!(body["grant_type"], "refresh_token");
+        reply_controlled_peer(
+            refresh,
+            json!({"access_token":"synthetic-new-access","refresh_token":"synthetic-new-refresh","expires_in":3600,"org_id":"org_b"}),
+        );
+
+        // Also answer a forbidden inference if the authority guard is removed:
+        // the counterexample must fail its 409/no-inference assertions, rather
+        // than accidentally failing because a fake provider never replied.
+        client.set_nonblocking(true).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(4);
+        let mut bytes = Vec::new();
+        let mut chunk = [0u8; 4096];
+        let mut forbidden_model_requests = 0;
+        loop {
+            assert!(
+                Instant::now() < deadline,
+                "bound authority result did not arrive"
+            );
+            match upstream.accept() {
+                Ok((mut peer, _)) => {
+                    peer.set_nonblocking(false).unwrap();
+                    peer.set_read_timeout(Some(Duration::from_secs(4))).unwrap();
+                    peer.set_write_timeout(Some(Duration::from_secs(4)))
+                        .unwrap();
+                    let headers = read_headers(&mut peer);
+                    let length = headers
+                        .lines()
+                        .find_map(|line| {
+                            line.split_once(':')
+                                .filter(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                                .map(|(_, value)| value.trim().parse::<usize>().unwrap())
+                        })
+                        .unwrap();
+                    assert!(length <= 16384);
+                    let mut body = vec![0; length];
+                    peer.read_exact(&mut body).unwrap();
+                    let model: Value = serde_json::from_slice(&body).unwrap();
+                    assert_eq!(model["model"], "fixture-wire");
+                    forbidden_model_requests += 1;
+                    reply_controlled_peer(
+                        peer,
+                        json!({"id":"synthetic-unexpected","model":"fixture-wire","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}]}),
+                    );
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+                Err(error) => panic!("controlled provider accept: {error}"),
+            }
+            match client.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(count) => {
+                    assert!(bytes.len() + count <= 65536);
+                    bytes.extend_from_slice(&chunk[..count]);
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+                Err(error) => panic!("bound client response: {error}"),
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        let response = String::from_utf8(bytes).unwrap();
+        assert!(response.starts_with("HTTP/1.1 409"), "{response}");
+        assert_eq!(
+            forbidden_model_requests, 0,
+            "changed authority reached inference"
+        );
+        assert!(
+            server
+                .get("/v1/minicon/binding", "x-minicon-session: refresh-org\r\n")
+                .starts_with("HTTP/1.1 409")
+        );
+        let fresh =
+            read_binding(server.get("/v1/minicon/binding", "x-minicon-session: resolved-org\r\n"));
+        assert_ne!(fresh["generation"], original["generation"]);
+        let mut client = server.request(
+            "/v1/chat/completions",
+            "x-minicon-session: resolved-org\r\n",
+            Some(&request),
+        );
+        let (inference, headers, body) = controlled_peer_request(&upstream);
+        assert!(
+            headers
+                .to_ascii_lowercase()
+                .contains("authorization: bearer synthetic-new-access\r\n")
+        );
+        assert!(headers.to_ascii_lowercase().contains("x-org-id: org_b\r\n"));
+        assert_eq!(body["model"], "fixture-wire");
+        reply_controlled_peer(
+            inference,
+            json!({"id":"synthetic-new","model":"fixture-wire","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}]}),
+        );
+        let mut response = String::new();
+        client.read_to_string(&mut response).unwrap();
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
     }
 
     #[test]

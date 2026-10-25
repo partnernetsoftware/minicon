@@ -9,6 +9,7 @@ import secrets
 import time
 import tempfile
 import unittest
+from unittest.mock import patch
 from urllib.parse import quote
 
 import fixture
@@ -66,6 +67,12 @@ def initial_trace(court):
 
 
 class ProtocolChecks(unittest.TestCase):
+    def test_loopback_fixture_never_resolves_a_host_name(self):
+        with patch("socket.getfqdn", side_effect=AssertionError("loopback fixture attempted DNS")):
+            with fixture.Fixture() as court:
+                self.assertEqual(court.server.server_name, "127.0.0.1")
+                self.assertEqual(request(court, "GET", "/driver/status")[0], 200)
+
     def test_finite_synthetic_trace_and_redacted_receipt(self):
         with fixture.Fixture() as court:
             with tempfile.TemporaryDirectory() as directory:

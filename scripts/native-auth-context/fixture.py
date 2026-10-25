@@ -279,6 +279,13 @@ class BoundedServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
     block_on_close = False
 
+    def server_bind(self):
+        # HTTPServer.server_bind calls getfqdn even for a literal loopback
+        # address. DNS is neither needed nor covered by the fixture deadline.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = "127.0.0.1"
+        self.server_port = self.server_address[1]
+
     def __init__(self, state):
         self.state = state
         self.slots = threading.BoundedSemaphore(8)

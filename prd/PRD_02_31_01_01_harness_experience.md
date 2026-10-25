@@ -352,6 +352,10 @@ and do not tell the user to log in again just to clear a stale page message.
 
 ## Account and model selection
 
+The [connection-selection owner](PRD_02_31_01_02_01_connection_selection.md)
+defines catalogue/authority identity, draft revisions, exact verification,
+atomic application and legacy migration. This section owns their presentation.
+
 Account cards show provider, provider-supplied label, stable short ID, connection
 state and the client allocations using that account. Only the expanded account shows
 its catalogue, network, balance and secondary actions. Keep Connect another

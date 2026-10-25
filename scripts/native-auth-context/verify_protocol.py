@@ -17,6 +17,7 @@ OUTPUT = args.output.resolve()
 OUTPUT.mkdir(mode=0o700, parents=True, exist_ok=False)
 original = SOURCE.read_bytes()
 cases = [
+    ("no-loopback-dns", "test_loopback_fixture_never_resolves_a_host_name", 'socketserver.TCPServer.server_bind(self)', 'http.server.HTTPServer.server_bind(self)'),
     ("receipt-redaction", "test_finite_synthetic_trace_and_redacted_receipt", 'run_sha256=digest(self.run)', 'run_sha256=self.run'),
     ("host-identity", "test_host_origin_and_nonce_are_checked_over_http", 'if self.headers.get_all("Host", []) != [urlsplit(self.server.state.origin).netloc]:', 'if False:'),
     ("duplicate-json", "test_body_framing_and_json_are_bounded", 'if key in result:', 'if False:'),
@@ -29,14 +30,27 @@ cases = [
     ("absolute-deadline", "test_fixture_has_an_absolute_deadline", 'if time.monotonic() >= self.deadline:', 'if False:'),
 ]
 observations = []
+failure = None
+active_case = None
 environment = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
 try:
     for name, test, guard, mutant in cases:
+        active_case = name
         text = original.decode()
         assert text.count(guard) == 1, name
         SOURCE.write_bytes(text.replace(guard, mutant, 1).encode("utf-8"))
-        result = subprocess.run([sys.executable, "-B", "-m", "unittest", f"fixture_selfcheck.ProtocolChecks.{test}"],
-                                cwd=ROOT, env=environment, capture_output=True, timeout=12)
+        # A timed-out child is never assertion RED. Preserve a diagnostic
+        # stack before its unchanged deadline, then retain captured output.
+        child = ("import faulthandler, unittest; "
+                 "faulthandler.dump_traceback_later(8, repeat=False); "
+                 "unittest.main(module=None)")
+        try:
+            result = subprocess.run([sys.executable, "-B", "-c", child,
+                                     f"fixture_selfcheck.ProtocolChecks.{test}"],
+                                    cwd=ROOT, env=environment, capture_output=True, timeout=12)
+        except subprocess.TimeoutExpired as error:
+            (OUTPUT / f"protocol-red-{name}.log").write_bytes((error.stdout or b"") + (error.stderr or b""))
+            raise
         log = result.stdout + result.stderr
         (OUTPUT / f"protocol-red-{name}.log").write_bytes(log)
         assert result.returncode != 0 and b"AssertionError" in log and b"Ran 1 test" in log, (name, log.decode(errors="replace"))
@@ -44,8 +58,19 @@ try:
                                  assertion_red=True, log=f"protocol-red-{name}.log", log_sha256=hashlib.sha256(log).hexdigest()))
         SOURCE.write_bytes(original)
         assert SOURCE.read_bytes() == original
+except BaseException as error:
+    failure = dict(case=active_case, kind=type(error).__name__)
+    raise
 finally:
     SOURCE.write_bytes(original)
+    if failure is not None:
+        (OUTPUT / "protocol-guard-receipt.json").write_text(json.dumps(dict(
+            kind="fixture-protocol-guard-controls", status="FAIL", failure=failure,
+            native_qualification="NOT_CLAIMED", native_browser_executed=False,
+            expected_assertion_reds=observations,
+            byte_exact_source_restored=SOURCE.read_bytes() == original,
+            fixture_sha256=hashlib.sha256(original).hexdigest(),
+        ), indent=2) + "\n", encoding="utf-8")
 restored = subprocess.run([sys.executable, "-B", "fixture_selfcheck.py", "--output", str(OUTPUT / "restored")], cwd=ROOT,
                           env=environment, capture_output=True, timeout=20)
 (OUTPUT / "protocol-restored.log").write_bytes(restored.stdout + restored.stderr)
@@ -58,4 +83,4 @@ receipt = dict(kind="fixture-protocol-guard-controls", native_qualification="NOT
                restored_log="protocol-restored.log")
 (OUTPUT / "protocol-guard-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
 print(json.dumps(dict(protocol_assertion_reds=len(observations), byte_exact_restored=True,
-                      final_protocol_checks=10, native_browser_executed=False, rust_compiled=False)))
+                      final_protocol_checks=11, native_browser_executed=False, rust_compiled=False)))

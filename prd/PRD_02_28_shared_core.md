@@ -198,6 +198,20 @@ field editing, pointer capture and geometry mechanisms. Do not extract a new
 tree framework or place MiniCon tab policy in native adapters; qualify paint,
 hits, input and session preservation through MiniCon's actual consumer.
 
+[Verified connection selection](PRD_02_31_01_02_01_connection_selection.md)
+keeps catalogue ownership, per-profile drafts, verification identities and
+applied-route migration in product-owned `provider_*` modules. Reuse shared
+private atomic publication, bounded HTTP and cancellation mechanisms; do not
+move provider organization or allocation policy into shared native adapters.
+That join requires a commit-aware private-publication result: distinguish a
+failure before replacement from a completed replacement with an unconfirmed
+durability barrier. Preserve the existing private temporary/file permissions,
+regular-entry checks and meaningful I/O error categories. The generic
+`filesystem_publish::write_file_atomic` staging helper alone does not establish
+the private-file contract; reuse the shared publication mechanism with private
+creation, rather than adding product-owned OS permission/rename code. This
+private result seam is planned, not implemented by the selection design.
+
 The [cluster horizon](PRD_02_37_cluster_horizon.md) reserves product-owned node
 identity, pairing/authority, origin-scoped projection and operation reconciliation.
 Audit reusable transport/identity/storage mechanisms at C0 before implementation;
@@ -612,6 +626,16 @@ assertion-RED controls with exact restoration, including independent cookie and
 localStorage loss cases. Local receipt:
 `target-six/v0.2.23-provider/native-auth-storage-diagnostics-protocol/protocol-guard-receipt.json`.
 These are protocol checks; corrected native execution remains required.
+
+**Diagnostic follow-up, source `bc25e30879466f4a5e41dfa17a63c1cf80e5ef77`.**
+Run `40167727817` retained actual Windows x64/ARM observations: reopened A's
+initial cookie is `missing`, while its initial localStorage `matches`. The first
+ordinary/A/B comparisons match. This distinguishes cookie loss from account
+cross-contamination; it does not yet establish shutdown/flush as the cause.
+The independent artifact/receipt audit is retained in
+`target-six/v0.2.23-provider/ci-bc25e30-native/verification-index.json`.
+macOS protocol preflight failure is owned by PRD 32 below, not classified as a
+native storage result. The required Windows persistence/native join stays open.
 
 The local scaffold checkpoint is recorded in
 `target-six/v0.2.23-provider/native-auth-court-final-gate-receipt.json`:

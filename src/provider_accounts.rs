@@ -4,6 +4,7 @@
 use crate::provider_auth::{Provider, Secret, TokenGrant, TokenLifecycle};
 use minicon_platform::filesystem;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -31,6 +32,14 @@ pub struct AccountSnapshot {
     pub summary: AccountSummary,
     pub preferences: AccountPreferences,
     pub generation: String,
+    pub organization: OrganizationAuthority,
+}
+
+/// Persistent authority identity only; raw organization values stay private.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrganizationAuthority {
+    pub epoch: String,
+    pub digest: String,
 }
 
 /// Private account policy. Debug and public account summaries never disclose
@@ -185,6 +194,12 @@ struct Credential {
     generation: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     ready: Option<bool>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_epoch"
+    )]
+    org_epoch: Option<String>,
     provider: Provider,
     access_token: String,
     refresh_token: Option<String>,
@@ -304,6 +319,7 @@ impl AccountStore {
                 .clone()
                 .unwrap_or_else(|| AccountPreferences::legacy(id)),
             generation: credential_generation(&credential, id).to_owned(),
+            organization: organization_authority(&credential, id),
         })
     }
 
@@ -321,6 +337,27 @@ impl AccountStore {
             .ok_or(StoreError::Missing)?;
         let credential = self.read_credential(id, account.summary.provider)?;
         check_generation(&credential, id, Some(expected))?;
+        decode_grant(&credential)
+    }
+
+    /// Acquire the bound organization's grant under the same lock as changes.
+    pub fn load_grant_for_authority(
+        &self,
+        id: &str,
+        expected_generation: &str,
+        expected: &OrganizationAuthority,
+    ) -> Result<TokenGrant, StoreError> {
+        let _guard = self.mutation.lock().map_err(|_| StoreError::Storage)?;
+        let accounts = self.read_registry()?;
+        let account = accounts
+            .iter()
+            .find(|account| account.summary.id == id)
+            .ok_or(StoreError::Missing)?;
+        let credential = self.read_credential(id, account.summary.provider)?;
+        check_generation(&credential, id, Some(expected_generation))?;
+        if &organization_authority(&credential, id) != expected {
+            return Err(StoreError::Changed);
+        }
         decode_grant(&credential)
     }
 
@@ -361,6 +398,11 @@ impl AccountStore {
         credential.ready =
             Some(projected_state(&credential, account.summary.state) == AccountState::AccountReady);
         credential.version = 2;
+        credential.org_epoch = Some(if credential.organization != organization {
+            next_epoch(organization_epoch(&credential, id))?
+        } else {
+            organization_epoch(&credential, id).to_owned()
+        });
         credential.organization = organization;
         self.write_credential(id, &credential)
     }
@@ -432,7 +474,15 @@ impl AccountStore {
         };
         let ready = !reconnect
             && projected_state(&current, account.summary.state) == AccountState::AccountReady;
-        let credential = encode_grant(grant, generation, ready)?;
+        let org_epoch = if reconnect {
+            generation.clone()
+        } else if current.organization != grant.organization {
+            next_epoch(organization_epoch(&current, id))?
+        } else {
+            organization_epoch(&current, id).to_owned()
+        };
+        let mut credential = encode_grant(grant, generation, ready)?;
+        credential.org_epoch = Some(org_epoch);
         self.write_credential(id, &credential)?;
         let mut summary = account.summary.clone();
         summary.state = projected_state(&credential, summary.state);
@@ -709,7 +759,11 @@ impl AccountStore {
         let credential: Credential =
             serde_json::from_slice(&bytes).map_err(|_| StoreError::Corrupt)?;
         let header_valid = match credential.version {
-            1 => credential.generation.is_none() && credential.ready.is_none(),
+            1 => {
+                credential.generation.is_none()
+                    && credential.ready.is_none()
+                    && credential.org_epoch.is_none()
+            }
             2 => {
                 credential
                     .generation
@@ -719,7 +773,13 @@ impl AccountStore {
             }
             _ => false,
         };
-        if !header_valid || credential.provider != provider {
+        if !header_valid
+            || credential.provider != provider
+            || credential
+                .org_epoch
+                .as_deref()
+                .is_some_and(|epoch| !valid_generation(epoch))
+        {
             return Err(StoreError::Corrupt);
         }
         // A syntactically valid header must not make a broken grant Ready.
@@ -734,6 +794,51 @@ impl AccountStore {
 
 fn credential_generation<'a>(credential: &'a Credential, id: &'a str) -> &'a str {
     credential.generation.as_deref().unwrap_or(id)
+}
+
+fn deserialize_optional_epoch<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    String::deserialize(deserializer).map(Some)
+}
+
+fn organization_epoch<'a>(credential: &'a Credential, id: &'a str) -> &'a str {
+    credential
+        .org_epoch
+        .as_deref()
+        .unwrap_or_else(|| credential_generation(credential, id))
+}
+
+fn organization_authority(credential: &Credential, id: &str) -> OrganizationAuthority {
+    let mut hash = Sha256::new();
+    hash.update(b"minicon.organization.v1\0");
+    match &credential.organization {
+        None => hash.update([0]),
+        Some(organization) => {
+            hash.update([1]);
+            hash.update((organization.len() as u64).to_be_bytes());
+            hash.update(organization.as_bytes());
+        }
+    }
+    OrganizationAuthority {
+        epoch: organization_epoch(credential, id).to_owned(),
+        digest: hash
+            .finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect(),
+    }
+}
+
+fn next_epoch(previous: &str) -> Result<String, StoreError> {
+    let bytes =
+        minicon_platform::entropy::secure_random_array::<16>().map_err(|_| StoreError::Storage)?;
+    let next: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+    if next == previous {
+        return Err(StoreError::Storage);
+    }
+    Ok(next)
 }
 
 fn projected_state(credential: &Credential, legacy: AccountState) -> AccountState {
@@ -815,6 +920,7 @@ fn encode_grant(
     };
     Ok(Credential {
         version: 2,
+        org_epoch: Some(generation.clone()),
         generation: Some(generation),
         ready: Some(ready),
         provider: grant.provider,
@@ -1044,6 +1150,7 @@ mod tests {
                 private["version"] = 1.into();
                 private.as_object_mut().unwrap().remove("generation");
                 private.as_object_mut().unwrap().remove("ready");
+                private.as_object_mut().unwrap().remove("org_epoch");
                 filesystem::write_private_atomic(
                     &private_path,
                     &serde_json::to_vec(&private).unwrap(),
@@ -1127,6 +1234,9 @@ mod tests {
             ("version", serde_json::json!(9)),
             ("generation", serde_json::Value::Null),
             ("generation", serde_json::json!("malformed")),
+            ("org_epoch", serde_json::Value::Null),
+            ("org_epoch", serde_json::json!("malformed")),
+            ("org_epoch", serde_json::json!("z".repeat(32))),
             ("ready", serde_json::Value::Null),
             ("provider", serde_json::json!("opencode")),
             ("access_token", serde_json::json!("")),
@@ -1193,6 +1303,144 @@ mod tests {
     }
 
     #[test]
+    fn organization_authority_persists_and_aba_never_revives_an_old_grant_binding() {
+        let fixture = Fixture::new();
+        let store = AccountStore::new(fixture.0.clone()).unwrap();
+        let opencode = |access: &str, organization: Option<&str>| TokenGrant {
+            provider: Provider::OpenCode,
+            access_token: Secret::new(access).unwrap(),
+            lifecycle: TokenLifecycle::ExpiringRefresh {
+                refresh_token: Secret::new("synthetic-refresh").unwrap(),
+                expires_at: Instant::now() + Duration::from_secs(600),
+            },
+            organization: organization.map(str::to_owned),
+        };
+        let account = store
+            .insert("OpenCode", opencode("initial-access", Some("org_a")))
+            .unwrap();
+        store.mark_ready(&account.id).unwrap();
+        let a = store.snapshot(&account.id).unwrap();
+        assert_eq!(
+            AccountStore::new(fixture.0.clone())
+                .unwrap()
+                .snapshot(&account.id)
+                .unwrap(),
+            a
+        );
+        store
+            .set_organization_if_current(&account.id, &a.generation, Some("org_a".into()))
+            .unwrap();
+        store
+            .replace_grant_if_current(
+                &account.id,
+                &a.generation,
+                opencode("refreshed-access", None),
+            )
+            .unwrap();
+        assert_eq!(store.snapshot(&account.id).unwrap(), a);
+        assert_eq!(
+            store
+                .load_grant_for_authority(&account.id, &a.generation, &a.organization)
+                .unwrap()
+                .access_token
+                .expose(),
+            "refreshed-access"
+        );
+
+        // A normal refresh can explicitly establish another org, without
+        // reconnecting the credential or clearing its existing readiness.
+        store
+            .replace_grant_if_current(
+                &account.id,
+                &a.generation,
+                opencode("org-b-access", Some("org_b")),
+            )
+            .unwrap();
+        let b = store.snapshot(&account.id).unwrap();
+        assert_eq!(b.generation, a.generation);
+        assert_eq!(b.summary.state, AccountState::AccountReady);
+        assert_ne!(b.organization.epoch, a.organization.epoch);
+        assert_ne!(b.organization.digest, a.organization.digest);
+        store
+            .set_organization_if_current(&account.id, &a.generation, Some("org_a".into()))
+            .unwrap();
+        let reopened = AccountStore::new(fixture.0.clone()).unwrap();
+        let returned = reopened.snapshot(&account.id).unwrap();
+        assert_eq!(returned.organization.digest, a.organization.digest);
+        assert_ne!(returned.organization.epoch, a.organization.epoch);
+        assert_ne!(returned.organization.epoch, b.organization.epoch);
+        assert_eq!(
+            reopened
+                .load_grant_for_authority(&account.id, &a.generation, &a.organization)
+                .unwrap_err(),
+            StoreError::Changed
+        );
+        assert_eq!(
+            reopened
+                .load_grant_for_authority(&account.id, &b.generation, &b.organization)
+                .unwrap_err(),
+            StoreError::Changed
+        );
+        assert_eq!(
+            reopened
+                .load_grant_for_authority(&account.id, &returned.generation, &returned.organization)
+                .unwrap()
+                .organization
+                .as_deref(),
+            Some("org_a")
+        );
+        let debug = format!("{returned:?}");
+        assert!(!debug.contains("org_a"));
+        assert!(!debug.contains("org-b-access"));
+        reopened
+            .reconnect_if_current(
+                &account.id,
+                &returned.generation,
+                opencode("new-login", None),
+            )
+            .unwrap();
+        let reconnected = reopened.snapshot(&account.id).unwrap();
+        assert_ne!(reconnected.generation, returned.generation);
+        assert_eq!(reconnected.organization.epoch, reconnected.generation);
+        assert_ne!(
+            reconnected.organization.digest,
+            returned.organization.digest
+        );
+        assert_eq!(reconnected.summary.state, AccountState::CredentialStored);
+    }
+
+    #[test]
+    fn organization_authority_legacy_missing_epoch_is_stable_until_the_value_changes() {
+        let fixture = Fixture::new();
+        let store = AccountStore::new(fixture.0.clone()).unwrap();
+        let account = store.insert("Legacy", grant("synthetic-legacy")).unwrap();
+        let path = store.credential_path(&account.id).unwrap();
+        let mut private: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        private.as_object_mut().unwrap().remove("org_epoch");
+        filesystem::write_private_atomic(&path, &serde_json::to_vec(&private).unwrap()).unwrap();
+        let original = store.snapshot(&account.id).unwrap();
+        assert_eq!(original.organization.epoch, original.generation);
+        let reopened = AccountStore::new(fixture.0.clone()).unwrap();
+        assert_eq!(reopened.snapshot(&account.id).unwrap(), original);
+        reopened
+            .set_organization_if_current(&account.id, &original.generation, None)
+            .unwrap();
+        assert_eq!(reopened.snapshot(&account.id).unwrap(), original);
+        let saved: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(saved["org_epoch"], original.organization.epoch);
+        assert_eq!(
+            reopened
+                .load_grant_for_authority(&account.id, &original.generation, &original.organization)
+                .unwrap()
+                .access_token
+                .expose(),
+            "synthetic-legacy"
+        );
+    }
+
+    #[test]
     fn organization_selection_preserves_a_same_generation_refresh_and_every_other_credential_field()
     {
         let fixture = Fixture::new();
@@ -1225,6 +1473,7 @@ mod tests {
         let path = store.credential_path(&account.id).unwrap();
         let mut expected: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let mut previous_authority = store.snapshot(&account.id).unwrap().organization;
         for organization in [
             Some("org_live-1.example:primary".to_owned()),
             Some("a".repeat(256)),
@@ -1234,6 +1483,10 @@ mod tests {
                 .set_organization_if_current(&account.id, &initial.generation, organization.clone())
                 .unwrap();
             expected["organization"] = serde_json::to_value(&organization).unwrap();
+            let authority = store.snapshot(&account.id).unwrap().organization;
+            assert_ne!(authority.epoch, previous_authority.epoch);
+            expected["org_epoch"] = authority.epoch.clone().into();
+            previous_authority = authority;
             let actual: serde_json::Value =
                 serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
             assert_eq!(actual, expected);
@@ -1308,7 +1561,11 @@ mod tests {
             .unwrap();
         assert_eq!(explicit.access_token.expose(), "explicit-access");
         assert_eq!(explicit.organization.as_deref(), Some("org_explicit"));
-        assert_eq!(store.snapshot(&account.id).unwrap(), current);
+        let explicit_snapshot = store.snapshot(&account.id).unwrap();
+        assert_eq!(explicit_snapshot.summary, current.summary);
+        assert_eq!(explicit_snapshot.preferences, current.preferences);
+        assert_eq!(explicit_snapshot.generation, current.generation);
+        assert_ne!(explicit_snapshot.organization, current.organization);
 
         store
             .reconnect_if_current(
