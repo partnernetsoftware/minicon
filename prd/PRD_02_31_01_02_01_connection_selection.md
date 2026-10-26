@@ -780,3 +780,19 @@ not qualify provider entitlement, physical input or release artifacts.
 The next selected slice is the accepted
 [whole-profile workflow design](PRD_02_31_01_02_01_01_profile_verification.md).
 Its runtime implementation/evidence remain planned, independently of plain Apply.
+
+### Readable draft guidance after native presentation review
+
+The native field checkpoint in [the experience owner](PRD_02_31_01_01_harness_experience.md#hosted-physical-harness-fields-and-redaction-checkpoint)
+exposes internal `IncompleteAllocation`/staged wording and clipped static
+explanations. Settings must distinguish loading/unavailable, saving, unsaved
+changes, invalid input, saved draft and applied state with short localized user
+guidance. An unselected account says choose an account; account-removed wording
+requires a previously selected identity. Put draft-versus-applied meaning and
+cost/retry/Apply disclosures into separate paginated read-only rows so a fixed
+caption cannot silently lose its ending. Keep the existing row/action identity,
+focus, drafts, paid-action admission, verification and atomic Apply contracts.
+This is a presentation correction in `src/harness_settings_ui.rs`, reusing its
+existing row/geometry/pager and language machinery; no runtime state, grant or
+new native mechanism is introduced. The existing native fields, profile-return,
+cost-caption and public Settings journeys must replay after integration.

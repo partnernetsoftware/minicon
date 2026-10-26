@@ -42,6 +42,7 @@ enum Row {
     Accounts,
     ConnectInput(Field),
     ConnectNetworkHint,
+    ConnectNetworkSeparation,
     Login,
     LoginActions,
     Challenge,
@@ -52,7 +53,9 @@ enum Row {
     AccountConnection,
     AccountReconnect,
     AccountReconnectHint,
+    AccountReconnectVerification,
     AccountNetworkHint,
+    AccountNetworkSeparation,
     CatalogueStatus,
     CatalogueRefresh,
     CatalogueModel(usize),
@@ -64,6 +67,7 @@ enum Row {
     VerificationCancel,
     VerificationRetry,
     ProbeNotice,
+    ProbeBehavior,
     ModelChoice(usize),
     Profile(usize),
     ProfileCreate,
@@ -71,6 +75,7 @@ enum Row {
     ProfileInput(ProfileField),
     ProfileToggle,
     ProfileApplied,
+    ProfileDraftHint,
     AppliedAlias(usize),
     AppliedAccount(usize),
     AppliedModel(usize),
@@ -494,6 +499,7 @@ impl HarnessSettings {
             Row::ConnectInput(Field::ConnectLoginProxy),
             Row::ConnectInput(Field::ConnectServiceProxy),
             Row::ConnectNetworkHint,
+            Row::ConnectNetworkSeparation,
             Row::Login,
             Row::LoginActions,
         ];
@@ -510,10 +516,12 @@ impl HarnessSettings {
                 Row::AccountInput(Field::LoginProxy),
                 Row::AccountInput(Field::ServiceProxy),
                 Row::AccountNetworkHint,
+                Row::AccountNetworkSeparation,
                 Row::AccountActions,
                 Row::AccountConnection,
                 Row::AccountReconnect,
                 Row::AccountReconnectHint,
+                Row::AccountReconnectVerification,
                 Row::CatalogueStatus,
                 Row::CatalogueRefresh,
             ]);
@@ -539,6 +547,7 @@ impl HarnessSettings {
                 ]);
             }
             rows.push(Row::ProfileApplied);
+            rows.push(Row::ProfileDraftHint);
             for index in 0..self.applied_allocations().len() {
                 rows.extend([
                     Row::AppliedAlias(index),
@@ -564,6 +573,7 @@ impl HarnessSettings {
                 Row::VerificationCancel,
                 Row::VerificationRetry,
                 Row::ProbeNotice,
+                Row::ProbeBehavior,
             ]);
             if let Some(catalogue) = self.current_catalogue()
                 && catalogue.status == provider_runtime::CatalogueStatus::Fresh
@@ -1430,6 +1440,7 @@ fn row_id(row: Row) -> String {
         Row::ConnectInput(Field::ConnectServiceProxy) => "connect_service_proxy",
         Row::ConnectInput(_) => "connect_input",
         Row::ConnectNetworkHint => "connect_network_hint",
+        Row::ConnectNetworkSeparation => "connect_network_separation",
         Row::Login => "login",
         Row::LoginActions => "login_actions",
         Row::Challenge => "device_challenge",
@@ -1443,7 +1454,9 @@ fn row_id(row: Row) -> String {
         Row::AccountConnection => "account_connection",
         Row::AccountReconnect => "account_reconnect",
         Row::AccountReconnectHint => "account_reconnect_hint",
+        Row::AccountReconnectVerification => "account_reconnect_verification",
         Row::AccountNetworkHint => "account_network_hint",
+        Row::AccountNetworkSeparation => "account_network_separation",
         Row::CatalogueStatus => "account_catalogue_status",
         Row::CatalogueRefresh => "account_catalogue_refresh",
         Row::CatalogueModel(index) => return format!("account_catalogue_model_{index}"),
@@ -1454,6 +1467,7 @@ fn row_id(row: Row) -> String {
         Row::VerificationCancel => "model_verification_cancel",
         Row::VerificationRetry => "model_readiness_retry",
         Row::ProbeNotice => "probe_notice",
+        Row::ProbeBehavior => "probe_behavior",
         Row::Connect => "connect",
         Row::KeyState => "key_state",
         Row::KeyDurability => "key_durability",
@@ -1476,6 +1490,7 @@ fn row_id(row: Row) -> String {
         Row::ProfileInput(ProfileField::Alias(slot)) => return format!("connection_alias_{slot}"),
         Row::ProfileToggle => "connection_profile_enabled",
         Row::ProfileApplied => "connection_applied",
+        Row::ProfileDraftHint => "connection_draft_hint",
         Row::AppliedAlias(index) => return format!("connection_applied_{index}_alias"),
         Row::AppliedAccount(index) => return format!("connection_applied_{index}_account"),
         Row::AppliedModel(index) => return format!("connection_applied_{index}_model"),
@@ -1786,8 +1801,20 @@ impl ConApp {
                     );
                 }
                 Row::AccountNetworkHint => {
-                    label = "Empty proxy = Direct. Login and service networks are independent."
-                        .to_owned();
+                    label = tr(
+                        "Empty proxy means Direct.",
+                        "代理留空表示直连。",
+                        "代理留空表示直連。",
+                    )
+                    .into();
+                }
+                Row::ConnectNetworkSeparation | Row::AccountNetworkSeparation => {
+                    label = tr(
+                        "Login and service networks are independent.",
+                        "登录与服务网络独立设置。",
+                        "登入與服務網路獨立設定。",
+                    )
+                    .into();
                 }
                 Row::AccountReconnect => {
                     button(surface, cell(0, 1), "Reconnect this account", false);
@@ -1834,12 +1861,28 @@ impl ConApp {
                     }
                 }
                 Row::AccountReconnectHint => {
-                    label = "Uses saved login settings. Connections to this account require model verification again after reconnecting.".into();
+                    label = tr(
+                        "Reconnect uses saved login settings.",
+                        "重新连接使用已保存的登录设置。",
+                        "重新連線使用已儲存的登入設定。",
+                    )
+                    .into();
+                }
+                Row::AccountReconnectVerification => {
+                    label = tr(
+                        "Verify this account's models again afterwards.",
+                        "重新连接后需再次验证此账号的模型。",
+                        "重新連線後需再次驗證此帳號的模型。",
+                    )
+                    .into();
                 }
                 Row::ConnectNetworkHint => {
-                    label =
-                        "New account: choose separate login and service networks, then Continue."
-                            .to_owned()
+                    label = tr(
+                        "Choose both networks before Continue.",
+                        "继续前请设置两种网络。",
+                        "繼續前請設定兩種網路。",
+                    )
+                    .into();
                 }
                 Row::NoAccounts => label = "No account. Add a provider to continue.".to_owned(),
                 Row::Profile(index) => {
@@ -1866,7 +1909,11 @@ impl ConApp {
                             } else {
                                 profile.id.get(..8).unwrap_or(&profile.id)
                             },
-                            if profile.dirty { " / staged" } else { "" }
+                            if profile.dirty {
+                                tr(" / draft", " / 草稿", " / 草稿")
+                            } else {
+                                ""
+                            }
                         ),
                         settings.forms.selected.as_deref() == Some(profile.id.as_str()),
                     );
@@ -1887,25 +1934,99 @@ impl ConApp {
                 ),
                 Row::ProfileState => {
                     label = settings.forms.current().map_or_else(
-                        || format!("Connection drafts: {:?}", settings.view.load_state),
+                        || {
+                            match settings.view.load_state {
+                                provider_runtime::LoadState::Loading => {
+                                    tr("Loading connections...", "正在加载连接…", "正在載入連線…")
+                                }
+                                provider_runtime::LoadState::Loaded => tr(
+                                    "Select or create a connection.",
+                                    "请选择或新建连接。",
+                                    "請選擇或建立連線。",
+                                ),
+                                provider_runtime::LoadState::Unavailable(_) => tr(
+                                    "Connections unavailable; check saved settings.",
+                                    "连接不可用，请检查保存的设置。",
+                                    "連線不可用，請檢查儲存的設定。",
+                                ),
+                            }
+                            .into()
+                        },
                         |form| {
-                            format!(
-                                "Draft / {} / {}",
-                                if form.waiting() {
-                                    "saving changes"
-                                } else if form.unsent() {
-                                    "local edits"
-                                } else {
-                                    "staged"
-                                },
-                                form.local_error.clone().unwrap_or_else(|| form
-                                    .view
-                                    .error
-                                    .map_or_else(
-                                        || "not applied".into(),
-                                        |error| format!("{error:?}")
-                                    ))
-                            )
+                            if form.waiting() {
+                                return tr(
+                                    "Saving connection changes...",
+                                    "正在保存连接更改…",
+                                    "正在儲存連線變更…",
+                                )
+                                .into();
+                            }
+                            if let Some(error) = &form.local_error {
+                                return error.clone();
+                            }
+                            if form.unsent() {
+                                return tr(
+                                    "Changes not saved; retry saving.",
+                                    "更改尚未保存，请重试保存。",
+                                    "變更尚未儲存，請重試儲存。",
+                                )
+                                .into();
+                            }
+                            if let Some(error) = form.view.error {
+                                use crate::provider_selection::ConnectionInputError as E;
+                                return match error {
+                                    E::InvalidLabel => tr(
+                                        "Enter a valid connection name.",
+                                        "请输入有效的连接名称。",
+                                        "請輸入有效的連線名稱。",
+                                    ),
+                                    E::InvalidAlias => tr(
+                                        "Use a valid public model alias.",
+                                        "请输入有效的公开模型别名。",
+                                        "請輸入有效的公開模型別名。",
+                                    ),
+                                    E::DuplicateAlias => tr(
+                                        "Use a different alias for each model.",
+                                        "每个模型需使用不同的别名。",
+                                        "每個模型需使用不同的別名。",
+                                    ),
+                                    E::InvalidDefaultAlias => tr(
+                                        "Choose a default alias from this connection.",
+                                        "请从此连接中选择默认模型别名。",
+                                        "請從此連線中選擇預設模型別名。",
+                                    ),
+                                    E::IncompleteAllocation => tr(
+                                        "Choose an account and model.",
+                                        "请选择账号和模型。",
+                                        "請選擇帳號和模型。",
+                                    ),
+                                    E::UnselectedModel => tr(
+                                        "Choose a model from this account's catalogue.",
+                                        "请从此账号的目录中选择模型。",
+                                        "請從此帳號的目錄中選擇模型。",
+                                    ),
+                                    E::DefaultCompatibility => tr(
+                                        "Use a new connection for custom settings.",
+                                        "自定义设置请使用新建连接。",
+                                        "自訂設定請使用新建連線。",
+                                    ),
+                                }
+                                .into();
+                            }
+                            if form.view.dirty {
+                                tr(
+                                    "Saved draft; verify before applying.",
+                                    "草稿已保存，请先验证再应用。",
+                                    "草稿已儲存，請先驗證再套用。",
+                                )
+                            } else {
+                                tr(
+                                    "Applied connection; no pending edits.",
+                                    "连接已应用，没有待处理的更改。",
+                                    "連線已套用，沒有待處理的變更。",
+                                )
+                            }
+                            .into()
                         },
                     );
                 }
@@ -1960,16 +2081,33 @@ impl ConApp {
                 Row::ProfileApplied => {
                     label = settings.forms.current().map_or_else(String::new, |form| {
                         form.view.applied.as_ref().map_or_else(
-                            || "Applied: none / this is an unsaved profile".into(),
+                            || {
+                                tr(
+                                    "Applied: none; save and verify this draft.",
+                                    "尚未应用，请保存并验证此草稿。",
+                                    "尚未套用，請儲存並驗證此草稿。",
+                                )
+                                .into()
+                            },
                             |applied| {
                                 format!(
-                                    "Applied: {} / {} model allocation(s); edits are separate",
+                                    "{}: {} / {} {}",
+                                    tr("Applied", "已应用", "已套用"),
                                     applied.label,
-                                    applied.allocations.len()
+                                    applied.allocations.len(),
+                                    tr("models", "个模型", "個模型"),
                                 )
                             },
                         )
                     });
+                }
+                Row::ProfileDraftHint => {
+                    label = tr(
+                        "Draft edits do not change the applied connection.",
+                        "编辑草稿不会改变已应用的连接。",
+                        "編輯草稿不會改變已套用的連線。",
+                    )
+                    .into()
                 }
                 Row::AppliedAlias(index)
                 | Row::AppliedAccount(index)
@@ -2040,7 +2178,14 @@ impl ConApp {
                             .iter()
                             .find(|entry| same_input && entry.slot == slot)
                             .map_or_else(
-                                || tr("Choose a model", "请选择模型", "請選擇模型").into(),
+                                || {
+                                    if allocation.account.is_none() {
+                                        tr("Choose an account", "请选择账号", "請選擇帳號")
+                                    } else {
+                                        tr("Choose a model", "请选择模型", "請選擇模型")
+                                    }
+                                    .into()
+                                },
                                 |entry| {
                                     use provider_runtime::{
                                         ConnectionAvailability as A, ConnectionEvidence as E,
@@ -2048,6 +2193,9 @@ impl ConApp {
                                     let availability = match entry.availability {
                                         A::Available => {
                                             tr("Account available", "账号可用", "帳號可用")
+                                        }
+                                        A::MissingAccount if allocation.account.is_none() => {
+                                            tr("Choose an account", "请选择账号", "請選擇帳號")
                                         }
                                         A::MissingAccount => {
                                             tr("Account removed", "账号已移除", "帳號已移除")
@@ -2170,7 +2318,7 @@ impl ConApp {
                     button(
                         surface,
                         cell(1, 2),
-                        tr("Stage / retry edits", "暂存 / 重试编辑", "暫存 / 重試編輯"),
+                        tr("Save draft", "保存草稿", "儲存草稿"),
                         false,
                     );
                 }
@@ -2179,7 +2327,7 @@ impl ConApp {
                         surface,
                         cell(0, 2),
                         tr(
-                            "Refresh this account catalogue",
+                            "Refresh model list",
                             "刷新此账号模型目录",
                             "重新整理此帳號模型目錄",
                         ),
@@ -2188,7 +2336,7 @@ impl ConApp {
                     button(
                         surface,
                         cell(1, 2),
-                        tr("Retry staged edits", "重试暂存编辑", "重試暫存編輯"),
+                        tr("Retry saving", "重试保存", "重試儲存"),
                         false,
                     );
                 }
@@ -2267,14 +2415,28 @@ impl ConApp {
                             );
                     }
                 }
-                Row::ProbeNotice => label = settings
-                    .forms
-                    .current()
-                    .and_then(|form| form.local_error.clone())
-                    .unwrap_or_else(|| {
-                        "Output ≤8 tokens; input may also be billed. No automatic retry or Apply."
+                Row::ProbeNotice => {
+                    label = settings
+                        .forms
+                        .current()
+                        .and_then(|form| form.local_error.clone())
+                        .unwrap_or_else(|| {
+                            tr(
+                                "Output ≤8 tokens; input may also be billed.",
+                                "输出≤8 tokens，输入也可能收费。",
+                                "輸出≤8 tokens，輸入也可能收費。",
+                            )
                             .into()
-                    }),
+                        })
+                }
+                Row::ProbeBehavior => {
+                    label = tr(
+                        "No automatic retry or Apply.",
+                        "不会自动重试或应用。",
+                        "不會自動重試或套用。",
+                    )
+                    .into()
+                }
                 Row::ModelChoice(index) => {
                     if let Some(model) = settings
                         .current_catalogue()
