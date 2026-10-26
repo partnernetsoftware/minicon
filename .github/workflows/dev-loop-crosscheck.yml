@@ -409,6 +409,9 @@ jobs:
           if [ -z "$filter" ] || [[ "$filter" == *provider* ]] || [[ "$filter" == *harness* ]] || [[ "$filter" == *auth* ]]; then
             run_suite minicon-auth-presentation bash scripts/build.sh test-suite --target "$triple" --bin minicon harness_auth_ui::tests -- --test-threads 1
             run_suite minicon-auth-settings bash scripts/build.sh test-suite --target "$triple" --bin minicon harness_settings_ui:: -- --test-threads 1
+            run_suite minicon-account-presentation bash scripts/build.sh test-suite --target "$triple" --bin minicon harness_account_ui::tests -- --test-threads 1
+            run_suite minicon-harness-cached bash scripts/build.sh test-suite --target "$triple" --bin minicon harness_workspace_ui::tests::h1_cached_cards_keep_stale_wallets_and_applied_client_identity -- --exact --test-threads 1
+            run_suite minicon-harness-cached-public bash scripts/build.sh test-suite --target "$triple" --test minicon_control browser_windows::host_harness_dashboard_reuses_account_state_and_targets_named_client -- --exact --test-threads 1
             run_suite minicon-web-context bash scripts/build.sh test-suite --target "$triple" -p minicon-web --lib profile::tests -- --test-threads 1
             run_suite minicon-web-process-selector bash scripts/build.sh test-suite --target "$triple" -p minicon-web --lib embedded_process_ -- --test-threads 1
             if [[ "$CELL" == win-* || "$CELL" == osx-* ]]; then
@@ -423,6 +426,7 @@ jobs:
               run_suite minicon-web-process-native bash scripts/build.sh test-suite --target "$triple" -p minicon-web --lib tests::embedded_page_process_selector_maps_and_resizes_only_its_direct_owned_child -- --exact --ignored --test-threads 1
             fi
             auth_suites="minicon-auth-presentation minicon-auth-settings minicon-web-context minicon-web-process-selector minicon-harness-workspace minicon-workspace-geometry minicon-control-pending minicon-harness-workspace-public"
+            auth_suites="$auth_suites minicon-account-presentation minicon-harness-cached minicon-harness-cached-public"
             if [[ "$CELL" == win-* || "$CELL" == osx-* ]]; then auth_suites="$auth_suites minicon-web-native-profile"; fi
             if [[ "$CELL" == lnx-* ]]; then auth_suites="$auth_suites minicon-browser-process minicon-web-process-native"; fi
             for suite in $auth_suites; do
@@ -675,6 +679,9 @@ jobs:
             probe-logs/macos-snap-half/
             probe-logs/minicon-auth-presentation.log
             probe-logs/minicon-auth-settings.log
+            probe-logs/minicon-account-presentation.log
+            probe-logs/minicon-harness-cached.log
+            probe-logs/minicon-harness-cached-public.log
             probe-logs/minicon-web-context.log
             probe-logs/minicon-web-process-selector.log
             probe-logs/minicon-web-native-profile.log

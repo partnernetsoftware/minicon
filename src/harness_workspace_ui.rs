@@ -1,6 +1,7 @@
 //! Read-only Harness destination; product owner: PRD 02.36.
 use super::*;
 pub(super) mod usage_report;
+use crate::harness_account_ui as pool;
 use provider_runtime::{ListenerState, LoadState, View};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -48,6 +49,7 @@ pub(super) enum SettingsTarget {
     Service,
     Accounts(Option<String>),
     Connection,
+    Client(String),
     Monitoring,
 }
 
@@ -56,6 +58,194 @@ struct Card {
     title: String,
     lines: Vec<String>,
     target: SettingsTarget,
+}
+
+fn monitoring_lines(
+    summary: &provider_server::usage::UsageSummary,
+    language: ui::UiLanguage,
+) -> Vec<String> {
+    vec![
+        usage_report::compact(summary, language),
+        format!(
+            "{}: {}",
+            text(
+                language,
+                "Active model requests",
+                "活动模型请求",
+                "活動模型請求"
+            ),
+            summary.active_requests
+        ),
+        text(
+            language,
+            "External processes are not observed",
+            "未观测外部进程",
+            "未觀測外部程序",
+        )
+        .into(),
+    ]
+}
+
+fn account_card(
+    view: &View,
+    account: &provider_runtime::AccountSummary,
+    language: ui::UiLanguage,
+) -> Card {
+    let tr = |en, zh, tw| text(language, en, zh, tw);
+    let network = view
+        .account_preferences
+        .iter()
+        .find(|(id, _)| id == &account.id)
+        .map_or_else(
+            || {
+                tr(
+                    "Network policies unavailable",
+                    "网络策略不可用",
+                    "網路原則無法使用",
+                )
+                .into()
+            },
+            |(_, p)| {
+                let mode = |p: &provider_runtime::NetworkPolicy| {
+                    if p.proxy().is_some() {
+                        tr("Proxy", "代理", "代理")
+                    } else {
+                        tr("Direct", "直连", "直連")
+                    }
+                };
+                format!(
+                    "{}: {} / {}: {}",
+                    tr("Login", "登录", "登入"),
+                    mode(&p.login),
+                    tr("Service", "服务", "服務"),
+                    mode(&p.service)
+                )
+            },
+        );
+    let mut lines = vec![
+        format!(
+            "{:?} · {}",
+            account.provider,
+            pool::state(view, account).caption(language)
+        ),
+        network,
+        pool::resource_preview(view, account, language),
+    ];
+    lines.extend(pool::details(view, account, language));
+    Card {
+        id: account.id.clone(),
+        title: account.label.clone(),
+        lines,
+        target: SettingsTarget::Accounts(Some(account.id.clone())),
+    }
+}
+
+fn allocation_label(
+    view: &View,
+    row: &provider_runtime::ConnectionAllocationInput,
+    language: ui::UiLanguage,
+) -> String {
+    let account = view
+        .accounts
+        .iter()
+        .find(|r| Some(&r.id) == row.account.as_ref())
+        .map_or_else(
+            || {
+                text(
+                    language,
+                    "Account unavailable",
+                    "账号不可用",
+                    "帳號無法使用",
+                )
+                .into()
+            },
+            |a| format!("{} ({})", a.label, pool::state(view, a).caption(language)),
+        );
+    format!("{} → {} / {}", row.alias, account, row.model)
+}
+
+fn client_card(
+    view: &View,
+    profile: &provider_runtime::ConnectionProfileView,
+    language: ui::UiLanguage,
+) -> Card {
+    let tr = |en, zh, tw| text(language, en, zh, tw);
+    let mut lines = Vec::new();
+    let title = if let Some(applied) = &profile.applied {
+        lines.push(format!(
+            "{} / {}: {}",
+            if applied.enabled {
+                tr("Profile enabled", "配置已启用", "設定已啟用")
+            } else {
+                tr("Profile disabled", "配置已停用", "設定已停用")
+            },
+            tr("Applied mappings", "已应用映射", "已套用對應"),
+            applied.allocations.len()
+        ));
+        let default = applied
+            .allocations
+            .iter()
+            .find(|a| a.alias == applied.default_alias);
+        lines.push(default.map_or_else(
+            || {
+                tr(
+                    "No applied default model",
+                    "尚无已应用的默认模型",
+                    "尚無已套用的預設模型",
+                )
+                .into()
+            },
+            |a| allocation_label(view, a, language),
+        ));
+        applied.label.clone()
+    } else {
+        lines.push(
+            tr(
+                "Draft only — no applied connection",
+                "仅有草稿，尚未应用连接",
+                "僅有草稿，尚未套用連線",
+            )
+            .into(),
+        );
+        lines.push(
+            tr(
+                "Choose and verify model allocations",
+                "请选择并验证模型分配",
+                "請選擇並驗證模型分配",
+            )
+            .into(),
+        );
+        profile.input.label.clone()
+    };
+    lines.push(
+        if profile.dirty && profile.applied.is_none() {
+            tr("Unapplied draft", "尚未应用的草稿", "尚未套用的草稿")
+        } else if profile.dirty {
+            tr(
+                "Unapplied changes; saved connection retained",
+                "有未应用更改；保留已保存连接",
+                "有未套用變更；保留已儲存連線",
+            )
+        } else {
+            tr(
+                "External process is not observed",
+                "未观测外部进程",
+                "未觀測外部程序",
+            )
+        }
+        .into(),
+    );
+    if let Some(applied) = &profile.applied {
+        for a in &applied.allocations {
+            lines.push(allocation_label(view, a, language));
+        }
+    }
+    Card {
+        id: format!("client:{}", profile.id),
+        title,
+        lines,
+        target: SettingsTarget::Client(profile.id.clone()),
+    }
 }
 fn cards(view: Option<&View>, section: Section, language: ui::UiLanguage) -> Vec<Card> {
     let unknown = match view.map(|view| view.load_state) {
@@ -130,68 +320,73 @@ fn cards(view: Option<&View>, section: Section, language: ui::UiLanguage) -> Vec
     let supply = card(
         "accounts",
         text(language, "Account supply", "账号供给", "帳號供給"),
-        vec![
-            match view {
-                Some(view) => format!(
-                    "{}: {}",
-                    text(language, "Stored accounts", "已保存账号", "已儲存帳號"),
-                    view.accounts.len()
-                ),
-                _ => unknown.into(),
+        view.and_then(pool::summary).map_or_else(
+            || vec![unknown.into()],
+            |s| {
+                vec![
+                    format!(
+                        "{}: {}",
+                        text(language, "Stored accounts", "已保存账号", "已儲存帳號"),
+                        s.stored + s.tested + s.disabled + s.unknown
+                    ),
+                    format!(
+                        "{}: {} / {}: {}",
+                        text(language, "Previously tested", "曾通过测试", "曾通過測試"),
+                        s.tested,
+                        text(language, "Disabled", "已停用", "已停用"),
+                        s.disabled
+                    ),
+                    format!(
+                        "{}: {} / {}: {}",
+                        text(language, "Reading attention", "读数需关注", "讀數需注意"),
+                        s.attention,
+                        text(language, "Unknown readings", "读数未知", "讀數未知"),
+                        s.readings_unknown
+                    ),
+                ]
             },
-            text(
-                language,
-                "Balance / allowance: not loaded",
-                "余额／额度：未加载",
-                "餘額／額度：未載入",
-            )
-            .into(),
-        ],
+        ),
         SettingsTarget::Accounts(None),
     );
     let connection = card(
         "connection",
         text(language, "Saved connection", "已保存连接", "已儲存連線"),
-        vec![
-            view.and_then(|v| {
-                v.selected_account
-                    .as_ref()
-                    .and_then(|id| v.accounts.iter().find(|a| &a.id == id))
-                    .map(|a| a.label.clone())
-            })
-            .unwrap_or_else(|| unknown.into()),
-            view.filter(|v| !v.model.is_empty())
-                .map(|v| format!("minicon-selected · {}", v.model))
-                .unwrap_or_else(|| unknown.into()),
-            text(
-                language,
-                "Manual selection; no external-client online claim.",
-                "手动选择；不推断外部客户端在线。",
-                "手動選擇；不推斷外部用戶端在線。",
-            )
-            .into(),
-        ],
+        view.map_or_else(
+            || vec![unknown.into()],
+            |v| {
+                vec![
+                    format!(
+                        "{}: {}",
+                        text(language, "Applied clients", "已应用客户端", "已套用用戶端"),
+                        pool::configured_client_count(v)
+                    ),
+                    format!(
+                        "{}: {}",
+                        text(language, "Unapplied drafts", "未应用草稿", "未套用草稿"),
+                        v.connection_profiles
+                            .iter()
+                            .filter(|p| p.dirty || p.applied.is_none())
+                            .count()
+                    ),
+                    text(
+                        language,
+                        "External processes are not observed",
+                        "未观测外部进程",
+                        "未觀測外部程序",
+                    )
+                    .into(),
+                ]
+            },
+        ),
         SettingsTarget::Connection,
     );
     let monitoring = card(
         "monitoring",
         text(language, "Monitoring", "监控", "監控"),
-        vec![
-            text(
-                language,
-                "Profiles / active requests / usage: unavailable",
-                "连接配置／活动请求／用量：暂不可用",
-                "連線設定／活動請求／用量：暫不可用",
-            )
-            .into(),
-            text(
-                language,
-                "No measurement source is connected to this view.",
-                "此页尚未接入测量来源。",
-                "此頁尚未接入測量來源。",
-            )
-            .into(),
-        ],
+        view.map_or_else(
+            || vec![unknown.into()],
+            |v| monitoring_lines(&v.usage, language),
+        ),
         SettingsTarget::Monitoring,
     );
     match section {
@@ -200,67 +395,18 @@ fn cards(view: Option<&View>, section: Section, language: ui::UiLanguage) -> Vec
             Some(view) if !view.accounts.is_empty() => view
                 .accounts
                 .iter()
-                .map(|account| {
-                    let network = view
-                        .account_preferences
-                        .iter()
-                        .find(|(id, _)| id == &account.id)
-                        .map(|(_, p)| {
-                            if p.service.proxy().is_some() {
-                                text(
-                                    language,
-                                    "Service network: proxy",
-                                    "服务网络：代理",
-                                    "服務網路：代理",
-                                )
-                            } else {
-                                text(
-                                    language,
-                                    "Service network: direct",
-                                    "服务网络：直连",
-                                    "服務網路：直連",
-                                )
-                            }
-                        })
-                        .unwrap_or(unknown);
-                    card(
-                        &account.id,
-                        &account.label,
-                        vec![
-                            format!(
-                                "{:?} · {}",
-                                account.provider,
-                                match account.state {
-                                    provider_accounts::AccountState::AccountReady => text(
-                                        language,
-                                        "Previously tested",
-                                        "曾通过测试",
-                                        "曾通過測試"
-                                    ),
-                                    provider_accounts::AccountState::CredentialStored => text(
-                                        language,
-                                        "Credential stored",
-                                        "凭据已保存",
-                                        "憑據已儲存"
-                                    ),
-                                }
-                            ),
-                            network.into(),
-                            text(
-                                language,
-                                "Balance / allowance: not loaded",
-                                "余额／额度：未加载",
-                                "餘額／額度：未載入",
-                            )
-                            .into(),
-                        ],
-                        SettingsTarget::Accounts(Some(account.id.clone())),
-                    )
-                })
+                .map(|account| account_card(view, account, language))
                 .collect(),
             _ => vec![supply],
         },
-        Section::Clients => vec![connection, monitoring],
+        Section::Clients => match view {
+            Some(view) if !view.connection_profiles.is_empty() => view
+                .connection_profiles
+                .iter()
+                .map(|p| client_card(view, p, language))
+                .collect(),
+            _ => vec![connection],
+        },
         Section::Usage => vec![monitoring],
         Section::Activity => vec![card(
             "runtime-status",
@@ -1236,7 +1382,7 @@ impl ConApp {
             if let Some(summary) = self.presented_harness_usage()
                 && let Some(card) = rows.iter_mut().find(|c| c.id == "monitoring")
             {
-                card.lines = vec![usage_report::compact(summary, self.ui_language)];
+                card.lines = monitoring_lines(summary, self.ui_language);
             }
             let start = g.start(rows.len(), self.harness_workspace.scroll);
             for (index, card) in rows.iter().enumerate() {
@@ -1349,7 +1495,7 @@ impl ConApp {
         if let Some(summary) = self.presented_harness_usage()
             && let Some(card) = rows.iter_mut().find(|c| c.id == "monitoring")
         {
-            card.lines = vec![usage_report::compact(summary, self.ui_language)];
+            card.lines = monitoring_lines(summary, self.ui_language);
         }
         let start = g.start(rows.len(), self.harness_workspace.scroll);
         json::object(vec![
@@ -1487,8 +1633,135 @@ mod tests {
         let rows = cards(Some(&view), Section::Overview, ui::UiLanguage::English);
         assert!(rows[0].lines[0].contains("23456"));
         assert!(rows[1].lines[0].ends_with('0'));
-        assert!(rows[3].lines[0].contains("unavailable"));
+        assert!(
+            rows[3]
+                .lines
+                .iter()
+                .any(|line| line == "Active model requests: 0")
+        );
     }
+    #[test]
+    fn h1_cached_cards_keep_stale_wallets_and_applied_client_identity() {
+        use crate::provider_monitoring as m;
+        let mut view = View {
+            load_state: LoadState::Loaded,
+            ..Default::default()
+        };
+        view.accounts.push(provider_runtime::AccountSummary {
+            id: "a".into(),
+            provider: provider_runtime::Provider::DeepSeek,
+            label: "Account A".into(),
+            state: provider_accounts::AccountState::AccountReady,
+        });
+        view.account_preferences.push((
+            "a".into(),
+            provider_runtime::AccountPreferences::legacy("a"),
+        ));
+        std::sync::Arc::make_mut(&mut view.account_monitoring)
+            .accounts
+            .push(m::AccountMonitorView {
+                account: "a".into(),
+                provider: provider_runtime::Provider::DeepSeek,
+                policy_revision: 0,
+                policy: Default::default(),
+                paused: Some(m::PauseReason::Off),
+                active_request: None,
+                next_due_unix_ms: None,
+                last_success: Some(m::Reading {
+                    source: m::MetadataSource::DeepSeekSummaryV0,
+                    observed_unix_ms: 1,
+                    provider_as_of: None,
+                    resources: m::Resources::DeepSeekWallets(vec![m::Wallet {
+                        kind: m::WalletKind::Normal,
+                        currency: m::Currency::Cny,
+                        balance: m::Decimal("1.2500".into()),
+                    }]),
+                }),
+                freshness: m::Freshness::Stale,
+                latest_attempt: Some(m::Attempt {
+                    request: 1,
+                    finished_unix_ms: Some(2),
+                    result: Err(m::MonitorError::Forbidden),
+                }),
+                attention: true,
+                wallet_capability: m::Capability::OfficialContract,
+                allowance_capability: m::Capability::Unknown,
+            });
+        let applied = provider_runtime::ConnectionDraftInput {
+            label: "Applied client".into(),
+            enabled: true,
+            default_alias: "work".into(),
+            allocations: vec![provider_runtime::ConnectionAllocationInput {
+                slot: 0,
+                alias: "work".into(),
+                account: Some("a".into()),
+                model: "applied-model".into(),
+            }],
+        };
+        let mut draft = applied.clone();
+        draft.label = "Unapplied label".into();
+        draft.allocations[0].model = "unapplied-model".into();
+        view.connection_profiles
+            .push(provider_runtime::ConnectionProfileView {
+                id: "dddddddddddddddddddddddddddddddd".into(),
+                revision: 2,
+                input: draft,
+                applied: Some(applied),
+                dirty: true,
+                error: None,
+                allocations: vec![],
+            });
+        let mut new_profile = view.connection_profiles[0].clone();
+        new_profile.id = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee".into();
+        new_profile.applied = None;
+        new_profile.input.label = "Draft only client".into();
+        view.connection_profiles.push(new_profile);
+        let before = view.clone();
+        let accounts = cards(Some(&view), Section::Accounts, ui::UiLanguage::English);
+        assert!(
+            accounts[0].lines[2].contains("Stale") && accounts[0].lines[2].contains("CNY: 1.2500")
+        );
+        assert!(
+            accounts[0]
+                .lines
+                .iter()
+                .any(|line| line.contains("Provider denied access"))
+        );
+        let clients = cards(Some(&view), Section::Clients, ui::UiLanguage::English);
+        assert_eq!(clients[0].title, "Applied client");
+        assert_eq!(clients[1].title, "Draft only client");
+        assert!(clients[1].lines[0].starts_with("Draft only"));
+        assert!(
+            !clients[1]
+                .lines
+                .iter()
+                .any(|line| line.contains("saved connection retained"))
+        );
+        assert!(
+            clients[0]
+                .lines
+                .iter()
+                .any(|line| line.contains("applied-model"))
+        );
+        assert!(
+            !clients[0]
+                .lines
+                .iter()
+                .any(|line| line.contains("unapplied-model"))
+        );
+        assert_eq!(
+            clients[0].target,
+            SettingsTarget::Client("dddddddddddddddddddddddddddddddd".into())
+        );
+        assert_eq!(view, before, "projecting cards cannot mutate the runtime");
+        view.account_preferences[0].1.enabled = false;
+        let accounts = cards(Some(&view), Section::Accounts, ui::UiLanguage::English);
+        assert!(accounts[0].lines[0].contains("Disabled"));
+        view.load_state = LoadState::Loading;
+        let overview = cards(Some(&view), Section::Overview, ui::UiLanguage::English);
+        assert!(overview[1].lines[0].contains("Loading"));
+    }
+
     #[test]
     fn h0_auth_suspension_is_attempt_scoped_and_retains_the_return_context() {
         let mut state = HarnessWorkspace {

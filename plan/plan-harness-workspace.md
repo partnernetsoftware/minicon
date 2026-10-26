@@ -1,9 +1,9 @@
 # Harness workspace delivery sequence
 
-Status: `[-]` H0 development integration after owner direction, 2026-10-25.
+Status: `[-]` H0/H1 development integration after owner direction, 2026-10-25.
 Behavior: [PRD 36](../prd/PRD_02_36_harness_workspace.md). Settings:
 [PRD 31.01.01](../prd/PRD_02_31_01_01_harness_experience.md). The current
-[0.2.23 plan](plan-v0.2.23.md) selects the entry reservation; the full visual
+[0.2.23 plan](plan-v0.2.23.md) selects H0 and available H1 projections; the full visual
 operation/monitoring workspace is a continuing core product track.
 
 ## Outcome tree DAG
@@ -16,7 +16,7 @@ Outcome: establish a usable Harness destination and grow it without fictional co
 │   safe failure: truthful unavailable state and existing workspace preserved
 │   dependency: host view seam and stable pool/profile/metric IDs
 │   non-goal: claiming full task operation in the entry reservation
-├── [_] H1 — account/client/request/usage observation with actionable attention
+├── [-] H1 — account/client/request/usage observation with actionable attention
 │   invariant: one runtime source of truth and bounded live updates
 │   evidence: PP/UM plus HW-02/06/07 with actual traffic
 │   safe failure: stale/unknown with no fake client or task health

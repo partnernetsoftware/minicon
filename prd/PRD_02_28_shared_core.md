@@ -232,10 +232,12 @@ Settings orientation and form selection stay product-private in `harness_setting
 it consumes the existing typed View, form identity, row geometry and field-focus
 route, with no shared OS/ISA API. Behavior and scoped Windows evidence belong
 to [the experience owner](PRD_02_31_01_01_harness_experience.md#focused-form-sections-2026-10-26).
-The adjacent `harness_settings_ui/pool.rs` projects account state and cached
-readings for the Settings/Monitoring consumers. It reuses the report's existing
-UTC timestamp and monitoring state labels, with no new shared OS/ISA API;
-presentation scope belongs to [the pool experience](PRD_02_31_01_01_harness_experience.md#cached-pool-status-and-account-readings-2026-10-26).
+The binary-private `harness_account_ui.rs` projects account state and cached
+readings for actual Settings/Monitoring and Dashboard consumers. It moved from
+the Settings child module when the Dashboard joined; it reuses the report's
+existing UTC timestamp and monitoring state labels, with no shared OS/ISA API.
+Settings presentation belongs to [the pool experience](PRD_02_31_01_01_harness_experience.md#cached-pool-status-and-account-readings-2026-10-26);
+operational cards and client targets belong to [PRD36](PRD_02_36_harness_workspace.md#cached-account-and-client-projection-2026-10-26).
 Report presentation reuses the existing pure
 `minicon_platform::contract::local_clock::civil_from_unix_seconds` conversion;
 UTC labels and unavailable-time meaning remain product-owned in

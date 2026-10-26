@@ -2032,6 +2032,100 @@ fn host_harness_pool_states_and_exact_account_monitoring_preserve_bindings() {
 }
 
 #[test]
+fn host_harness_dashboard_reuses_account_state_and_targets_named_client() {
+    let root = minicon_binary()
+        .parent()
+        .unwrap()
+        .join("browser-court")
+        .join(unique_suffix())
+        .join("config");
+    harness_synthetic_profile(
+        &root,
+        28789,
+        "synthetic-dashboard-key",
+        "synthetic-dashboard-token",
+    );
+    let gateway = root.join("harness/gateway.json");
+    let mut config: Value = serde_json::from_slice(&fs::read(&gateway).unwrap()).unwrap();
+    config["version"] = 2.into();
+    config["profiles"] = serde_json::json!([{"id":"dddddddddddddddddddddddddddddddd","label":"Named work","enabled":true,"default_model":"work",
+        "allocations":[{"alias":"work","account":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","route":"deepseek/fixture-model"}]}]);
+    harness_private_file(&gateway, &serde_json::to_vec(&config).unwrap());
+    let registry = root.join("harness/accounts/accounts.json");
+    let mut accounts: Value = serde_json::from_slice(&fs::read(&registry).unwrap()).unwrap();
+    accounts["accounts"][0]["preferences"] = serde_json::json!({"context_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "service_generation":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","enabled":false,"login":"Direct","service":"Direct"});
+    harness_private_file(&registry, &serde_json::to_vec(&accounts).unwrap());
+    let mut host = BrowserGui::spawn_with_config(true, None, None, Some(root));
+    let before = open_harness(&host);
+    assert_eq!(before["pool"]["disabled"], 1);
+    host.click_geometry("settings");
+    host.click_geometry("harness_entry");
+    let snapshot = host.cli(&["ui-snapshot"]);
+    host.click_rect(
+        &snapshot["geometry"]["harness_workspace"]["navigation"][1],
+        "Accounts navigation",
+        &snapshot["geometry"],
+    );
+    let snapshot = host.cli(&["ui-snapshot"]);
+    let workspace = &snapshot["geometry"]["harness_workspace"];
+    assert!(
+        workspace["cards"][0]["lines"][0]
+            .as_str()
+            .unwrap()
+            .contains("Disabled")
+    );
+    host.click_rect(
+        &workspace["navigation"][2],
+        "Clients navigation",
+        &snapshot["geometry"],
+    );
+    let snapshot = host.cli(&["ui-snapshot"]);
+    let workspace = &snapshot["geometry"]["harness_workspace"];
+    let card = workspace["cards"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["id"] == "client:dddddddddddddddddddddddddddddddd")
+        .expect("named applied client card");
+    assert_eq!(card["title"], "Named work");
+    assert!(
+        card["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|line| line.as_str().unwrap().contains("fixture-model"))
+    );
+    host.click_rect(&card["rect"], "Named client card", &snapshot["geometry"]);
+    let shot = host
+        .gui
+        .screenshot
+        .with_file_name("dashboard-clients.png")
+        .to_string_lossy()
+        .into_owned();
+    host.cli(&["screenshot-pane", "--output", &shot]);
+    host.click_rect(
+        &workspace["settings"],
+        "Configure selected client",
+        &snapshot["geometry"],
+    );
+    let after = wait_harness(&host, |s| {
+        s["connection_profile"] == "dddddddddddddddddddddddddddddddd"
+    });
+    assert_eq!(after["section"], "clients");
+    assert_eq!(after["selected_account"], before["selected_account"]);
+    assert_eq!(after["model"], before["model"]);
+    assert_eq!(after["listener"], "stopped");
+    assert_eq!(after["login_active"], false);
+    assert!(
+        !serde_json::to_string(&after)
+            .unwrap()
+            .contains("synthetic-dashboard-token")
+    );
+    host.close_and_wait();
+}
+
+#[test]
 fn host_harness_routes_preserve_independent_drafts_and_scroll_readable_controls() {
     let mut host = BrowserGui::spawn(true, None, None);
     host.cli(&["send-ui-keys", "Ctrl+Shift+I"]);

@@ -4,7 +4,7 @@ Parent: [MiniCon product index](../PRD.md). Product boundary:
 [charter](PRD_02_23_minicon.md). Settings:
 [Harness connection experience](PRD_02_31_01_01_harness_experience.md).
 Sequence: [Harness workspace plan](../plan/plan-harness-workspace.md).
-Status: `[-]` H0 robot/overview implementation in development with a local
+Status: `[-]` H0 robot/overview and cached H1 projections in development with a local
 Windows injected-host checkpoint. Native input, live-page, selected artifact
 and remaining operational projection acceptance stay open; task operation is
 a later stage.
@@ -78,6 +78,78 @@ flowchart LR
 ```
 
 ## Product structure and navigation
+
+### Cached account and client projection (2026-10-26)
+
+```text
+Outcome: operational cards describe the same cached accounts and applied clients as Settings
+├── [-] Account supply and resource cards
+│   invariant: reuse account-policy and reading projections; never replace known readings with a fixed placeholder
+│   evidence: mixed disabled/stored/tested pool, stale resources and public Dashboard-to-account navigation
+│   safe failure: missing/loading stays unknown; currencies and allowance remain distinct
+│   dependency: existing View and Settings pool projection; non-goal: new reads, polling or rotation
+└── [-] Applied client cards and exact configuration handoff
+    invariant: show applied mappings independently of drafts and external-process liveness
+    evidence: multiple profiles, dirty draft and exact-profile Settings link
+    safe failure: missing profile is explicit and cannot silently edit another profile
+    dependency: connection profile View and typed Settings target; non-goal: controlling external agents
+```
+
+Account cards show provider/state, applied login/service network modes and a
+freshness-labeled resource preview. Their inspector uses the same source/time,
+latest-attempt and resource lines as Settings; a multi-resource preview says
+that more values exist rather than inventing a total. The supply card counts
+cached account states and reading attention. Client cards use stable profile
+IDs and applied labels/mappings, with unapplied drafts clearly separate. An
+Edit allocation link selects that exact profile; a removed profile leaves an
+explicit unavailable result. Current request counters remain model API request
+observations, not external process/task health.
+
+```mermaid
+flowchart LR
+    V[Existing typed Runtime View] --> P[Product-private shared account projection]
+    P --> S[Settings account and monitoring forms]
+    P --> A[Dashboard supply / account cards and inspector]
+    V --> C[Applied client cards; draft status separate]
+    A --> AS[Exact account Settings target]
+    C --> CS[Exact client Settings target]
+    U[Existing coalesced UsageSummary] --> M[Model request observations]
+    AS & CS -. navigation has no login / probe / Start authority .-> S
+```
+
+Hot files: the existing Dashboard and Settings modules plus the account
+projection moved to the binary-private `harness_account_ui.rs` for these actual
+consumers. No shared platform crate, transport, writer or task runtime changes.
+The three-line card preview remains bounded; full lines belong to its inspector
+and the existing Settings/usage views. Native, real-account and final-artifact
+acceptance remain selected.
+
+Windows development evidence: `h1_cached_cards_keep_stale_wallets_and_applied_client_identity`
+retains exact stale wallet values after denied reads, applied labels/models
+despite dirty edits, draft-only distinction and disabled account presentation.
+`client_deeplink_reports_removed_profile_after_delayed_hydration` retains the
+previous binding and explicitly reports a removed target after loading.
+`browser_windows::host_harness_dashboard_reuses_account_state_and_targets_named_client`
+uses isolated synthetic accounts and two persisted profiles through the public
+CLI. It compares disabled state with Settings, inspects the named card and opens
+that exact client without login/Start or applied-binding changes. Its actual
+client-card PNG was visually reviewed. An initial fixture with a non-opaque
+profile ID was refused as Corrupt; the corrected32-hex identity is used for
+the actual pass, without weakening configuration validation.
+
+`target-six/v0.2.23-provider/dashboard-cached-controls/receipt.json` records
+three actual production faults rejected by original assertions (replace a
+known reading with a placeholder; hide a missing target error; navigate to the
+default client instead), exact source restoration and passing5 Dashboard,
+29 Settings,1 shared account and9 public Harness subjects, zero ignored.
+The binary inventory grows872 -> 874; control integration37 -> 38. The shared
+account subject moves with its production module and is not a second copy.
+These are cached/synthetic Windows development observations, not real provider,
+physical input, all-platform/language/scale or signed-artifact qualification.
+The existing development-court workflow retains the moved account subject and
+adds the cached-card and exact-client public subjects to its explicit Harness
+selection and receipt/log inventory. YAML and the changed suite shell block
+parse locally; no cross-platform job is dispatched for this checkpoint.
 
 Two persistent host destinations are **Console/Web workspace** and **Harness**.
 Harness is a host content view, with one instance per window; it is not another

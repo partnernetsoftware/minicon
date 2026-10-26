@@ -55,6 +55,7 @@ mod control_dispatch;
 mod control_pending;
 mod font;
 mod harness;
+mod harness_account_ui;
 #[cfg(feature = "native-auth-court")]
 mod harness_auth_court;
 mod harness_auth_ui;

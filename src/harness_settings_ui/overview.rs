@@ -127,15 +127,7 @@ impl HarnessSettings {
     }
 
     pub(super) fn configured_client_count(&self) -> usize {
-        self.view
-            .connection_profiles
-            .iter()
-            .filter(|p| {
-                p.applied
-                    .as_ref()
-                    .is_some_and(|a| !a.allocations.is_empty() && !a.default_alias.is_empty())
-            })
-            .count()
+        pool::configured_client_count(&self.view)
     }
 
     pub(super) fn orientation_step(&self) -> Step {

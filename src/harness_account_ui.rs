@@ -1,7 +1,10 @@
 //! Cached account presentation; Runtime retains provider and measurement authority.
-use super::*;
 use crate::harness_workspace_ui::usage_report::{attempt_label, freshness_label, utc_moment};
 use crate::provider_monitoring as monitor;
+#[cfg(test)]
+use crate::provider_runtime::{AccountPreferences, Provider};
+use crate::provider_runtime::{AccountSummary, NetworkPolicy, View};
+use crate::{provider_accounts, provider_runtime, ui};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum State {
@@ -18,7 +21,7 @@ impl State {
             Self::Disabled => ("Disabled", "已停用", "已停用"),
             Self::Unknown => ("Policy unavailable", "账号策略不可用", "帳號原則無法使用"),
         };
-        super::super::harness_workspace_ui::text(l, en, zh, tw)
+        crate::harness_workspace_ui::text(l, en, zh, tw)
     }
 }
 pub(super) fn state(view: &View, account: &AccountSummary) -> State {
@@ -85,12 +88,23 @@ pub(super) fn affected_clients(view: &View, account: &str) -> usize {
         })
         .count()
 }
+
+pub(super) fn configured_client_count(view: &View) -> usize {
+    view.connection_profiles
+        .iter()
+        .filter(|p| {
+            p.applied
+                .as_ref()
+                .is_some_and(|a| !a.allocations.is_empty() && !a.default_alias.is_empty())
+        })
+        .count()
+}
 pub(super) fn resource_label(
     resources: &monitor::Resources,
     index: usize,
     l: ui::UiLanguage,
 ) -> Option<String> {
-    let tr = |en, zh, tw| super::super::harness_workspace_ui::text(l, en, zh, tw);
+    let tr = |en, zh, tw| crate::harness_workspace_ui::text(l, en, zh, tw);
     match resources {
         monitor::Resources::DeepSeekWallets(rows) => rows.get(index).map(|w| {
             format!(
@@ -126,7 +140,7 @@ pub(super) fn resource_label(
     }
 }
 pub(super) fn details(view: &View, account: &AccountSummary, l: ui::UiLanguage) -> Vec<String> {
-    let tr = |en, zh, tw| super::super::harness_workspace_ui::text(l, en, zh, tw);
+    let tr = |en, zh, tw| crate::harness_workspace_ui::text(l, en, zh, tw);
     let mut rows = vec![state(view, account).caption(l).into()];
     if let Some((_, p)) = view
         .account_preferences
@@ -264,6 +278,39 @@ pub(super) fn reading_resource_label(
     let reading = account.last_success.as_ref()?;
     resource_label(&reading.resources, index, l)
         .map(|label| format!("{} · {label}", freshness_label(account.freshness, l)))
+}
+
+pub(super) fn resource_preview(view: &View, account: &AccountSummary, l: ui::UiLanguage) -> String {
+    let tr = |en, zh, tw| crate::harness_workspace_ui::text(l, en, zh, tw);
+    let Some(m) = measurement(view, account) else {
+        return tr(
+            "Resource readings unavailable",
+            "资源读数不可用",
+            "資源讀數無法使用",
+        )
+        .into();
+    };
+    if let Some(label) = reading_resource_label(m, 0, l) {
+        let count = m.last_success.as_ref().map_or(0, |r| match &r.resources {
+            monitor::Resources::DeepSeekWallets(rows) => rows.len(),
+            monitor::Resources::OpenCodeGo(rows) => rows.len(),
+        });
+        if count > 1 {
+            format!(
+                "{label} / +{} {}",
+                count - 1,
+                tr("in details", "项见详情", "項見詳情")
+            )
+        } else {
+            label
+        }
+    } else {
+        format!(
+            "{} / {}",
+            freshness_label(m.freshness, l),
+            attempt_label(m.latest_attempt.as_ref().map(|a| a.result), l)
+        )
+    }
 }
 
 #[cfg(test)]

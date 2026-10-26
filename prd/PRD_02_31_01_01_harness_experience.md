@@ -337,8 +337,8 @@ flowchart LR
     M -. never grants inference readiness .-> I[Independent applied model binding]
 ```
 
-Product-private hot files are `harness_settings_ui.rs`, its overview/pool/
-monitoring projections and the existing report timestamp helper. Reuse the
+Product-private hot files are `harness_settings_ui.rs`, its overview/monitoring
+projections, shared `harness_account_ui.rs` and the existing report timestamp helper. Reuse the
 monitoring owner's freshness/attempt/attention observations; no new transport,
 timer, persistence schema or shared OS/ISA mechanism is introduced. Full
 real-account and native/language acceptance remains selected.
@@ -367,6 +367,9 @@ Final fmt/strict Clippy and daily smoke are recorded separately in
 `pool-presentation-controls/final-receipt.json` under the same local evidence root.
 This checkpoint does not close real DeepSeek/Go reads, physical input,
 all-language/scale, dashboard projection or final artifact acceptance.
+The subsequent Dashboard projection join, including the move of the original
+Settings `pool.rs` to the common binary-private projection, is recorded by
+[PRD36](PRD_02_36_harness_workspace.md#cached-account-and-client-projection-2026-10-26).
 
 The list distinguishes same-provider accounts using local labels, provider,
 short identity and connected/needs-login/disabled states. Selecting a row opens

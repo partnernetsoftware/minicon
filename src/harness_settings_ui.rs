@@ -3,7 +3,7 @@ use super::*;
 mod connection_forms;
 mod monitoring;
 mod overview;
-mod pool;
+use crate::harness_account_ui as pool;
 mod profile_keys;
 use connection_forms::{ConnectionForms, FormFocus, ProfileField};
 use minicon_core::field_editor::{self, Command, Intent, Limits};
@@ -304,6 +304,17 @@ impl HarnessSettings {
             }
             SettingsTarget::Connection => {
                 self.select_section(overview::Section::Clients);
+                Row::Model
+            }
+            SettingsTarget::Client(profile) => {
+                self.select_section(overview::Section::Clients);
+                if self.view.load_state == provider_runtime::LoadState::Loaded {
+                    if self.forms.forms.contains_key(&profile) {
+                        self.focus_connection(&profile);
+                    } else {
+                        self.error = Some("Selected client is no longer available.".into());
+                    }
+                }
                 Row::Model
             }
             SettingsTarget::Monitoring => {
@@ -5272,6 +5283,31 @@ mod tests {
             Some(provider_runtime::RuntimeError::AccountChanged)
         );
     }
+    #[test]
+    fn client_deeplink_reports_removed_profile_after_delayed_hydration() {
+        let mut settings = HarnessSettings::default();
+        settings.show_workspace_target(super::super::harness_workspace_ui::SettingsTarget::Client(
+            "dddddddddddddddddddddddddddddddd".into(),
+        ));
+        assert!(settings.pending_workspace_target.is_some());
+        settings.view.load_state = provider_runtime::LoadState::Loaded;
+        settings.view.connection_profile = "default".into();
+        settings.view.connection_profiles = vec![connection_profile("default", "a")];
+        settings.sync_connection_forms();
+        let before = settings.view.clone();
+        settings.finish_workspace_target();
+        assert_eq!(settings.forms.selected.as_deref(), Some("default"));
+        assert_eq!(
+            settings.error.as_deref(),
+            Some("Selected client is no longer available.")
+        );
+        assert_eq!(
+            settings.view, before,
+            "missing target must not publish a different binding"
+        );
+        assert!(settings.pending_workspace_target.is_none());
+    }
+
     #[test]
     fn monitoring_deeplink_survives_initial_profile_load_and_yields_to_later_navigation() {
         let mut settings = HarnessSettings::default();
