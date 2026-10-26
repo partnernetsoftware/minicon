@@ -16,6 +16,11 @@ mod owned_console_gui;
 mod browser_windows;
 
 #[test]
+fn harness_sections_preserve_drafts_and_hide_unselected_controls() {
+    browser_windows::harness_sections_preserve_drafts_and_hide_unselected_controls();
+}
+
+#[test]
 fn harness_orientation_links_do_not_start_login_listener_or_key_creation() {
     browser_windows::harness_orientation_links_do_not_start_login_listener_or_key_creation();
 }

@@ -840,6 +840,14 @@ def main():
         return geo()["harness_settings"]
 
     def harness_cell(row_id, column=0):
+        destination = {
+            "port": ("service", "overview_service"),
+            "model_input": ("clients", "overview_allocations"),
+            "key_actions": ("clients", "overview_allocations"),
+        }.get(row_id)
+        if destination and harness()["section"] != destination[0]:
+            native.click(harness_cell(destination[1]))
+            assert harness()["section"] == destination[0], "Harness section did not change"
         for _ in range(40):
             state = harness()
             if state["scroll"] == 0:

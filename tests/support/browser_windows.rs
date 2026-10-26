@@ -1655,6 +1655,7 @@ fn open_harness(host: &BrowserGui) -> Value {
 pub(super) fn harness_orientation_links_do_not_start_login_listener_or_key_creation() {
     let mut host = BrowserGui::spawn(true, None, None);
     let initial = open_harness(&host);
+    assert_eq!(initial["section"], "accounts");
     assert_eq!(initial["next_step"], "connect_account");
     assert_eq!(
         initial["configured_clients"], 0,
@@ -1672,25 +1673,22 @@ pub(super) fn harness_orientation_links_do_not_start_login_listener_or_key_creat
     host.cli(&["screenshot-pane", "--output", &shot]);
     host.cli(&["send-ui-keys", "Tab"]);
     assert_eq!(harness_snapshot(&host)["overview_focused"], true);
-    host.cli(&["send-ui-keys", "Shift+Tab"]);
-    assert_eq!(harness_snapshot(&host)["port_editor"]["focused"], true);
-    host.cli(&["send-ui-keys", "Shift+Tab", "Tab"]);
-    assert_eq!(
-        harness_snapshot(&host)["port_editor"]["focused"],
-        true,
-        "reverse traversal into monitoring must return to Local API"
-    );
-    host.cli(&["send-ui-keys", "Tab"]);
-    assert_eq!(
-        harness_snapshot(&host)["overview_focused"],
-        true,
-        "the final form field must wrap to the visible overview"
-    );
     host.cli(&["send-ui-keys", "Enter"]);
     let next = harness_snapshot(&host);
-    assert_eq!(next["rows"][0]["id"], "accounts");
+    assert!(
+        next["scroll"].as_u64().unwrap() > 0,
+        "Next must reveal the form body"
+    );
+    assert!(
+        next["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["id"] == "accounts")
+    );
     for (link, destination) in [
         ("overview_allocations", "model"),
+        ("overview_monitoring", "monitoring"),
         ("overview_service", "local_api"),
         ("overview_accounts", "accounts"),
     ] {
@@ -1709,6 +1707,23 @@ pub(super) fn harness_orientation_links_do_not_start_login_listener_or_key_creat
         assert_eq!(state["listener"], "stopped");
         assert_eq!(state["local_key_exists"], false);
         assert!(state["accounts"].as_array().unwrap().is_empty());
+        if link == "overview_service" {
+            host.cli(&["send-ui-keys", "Tab", "Shift+Tab"]);
+            assert_eq!(harness_snapshot(&host)["port_editor"]["focused"], true);
+            host.cli(&["send-ui-keys", "Tab"]);
+            assert_eq!(
+                harness_snapshot(&host)["overview_focused"],
+                true,
+                "the service form must wrap to the overview"
+            );
+        } else if link == "overview_monitoring" {
+            host.cli(&["send-ui-keys", "Shift+Tab"]);
+            assert_eq!(
+                harness_snapshot(&host)["overview_focused"],
+                true,
+                "reverse traversal from monitoring must return to visible section links"
+            );
+        }
     }
     host.click_geometry("settings");
     let reopened = open_harness(&host);
@@ -1719,6 +1734,30 @@ pub(super) fn harness_orientation_links_do_not_start_login_listener_or_key_creat
 }
 
 fn click_harness(host: &BrowserGui, id: &str, column: usize) {
+    if !id.starts_with("overview_") {
+        let (section, link) = if id.starts_with("monitoring") {
+            ("monitoring", "overview_monitoring")
+        } else if matches!(
+            id,
+            "port" | "listener" | "listener_actions" | "local_api" | "status"
+        ) {
+            ("service", "overview_service")
+        } else if id.starts_with("model")
+            || id.starts_with("connection")
+            || id.starts_with("key_")
+            || id.starts_with("recipe")
+            || id.starts_with("probe_")
+            || matches!(id, "connect" | "openai_base_url" | "anthropic_base_url")
+        {
+            ("clients", "overview_allocations")
+        } else {
+            ("accounts", "overview_accounts")
+        };
+        if harness_snapshot(host)["section"] != section {
+            click_harness(host, link, 0);
+            assert_eq!(harness_snapshot(host)["section"], section);
+        }
+    }
     // Find a published target by navigating the real panel. The court never
     // re-derives product row order, position, count or hit geometry.
     for _ in 0..80 {
@@ -1746,6 +1785,137 @@ fn click_harness(host: &BrowserGui, id: &str, column: usize) {
         host.click_rect(&harness["next"], "Harness Next", geometry);
     }
     panic!("Harness target {id} never became reachable");
+}
+
+pub(super) fn harness_sections_preserve_drafts_and_hide_unselected_controls() {
+    fn form_ids(host: &BrowserGui) -> std::collections::BTreeSet<String> {
+        let mut ids = std::collections::BTreeSet::new();
+        for _ in 0..80 {
+            let snapshot = host.cli(&["ui-snapshot"]);
+            let geometry = &snapshot["geometry"];
+            let state = &geometry["harness_settings"];
+            if state["scroll"] == 0 {
+                break;
+            }
+            host.click_rect(&state["previous"], "Harness Previous", geometry);
+        }
+        for _ in 0..80 {
+            let snapshot = host.cli(&["ui-snapshot"]);
+            let geometry = &snapshot["geometry"];
+            let state = &geometry["harness_settings"];
+            ids.extend(
+                state["rows"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|row| row["id"].as_str().unwrap().to_owned()),
+            );
+            host.click_rect(&state["next"], "Harness Next", geometry);
+            if harness_snapshot(host)["scroll"] == state["scroll"] {
+                return ids;
+            }
+        }
+        panic!("isolated empty Harness form did not reach its end");
+    }
+    let mut host = BrowserGui::spawn(true, None, None);
+    open_harness(&host);
+    for (link, section, present, absent) in [
+        (
+            "overview_accounts",
+            "accounts",
+            "connect_label",
+            ["model_input", "port", "monitoring"],
+        ),
+        (
+            "overview_allocations",
+            "clients",
+            "model_input",
+            ["connect_label", "port", "monitoring"],
+        ),
+        (
+            "overview_monitoring",
+            "monitoring",
+            "monitoring",
+            ["connect_label", "port", "model_input"],
+        ),
+        (
+            "overview_service",
+            "service",
+            "port",
+            ["connect_label", "model_input", "monitoring"],
+        ),
+    ] {
+        click_harness(&host, link, 0);
+        assert_eq!(harness_snapshot(&host)["section"], section);
+        let ids = form_ids(&host);
+        assert!(
+            ids.contains(present),
+            "missing {section} control {present}: {ids:?}"
+        );
+        for hidden in absent {
+            assert!(
+                !ids.contains(hidden),
+                "hidden {hidden} remains presented in {section}"
+            );
+        }
+    }
+    click_harness(&host, "model_input", 0);
+    host.cli(&["send-ui-keys", "Ctrl+a"]);
+    host.cli(&["send-ui-ime", "commit", "section-model-draft"]);
+    click_harness(&host, "port", 0);
+    host.cli(&["send-ui-keys", "Ctrl+a"]);
+    host.cli(&["send-ui-ime", "commit", "34567"]);
+    click_harness(&host, "connect_label", 0);
+    host.cli(&["send-ui-ime", "commit", "Account draft"]);
+    click_harness(&host, "overview_allocations", 0);
+    let clients = harness_snapshot(&host);
+    assert_eq!(clients["model_editor"]["text"], "section-model-draft");
+    assert_eq!(clients["port_editor"]["focused"], false);
+    assert_eq!(clients["connect_draft"]["label_focused"], false);
+    host.click_geometry("settings");
+    let reopened = open_harness(&host);
+    assert_eq!(reopened["section"], "clients");
+    assert_eq!(reopened["model_editor"]["text"], "section-model-draft");
+    click_harness(&host, "overview_service", 0);
+    assert_eq!(harness_snapshot(&host)["port_editor"]["text"], "34567");
+    host.cli(&["resize-window", "--width", "420", "--height", "300"]);
+    click_harness(&host, "overview_accounts", 0);
+    click_harness(&host, "connect_label", 0);
+    let accounts = harness_snapshot(&host);
+    let input = accounts["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == "connect_label")
+        .unwrap();
+    assert_eq!(input["cells"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        input["cells"][0]["width"], input["rect"]["width"],
+        "account editor must use the full readable row"
+    );
+    assert_eq!(
+        accounts["connect_draft"]["label_bytes"],
+        "Account draft".len()
+    );
+    assert_eq!(accounts["login_active"], false);
+    assert_eq!(accounts["listener"], "stopped");
+    assert_eq!(accounts["local_key_exists"], false);
+    assert_eq!(
+        accounts["port"], 28789,
+        "navigation cannot save the port draft"
+    );
+    assert_eq!(
+        accounts["model"], "",
+        "navigation cannot apply the model draft"
+    );
+    let shot = host
+        .gui
+        .screenshot
+        .with_file_name("sections-narrow.png")
+        .to_string_lossy()
+        .into_owned();
+    host.cli(&["screenshot-pane", "--output", &shot]);
+    host.close_and_wait();
 }
 
 fn harness_private_file(path: &std::path::Path, bytes: &[u8]) {

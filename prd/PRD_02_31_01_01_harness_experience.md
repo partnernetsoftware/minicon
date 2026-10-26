@@ -186,8 +186,9 @@ binary subject (870 total) and one control integration subject (35 total).
 passes, two actual production faults rejected by the original assertions,
 byte-exact restoration and both restored passes. This is scoped development
 feedback, not real-provider, physical-input, all-language/scale or final-artifact
-acceptance. The full pool availability/attention summary and collapsible section
-presentation remain open under ORIENT.
+acceptance. The full pool availability/attention summary remains open under
+ORIENT; the subsequent focused-form checkpoint below replaces the single long
+list of unrelated forms.
 
 The global gear opens the existing anchored chrome panel. Keep the top-level
 Console / Web / Harness routes. Harness begins with a compact setup/service
@@ -195,6 +196,74 @@ summary and four section links: **Account pool, Client allocations, Usage
 monitoring, Local API**. These select a form section inside the same panel;
 they do not add windows or a row of full application tabs. Diagnostics and
 low-level identifiers are expandable details in their relevant section.
+
+### Focused form sections (2026-10-26)
+
+```text
+Outcome: reach the intended Harness form without paging through unrelated controls
+├── [-] Select one form: Accounts (initial), Clients, Monitoring or Local API
+│   invariant: overview stays reachable; only the selected form owns presented rows and hits
+│   evidence: public CLI first use, each section link and hidden-control refusal
+│   safe failure: loading keeps the chosen section, with explicit unavailable state
+│   dependency: existing row geometry and typed View; non-goal: another window or full-app tab bar
+└── [-] Preserve working context across form changes and dashboard deep links
+    invariant: retain account/client drafts, applied binding and service state; no implicit runtime action
+    evidence: edit/leave/return plus delayed hydration and exact-entity deep links
+    safe failure: unsaved edits remain editable; hidden editors relinquish input ownership
+    dependency: existing form buffers and workspace targets; non-goal: saving or authorizing by navigation
+```
+
+The four overview links select a form body and reveal its heading. The Next
+link opens the form containing the incomplete step. Console/Web/Harness route
+return retains that selection. Runtime hydration must not change it or focus
+an editor in a hidden section. A dashboard deep link explicitly selects the
+destination form before revealing the account, allocation, monitor or service.
+Changing sections blurs the previous input using existing editor semantics;
+it does not discard committed draft text. Key-copy intent is invalidated by
+leaving the client form. Shared prerequisites/hot files remain those of the
+orientation slice; native courts must select the real form through visible
+links, without weakening physical-input or cleanup guards.
+Account label/login-proxy/service-proxy fields use a localized caption followed
+by a full-width editor. Paint, hit testing, drag selection and native IME cursor
+geometry use that same one-column row, rather than duplicating a clipped label
+beside a half-width input. Public connect-draft observations expose label byte
+count, caret and focus only, never the label or proxy value.
+
+Windows development checkpoint: `harness_sections_preserve_drafts_and_hide_unselected_controls`
+traverses every page of all four forms through the public CLI and rejects
+controls from other sections. It edits model/port/account-name drafts, switches
+forms and closes/reopens Settings, then checks retained values (the account
+label is observed by byte count only), unchanged applied configuration and no
+implicit login/start/key creation. The actual narrow-window editor uses the
+published full-width cell; its synthetic PNG was visually reviewed.
+`section_selection_survives_hydration_without_focusing_hidden_client_form`
+checks delayed client publication, hidden account arrival/removal and exact
+private draft buffers without a native window. Both are new subjects: default
+Windows binary inventory 870 -> 871, control integration inventory 35 -> 36.
+
+`target-six/v0.2.23-provider/section-controls/receipt.json` records two real
+production faults (present unrelated rows; allow hidden client hydration to
+take the viewport), both rejected by original assertions, exact restoration,
+28 passing form-component subjects and 7 passing public Harness journeys,
+all with zero ignored. Existing geometry subjects now explicitly select their
+form before asserting the original paint/hit/visibility contracts. The native
+fixture also selects the actual visible form before its unchanged guarded
+physical input; only its Python syntax is checked here. This checkpoint does
+not qualify a new physical, provider, language/scale or final artifact run.
+
+```mermaid
+flowchart LR
+    O[Overview and Next action] --> S{Selected form}
+    D[Dashboard entity deep link] --> S
+    S --> A[Account pool]
+    S --> C[Client allocations and key]
+    S --> M[Usage monitoring]
+    S --> L[Local API]
+    A & C & M & L --> B[Existing private draft buffers]
+    V[Asynchronous View hydration] --> B
+    V -. cannot change selected form .-> S
+    B --> X[Explicit login / verify / save / key / start controls]
+```
 
 Use a readable expanded panel up to 760 DIP, bounded by available host width
 and height and anchored to the Settings entry. At least 640 available DIP

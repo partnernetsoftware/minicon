@@ -44,6 +44,7 @@ enum Row {
     Port,
     ListenerActions,
     Accounts,
+    AccountFieldCaption(Field),
     ConnectInput(Field),
     ConnectNetworkHint,
     ConnectNetworkSeparation,
@@ -249,6 +250,7 @@ pub(super) struct HarnessSettings {
     forms: ConnectionForms,
     keys: KeyUi,
     monitoring: monitoring::MonitoringUi,
+    section: overview::Section,
     open_usage: bool,
     pending_workspace_target: Option<super::harness_workspace_ui::SettingsTarget>,
     profile_navigation: Option<usize>,
@@ -283,8 +285,12 @@ impl HarnessSettings {
             (self.view.load_state == provider_runtime::LoadState::Loading).then(|| target.clone());
         self.blur();
         let marker = match target {
-            SettingsTarget::Service => Row::Local,
+            SettingsTarget::Service => {
+                self.select_section(overview::Section::Service);
+                Row::Local
+            }
             SettingsTarget::Accounts(account) => {
+                self.select_section(overview::Section::Accounts);
                 if let Some(id) = account {
                     self.focus_account(&id);
                     Row::AccountInput(Field::AccountLabel)
@@ -292,8 +298,12 @@ impl HarnessSettings {
                     Row::Accounts
                 }
             }
-            SettingsTarget::Connection => Row::Model,
+            SettingsTarget::Connection => {
+                self.select_section(overview::Section::Clients);
+                Row::Model
+            }
             SettingsTarget::Monitoring => {
+                self.select_section(overview::Section::Monitoring);
                 self.monitoring.sync(&self.view);
                 self.monitoring.enter();
                 Row::Monitoring(monitoring::Item::Heading)
@@ -460,6 +470,7 @@ impl HarnessSettings {
             forms: ConnectionForms::default(),
             keys: KeyUi::default(),
             monitoring: Default::default(),
+            section: Default::default(),
             open_usage: false,
             pending_workspace_target: None,
             profile_navigation: None,
@@ -481,6 +492,7 @@ impl HarnessSettings {
     }
 
     pub(super) fn select_monitoring_account(&mut self, account: Option<&str>) {
+        self.select_section(overview::Section::Monitoring);
         self.monitoring.select(account);
         self.monitoring.enter();
     }
@@ -508,8 +520,11 @@ impl HarnessSettings {
             Row::OverviewLink(overview::Link::Monitoring),
             Row::OverviewLink(overview::Link::Service),
             Row::Accounts,
+            Row::AccountFieldCaption(Field::ConnectLabel),
             Row::ConnectInput(Field::ConnectLabel),
+            Row::AccountFieldCaption(Field::ConnectLoginProxy),
             Row::ConnectInput(Field::ConnectLoginProxy),
+            Row::AccountFieldCaption(Field::ConnectServiceProxy),
             Row::ConnectInput(Field::ConnectServiceProxy),
             Row::ConnectNetworkHint,
             Row::ConnectNetworkSeparation,
@@ -525,8 +540,11 @@ impl HarnessSettings {
         rows.extend((0..self.view.accounts.len()).map(Row::Account));
         if self.account_focus.is_some() {
             rows.extend([
+                Row::AccountFieldCaption(Field::AccountLabel),
                 Row::AccountInput(Field::AccountLabel),
+                Row::AccountFieldCaption(Field::LoginProxy),
                 Row::AccountInput(Field::LoginProxy),
+                Row::AccountFieldCaption(Field::ServiceProxy),
                 Row::AccountInput(Field::ServiceProxy),
                 Row::AccountNetworkHint,
                 Row::AccountNetworkSeparation,
@@ -632,6 +650,18 @@ impl HarnessSettings {
             Row::Port,
             Row::ListenerActions,
         ]);
+        let mut section = overview::Section::Accounts;
+        rows.retain(|row| {
+            match row {
+                Row::Overview(_) | Row::OverviewLink(_) => return true,
+                Row::Accounts => section = overview::Section::Accounts,
+                Row::Model => section = overview::Section::Clients,
+                Row::Monitoring(_) => section = overview::Section::Monitoring,
+                Row::Local => section = overview::Section::Service,
+                _ => {}
+            }
+            section == self.section
+        });
         rows
     }
 
@@ -863,7 +893,10 @@ impl HarnessSettings {
                 Field::Model | Field::Profile(_) | Field::ProfileChooser
             )
         });
-        if previous != self.forms.selected && !independent_editor {
+        if previous != self.forms.selected
+            && !independent_editor
+            && self.section == overview::Section::Clients
+        {
             self.focused = None;
             self.drag = None;
             self.clicks = Default::default();
@@ -902,6 +935,7 @@ impl HarnessSettings {
     }
 
     fn focus_connection(&mut self, id: &str) {
+        self.select_section(overview::Section::Clients);
         self.blur();
         let initial = self
             .rows()
@@ -945,7 +979,9 @@ impl HarnessSettings {
             return;
         };
         if self.account_focus.as_deref() != Some(id) {
-            self.blur();
+            if self.section == overview::Section::Accounts {
+                self.blur();
+            }
             if let Some(previous) = self.account_focus.replace(id.to_owned()) {
                 self.account_drafts
                     .insert(previous, std::mem::take(&mut self.account_draft));
@@ -1017,7 +1053,7 @@ impl HarnessSettings {
             .as_ref()
             .is_some_and(|id| self.view.accounts.iter().any(|account| &account.id == id))
         {
-            if self.account_focus.is_some() {
+            if self.account_focus.is_some() && self.section == overview::Section::Accounts {
                 self.blur();
             }
             self.account_focus = None;
@@ -1231,6 +1267,7 @@ impl HarnessSettings {
                 }
             }
             Row::AccountConnection if column == 0 => {
+                self.select_section(overview::Section::Clients);
                 self.scroll = self
                     .rows()
                     .iter()
@@ -1437,6 +1474,29 @@ fn key_button_fits(rect: ui::Rect, caption: &str, size: u16, scale: f64) -> bool
             >= host_ui::host_ui_text_width(caption, size)
 }
 
+fn account_field_caption(field: Field, language: ui::UiLanguage) -> &'static str {
+    let (en, zh, tw) = match field {
+        Field::AccountLabel => ("Account name", "账号名称", "帳號名稱"),
+        Field::ConnectLabel => (
+            "New account label (optional)",
+            "新账号名称（可选）",
+            "新帳號名稱（選填）",
+        ),
+        Field::LoginProxy | Field::ConnectLoginProxy => (
+            "Login proxy (blank = Direct)",
+            "登录代理（留空为直连）",
+            "登入代理（留空為直連）",
+        ),
+        Field::ServiceProxy | Field::ConnectServiceProxy => (
+            "Service proxy (blank = Direct)",
+            "服务代理（留空为直连）",
+            "服務代理（留空為直連）",
+        ),
+        _ => unreachable!("account captions name account fields"),
+    };
+    super::harness_workspace_ui::text(language, en, zh, tw)
+}
+
 fn row_columns(row: Row) -> usize {
     match row {
         Row::KeyActions => 3,
@@ -1447,8 +1507,6 @@ fn row_columns(row: Row) -> usize {
         | Row::LoginActions
         | Row::ChallengeActions
         | Row::Account(_)
-        | Row::AccountInput(_)
-        | Row::ConnectInput(_)
         | Row::AccountActions
         | Row::AccountConnection
         | Row::ModelInput
@@ -1476,6 +1534,15 @@ fn row_id(row: Row) -> String {
             );
         }
         Row::Monitoring(item) => return monitoring::MonitoringUi::id(item),
+        Row::AccountFieldCaption(field) => {
+            let input = match field {
+                Field::AccountLabel | Field::LoginProxy | Field::ServiceProxy => {
+                    Row::AccountInput(field)
+                }
+                _ => Row::ConnectInput(field),
+            };
+            return format!("{}_caption", row_id(input));
+        }
         Row::Local => "local_api",
         Row::Listener => "listener",
         Row::Port => "port",
@@ -1633,7 +1700,8 @@ impl ConApp {
                     surface,
                     rect,
                     overview::link_caption(link, settings.orientation_step(), self.ui_language),
-                    settings.focused == Some(Field::Overview(link)),
+                    settings.focused == Some(Field::Overview(link))
+                        || link.section() == Some(settings.section),
                 ),
                 Row::Monitoring(item) => {
                     let summary = self
@@ -1800,34 +1868,34 @@ impl ConApp {
                     );
                     button(surface, cell(1, 2), "Remove account", false);
                 }
+                Row::AccountFieldCaption(field) => {
+                    label = account_field_caption(field, self.ui_language).into()
+                }
                 Row::AccountInput(field) | Row::ConnectInput(field) => {
-                    let name = match field {
-                        Field::AccountLabel => "Account name",
-                        Field::LoginProxy => "Login proxy",
-                        Field::ServiceProxy => "Service proxy",
-                        Field::ConnectLabel => "New account label (optional)",
-                        Field::ConnectLoginProxy => "Login proxy (blank = Direct)",
-                        Field::ConnectServiceProxy => "Service proxy (blank = Direct)",
-                        _ => "Account setting",
+                    let name = if matches!(
+                        field,
+                        Field::LoginProxy
+                            | Field::ServiceProxy
+                            | Field::ConnectLoginProxy
+                            | Field::ConnectServiceProxy
+                    ) {
+                        tr(
+                            "Direct (no proxy)",
+                            "直连（不使用代理）",
+                            "直連（不使用代理）",
+                        )
+                    } else {
+                        account_field_caption(field, self.ui_language)
                     };
                     host_ui::paint_single_line_host_editor(
                         surface,
-                        cell(0, 2),
+                        rect,
                         settings.editor(field),
                         settings.focused == Some(field),
                         name,
                         theme,
                         size,
                         scale,
-                    );
-                    paint_host_ui_text(
-                        surface,
-                        cell(1, 2).x + (8.0 * scale) as u32,
-                        rect.y + rect.height.saturating_sub(font::cell_metrics(size).height) / 2,
-                        name,
-                        theme.text,
-                        size,
-                        cell(1, 2).width.saturating_sub((16.0 * scale) as u32),
                     );
                 }
                 Row::AccountActions => {
@@ -2686,6 +2754,7 @@ impl ConApp {
         json::object(vec![
             ("panel", rect(geometry.panel)),
             ("next_step", settings.orientation_step().id().into()),
+            ("section", settings.section.id().into()),
             ("configured_clients", settings.configured_client_count().into()),
             ("overview_focused", (active && matches!(settings.focused, Some(Field::Overview(_)))).into()),
             ("monitoring", settings.monitoring.snapshot(&settings.view)),
@@ -2809,6 +2878,11 @@ impl ConApp {
             ),
             ("port_editor", editor(Field::Port)),
             ("model_editor", editor(Field::Model)),
+            ("connect_draft", json::object(vec![
+                ("label_bytes", settings.connection_draft.label.text.len().into()),
+                ("label_caret", settings.connection_draft.label.caret.into()),
+                ("label_focused", (active && settings.focused == Some(Field::ConnectLabel)).into()),
+            ])),
             ("connection_profile",settings.forms.selected.as_deref().map_or(json::JsonValue::Null,Into::into)),
             ("connection_profile_navigation",settings.profile_navigation.map_or(json::JsonValue::Null,Into::into)),
             ("connection_picker_focused",(active&&settings.focused==Some(Field::ProfileChooser)).into()),
@@ -2936,6 +3010,8 @@ impl ConApp {
         self.settings_section = ui::SettingsSection::Harness;
         self.poll_harness_settings(window);
         if let Some(settings) = &mut self.harness_settings {
+            settings
+                .show_workspace_target(super::harness_workspace_ui::SettingsTarget::Accounts(None));
             settings.blur();
             settings.connection_draft.provider = provider;
             settings.focused = Some(Field::ConnectLabel);
@@ -3260,7 +3336,7 @@ impl ConApp {
                         .iter()
                         .position(|row| row_field(*row) == Some(field))
                         .unwrap_or(0);
-                    let rect = geometry.cell(row, 0, 2, scale);
+                    let rect = geometry.cell(row, 0, row_columns(rows[row]), scale);
                     let offset = super::browser_ui::host_field_offset(
                         settings.editor(field),
                         rect,
@@ -3353,7 +3429,7 @@ impl ConApp {
                                 settings.focused = Some(Field::ProfileChooser);
                                 settings.navigate_connection_profiles(0);
                             } else if let Some(field) = field {
-                                let rect = geometry.cell(index, 0, 2, scale);
+                                let rect = geometry.cell(index, 0, columns, scale);
                                 let offset = super::browser_ui::host_field_offset(
                                     settings.editor(field),
                                     rect,
@@ -3631,7 +3707,7 @@ impl ConApp {
                 .unwrap_or(0);
             let rect = layout
                 .harness_settings(scale, rows.len(), settings.scroll)
-                .cell(index, 0, 2, scale);
+                .cell(index, 0, row_columns(rows[index]), scale);
             let editor = settings.editor(field);
             let cell = font::cell_metrics(size).width.max(1);
             let columns = (rect.width.saturating_sub((16.0 * scale) as u32) / cell).max(1) as usize;
@@ -3856,7 +3932,10 @@ mod tests {
         let size = 14;
         for (width, height) in [(760, 420), (420, 360), (760, 300)] {
             let layout = ui::Layout::new(width, height, 1.0);
-            let mut settings = HarnessSettings::default();
+            let mut settings = HarnessSettings {
+                section: overview::Section::Clients,
+                ..Default::default()
+            };
             let rows = settings.rows();
             let index = rows
                 .iter()
@@ -4031,7 +4110,10 @@ mod tests {
     }
     #[test]
     fn cs05_actual_profile_action_paints_exact_cost_in_supported_short_viewports_and_dispatches() {
-        let mut settings = HarnessSettings::default();
+        let mut settings = HarnessSettings {
+            section: overview::Section::Clients,
+            ..Default::default()
+        };
         settings.view.load_state = provider_runtime::LoadState::Loaded;
         settings.view.busy = false;
         settings.view.connection_profile = "default".into();
@@ -4162,7 +4244,10 @@ mod tests {
 
     #[test]
     fn cs04_actual_apply_column_is_reachable_and_dispatches_only_an_acknowledged_request() {
-        let mut settings = HarnessSettings::default();
+        let mut settings = HarnessSettings {
+            section: overview::Section::Clients,
+            ..Default::default()
+        };
         settings.view.load_state = provider_runtime::LoadState::Loaded;
         settings.view.busy = false;
         settings.view.connection_profile = "default".into();
@@ -4226,7 +4311,10 @@ mod tests {
     #[test]
     fn cs03_actual_verify_button_paints_visible_localized_cost_and_output_limit_with_a_local_error()
     {
-        let mut settings = HarnessSettings::default();
+        let mut settings = HarnessSettings {
+            section: overview::Section::Clients,
+            ..Default::default()
+        };
         settings.view.load_state = provider_runtime::LoadState::Loaded;
         settings.view.connection_profile = "default".into();
         settings.view.connection_profiles = vec![connection_profile("default", "account-a")];
@@ -4344,7 +4432,10 @@ mod tests {
 
     #[test]
     fn cs03_verification_controls_reveal_and_hit_in_the_actual_short_settings_viewport() {
-        let mut settings = HarnessSettings::default();
+        let mut settings = HarnessSettings {
+            section: overview::Section::Clients,
+            ..Default::default()
+        };
         settings.view.load_state = provider_runtime::LoadState::Loaded;
         settings.view.connection_profile = "default".into();
         settings.view.connection_profiles = vec![connection_profile("default", "account-a")];
@@ -4403,6 +4494,79 @@ mod tests {
             error: None,
             allocations: vec![],
         }
+    }
+
+    #[test]
+    fn section_selection_survives_hydration_without_focusing_hidden_client_form() {
+        let mut settings = HarnessSettings::default();
+        assert!(
+            settings
+                .rows()
+                .iter()
+                .any(|row| matches!(row, Row::Accounts))
+        );
+        assert!(
+            !settings
+                .rows()
+                .iter()
+                .any(|row| matches!(row, Row::Port | Row::Model))
+        );
+        settings.overview_link(overview::Link::Service);
+        settings.scroll = 7;
+        settings.view.load_state = provider_runtime::LoadState::Loaded;
+        settings.view.connection_profile = "default".into();
+        settings.view.connection_profiles = vec![connection_profile("default", "a")];
+        settings.sync_connection_forms();
+        assert_eq!(settings.section, overview::Section::Service);
+        assert_eq!(
+            settings.scroll, 7,
+            "hydration must not jump to a hidden client form"
+        );
+        assert!(settings.focused.is_none());
+        assert!(settings.rows().iter().any(|row| matches!(row, Row::Port)));
+        assert!(!settings.rows().iter().any(|row| matches!(row, Row::Model)));
+        settings.focused = Some(Field::Port);
+        settings.view.accounts.push(AccountSummary {
+            id: "a".into(),
+            provider: Provider::DeepSeek,
+            label: "Private account".into(),
+            state: provider_accounts::AccountState::CredentialStored,
+        });
+        settings
+            .view
+            .account_preferences
+            .push(("a".into(), AccountPreferences::legacy("a")));
+        settings.sync_account_drafts();
+        assert!(
+            settings.focused == Some(Field::Port),
+            "hidden account hydration cannot blur the visible editor"
+        );
+        settings.view.accounts.clear();
+        settings.sync_account_drafts();
+        assert!(
+            settings.focused == Some(Field::Port),
+            "hidden account removal cannot blur the visible editor"
+        );
+        settings.connection_draft.label.text = "Private account draft".into();
+        settings.port.text = "34567".into();
+        settings.forms.current_mut().unwrap().model_mut().text = "Private model draft".into();
+        for link in [
+            overview::Link::Accounts,
+            overview::Link::Allocations,
+            overview::Link::Service,
+            overview::Link::Monitoring,
+        ] {
+            settings.overview_link(link);
+        }
+        assert_eq!(
+            settings.connection_draft.label.text,
+            "Private account draft"
+        );
+        assert_eq!(settings.port.text, "34567");
+        assert_eq!(
+            settings.forms.current().unwrap().model().text,
+            "Private model draft"
+        );
     }
 
     #[test]
@@ -4487,7 +4651,10 @@ mod tests {
 
     #[test]
     fn independent_port_focus_survives_profile_hydration() {
-        let mut settings = HarnessSettings::default();
+        let mut settings = HarnessSettings {
+            section: overview::Section::Service,
+            ..Default::default()
+        };
         settings.view.busy = false;
         settings.view.load_state = provider_runtime::LoadState::Loaded;
         settings.view.connection_profile = "default".into();
@@ -4510,7 +4677,10 @@ mod tests {
 
     #[test]
     fn independent_port_selection_survives_unrelated_view_publication() {
-        let mut settings = HarnessSettings::default();
+        let mut settings = HarnessSettings {
+            section: overview::Section::Service,
+            ..Default::default()
+        };
         settings.view.busy = false;
         settings.port.text = settings.view.port.to_string();
         settings.port.caret = 3;
@@ -4533,7 +4703,10 @@ mod tests {
 
     #[test]
     fn connection_form_catalogue_choices_follow_slot_account_and_preserve_applied_view() {
-        let mut settings = HarnessSettings::default();
+        let mut settings = HarnessSettings {
+            section: overview::Section::Clients,
+            ..Default::default()
+        };
         settings.view.load_state = provider_runtime::LoadState::Loaded;
         settings.view.selected_account = Some("applied".into());
         settings.view.model = "applied-wire".into();
@@ -4596,7 +4769,10 @@ mod tests {
 
     #[test]
     fn connection_profiles_remain_distinct_and_unavailable_allocations_remain_editable() {
-        let mut settings = HarnessSettings::default();
+        let mut settings = HarnessSettings {
+            section: overview::Section::Clients,
+            ..Default::default()
+        };
         settings.view.load_state = provider_runtime::LoadState::Loaded;
         settings.view.connection_profile = "default".into();
         settings.view.connection_profiles = (0..8)
@@ -4639,7 +4815,10 @@ mod tests {
 
     #[test]
     fn connection_rows_use_existing_reveal_and_hit_geometry_in_narrow_short_windows() {
-        let mut settings = HarnessSettings::default();
+        let mut settings = HarnessSettings {
+            section: overview::Section::Clients,
+            ..Default::default()
+        };
         settings.view.load_state = provider_runtime::LoadState::Loaded;
         settings.view.connection_profile = "custom".into();
         settings.view.connection_profiles = vec![connection_profile("custom", "missing")];
@@ -4757,7 +4936,10 @@ mod tests {
 
     #[test]
     fn connection_applied_rows_remain_visible_and_distinct_from_later_draft_choices() {
-        let mut settings = HarnessSettings::default();
+        let mut settings = HarnessSettings {
+            section: overview::Section::Clients,
+            ..Default::default()
+        };
         settings.view.load_state = provider_runtime::LoadState::Loaded;
         settings.view.connection_profile = "default".into();
         let mut profile = connection_profile("default", "missing-applied-account");
@@ -5108,7 +5290,10 @@ mod tests {
     }
     #[test]
     fn monitoring_open_report_uses_actual_revealed_cell_and_full_localized_caption() {
-        let settings = HarnessSettings::default();
+        let settings = HarnessSettings {
+            section: overview::Section::Monitoring,
+            ..Default::default()
+        };
         let rows = settings.rows();
         let index = rows
             .iter()

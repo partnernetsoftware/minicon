@@ -1,6 +1,26 @@
 //! Read-only orientation and navigation; runtime actions remain explicit below.
 use super::*;
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) enum Section {
+    #[default]
+    Accounts,
+    Clients,
+    Monitoring,
+    Service,
+}
+
+impl Section {
+    pub(super) fn id(self) -> &'static str {
+        match self {
+            Self::Accounts => "accounts",
+            Self::Clients => "clients",
+            Self::Monitoring => "monitoring",
+            Self::Service => "service",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Link {
     Next,
@@ -8,6 +28,18 @@ pub(super) enum Link {
     Allocations,
     Monitoring,
     Service,
+}
+
+impl Link {
+    pub(super) fn section(self) -> Option<Section> {
+        match self {
+            Self::Next => None,
+            Self::Accounts => Some(Section::Accounts),
+            Self::Allocations => Some(Section::Clients),
+            Self::Monitoring => Some(Section::Monitoring),
+            Self::Service => Some(Section::Service),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -86,6 +118,14 @@ impl Step {
 }
 
 impl HarnessSettings {
+    pub(super) fn select_section(&mut self, section: Section) {
+        if self.section != section {
+            self.blur();
+            self.section = section;
+            self.scroll = 0;
+        }
+    }
+
     pub(super) fn configured_client_count(&self) -> usize {
         self.view
             .connection_profiles
@@ -161,24 +201,32 @@ impl HarnessSettings {
 
     pub(super) fn overview_link(&mut self, link: Link) {
         use super::super::harness_workspace_ui::SettingsTarget;
-        let marker = match link {
-            Link::Accounts => Some(Row::Accounts),
-            Link::Allocations => Some(Row::Model),
-            Link::Monitoring => {
-                self.show_workspace_target(SettingsTarget::Monitoring);
-                return;
-            }
-            Link::Service => Some(Row::Local),
-            Link::Next => match self.orientation_step() {
-                Step::Loading => None,
-                Step::Unavailable => Some(Row::Status),
-                Step::Authorization | Step::Account | Step::AccountRepair => Some(Row::Accounts),
-                Step::Allocation | Step::Draft => Some(Row::Model),
-                Step::Key | Step::Handoff => Some(Row::Connect),
-                Step::Service => Some(Row::Local),
-            },
+        let target = match link {
+            Link::Accounts => Some(SettingsTarget::Accounts(None)),
+            Link::Allocations => Some(SettingsTarget::Connection),
+            Link::Monitoring => Some(SettingsTarget::Monitoring),
+            Link::Service => Some(SettingsTarget::Service),
+            Link::Next => None,
+        };
+        if let Some(target) = target {
+            self.show_workspace_target(target);
+            return;
+        }
+        let marker = match self.orientation_step() {
+            Step::Loading => None,
+            Step::Unavailable => Some(Row::Status),
+            Step::Authorization | Step::Account | Step::AccountRepair => Some(Row::Accounts),
+            Step::Allocation | Step::Draft => Some(Row::Model),
+            Step::Key | Step::Handoff => Some(Row::Connect),
+            Step::Service => Some(Row::Local),
         };
         if let Some(marker) = marker {
+            self.select_section(match marker {
+                Row::Accounts => Section::Accounts,
+                Row::Model | Row::Connect => Section::Clients,
+                Row::Local | Row::Status => Section::Service,
+                _ => unreachable!("overview links have typed form destinations"),
+            });
             self.blur();
             self.scroll = self
                 .rows()
