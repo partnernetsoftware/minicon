@@ -1,4 +1,4 @@
-# v0.2.24 — tab-tree drag and reliable inline rename
+# v0.2.24 — tab-tree interactions and clipboard status
 
 Status: `[_]` selected next-version scope, 2026-10-25. The owner requests these
 changes in the next 0.2.x version. The current active owner goal now selects
@@ -15,7 +15,7 @@ it is not automatically promised as complete in this tree-interaction release.
 ## Outcome tree DAG
 
 ```text
-Outcome: publicly deliver predictable tab organization and editable names
+Outcome: improve daily workspace interaction and clipboard awareness
 ├── [-] R0 — preserve owner rename regression and version/source baseline
 │   invariant: source inspection and injected/physical evidence stay distinct
 │   evidence: retained baseline receipt linked in PRD 25.03
@@ -36,11 +36,14 @@ Outcome: publicly deliver predictable tab organization and editable names
 │   evidence: TT-05/06 public press/move/release and native pointer journeys
 │   safe failure: stale/cancelled proposals leave no tree mutation
 │   dependency: R1/T1 and frozen observation seam; non-goal: OS file/URL/cross-window drag
+├── [_] C1 — clipboard type alongside labeled size
+│   invariant/evidence/safe failure/dependency/non-goal: PRD 25, Clipboard status type and size
+│   sequence: bounded format summary, generation-safe status, localized native/pixel acceptance
 └── [_] Q — integrate and release exact 0.2.24 source
     invariant: two versions' product/artifact/native receipts never substitute for each other
     evidence: TT-07, required product gates, exact six-cell/sign/scan/Promotion/public checks
     safe failure: hold publication on missing selected evidence
-    dependency: R1/T1/T2 and 0.2.23 release join; non-goal: claiming future cluster or H2 delivery
+    dependency: R1/T1/T2/C1 and 0.2.23 release join; non-goal: claiming future cluster or H2 delivery
 ```
 
 ## Memory palace
@@ -55,6 +58,7 @@ flowchart LR
     D --> N[Native focus/pointer/IME and public runtime counterexamples]
     V[Complete0.2.23 source/release join] --> FREEZE[Select0.2.24 version and freeze matching source]
     N --> FREEZE
+    CLIP[PRD25 clipboard type / labeled size / asynchronous summary] --> FREEZE
     FREEZE --> Q[Exact artifact qualification and authorized no-rebuild publication]
     MISS[Missing required evidence] --> BLOCK[BLOCKED exact claim]
 ```
@@ -73,6 +77,11 @@ flowchart LR
 5. Qualify the selected OS/ISA/native input/scales and exact artifacts, then use
    the registered release skills and existing named-version publication authority.
    Upsert owner status/evidence before archiving this plan.
+
+The owner's 2026-10-26 clipboard request adds C1 to this next version.
+[PRD25](../prd/PRD_02_25_con_workspace.md#clipboard-status-type-and-size-planned-0224)
+owns behavior and CB-TYPE-01..03. Its status/clipboard files can proceed after
+their own contract review; they do not need the tree drag implementation.
 
 Hot files: `src/main.rs`, `rename.rs`, `workspace.rs`, `ui.rs`, `host_paint.rs`,
 `snapshot.rs`, control dispatch and public/native input fixtures. R1 and T2 share

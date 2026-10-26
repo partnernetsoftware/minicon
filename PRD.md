@@ -82,7 +82,7 @@ MiniCon — one-file local terminal
 └── Current delivery
     ├── [v] public v0.2.22 → prd/archive/v0.2.22-release-history.md
     ├── [-] v0.2.23 browser controls and first harness connection → plan/plan-v0.2.23.md
-    ├── [_] v0.2.24 tree drag and inline rename → plan/plan-v0.2.24.md
+    ├── [_] v0.2.24 tree interactions and clipboard status → plan/plan-v0.2.24.md
     ├── current independent tracks → plan/plan-v0.2.x-product-roadmap.md
     └── historical outcomes and receipts → prd/archive/README.md
 ```

@@ -38,6 +38,7 @@ minicon workspace and input
 ├── External composer input (exactly one focus owner)
 ├── Scrollbar and divider
 ├── Selection and clipboard
+│   └── [_] Clipboard status type and size (0.2.24) → section below
 ├── Configuration (minicon.json; themes; language; font size)
 │   ├── [-] terminal capability profile / advanced TERM override for new sessions
 │   │   invariant: choice survives reload; existing sessions retain their original contract
@@ -95,7 +96,40 @@ flowchart LR
     HW -->|"restore tab and focus"| Strip
     HW -->|"typed configuration link"| Sett
     Hist -.->|"not a content panel"| Strip
+    CB["Clipboard generation / explicit focus refresh"] --> CT["Bounded asynchronous format/type summary"]
+    CT --> CS["Planned status: type plus labeled size; unknown stays unknown"]
 ```
+
+## Clipboard status type and size (planned 0.2.24)
+
+Owner request, 2026-10-26: the existing clipboard status readout should show
+whether content is text or an image alongside its size. Status is `[_]`;
+sequencing belongs to [the next-version plan](../plan/plan-v0.2.24.md).
+
+- Outcome/invariant: at a glance distinguish Text, Image, Text + image,
+  Empty and Other/Unknown from the same observed clipboard generation. Busy,
+  denied or unsupported reads show unavailable, not Empty or a stale type.
+- Presentation: localize type and units. Text uses character count (the current
+  number is characters, not bytes), for example `Clip Text 123 chars`; images
+  show `Clip Image 240 KiB` only when that representation's byte size is known.
+  An unknown image size keeps the known Image label and says size unknown.
+  Mixed formats must not silently become text-only; never add unlike units.
+  Keep narrow-window/IME/status layout readable without per-update jitter.
+- Dependency/reuse: `src/clipboard_status.rs`, status painting and the existing
+  platform available-types/rich-read contracts. Classification is product-owned;
+  OS format spelling stays in native adapters. Determine image support from
+  advertised formats without decoding or persisting a full image just to label
+  it. Keep bounded asynchronous work, refresh triggers and generation checks so
+  late reads cannot overwrite a newer type/size pair.
+- Observable evidence: CB-TYPE-01 synthetic native text/image/mixed/empty/other
+  transitions; CB-TYPE-02 busy/oversized/stale-completion and unsupported paths;
+  CB-TYPE-03 localized narrow/normal pixel readouts alongside IME/status content.
+  Name the actual OS/ISA and removed-guard failure before marking it delivered.
+  Clipboard mutation tests use disposable courts and restore all original
+  formats; they never run on the owner's live desktop.
+- Safe failure/non-goal: retain a truthful known type with unknown size or
+  explicit unavailable state. No preview/OCR, clipboard history, image export,
+  content upload, automatic paste or new paste-priority policy is selected.
 
 ## Terminology (naming decision, 2026-10-23)
 
