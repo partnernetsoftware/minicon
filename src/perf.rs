@@ -21,6 +21,13 @@ pub(super) struct PerfStats {
     pub(super) pty_budget_yields: u64,
     pub(super) control_requests: u64,
     pub(super) control_budget_yields: u64,
+    pub(super) control_dispatch_wait_samples: u64,
+    pub(super) control_dispatch_wait_last_us: u64,
+    pub(super) control_dispatch_wait_max_us: u64,
+    pub(super) browser_native_create_count: u64,
+    pub(super) browser_native_create_failures: u64,
+    pub(super) browser_native_create_last_us: u64,
+    pub(super) browser_native_create_max_us: u64,
     pub(super) full_candidate_frames: u64,
     pub(super) partial_candidate_frames: u64,
     pub(super) dirty_pixels: u64,
@@ -37,6 +44,25 @@ pub(super) struct PerfStats {
 }
 
 impl PerfStats {
+    pub(super) fn record_control_dispatch_wait(&mut self, elapsed: Duration) {
+        let micros = elapsed.as_micros().min(u128::from(u64::MAX)) as u64;
+        self.control_dispatch_wait_samples = self.control_dispatch_wait_samples.saturating_add(1);
+        self.control_dispatch_wait_last_us = micros;
+        self.control_dispatch_wait_max_us = self.control_dispatch_wait_max_us.max(micros);
+    }
+
+    #[cfg(any(target_os = "macos", windows))]
+    pub(super) fn record_native_page_creation(&mut self, elapsed: Duration, succeeded: bool) {
+        let micros = elapsed.as_micros().min(u128::from(u64::MAX)) as u64;
+        self.browser_native_create_count = self.browser_native_create_count.saturating_add(1);
+        if !succeeded {
+            self.browser_native_create_failures =
+                self.browser_native_create_failures.saturating_add(1);
+        }
+        self.browser_native_create_last_us = micros;
+        self.browser_native_create_max_us = self.browser_native_create_max_us.max(micros);
+    }
+
     pub(super) fn record_frame(&mut self, elapsed: Duration) {
         let micros = elapsed.as_micros().min(u128::from(u64::MAX)) as u64;
         self.frames = self.frames.saturating_add(1);
@@ -136,6 +162,38 @@ impl PerfStats {
             ("pty_budget_yields", self.pty_budget_yields.into()),
             ("control_requests", self.control_requests.into()),
             ("control_budget_yields", self.control_budget_yields.into()),
+            (
+                "control_dispatch_wait_samples",
+                self.control_dispatch_wait_samples.into(),
+            ),
+            (
+                "control_dispatch_wait_last_us",
+                self.control_dispatch_wait_last_us.into(),
+            ),
+            (
+                "control_dispatch_wait_max_us",
+                self.control_dispatch_wait_max_us.into(),
+            ),
+            (
+                "browser_native_create_supported",
+                cfg!(any(target_os = "macos", windows)).into(),
+            ),
+            (
+                "browser_native_create_count",
+                self.browser_native_create_count.into(),
+            ),
+            (
+                "browser_native_create_failures",
+                self.browser_native_create_failures.into(),
+            ),
+            (
+                "browser_native_create_last_us",
+                self.browser_native_create_last_us.into(),
+            ),
+            (
+                "browser_native_create_max_us",
+                self.browser_native_create_max_us.into(),
+            ),
             ("full_candidate_frames", self.full_candidate_frames.into()),
             (
                 "partial_candidate_frames",

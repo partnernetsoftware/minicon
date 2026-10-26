@@ -1046,6 +1046,23 @@ def main():
             except (OSError, RuntimeError, AssertionError, subprocess.SubprocessError, json.JSONDecodeError):
                 receipt["failure_snapshot_unavailable"] = True
         cleanup = {}
+        if child is not None and child.poll() is None:
+            try:
+                values = cli('perf-stats')
+                timing_keys = ('control_dispatch_wait_samples', 'control_dispatch_wait_last_us',
+                               'control_dispatch_wait_max_us', 'browser_native_create_count',
+                               'browser_native_create_failures', 'browser_native_create_last_us',
+                               'browser_native_create_max_us')
+                if (all(type(values.get(key)) is int and values[key] >= 0 for key in timing_keys)
+                        and type(values.get('browser_native_create_supported')) is bool):
+                    receipt['performance_observation'] = {
+                        'status': 'observed', 'phase': phase,
+                        'browser_native_create_supported': values['browser_native_create_supported'],
+                        **{key: values[key] for key in timing_keys}}
+                else:
+                    receipt['performance_observation'] = {'status': 'unavailable'}
+            except (OSError, RuntimeError, subprocess.SubprocessError, json.JSONDecodeError):
+                receipt['performance_observation'] = {'status': 'unavailable'}
         if native is not None:
             receipt["native_focus_observations"] = native.focus_observations
             receipt["owned_topmost_for_presentation"] = native.presentation_topmost

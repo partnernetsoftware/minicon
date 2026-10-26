@@ -1886,6 +1886,18 @@ court predicates. Measure creation and dispatch/wake timing before changing
 thread ownership or declaring a startup/readiness fault; no timeout increase,
 automatic retry or unqualified cached reply closes this failed court.
 
+The next measurement uses the [public performance ledger](PRD_02_24_con_terminal.md#native-page-and-control-dispatch-timing-diagnostics)
+for completed page-factory duration and pre-dispatch request age. The physical
+fixture collects its eight allowlisted numeric/boolean fields once before
+cleanup on success or failure. Missing fields, unavailable CLI or in-progress
+creation remain unavailable, not zero. It neither retries the failed command
+nor changes its original five-second deadline or overall verdict. Collection
+is a later observation, not atomic with the failed request or frame. Shared
+prerequisites: decoded request ownership and the existing page factory. Hot
+files: product-local control reply/perf/dispatch/main plus the native fixture.
+Native backend ownership, shared OS/ISA APIs and features are unchanged.
+No new provider or window authority is added; unknown latency remains open.
+
 ### Windows full standard workspace checkpoint
 
 [Run40252299740](https://github.com/partnernetsoftware/minicon/actions/runs/40252299740)

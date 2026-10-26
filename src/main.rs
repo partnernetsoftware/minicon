@@ -2542,6 +2542,7 @@ impl ConApp {
         let wake = move || {
             let _ = waker.wake();
         };
+        let native_creation_started = Instant::now();
         let result = if let Some(auth) = &self.browser_auth {
             browser::NativePageHost::new_with_context(slot, &auth.context, wake)
                 .map_err(|error| error.to_string())
@@ -2549,6 +2550,8 @@ impl ConApp {
             self.effective_browser_proxy()
                 .and_then(|proxy| browser::NativePageHost::new(slot, &proxy, wake))
         };
+        self.perf_stats
+            .record_native_page_creation(native_creation_started.elapsed(), result.is_ok());
         match result {
             Ok(page) => {
                 let _ = page.set_visible(self.active_is_browser());

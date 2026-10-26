@@ -871,6 +871,7 @@ pub struct ReplySender(Arc<ReplySlot>);
 pub(crate) struct ReplyReceiver(Arc<ReplySlot>);
 
 struct ReplySlot {
+    created_at: std::time::Instant,
     value: std::sync::Mutex<Option<Reply>>,
     ready: std::sync::Condvar,
     sender_alive: AtomicBool,
@@ -879,6 +880,7 @@ struct ReplySlot {
 impl Default for ReplySlot {
     fn default() -> Self {
         Self {
+            created_at: std::time::Instant::now(),
             value: std::sync::Mutex::new(None),
             ready: std::sync::Condvar::new(),
             sender_alive: AtomicBool::new(true),
@@ -887,6 +889,10 @@ impl Default for ReplySlot {
 }
 
 impl ReplySender {
+    pub(crate) fn age_before_dispatch(&self) -> Duration {
+        self.0.created_at.elapsed()
+    }
+
     pub fn send(&self, value: Reply) -> Result<(), Reply> {
         let mut slot = self
             .0

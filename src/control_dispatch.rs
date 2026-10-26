@@ -641,6 +641,8 @@ impl ConApp {
             .map(|server| server.recv_batch(CONTROL_DRAIN_BUDGET_REQUESTS))
             .unwrap_or_else(|| (Vec::new(), false));
         for request in requests {
+            self.perf_stats
+                .record_control_dispatch_wait(request.reply.age_before_dispatch());
             let result = self
                 .windowless_command(&request.command)
                 .unwrap_or_else(|| Err("the window is detached; attach-gui first".to_owned()));
@@ -661,6 +663,8 @@ impl ConApp {
             .unwrap_or_else(|| (Vec::new(), false));
         let mut requests: std::collections::VecDeque<_> = requests.into();
         while let Some(request) = requests.pop_front() {
+            self.perf_stats
+                .record_control_dispatch_wait(request.reply.age_before_dispatch());
             if matches!(&request.command, control::CliCommand::ResizeWindow { .. }) {
                 self.pending_resize_requests.push(request);
                 self.pending_resize_deadline

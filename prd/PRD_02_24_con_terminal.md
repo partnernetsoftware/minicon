@@ -733,6 +733,30 @@ Verified on a user's Windows Server 2016 (build 14393) on 2026-08-23.
 
 ## Rendering performance evidence
 
+### Native page and control-dispatch timing diagnostics
+
+The public perf-stats ledger additionally records completed native page factory
+count/failures and last/max microseconds, with a supported boolean for the
+same-process Windows/macOS implementation. The interval covers the factory
+selection, proxy resolution and native constructor/context validation; it is
+not a network-load duration, raw OS API timer or an in-progress hang detector.
+Linux's separate page helper is not measured by these fields. Zero count means
+no completed sample, not instant creation. Reset clears this ledger together
+with the existing performance counters.
+
+Control dispatch wait samples/last/max microseconds measure reply-slot creation
+(after wire decoding, just before queue admission) through GUI/windowless
+dispatch selection. This includes queue wait and prior batch work, not connect,
+decoding, current-command execution, pending wait completion or reply delivery.
+The ledger has fixed-size counters only: no command arguments, request IDs,
+provider/profile data or unbounded event history. Counts and durations saturate.
+The owning consumer is the native responsiveness investigation in
+[PRD32](PRD_02_32_dev_loop_crosscheck.md); samples explain observations but
+establish no response SLA or timeout exemption. Real elapsed measurements and
+removed-instrumentation controls remain separate from product input evidence.
+
+### Rendering and present ledger
+
 Frame, damage and present counters are exposed through `perf-stats` /
 `reset-perf-stats` ([26](PRD_02_26_con_control_cli.md)): conservative
 full/partial raster-candidate frames, dirty and frame pixels, platform-owned
