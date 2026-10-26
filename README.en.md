@@ -177,7 +177,7 @@ alternate screen to avoid it, e.g. `grok --no-alt-screen` (or its
 ```
 
 On macOS, the canonical dev build also assembles the unsigned local-test wrapper
-`target/debug/MiniCon 0.2.23 Dev.app`; its version follows `Cargo.toml` and it has a distinct development bundle id
+`target/debug/MiniCon 0.2.24 Dev.app`; its version follows `Cargo.toml` and it has a distinct development bundle id
 so it cannot be confused with an installed release during UI qualification.
 The executable under test remains `target/debug/minicon`.
 

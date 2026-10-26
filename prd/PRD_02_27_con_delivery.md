@@ -13,8 +13,8 @@ Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
 
 ## Current release evolution
 
-The current public baseline is v0.2.22 (receipts in
-[its release history](archive/v0.2.22-release-history.md)). The per-release
+The current public baseline is v0.2.23 (receipts in
+[its release history](archive/v0.2.23-release-history.md)). The per-release
 evolution record from v0.1.2 forward — cell coverage, signing-mode changes,
 candidate/court/promotion receipts and the lessons each release bought — is
 frozen in [the delivery-history archive](archive/PRD_02_27-delivery-history.md)

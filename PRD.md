@@ -82,8 +82,8 @@ MiniCon — one-file local terminal
 │           └── [_] deferred native command-line installation → prd/PRD_02_27_01_install.md
 └── Current delivery
     ├── [v] public v0.2.22 → prd/archive/v0.2.22-release-history.md
-    ├── [-] v0.2.23 browser controls and first harness connection → plan/plan-v0.2.23.md
-    ├── [_] v0.2.24 tree interactions and clipboard status → plan/plan-v0.2.24.md
+    ├── [v] public v0.2.23 → prd/archive/v0.2.23-release-history.md
+    ├── [-] v0.2.24 tree interactions and clipboard status → plan/plan-v0.2.24.md
     ├── current independent tracks → plan/plan-v0.2.x-product-roadmap.md
     └── historical outcomes and receipts → prd/archive/README.md
 ```
@@ -203,8 +203,8 @@ flowchart LR
   owns the design and [its plan](plan/plan-harness-workspace.md) owns sequencing.
   Settings forms, the provider pool and monitoring retain their existing owners;
   Console/Web maintenance and qualification continue.
-- [_] **Next 0.2.x: tab-tree drag and reliable inline rename.** The owner
-  retains this as selected 0.2.24 scope; current delivery is 0.2.23.
+- [-] **v0.2.24: tab-tree drag, reliable inline rename and clipboard type.**
+  The owner retains this as the current selected release scope.
   [PRD 25.03](prd/PRD_02_25_03_tab_tree_interactions.md) owns the reproduced
   inside-click failure and proposed subtree/gesture contract;
   [the plan](plan/plan-v0.2.24.md) sequences rename repair before drag integration.
@@ -213,30 +213,16 @@ flowchart LR
   signed/Candidate/Defender/public qualification, retained failures and scope.
   [Workspace](prd/PRD_02_25_con_workspace.md) and
   [preferences](prd/PRD_02_25_01_browser_preferences.md) own behavior.
-- [-] **v0.2.23: browser controls and first harness connection.**
-  [Controls owner](prd/PRD_02_25_02_browser_controls.md) defines consistent
-  editing, compact menu geometry, keyboard/pointer menus and native focus evidence;
-  [provider gateway](prd/PRD_02_31_01_provider_gateway.md) owns Harness settings,
-  a manual account pool, local OpenAI/Anthropic model API and the future
-  llm-gate selection seam. The provider owner records a real DeepSeek development grant/inference
-  checkpoint; OpenCode and final worker/artifact qualification remain open;
-  initial scope is connection, not dynamic scheduling.
-  The owner's 2026-10-25 product feedback reopens the
-  [Harness connection experience](prd/PRD_02_31_01_01_harness_experience.md)
-  before publication; successful machine release preparation does not close
-  that product acceptance gate.
-  Its [provider pool](prd/PRD_02_31_01_02_provider_pool.md) now explicitly includes
-  same-provider accounts, account-specific proxy settings and separate client
-  allocations; [monitoring](prd/PRD_02_31_01_03_usage_monitoring.md) owns local
-  usage and authoritative balance/allowance visibility. These are selected
-  designs with product implementation and evidence still open. The pool owner
-  records a partial private-store/HTTP backend checkpoint for keyed profiles,
-  alias allowlists, isolated sessions/revocation and shared account limits;
-  its authorization development join adds explicit account contexts, pinned
-  login networks and ordinary-page restoration with local consumer regressions.
-  actual three-account/native UI acceptance remains open.
-  [The plan](plan/plan-v0.2.23.md) sequences both branches. Implementation is
-  active under the owner's public-0.2.23 goal. Installation remains
+- [v] **Public v0.2.23: browser controls and experimental first Harness connection.**
+  [Release history](prd/archive/v0.2.23-release-history.md) owns the exact
+  source, public chain and deferred acceptance record.
+  [Controls](prd/PRD_02_25_02_browser_controls.md) and
+  [provider gateway](prd/PRD_02_31_01_provider_gateway.md) own shipped
+  behavior. The [connection experience](prd/PRD_02_31_01_01_harness_experience.md),
+  [provider pool](prd/PRD_02_31_01_02_provider_pool.md) and
+  [monitoring](prd/PRD_02_31_01_03_usage_monitoring.md) retain real-account,
+  client and native acceptance still open after the owner's experimental
+  release decision. Installation remains
   [deferred for coordinated AgenTerm planning](prd/PRD_02_27_01_install.md).
 - [-] **Modern-agent and terminal-library qualification.** Owned Rust console
   is the Windows default from 0.2.20; classic remains the explicit rollback.

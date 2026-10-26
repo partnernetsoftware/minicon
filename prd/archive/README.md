@@ -20,6 +20,9 @@ explicit disposition and current capability-owner pointers.
 
 Entries:
 
+- [v0.2.23 release history](v0.2.23-release-history.md) — browser controls,
+  experimental Harness connection, exact public artifacts and retained
+  real-account acceptance.
 - [v0.2.22 release history](v0.2.22-release-history.md) — visible browser entry,
   proxy preferences, Console/Web settings, recovery and qualified public bytes;
   retains failed controls and the 0.2.23 planning handoff.
@@ -60,7 +63,7 @@ Entries:
   includes the owner's dated `minicon.com` ceiling raise (11 → 11.75 MiB) and
   the second recorded macOS `stapler`/CloudKit flake.
 
-File index (updated 2026-10-24). Individual histories own the facts:
+File index (updated 2026-10-27). Individual histories own the facts:
 
 - [v0.1.3](v0.1.3-release-history.md) · [v0.1.4](v0.1.4-release-history.md) · [v0.1.5](v0.1.5-release-history.md) · [v0.1.6](v0.1.6-release-history.md)
 - [v0.1.7](v0.1.7-release-history.md) · [v0.1.9](v0.1.9-release-history.md) · [v0.1.10](v0.1.10-release-history.md) · [v0.1.11](v0.1.11-release-history.md)

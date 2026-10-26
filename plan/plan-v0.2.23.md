@@ -1,6 +1,8 @@
 # v0.2.23 — browser controls and the first harness connection
 
-Status: `[-]` implementation active. Planning refined at the
+Status: `[v]` publicly released as an experimental Harness delivery; exact
+source and open acceptance are recorded in
+[release history](../prd/archive/v0.2.23-release-history.md). Planning refined at the
 owner's request on 2026-10-24, using exploration of public 0.2.22 and the
 subsequent Harness/provider-pool direction. Scope is the first working model
 connection through a multi-account pool, per-account networks, keyed client
