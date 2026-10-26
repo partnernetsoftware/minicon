@@ -3656,6 +3656,21 @@ fn clicking_inside_the_tree_rename_editor_keeps_editing() {
     let committed =
         session.wait_for_ui_snapshot(Duration::from_secs(5), |state| state["rename"].is_null());
     assert!(committed["rename"].is_null());
+    click(&session, pencil_x, pencil_y);
+    let reentered =
+        session.wait_for_ui_snapshot(Duration::from_secs(5), |state| !state["rename"].is_null());
+    assert_ne!(reentered["rename"]["text"], original);
+    session.control_json(&["send-ui-keys", "Escape"]);
+    assert!(
+        session
+            .wait_for_ui_snapshot(Duration::from_secs(5), |state| state["rename"].is_null())
+            ["rename"]
+            .is_null()
+    );
+    click(&session, pencil_x, pencil_y);
+    let restored =
+        session.wait_for_ui_snapshot(Duration::from_secs(5), |state| !state["rename"].is_null());
+    assert_eq!(restored["rename"]["text"], reentered["rename"]["text"]);
     let _ = session.child.kill();
 }
 
@@ -3745,6 +3760,46 @@ fn tree_drag_commits_only_on_release_and_escape_cancels() {
     assert!(
         refused["tabs"][1]["parent"].is_null(),
         "invalid drop moved tree: {refused}"
+    );
+    mouse(&session, "press", 1.5);
+    mouse(&session, "move", 1.55);
+    assert_eq!(
+        session.control_json(&["ui-snapshot"])["tree_drag"]["phase"],
+        "armed",
+        "a subthreshold move must remain a click"
+    );
+    mouse(&session, "release", 1.55);
+    assert!(session.control_json(&["ui-snapshot"])["tree_drag"].is_null());
+    assert!(session.control_json(&["list-tabs"])["tabs"][1]["parent"].is_null());
+
+    mouse(&session, "press", 1.5);
+    mouse(&session, "move", 2.5);
+    assert_eq!(
+        session.control_json(&["ui-snapshot"])["tree_drag"]["phase"],
+        "dragging"
+    );
+    let outside_x = ((geometry["sidebar"]["x"].as_f64().expect("sidebar x")
+        + geometry["sidebar"]["width"]
+            .as_f64()
+            .expect("sidebar width")
+        + 24.0)
+        / scale)
+        .round() as u16;
+    session.control_json(&[
+        "send-ui-mouse",
+        "--action",
+        "release",
+        "--button",
+        "left",
+        "--column",
+        &outside_x.to_string(),
+        "--row",
+        &point(2.5).to_string(),
+    ]);
+    assert!(session.control_json(&["ui-snapshot"])["tree_drag"].is_null());
+    assert!(
+        session.control_json(&["list-tabs"])["tabs"][1]["parent"].is_null(),
+        "an outside release must cancel the drag"
     );
     let _ = session.child.kill();
 }

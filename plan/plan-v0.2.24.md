@@ -144,7 +144,10 @@ product-code changes and the version bump follow the completed 0.2.23 Promotion.
 - T1/T2 development checkpoint: Windows x86_64 Workspace branch matrix (17
   tests) and the public GUI drag/cancel/refusal journey passed. Removing the
   parent update and the release-only commit each produced their expected RED
-  result before restoration. PRD 25.03 retains native pointer, full preview,
+  result before restoration. The public journey now also covers subthreshold
+  motion and outside release; removing the movement threshold produced RED,
+  then restoration passed. The rename journey now covers Escape restoring
+  the committed name. PRD 25.03 retains native pointer, full preview,
   scroll/capture/stale cases and exact-source qualification as open evidence.
 - Design checkpoint: PRD 31.01.04 specifies the first candidate-ordering
   ujs/WASM host envelope and marks engine ABI/readiness BLOCKED pending an

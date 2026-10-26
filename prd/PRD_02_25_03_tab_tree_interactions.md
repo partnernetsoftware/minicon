@@ -198,12 +198,12 @@ all coordinates, scrolling and work to existing tree bounds; no paint-thread I/O
 
 | Status / journey | Required observable result |
 | --- | --- |
-| `[-]` TT-01 | Pencil -> inside click -> caret/edit remains active; typing changes only that label; Enter commits and Escape restores. Windows x86_64 injected click/typing/Enter and guard-removal RED pass; Escape and selected native scope remain open |
+| `[-]` TT-01 | Pencil -> inside click -> caret/edit remains active; typing changes only that label; Enter commits and Escape restores. Windows x86_64 injected click/typing/Enter/Escape passed and the inside-click guard-removal RED passed; selected native scope remains open |
 | `[_]` TT-02 | UTF-8, selected replacement, bounds, native IME, selection drag and outside blur preserve one focus owner; no PTY/browser/Harness leakage |
 | `[-]` TT-03 | Root/child reorder, reparent and root promotion preserve preorder/depth/IDs and source subtree internal links/order; Workspace matrix passed on Windows x86_64 |
 | `[-]` TT-04 | Self/descendant/cycle/missing/Browser-nesting/no-op cases are atomic; Workspace rejection matrix passed, native session/page identity remains open |
-| `[-]` TT-05 | Below-threshold click, icon press, text-selection drag, valid/invalid preview and release produce exactly the intended effect; injected click/valid-invalid release passed |
-| `[-]` TT-06 | Scroll, capture loss, Escape, outside release and concurrent tree change cancel safely; injected Escape passed, other paths remain open |
+| `[-]` TT-05 | Below-threshold click, icon press, text-selection drag, valid/invalid preview and release produce exactly the intended effect; injected click/below-threshold/valid-invalid release passed, and removing the movement threshold made the public test fail; icon/text-selection paths remain open |
+| `[-]` TT-06 | Scroll, capture loss, Escape, outside release and concurrent tree change cancel safely; injected Escape and outside release passed, other paths remain open |
 | `[_]` TT-07 | Same-frame geometry/hits/observations and native pointer/keyboard/IME at actual claimed OS/ISA/scales/viewport sizes; exact-artifact behavior separately qualified |
 
 Additive observations need source ID, drag phase, proposal target/position,
