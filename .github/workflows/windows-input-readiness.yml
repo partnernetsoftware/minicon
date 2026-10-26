@@ -38,7 +38,7 @@ jobs:
           import json, os, subprocess, sys
           from pathlib import Path
           import winreg
-          assert os.environ.get('GITHUB_ACTIONS') == 'true' and os.name == 'nt'
+          assert os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted' and os.name == 'nt'
           u = c.WinDLL('user32', use_last_error=True)
           k = c.WinDLL('kernel32', use_last_error=True)
           class Flags(c.Structure):
@@ -63,17 +63,29 @@ jobs:
               if not u.GetUserObjectInformationW(handle, 2, value, c.sizeof(value), c.byref(size)):
                   return None
               return value.value  # Compared only in memory; never written.
+          def receives_input(handle):
+              value = w.BOOL()
+              size = w.DWORD()
+              if not handle:
+                  return None, None
+              if not u.GetUserObjectInformationW(handle, 6, c.byref(value), c.sizeof(value), c.byref(size)):
+                  return None, c.get_last_error()
+              return bool(value.value), None
           station = u.GetProcessWindowStation()
           flags = Flags(); needed = w.DWORD()
           visible = bool(flags.flags & 1) if station and u.GetUserObjectInformationW(station, 1, c.byref(flags), c.sizeof(flags), c.byref(needed)) else None
           desktop = u.OpenInputDesktop(0, False, 1)
           desktop_error = None if desktop else c.get_last_error()
           same_desktop = None
+          current = u.GetThreadDesktop(k.GetCurrentThreadId())
+          current_receives_input, current_input_error = receives_input(current)
+          input_receives_input, input_state_error = None, None
           closed = None
           if desktop:
               try:
-                  current_name = object_name(u.GetThreadDesktop(k.GetCurrentThreadId()))
+                  current_name = object_name(current)
                   input_name = object_name(desktop)
+                  input_receives_input, input_state_error = receives_input(desktop)
                   if current_name and input_name:
                       same_desktop = current_name == input_name
               finally:
@@ -95,7 +107,8 @@ jobs:
               actual = u.GetKeyboardLayoutList(count, layouts)
               if 0 < actual <= count:
                   loaded = any(value and value & 0xffff == 0x804 for value in layouts[:actual])
-          ready_desktop = visible is True and same_desktop is True and closed is True
+          ready_desktop = (visible is True and same_desktop is True and closed is True
+                           and current_receives_input is True and input_receives_input is True)
           status = ('READY_TO_ATTEMPT' if ready_desktop and installed is True and loaded is True
                     else 'SETUP_REQUIRED' if ready_desktop and installed is True else 'BLOCKED')
           report = dict(kind='windows-native-input-prerequisites', status=status,
@@ -103,7 +116,11 @@ jobs:
               cell=os.environ['CELL'], runner_arch=os.environ.get('RUNNER_ARCH'),
               python_bits=c.sizeof(c.c_void_p)*8, native_input_qualified=False,
               visible_window_station=visible, input_desktop_opened=bool(desktop),
-              input_desktop_error=desktop_error, current_desktop_is_input=same_desktop,
+              input_desktop_error=desktop_error, current_input_desktop_names_match=same_desktop,
+              current_desktop_is_input=current_receives_input,
+              opened_input_desktop_receives_input=input_receives_input,
+              current_desktop_input_query_error=current_input_error,
+              opened_desktop_input_query_error=input_state_error,
               owned_desktop_handle_closed=closed, foreground_window_present=bool(u.GetForegroundWindow()),
               microsoft_pinyin_profile_installed=installed, simplified_chinese_layout_loaded=loaded,
               input_sent=False, foreground_changed=False, clipboard_accessed=False,

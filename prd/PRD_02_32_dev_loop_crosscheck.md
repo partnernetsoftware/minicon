@@ -1762,6 +1762,42 @@ All actual DLL calls are intercepted, including the deliberately weakened paths.
 Actual hide, subsequent desktop readiness and complete ARM64 native input are
 still open until their hosted observations; no local owner input was performed.
 
+The actual hide [run40258292627](https://github.com/partnernetsoftware/minicon/actions/runs/40258292627)
+at `db70cd35eff6fe35978992019abaa2566d8067d6` is terminal BLOCKED. Onboarding
+closes; one qualified Search hide request is accepted but no gone/style-hidden
+acknowledgement follows. Search stays foreground/style-visible and its cloak
+value changes2 ->0. All handles/DPI/languages restore; native court exit is null
+and no product/input/clipboard is used. Artifacts:
+`target-six/v0.2.23-provider/preparation-only-ci-db70cd3/`.
+Retire the hide workflow/CLI option and native call from active source: its
+accepted request is not successful preparation and must not be repeated as an
+unchanged workaround. Its exact source/controls/history above remain evidence
+of the failed experiment, not an available qualified capability.
+
+The next read-only correction belongs to `windows-input-readiness.yml`:
+desktop-name equality is only `current_input_desktop_names_match`, not proof
+that the calling desktop receives input. Query UOI_IO=6 independently on the
+calling desktop and the opened input desktop, retaining nullable booleans and
+per-query errors; unknown/false must not become READY_TO_ATTEMPT. Microsoft
+defines this [desktop input-state query](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getuserobjectinformationw).
+Preserve names only for in-memory comparison and expose no raw handles/names.
+The readiness predicate requires station visibility, matching names, both
+actual input-state booleans and handle cleanup before considering Pinyin.
+This producer remains read-only: no foreground, capture, clipboard, keyboard,
+service, desktop-switch or language mutation. Its diagnostics do not weaken
+the original preparation or physical court. Missing native state remains
+BLOCKED for that claim; no neighboring cell supplies it.
+
+The actual readiness producer's Python block passes eight fully intercepted
+subjects: ready, calling/input desktop not receiving input, each query
+unavailable, differing names, failed handle cleanup and hidden station. Four
+actual producer faults remove either input-state guard, mislabel name equality
+as input identity or coerce an unavailable query to false. Each fails its
+original assertion and exact source restoration passes. Receipt:
+`target-six/v0.2.23-provider/input-desktop-uoi-controls/receipt.json`.
+Native DLL calls, registry reads and Git identity are synthetic throughout;
+only the hosted replay can establish the actual desktop state on either cell.
+
 ### Windows full standard workspace checkpoint
 
 [Run40252299740](https://github.com/partnernetsoftware/minicon/actions/runs/40252299740)
