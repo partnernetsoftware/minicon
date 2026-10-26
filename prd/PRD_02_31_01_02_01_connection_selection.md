@@ -846,3 +846,9 @@ no physical input, clipboard or provider request is used. Receipt/image:
 The preceding attempt had no model entry in its fresh configuration, failed
 fixture preparation and contributes no pixel evidence. This host-frame check
 does not qualify native compositor pixels, long identifiers or other locales.
+
+Matching-source selected six-platform development feedback at `a53356b` is
+now successful and independently archived; [PRD 32](PRD_02_32_dev_loop_crosscheck.md#allocation-row-selected-development-feedback)
+owns the exact source/run, native-browser/public-caller witnesses and scope.
+This closes the requested cross-platform regression replay for this presentation
+change, while the real-account, physical/native and final-artifact gates remain.

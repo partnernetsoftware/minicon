@@ -1448,3 +1448,44 @@ and
 `target-six/v0.2.23-provider/default-preparation-identity-controls-enumeration/receipt.json`.
 These are mechanism/refusal controls, not a substitute for the next hosted
 window closure and unchanged actual Pinyin/input journey.
+
+The enumeration-source [run40251293280](https://github.com/partnernetsoftware/minicon/actions/runs/40251293280)
+at `b11c2abefa1006d17a2adb009c6e3580c99b5502` again passes x64's entire
+court. ARM64 stops at the combined image/session/desktop/lifetime guard with
+zero close requests, no GUI/input, both handles closed and language profiles
+restored. Artifacts: `target-six/v0.2.23-provider/native-controls-ci-b11c2ab/`.
+This combined failure does not identify which individual guard refused the
+target. The next diagnostic records the ordered boolean checks as they execute,
+retaining the same short-circuit admission and no full paths or foreign content.
+No mismatch is treated as permission to close, and no unchanged replay is needed.
+
+The diagnostic source replays all twelve entry/identity subjects and eleven
+intended guard-removal failures with exact restoration and every native call
+intercepted. Receipts:
+`target-six/v0.2.23-provider/default-preparation-refusal-controls-diagnostic/receipt.json`
+and
+`target-six/v0.2.23-provider/default-preparation-identity-controls-diagnostic/receipt.json`.
+Python syntax, format and strict all-target Clippy pass; the earlier hosted
+failure is retained rather than relabeled as successful preparation.
+
+### Allocation-row selected development feedback
+
+[Run40250189717](https://github.com/partnernetsoftware/minicon/actions/runs/40250189717)
+at `a53356b890483de8402f026378ea474a19e5a83b` passes all six development
+targets after the readable allocation-row join. The independent audit verifies
+each official ZIP digest against the API artifact identity and every extracted
+member against its ZIP bytes, exact receipt source/cell and successful selected
+suites. Ten named original UI/public caller subjects have actual passing raw
+job witnesses on every cell, including narrow row geometry, profile return,
+independent port focus/selection, route/draft/save recovery, redaction and H0.
+
+Each native browser court passes its22 shared public host observations;
+macOS additionally passes the owned-window-half public route (23 observations
+total). Shutdown has three actual named subjects on Unix and a fourth pipe-
+reply consumer subject on Windows; all pass. Scoped integrity audit:
+`target-six/v0.2.23-provider/dev-a53356b-all-cells/verification-index.json`
+(`PASS`, six cells), with raw logs, subject witnesses and retained corrections
+to the audit's initial OS-independent count assumptions. Counts are scoped
+observations, not unique tests or physical input. This run selects `harness`
+and does not select native-auth-context, full workspace, real provider grants,
+native IME, signing or release qualification.

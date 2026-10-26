@@ -125,11 +125,16 @@ def prepare(report, allow_close):
         image = c.create_unicode_buffer(32768)
         length = w.DWORD(len(image))
         system_root = os.environ.get('SystemRoot')
+
+        def checked(name, value):
+            report.setdefault('target_identity_checks', {})[name] = bool(value)
+            return value
+
         if (not system_root or not k.QueryFullProcessImageNameW(handle, 0, image, c.byref(length))
-                or os.path.normcase(image.value) != os.path.normcase(str(Path(system_root) / 'System32' / 'WWAHost.exe'))
-                or session(pid.value) != session(k.GetCurrentProcessId())
-                or not contains_window(hwnd)
-                or k.WaitForSingleObject(handle, 0) != 0x102):
+                or not checked('system_image', os.path.normcase(image.value) == os.path.normcase(str(Path(system_root) / 'System32' / 'WWAHost.exe')))
+                or not checked('same_session', session(pid.value) == session(k.GetCurrentProcessId()))
+                or not checked('input_desktop_member', contains_window(hwnd))
+                or not checked('process_alive', k.WaitForSingleObject(handle, 0) == 0x102)):
             raise Blocked('known onboarding image/session/lifetime mismatch')
         report['known_onboarding_identity_verified'] = True
         current_pid = w.DWORD()
