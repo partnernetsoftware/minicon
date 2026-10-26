@@ -8,6 +8,11 @@ below; original controls, native/public UI and real-account qualification remain
 retains the full selected 0.2.23 outcome, including two DeepSeek accounts and
 OpenCode Go; a safe Unknown display does not complete a supported metadata read.
 
+The cached account-pool presentation and exact-account configuration link are
+owned by [the Harness experience](PRD_02_31_01_01_harness_experience.md#cached-pool-status-and-account-readings-2026-10-26).
+Its development observations consume this module's existing View; they do not
+replace the selected real DeepSeek/Go metadata-read evidence below.
+
 ## Outcome tree DAG
 
 ```text

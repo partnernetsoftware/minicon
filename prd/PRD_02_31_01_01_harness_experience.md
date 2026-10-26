@@ -186,9 +186,9 @@ binary subject (870 total) and one control integration subject (35 total).
 passes, two actual production faults rejected by the original assertions,
 byte-exact restoration and both restored passes. This is scoped development
 feedback, not real-provider, physical-input, all-language/scale or final-artifact
-acceptance. The full pool availability/attention summary remains open under
-ORIENT; the subsequent focused-form checkpoint below replaces the single long
-list of unrelated forms.
+acceptance. The following focused-form and cached-pool checkpoints record the
+subsequent presentation joins; full native and real-account acceptance remains
+open under ORIENT.
 
 The global gear opens the existing anchored chrome panel. Keep the top-level
 Console / Web / Harness routes. Harness begins with a compact setup/service
@@ -295,6 +295,78 @@ Account setup 3 configured · Client setup 2 configured · Local API Stopped
 ```
 
 ### Account pool form
+
+#### Cached pool status and account readings (2026-10-26)
+
+```text
+Outcome: identify account setup and resource issues without mistaking cached evidence for live health
+├── [-] Pool summary and account state
+│   invariant: disabled/unknown policy, stored credentials and previously tested accounts remain distinct
+│   evidence: mixed three-account projection and public isolated Settings journey
+│   safe failure: loading/unavailable is not zero; cached tests never imply fresh inference
+│   dependency: existing View/account preferences; non-goal: automatic account rotation
+└── [-] Selected account readings and recovery link
+    invariant: latest attempt cannot erase a labeled old reading; different providers/currencies are not summed
+    evidence: stale success plus denied/new read, exact decimals, missing measurements and exact-account navigation
+    safe failure: unknown is not zero; metadata failure does not revoke inference readiness
+    dependency: monitoring View and existing report labels; non-goal: new provider requests or implicit Refresh
+```
+
+The overview shows configured account states and the number of accounts with
+monitoring attention. Missing monitoring observations are counted separately.
+Each account row says **Credentials stored**, **Previously tested**, **Disabled**
+or **Policy unavailable**; none is a live-health claim. A selected account shows
+applied login/service network modes, affected applied-client count, cached
+resource freshness, latest attempt and retained readings with source/time.
+Money keeps wallet kind and currency; Go shows consumed allowance percentage
+and provider reset, never a cash balance. Empty/missing values remain unknown.
+The account's monitoring link reveals that exact account in the existing form;
+only the existing explicit Refresh/opt-in controls may start a metadata request.
+No configuration draft, account label, proxy address or credential is copied
+into the new public pool observation; it exposes aggregate counts and enums.
+
+```mermaid
+flowchart LR
+    V[Existing account and preference View] --> P[Cached pool projection]
+    M[Monitoring last success / latest attempt / freshness] --> P
+    P --> O[Overview counts and account states]
+    P --> D[Selected account network / client / resource details]
+    D --> N[Exact account monitoring navigation]
+    N --> E[Existing explicit Refresh or opt-in control]
+    E --> R[Monitoring owner request admission]
+    M -. never grants inference readiness .-> I[Independent applied model binding]
+```
+
+Product-private hot files are `harness_settings_ui.rs`, its overview/pool/
+monitoring projections and the existing report timestamp helper. Reuse the
+monitoring owner's freshness/attempt/attention observations; no new transport,
+timer, persistence schema or shared OS/ISA mechanism is introduced. Full
+real-account and native/language acceptance remains selected.
+
+Windows development evidence:
+`cached_pool_keeps_disabled_and_old_readings_separate_from_inference` covers a
+mixed three-account pool, missing policy, provider-mismatched observations,
+stale successful wallets retained after a denied metadata read, exact decimal
+currency values and Go consumption above100% without cash conversion. It also
+rejects loading-as-zero and fresh metadata-as-model-verification.
+`browser_windows::host_harness_pool_states_and_exact_account_monitoring_preserve_bindings`
+loads three isolated synthetic account records, observes typed aggregate states,
+selects the second account and follows its monitoring link through the public
+CLI. It retains the applied binding/service state and rejects label/proxy/token
+disclosure in the new public observation. The account details PNG was visually
+reviewed. These add one binary subject (871 -> 872) and one control subject
+(36 -> 37); synthetic grants are not real provider evidence.
+
+`target-six/v0.2.23-provider/pool-presentation-controls/receipt.json` records
+two production faults rejected by original assertions (ignore disabled policy;
+misdirect monitoring to the first account), exact restoration and passing
+1 pool /28 form /9 monitoring /8 public Harness subjects, with zero ignored.
+An initial unqualified `--exact` selector executed zero cases and is explicitly
+not evidence; the corrected qualified subject and eight-case public run execute.
+Final fmt/strict Clippy and daily smoke are recorded separately in
+`pool-presentation-controls/final-receipt.json` under the same local evidence root.
+This checkpoint does not close real DeepSeek/Go reads, physical input,
+all-language/scale, dashboard projection or final artifact acceptance.
 
 The list distinguishes same-provider accounts using local labels, provider,
 short identity and connected/needs-login/disabled states. Selecting a row opens

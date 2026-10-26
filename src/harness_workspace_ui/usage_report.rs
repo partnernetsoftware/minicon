@@ -1188,7 +1188,7 @@ fn optional(n: Option<u64>, l: ui::UiLanguage) -> String {
         |n| n.to_string(),
     )
 }
-fn utc_moment(unix_ms: Option<u64>, l: ui::UiLanguage) -> String {
+pub(crate) fn utc_moment(unix_ms: Option<u64>, l: ui::UiLanguage) -> String {
     let civil = unix_ms
         .and_then(|value| i64::try_from(value / 1000).ok())
         .map(minicon_platform::contract::local_clock::civil_from_unix_seconds);

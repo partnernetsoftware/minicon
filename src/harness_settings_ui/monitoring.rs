@@ -812,10 +812,7 @@ impl MonitoringUi {
             Item::OpenReport=>tr("Open usage report","打开用量报告","開啟用量報告").into(),
             Item::Account(i)=>view.account_monitoring.accounts.get(i).map_or_else(String::new,|a|format!("{}{}: {}",if self.selected.as_ref()==Some(&a.account){"> "}else{""},tr("Account","账号","帳號"),view.accounts.iter().find(|r|r.id==a.account).map_or(a.account.as_str(),|r|r.label.as_str()))),
             Item::State=>self.account(view).map_or_else(||tr("Metadata not loaded / selected account unavailable","元数据未加载／所选账号不可用","中繼資料未載入／所選帳號無法使用").into(),|a|format!("{}: {}; {}; {}; {}",tr("Reading / pause / attempt / storage","读数／暂停／尝试／存储","讀數／暫停／嘗試／儲存"),freshness_label(a.freshness,l),pause_label(a.paused,l),attempt_label(a.latest_attempt.as_ref().map(|r|r.result),l),persistence_label(view.account_monitoring.persistence,l))),
-            Item::Resources(i)=>self.account(view).and_then(|a|a.last_success.as_ref()).map_or_else(String::new,|r|match &r.resources{
-                monitor::Resources::DeepSeekWallets(wallets)=>wallets.get(i).map_or_else(String::new,|w|format!("{:?} {:?}: {}",w.kind,w.currency,w.balance.0)),
-                monitor::Resources::OpenCodeGo(windows)=>windows.get(i).map_or_else(String::new,|w|format!("Go {:?}: {}%; {}: {}",w.window,w.used_percent.0,tr("Limited","有限额","有限額"),w.limited)),
-            }),
+            Item::Resources(i)=>self.account(view).and_then(|a|pool::reading_resource_label(a,i,l)).unwrap_or_default(),
             Item::Enabled=>format!("{}: {}",tr("Draft auto monitoring", "自动监测草稿", "自動監測草稿"),self.selected.as_ref().and_then(|id|self.forms.get(id)).is_some_and(|f|f.enabled)),
             Item::Threshold(i)|Item::ThresholdLabel(i)=>self.selected.as_ref().and_then(|id|self.forms.get(id)).and_then(|f|f.thresholds.get(i)).map_or_else(String::new,|t|format!("{} {}: {}",match t.resource{Resource::Wallet(k,c)=>format!("{k:?} {c:?}"),Resource::Go=>tr("Go used percent","Go用量百分比","Go用量百分比").into()},tr("threshold","阈值","門檻"),t.value.text)),
             Item::RemoveThreshold(_)=>tr("Remove", "移除", "移除").into(),

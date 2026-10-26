@@ -1951,6 +1951,87 @@ fn harness_synthetic_profile(root: &std::path::Path, port: u16, key: &str, token
 }
 
 #[test]
+fn host_harness_pool_states_and_exact_account_monitoring_preserve_bindings() {
+    let root = minicon_binary()
+        .parent()
+        .unwrap()
+        .join("browser-court")
+        .join(unique_suffix())
+        .join("config");
+    harness_synthetic_profile(
+        &root,
+        28789,
+        "synthetic-pool-local-key",
+        "synthetic-pool-token",
+    );
+    let base = root.join("harness/accounts");
+    let ids = [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "cccccccccccccccccccccccccccccccc",
+    ];
+    let accounts: Vec<_> = ids.iter().enumerate().map(|(i, id)| serde_json::json!({
+        "id": id, "provider": if i == 2 { "opencode" } else { "deepseek" },
+        "label": format!("Synthetic account {i}"), "state": if i == 2 { "CredentialStored" } else { "AccountReady" },
+        "preferences": { "context_id": id, "service_generation": id, "enabled": i != 1,
+            "login": if i == 1 { serde_json::json!({"Proxy":"http://127.0.0.1:19199"}) } else { serde_json::json!("Direct") }, "service": "Direct" }
+    })).collect();
+    harness_private_file(
+        &base.join("accounts.json"),
+        &serde_json::to_vec(&serde_json::json!({"version":1,"accounts":accounts})).unwrap(),
+    );
+    for (i, id) in ids.iter().enumerate().skip(1) {
+        harness_private_file(&base.join("credentials").join(format!("{id}.json")), &serde_json::to_vec(&serde_json::json!({
+            "version":1,"provider":if i==2 {"opencode"} else {"deepseek"},"access_token":"synthetic-unused-token",
+            "refresh_token":null,"expires_unix_ms":null,"organization":null
+        })).unwrap());
+    }
+    let mut host = BrowserGui::spawn_with_config(true, None, None, Some(root));
+    let before = open_harness(&host);
+    assert_eq!(
+        before["pool"],
+        serde_json::json!({"previously_tested":1,"stored":1,"disabled":1,"policy_unknown":0,"reading_attention":0,"readings_unknown":3})
+    );
+    click_harness(&host, "account_1", 0);
+    let selected = harness_snapshot(&host);
+    assert_eq!(selected["account_focus"], ids[1]);
+    click_harness(&host, "account_detail_0", 0);
+    let shot = host
+        .gui
+        .screenshot
+        .with_file_name("pool-account.png")
+        .to_string_lossy()
+        .into_owned();
+    host.cli(&["screenshot-pane", "--output", &shot]);
+    click_harness(&host, "account_monitoring", 0);
+    let after = harness_snapshot(&host);
+    assert_eq!(after["section"], "monitoring");
+    assert_eq!(
+        after["monitoring"]["selected_account"], ids[1],
+        "the link must select the same account, not the first account"
+    );
+    assert_eq!(after["monitoring"]["pending"], Value::Null);
+    assert_eq!(after["pool"], before["pool"]);
+    assert_eq!(after["selected_account"], before["selected_account"]);
+    assert_eq!(after["model"], before["model"]);
+    assert_eq!(after["listener"], "stopped");
+    assert_eq!(after["login_active"], false);
+    let serialized = serde_json::to_string(&after).unwrap();
+    for private in [
+        "synthetic-pool-token",
+        "synthetic-unused-token",
+        "Synthetic account",
+        "http://127.0.0.1:19199",
+    ] {
+        assert!(
+            !serialized.contains(private),
+            "public pool observation disclosed private account data"
+        );
+    }
+    host.close_and_wait();
+}
+
+#[test]
 fn host_harness_routes_preserve_independent_drafts_and_scroll_readable_controls() {
     let mut host = BrowserGui::spawn(true, None, None);
     host.cli(&["send-ui-keys", "Ctrl+Shift+I"]);

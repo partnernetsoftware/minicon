@@ -238,7 +238,9 @@ impl HarnessSettings {
 
     pub(super) fn overview_label(&self, index: u8, language: ui::UiLanguage) -> String {
         let tr = |en, zh, tw| super::super::harness_workspace_ui::text(language, en, zh, tw);
-        if matches!(index, 1 | 3) && self.view.load_state != provider_runtime::LoadState::Loaded {
+        if matches!(index, 1 | 3 | 5..=7)
+            && self.view.load_state != provider_runtime::LoadState::Loaded
+        {
             return match self.view.load_state {
                 provider_runtime::LoadState::Loading => tr(
                     "Connections: loading…",
@@ -270,6 +272,32 @@ impl HarnessSettings {
                 tr("Applied clients", "已应用客户端", "已套用用戶端"),
                 self.configured_client_count()
             ),
+            5..=7 => {
+                let s = pool::summary(&self.view).unwrap_or_default();
+                match index {
+                    5 => format!(
+                        "{}: {} / {}: {}",
+                        tr("Previously tested", "曾通过测试", "曾通過測試"),
+                        s.tested,
+                        tr("Stored", "凭据已保存", "憑據已儲存"),
+                        s.stored
+                    ),
+                    6 => format!(
+                        "{}: {} / {}: {}",
+                        tr("Disabled", "已停用", "已停用"),
+                        s.disabled,
+                        tr("Unknown policy", "策略未知", "原則未知"),
+                        s.unknown
+                    ),
+                    _ => format!(
+                        "{}: {} / {}: {}",
+                        tr("Reading attention", "读数需关注", "讀數需注意"),
+                        s.attention,
+                        tr("Unknown readings", "读数未知", "讀數未知"),
+                        s.readings_unknown
+                    ),
+                }
+            }
             2 => format!(
                 "{}: {}",
                 tr("Local API", "本地 API", "本機 API"),

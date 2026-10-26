@@ -3,6 +3,7 @@ use super::*;
 mod connection_forms;
 mod monitoring;
 mod overview;
+mod pool;
 mod profile_keys;
 use connection_forms::{ConnectionForms, FormFocus, ProfileField};
 use minicon_core::field_editor::{self, Command, Intent, Limits};
@@ -53,6 +54,9 @@ enum Row {
     Challenge,
     ChallengeActions,
     Account(usize),
+    AccountStatus(usize),
+    AccountDetail(usize),
+    AccountMonitoring,
     AccountInput(Field),
     AccountActions,
     AccountConnection,
@@ -515,6 +519,9 @@ impl HarnessSettings {
             Row::Overview(1),
             Row::Overview(2),
             Row::Overview(3),
+            Row::Overview(5),
+            Row::Overview(6),
+            Row::Overview(7),
             Row::OverviewLink(overview::Link::Accounts),
             Row::OverviewLink(overview::Link::Allocations),
             Row::OverviewLink(overview::Link::Monitoring),
@@ -537,8 +544,14 @@ impl HarnessSettings {
         if self.view.accounts.is_empty() {
             rows.push(Row::NoAccounts);
         }
-        rows.extend((0..self.view.accounts.len()).map(Row::Account));
+        for index in 0..self.view.accounts.len() {
+            rows.extend([Row::Account(index), Row::AccountStatus(index)]);
+        }
         if self.account_focus.is_some() {
+            rows.extend(
+                (0..self.account_details(ui::UiLanguage::English).len()).map(Row::AccountDetail),
+            );
+            rows.push(Row::AccountMonitoring);
             rows.extend([
                 Row::AccountFieldCaption(Field::AccountLabel),
                 Row::AccountInput(Field::AccountLabel),
@@ -663,6 +676,16 @@ impl HarnessSettings {
             section == self.section
         });
         rows
+    }
+
+    fn account_details(&self, language: ui::UiLanguage) -> Vec<String> {
+        self.view
+            .accounts
+            .iter()
+            .find(|a| Some(&a.id) == self.account_focus.as_ref())
+            .map_or_else(Vec::new, |account| {
+                pool::details(&self.view, account, language)
+            })
     }
 
     fn port_editable(&self) -> bool {
@@ -1256,6 +1279,14 @@ impl HarnessSettings {
                     self.act(Action::RemoveAccount(id));
                 }
             }
+            Row::AccountMonitoring => {
+                if let Some(account) = self.account_focus.clone() {
+                    self.select_monitoring_account(Some(&account));
+                    self.show_workspace_target(
+                        super::harness_workspace_ui::SettingsTarget::Monitoring,
+                    );
+                }
+            }
             Row::AccountActions if column == 0 => self.save_account(),
             Row::AccountActions => {
                 if self.account_draft.submitted.is_some() {
@@ -1534,6 +1565,9 @@ fn row_id(row: Row) -> String {
             );
         }
         Row::Monitoring(item) => return monitoring::MonitoringUi::id(item),
+        Row::AccountStatus(index) => return format!("account_status_{index}"),
+        Row::AccountDetail(index) => return format!("account_detail_{index}"),
+        Row::AccountMonitoring => "account_monitoring",
         Row::AccountFieldCaption(field) => {
             let input = match field {
                 Field::AccountLabel | Field::LoginProxy | Field::ServiceProxy => {
@@ -1681,6 +1715,7 @@ impl ConApp {
                 rect.width.saturating_sub((16.0 * scale) as u32),
             );
         };
+        let account_details = settings.account_details(self.ui_language);
         for (index, &row) in rows
             .iter()
             .enumerate()
@@ -1850,17 +1885,11 @@ impl ConApp {
                 }
                 Row::Account(account_index) => {
                     let account = &settings.view.accounts[account_index];
-                    let state = match account.state {
-                        provider_accounts::AccountState::CredentialStored => {
-                            "stored; test required"
-                        }
-                        provider_accounts::AccountState::AccountReady => "ready",
-                    };
                     button(
                         surface,
                         cell(0, 2),
                         &format!(
-                            "{} [{}] / {state}",
+                            "{} [{}]",
                             account.label,
                             account.id.get(..8).unwrap_or(&account.id)
                         ),
@@ -1868,6 +1897,23 @@ impl ConApp {
                     );
                     button(surface, cell(1, 2), "Remove account", false);
                 }
+                Row::AccountStatus(index) => {
+                    let account = &settings.view.accounts[index];
+                    label = format!(
+                        "{:?}: {}",
+                        account.provider,
+                        pool::state(&settings.view, account).caption(self.ui_language)
+                    );
+                }
+                Row::AccountDetail(index) => {
+                    label = account_details.get(index).cloned().unwrap_or_default()
+                }
+                Row::AccountMonitoring => button(
+                    surface,
+                    rect,
+                    tr("Balances and monitoring", "余额与监测", "餘額與監測"),
+                    false,
+                ),
                 Row::AccountFieldCaption(field) => {
                     label = account_field_caption(field, self.ui_language).into()
                 }
@@ -2756,6 +2802,11 @@ impl ConApp {
             ("next_step", settings.orientation_step().id().into()),
             ("section", settings.section.id().into()),
             ("configured_clients", settings.configured_client_count().into()),
+            ("pool", pool::summary(&settings.view).map_or(json::JsonValue::Null, |s| json::object(vec![
+                ("stored", s.stored.into()), ("previously_tested", s.tested.into()),
+                ("disabled", s.disabled.into()), ("policy_unknown", s.unknown.into()),
+                ("reading_attention", s.attention.into()), ("readings_unknown", s.readings_unknown.into()),
+            ]))),
             ("overview_focused", (active && matches!(settings.focused, Some(Field::Overview(_)))).into()),
             ("monitoring", settings.monitoring.snapshot(&settings.view)),
             ("monitoring_usage_revision", self.presented_harness_usage().map_or(json::JsonValue::Null,|s|s.revision.into())),
