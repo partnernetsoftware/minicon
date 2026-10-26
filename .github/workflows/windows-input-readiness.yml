@@ -111,10 +111,56 @@ jobs:
           Path('input-readiness.json').write_text(json.dumps(report, indent=2)+'\n', encoding='utf-8')
           print(json.dumps(report))
           sys.exit(0 if status == 'READY_TO_ATTEMPT' else 2)
+      - name: Observe installed typing and text-service prerequisites
+        if: always()
+        timeout-minutes: 2
+        shell: pwsh
+        env:
+          CELL: ${{ matrix.cell }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw 'Disposable hosted observer required' }
+          $typing = 'Unavailable'
+          try {
+            $capability = Get-WindowsCapability -Online -Name 'Language.Basic~~~zh-CN~0.0.1.0' -ErrorAction Stop
+            if ($null -ne $capability) { $typing = $capability.State.ToString() }
+          } catch { $typing = 'Unavailable' }
+          $services = @(
+            foreach ($serviceName in @('TextInputManagementService', 'TabletInputService')) {
+              try {
+                $observedService = Get-CimInstance Win32_Service -Filter "Name='$serviceName'" -ErrorAction Stop
+                if ($null -eq $observedService) {
+                  [ordered]@{ name = $serviceName; observation = 'absent' }
+                } else {
+                  [ordered]@{ name = $serviceName; observation = 'observed'; state = $observedService.State; start_mode = $observedService.StartMode }
+                }
+              } catch {
+                [ordered]@{ name = $serviceName; observation = 'unavailable' }
+              }
+            }
+          )
+          $ctfmon = @(Get-Process -Name ctfmon -ErrorAction SilentlyContinue)
+          $report = [ordered]@{
+            kind = 'windows-native-typing-service-prerequisites'
+            source_sha = (git rev-parse HEAD).Trim()
+            cell = $env:CELL
+            os_version = [Environment]::OSVersion.Version.ToString()
+            zh_cn_basic_typing = $typing
+            text_input_services = $services
+            ctfmon_process_count = $ctfmon.Count
+            native_input_qualified = $false
+            configuration_changed = $false
+            service_started_or_stopped = $false
+            language_component_installed = $false
+          }
+          $report | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath input-services.json -Encoding utf8
+          $report | ConvertTo-Json -Depth 5
       - name: Upload finite prerequisite receipt
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: input-readiness-${{ matrix.cell }}
-          path: input-readiness.json
+          path: |
+            input-readiness.json
+            input-services.json
           if-no-files-found: error

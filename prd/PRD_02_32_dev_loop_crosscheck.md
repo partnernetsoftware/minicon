@@ -1288,3 +1288,23 @@ the selected profile and restore/read back the original before COM release.
 No default-desktop TSF mutation is added to the passing x86_64 path. Record
 finite profile-type/language/exact-Pinyin equality facts and HRESULTs; profile
 selection is setup, with actual preedit/commit and cleanup still mandatory.
+
+The exact-profile [run40247804581](https://github.com/partnernetsoftware/minicon/actions/runs/40247804581)
+at `9881b24bc5f9e1348dce758816f9b6fdb4050ca6` passes x86_64's entire physical
+court with the revised presentation. ARM64's actual profile trace starts as
+English keyboard layout and then verifies input-processor type,2052 language
+and exact Microsoft Pinyin equality. Original TSF profile restoration and all
+desktop/GUI/clipboard/language cleanup pass. Nevertheless, the same original
+preedit predicate remains BLOCKED with committed Latin `nihao`. Thus selection
+alone has not established functioning composition. Artifacts:
+`target-six/v0.2.23-provider/native-controls-ci-9881b24/`.
+
+Before changing activation again, the read-only readiness workflow additionally
+records the actual OS version, installed `Language.Basic` Chinese typing state,
+TextInputManagementService/TabletInputService availability/state/start mode and
+Ctfmon process count. Unavailable queries remain explicit; registry TIP presence
+does not imply installed typing payload or a running input framework. Microsoft
+[documents the text-service prerequisite](https://learn.microsoft.com/en-us/troubleshoot/windows-client/shell-experience/troubleshoot-ime-common-issues).
+The observer starts/stops no service, installs no component, changes no input
+state and grants no native-input pass. Its finite `input-services.json` is
+retained beside `input-readiness.json` for both actual hosted architectures.
