@@ -21,10 +21,12 @@ def prepare(report, allow_close):
         raise Blocked('hosted ARM64 preparation required')
     u = c.WinDLL('user32', use_last_error=True)
     k = c.WinDLL('kernel32', use_last_error=True)
+    window_callback = c.WINFUNCTYPE(w.BOOL, w.HWND, w.LPARAM)
     for dll, name, result, arguments in [
         (u, 'GetProcessWindowStation', w.HANDLE, []),
         (u, 'GetThreadDesktop', w.HANDLE, [w.DWORD]),
         (u, 'OpenInputDesktop', w.HANDLE, [w.DWORD, w.BOOL, w.DWORD]),
+        (u, 'EnumDesktopWindows', w.BOOL, [w.HANDLE, window_callback, w.LPARAM]),
         (u, 'CloseDesktop', w.BOOL, [w.HANDLE]),
         (u, 'GetUserObjectInformationW', w.BOOL,
          [w.HANDLE, c.c_int, c.c_void_p, w.DWORD, c.POINTER(w.DWORD)]),
@@ -64,7 +66,7 @@ def prepare(report, allow_close):
     if (object_name(u.GetProcessWindowStation()) != 'winsta0'
             or object_name(u.GetThreadDesktop(k.GetCurrentThreadId())) != 'default'):
         raise Blocked('interactive Default calling desktop required')
-    desktop = u.OpenInputDesktop(0, False, 0x101)
+    desktop = u.OpenInputDesktop(0, False, 0x41)  # READOBJECTS | ENUMERATE, no switch
     if not desktop:
         raise Blocked('Default input desktop unavailable')
     handle = None
@@ -73,6 +75,30 @@ def prepare(report, allow_close):
         if object_name(desktop) != 'default':
             raise Blocked('non-secure Default input desktop required')
         report['default_desktop_verified'] = True
+
+        def contains_window(target):
+            count, found, overflow = 0, False, False
+
+            @window_callback
+            def visit(candidate, _):
+                nonlocal count, found, overflow
+                if count >= 256:
+                    overflow = True
+                    return False
+                count += 1
+                if candidate == target:
+                    found = True
+                    return False
+                return True
+
+            completed = u.EnumDesktopWindows(desktop, visit, 0)
+            if found:
+                report['target_on_input_desktop_verified'] = True
+                return True
+            if not completed or overflow:
+                raise Blocked('bounded input-desktop window enumeration unavailable')
+            return False
+
         hwnd = u.GetForegroundWindow()
         if not hwnd:
             report['action'] = 'none-no-foreground'
@@ -102,7 +128,7 @@ def prepare(report, allow_close):
         if (not system_root or not k.QueryFullProcessImageNameW(handle, 0, image, c.byref(length))
                 or os.path.normcase(image.value) != os.path.normcase(str(Path(system_root) / 'System32' / 'WWAHost.exe'))
                 or session(pid.value) != session(k.GetCurrentProcessId())
-                or object_name(u.GetThreadDesktop(thread)) != 'default'
+                or not contains_window(hwnd)
                 or k.WaitForSingleObject(handle, 0) != 0x102):
             raise Blocked('known onboarding image/session/lifetime mismatch')
         report['known_onboarding_identity_verified'] = True

@@ -1418,3 +1418,33 @@ again. No actual native DLL is called, even by those controls. Receipt/logs:
 Workflow PowerShell and Python parsing, format, strict all-target Clippy and all
 18 alignment subjects also pass. Actual hosted closure and ARM64 composition
 remain unqualified until the selected replay observes their original outcomes.
+
+The first hosted [run40250873080](https://github.com/partnernetsoftware/minicon/actions/runs/40250873080)
+at `6d0ca6c26789f5193ed87fd5ddcf612d07167e30` passes x64's complete original
+court. ARM64 preparation verifies its calling/input Default desktop but fails
+when querying the foreign target thread's desktop identity, before posting any
+close request or launching the GUI. Both opened handles close and original
+language profiles restore. Artifacts:
+`target-six/v0.2.23-provider/native-controls-ci-6d0ca6c/`.
+
+The corrected target-desktop check uses bounded
+[EnumDesktopWindows](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-enumdesktopwindows)
+membership on the held, named input-desktop handle, with only READOBJECTS and
+ENUMERATE rights. It must find that exact foreground root within256 callbacks;
+failure, truncation or absence refuses the request. This replaces the unavailable
+foreign-thread desktop-name query without dropping the target-desktop binding.
+Package/image/session/lifetime and immediate foreground/PID/thread revalidation
+remain required. No switch, application input or new permission is introduced.
+
+The corrected source passes three pre-DLL subjects and nine intercepted native-
+response subjects, including exact matching, wrong class/package/image/session/
+foreground, absent desktop membership, failed enumeration and overflow. Eleven
+actual guard-removal controls reach their original no-effect assertions, fail
+and pass again after byte-exact source restoration. All native calls are
+intercepted, including successful matching and every mutant; no real application
+is closed locally. Receipts:
+`target-six/v0.2.23-provider/default-preparation-refusal-controls-enumeration/receipt.json`
+and
+`target-six/v0.2.23-provider/default-preparation-identity-controls-enumeration/receipt.json`.
+These are mechanism/refusal controls, not a substitute for the next hosted
+window closure and unchanged actual Pinyin/input journey.
