@@ -143,6 +143,12 @@ product-code changes and the version bump follow the completed 0.2.23 Promotion.
   parent update and the release-only commit each produced their expected RED
   result before restoration. PRD 25.03 retains native pointer, full preview,
   scroll/capture/stale cases and exact-source qualification as open evidence.
+- Design checkpoint: PRD 31.01.04 specifies the first candidate-ordering
+  ujs/WASM host envelope and marks engine ABI/readiness BLOCKED pending an
+  immutable qualified revision. PRD 36 defines H2's first local task and its
+  missing typed worker-event seam; PRD 37 defines C0 read-only pairing and
+  origin-scoped observation. Their later runtime delivery is not inferred from
+  these design contracts.
 - Use the existing three-subject daily smoke and requirement-selected tests.
   Each new critical guard needs a real failing counterexample. Archive weak
   duplicate tests only after review; do not add source-string assertions as proof.

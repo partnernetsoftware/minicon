@@ -78,6 +78,38 @@ credential storage, process lifetime and authorization scopes before C1 code.
 Do not treat the local model key or existing GUI control endpoint as a complete
 cross-machine trust protocol.
 
+#### C0 contract checkpoint for 0.2.24
+
+The first capability selected for design is **paired read-only observation**.
+Pairing must be initiated explicitly on both machines and show a human-verifiable
+identity fingerprint before either side persists a peer. A node ID is bound to
+its private identity key; label, address, OS and network route are mutable
+metadata. Revoke removes that peer's read authority. A changed identity at a
+known address is a new untrusted peer, not an automatic key rotation. The
+connection handshake advertises protocol major/minor and capabilities, with
+`observe` the only C1 scope; `operate` is a separate future grant after C2's
+admission contract. The local loopback model API key and GUI control endpoint
+are never accepted as cross-machine credentials.
+
+The proposed observation envelope has `origin_node_id`, `node_epoch`,
+`sequence`, `snapshot_revision`, source time, receiver time and an explicit
+coverage/capability mask. Every account, profile, request and later task key is
+qualified by `origin_node_id`; labels cannot act as keys. A fresh full snapshot
+sets the watermark; later bounded events advance it once. Duplicates are
+ignored, a sequence gap requests a new snapshot, and an older epoch cannot
+overwrite newer final state. Clock skew affects displayed age/uncertainty, not
+event ordering. Disconnect makes that origin Stale/Unknown while its last
+observed values retain their times; it never creates zero balance, a stopped
+task or a second usage charge.
+
+Transport and identity-key implementation remain gated decisions: compare
+mutually authenticated native options against PRD 28's existing private
+storage/network mechanisms, then select bootstrap, key storage, version
+negotiation and bounded event retention together. C0 review scenarios are
+wrong-peer/changed-key/revoke, two origins with the same local account ID,
+duplicate/out-of-order events, sequence gap, restart epoch, lost connection
+and clock skew. They are contract cases, not two-machine delivery evidence.
+
 ### C1 — explicit pairing and read-only observation
 
 Pair machines deliberately; label them locally and expose read-only local

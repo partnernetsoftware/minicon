@@ -334,6 +334,36 @@ existing worker limits and invocation summary before Start. File-root and exec
 policy retain their existing meanings; no sandbox or new permission layer is
 implied by this form. Start cannot silently increase the command allowlist.
 
+### H2 first local journey design for 0.2.24
+
+The first selected journey is one explicitly started local task: choose an
+existing project root, enter a task such as reading a named file and running one
+allowlisted command, select one applied client/model binding, inspect the
+resolved account/network and worker limits, then press **Start task**. A missing
+root, disallowed command, unavailable account or changed applied binding blocks
+Start with an editable draft. Start creates one opaque local run ID and pins
+the root, command list, profile revision, account/model, worker budget and
+selected logic version for that run. The GUI cannot retarget a live run when a
+profile or pool setting changes.
+
+The current `minicon harness --root --task` invocation is a bounded
+single-task worker, but it does not yet publish a typed, host-consumable run
+event/lifecycle stream. H2 implementation first needs an owned worker seam:
+ordered bounded events with `run_id`, monotonically increasing `sequence`,
+`stage`, source time and typed progress/tool/final outcomes; a separate private
+bounded output channel; and one cancel acknowledgement after model/owned child
+cleanup. The GUI derives the task card from those events and a final worker
+receipt, never from model API request counts or captured terminal pixels.
+Restart after ambiguous output must reconcile the same run ID before offering
+an explicit new invocation; it cannot silently repeat a file write or command.
+
+**Stop this task** targets only that run. Pressing it moves the view to
+Cancelling; Cancelled appears only after the worker reports final cleanup.
+Closing the task view preserves a live run; closing the GUI follows the current
+owned-process shutdown rules. These choices form the HW-04/05 acceptance
+scenarios for a later implementation release. The 0.2.24 result is the design
+and the named missing worker seam, not an executable Start control.
+
 The run view owns: task summary, immutable connection binding, lifecycle,
 bounded text/tool activity, elapsed time, available token/usage and scoped Stop.
 Use the existing worker and an explicit typed event seam; do not build a second

@@ -72,6 +72,9 @@ flowchart LR
 5. Design and implement H2 after a bounded worker event/lifecycle seam exists.
    This is a later selected stage, not an unannounced full-workbench obligation
    added to 0.2.23. Choose its release only when its end-to-end slice is concrete.
+   The 0.2.24 [first-journey design](../prd/PRD_02_36_harness_workspace.md#h2-first-local-journey-design-for-0224)
+   fixes Start/Stop ownership and names the typed worker-event seam still needed
+   before implementation; H2 remains `[_]` runtime delivery.
 6. Consider H3 through its existing future owner after real operation feedback.
    Console/Web maintenance and their native/input regressions continue throughout.
 

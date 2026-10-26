@@ -76,6 +76,37 @@ experiment. Embedding the engine is conditional on actual unisacc/ujs maturity;
 there is no promised runtime shipment in that version. Implementation ownership
 must follow PRD28 before adding crates or dependencies.
 
+### 0.2.24 contract design checkpoint
+
+The first bounded experiment is **candidate ordering for one new model
+request**. The module receives a redacted snapshot of candidate IDs, enabled
+state, supported model/transport, network mode, recent failure/latency and
+quota facts with observation times. It returns one ordered list of those same
+IDs with short reason codes, or `abstain`. It cannot create an account, choose
+an unallocated client profile, change a conversation's pinned binding, execute
+tools or fetch balance itself. The host revalidates every returned ID, profile
+allocation and current health before using it. Invalid, stale, trapped or late
+output falls back to the existing explicit/manual selection path and records
+an error without replaying any upstream request.
+
+The proposed envelope names `abi_major`, `abi_minor`, `module_version`,
+`request_id`, `profile_id`, `conversation_id`, `candidate_ids` and a bounded
+`facts_as_of` timestamp; output names `request_id`, `ranked_candidate_ids`
+and `reason_codes`. The host owns field validation and sizes. A module cannot
+read raw credentials or prompts, and all I/O remains a host capability with
+explicit scope; the first experiment receives no I/O capability. Each request
+pins one activated module digest and one connection binding through completion.
+An ABI-major mismatch is refused before activation; an unknown optional minor
+field cannot widen authority.
+
+Readiness gate: no immutable current `unisacc`/ujs revision has yet been
+qualified for this product; a stale or dirty local checkout cannot establish
+a current ujs/WASM ABI or a shippable binary size. Engine revision, callable
+ABI, deterministic budgets, host
+imports, cancellation and package provenance are **BLOCKED** until inspected
+at an immutable current revision and measured with the first experiment. No
+engine dependency or runtime feature is selected for 0.2.24 by this design.
+
 The future UI shows active logic version, compatible host range, origin, update
 result and previous working version. Install/update/rollback are explicit
 initially; automatic updates require a later decision. New requests use the new

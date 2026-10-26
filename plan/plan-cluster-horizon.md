@@ -9,7 +9,7 @@ Status: `[_]` future track requested on 2026-10-25. Behavior and open decisions:
 
 ```text
 Outcome: introduce cross-machine coordination in reviewable subsequent slices
-├── [_] C0 — concrete node/trust/observation design next
+├── [-] C0 — concrete node/trust/observation design next
 │   invariant: identity and authority precede transport implementation
 │   evidence: reviewed protocol scenarios and shared-core reuse inventory
 │   safe failure: unresolved decisions remain named prerequisites
@@ -57,6 +57,11 @@ subsequent selected version; assign its version after C0's prerequisites and
 two-machine evidence are concrete. C2 waits for local H2 lifecycle qualification;
 C3 waits for real coordination feedback. Do not turn this future track into an
 unannounced 0.2.23 release requirement.
+
+The 0.2.24 [C0 contract checkpoint](../prd/PRD_02_37_cluster_horizon.md#c0-contract-checkpoint-for-0224)
+defines explicit pairing, read-only scope, origin/epoch/sequence semantics and
+the review scenarios. Transport, key implementation and two-machine evidence
+remain open; the next review resolves them before selecting C1 code.
 
 At each join, update PRD 37 status/evidence, PRD 36's visible actions, the shared
 ownership map and exact release scope. Freeze transport and observation contracts
