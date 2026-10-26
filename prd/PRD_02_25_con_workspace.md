@@ -107,9 +107,11 @@ whether content is text or an image alongside its size. Status is `[-]`;
 sequencing belongs to [the next-version plan](../plan/plan-v0.2.24.md).
 
 Windows x86_64 development evidence: the selected `clipboard_status::tests`
-suite passed four synthetic tests under `scripts/build.sh test-suite --bin
+suite passed five synthetic tests under `scripts/build.sh test-suite --bin
 minicon clipboard_status::tests`; removing image classification made the mixed
-case fail as Text rather than Text + image, and restoration passed. The status
+case fail as Text rather than Text + image, and removing the generation guard
+let an old image result replace a newer checking state; both guards were
+restored and passed. The status
 now observes native type names plus bounded text off the GUI thread, invalidates
 late results after a newer generation, renders an unknown image size honestly,
 and gives a narrow window one non-overlapping readout. Native clipboard

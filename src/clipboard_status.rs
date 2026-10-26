@@ -161,29 +161,7 @@ impl ClipboardStatus {
                 ClipboardObservedReadPoll::Pending => return self.summary != before,
                 ClipboardObservedReadPoll::Ready(result) => {
                     self.pending = None;
-                    if self.pending_generation == self.generation && !self.refresh_requested {
-                        match result {
-                            Ok(observed)
-                                if observed.change_count.is_none()
-                                    || observed.change_count == current_change =>
-                            {
-                                self.summary = classify(observed);
-                            }
-                            Err(ClipboardError::Failed { code, .. })
-                                if code == "clipboard_changed_during_read" =>
-                            {
-                                self.generation = self.generation.wrapping_add(1);
-                                self.refresh_requested = true;
-                                self.summary = ClipboardSummary::CHECKING;
-                            }
-                            Ok(_) => {
-                                self.generation = self.generation.wrapping_add(1);
-                                self.refresh_requested = true;
-                                self.summary = ClipboardSummary::CHECKING;
-                            }
-                            Err(_) => self.summary = ClipboardSummary::UNAVAILABLE,
-                        }
-                    }
+                    self.apply_observation(result, current_change);
                 }
             }
         }
@@ -196,6 +174,34 @@ impl ClipboardStatus {
             }
         }
         self.summary != before
+    }
+
+    fn apply_observation(
+        &mut self,
+        result: Result<ClipboardObserved, ClipboardError>,
+        current_change: Option<u64>,
+    ) {
+        if self.pending_generation != self.generation || self.refresh_requested {
+            return;
+        }
+        match result {
+            Ok(observed)
+                if observed.change_count.is_none() || observed.change_count == current_change =>
+            {
+                self.summary = classify(observed);
+            }
+            Err(ClipboardError::Failed { code, .. }) if code == "clipboard_changed_during_read" => {
+                self.generation = self.generation.wrapping_add(1);
+                self.refresh_requested = true;
+                self.summary = ClipboardSummary::CHECKING;
+            }
+            Ok(_) => {
+                self.generation = self.generation.wrapping_add(1);
+                self.refresh_requested = true;
+                self.summary = ClipboardSummary::CHECKING;
+            }
+            Err(_) => self.summary = ClipboardSummary::UNAVAILABLE,
+        }
     }
 }
 
@@ -251,6 +257,8 @@ fn text_type(name: &str) -> bool {
             | "string"
             | "text"
             | "«class utf8»"
+            | "«class ut16»"
+            | "«class utxt»"
             | "unicode text"
     ) || name.starts_with("text/")
         || name.contains("plain-text")
@@ -266,6 +274,11 @@ fn image_type(name: &str) -> bool {
             | "cf_dibv5"
             | "cf_tiff"
             | "cf_enhmetafile"
+            | "png"
+            | "jpeg"
+            | "jfif"
+            | "gif"
+            | "bmp"
             | "«class pngf»"
             | "«class tiff»"
             | "«class jpeg»"
@@ -340,7 +353,11 @@ pub(crate) fn readout(summary: ClipboardSummary, chinese: bool, compact: bool) -
         ),
         ClipboardKind::TextAndImage => {
             if compact {
-                format!("{} {text_amount}/?", if chinese { "文+图" } else { "T+I" })
+                format!(
+                    "{} {text_amount}/{}",
+                    if chinese { "文+图" } else { "T+I" },
+                    if chinese { "图?" } else { "I?" }
+                )
             } else {
                 format!(
                     "{} {text_amount} · {}",
@@ -503,6 +520,14 @@ mod tests {
             ClipboardKind::Image
         );
         assert_eq!(
+            classify(observation(
+                &["PNG"],
+                Err(ClipboardError::failed("clipboard_unavailable", "no text"))
+            ))
+            .kind,
+            ClipboardKind::Image
+        );
+        assert_eq!(
             classify(observation(&[], Ok(""))).kind,
             ClipboardKind::Empty
         );
@@ -525,5 +550,26 @@ mod tests {
             .length,
             ClipboardLength::Over
         );
+    }
+
+    #[test]
+    fn a_late_observation_cannot_replace_a_newer_clipboard_summary() {
+        let mut status = ClipboardStatus::new();
+        status.refresh_requested = false;
+        status.generation = 2;
+        status.pending_generation = 1;
+        status.apply_observation(Ok(observation(&["PNG"], Ok(""))), None);
+        assert_eq!(status.summary(), ClipboardSummary::CHECKING);
+        status.pending_generation = 2;
+        status.apply_observation(Ok(observation(&["PNG"], Ok(""))), None);
+        assert_eq!(status.summary().kind, ClipboardKind::Image);
+
+        status.pending_generation = 2;
+        let mut changed = observation(&["text/plain"], Ok("old"));
+        changed.change_count = Some(7);
+        status.apply_observation(Ok(changed), Some(8));
+        assert_eq!(status.summary(), ClipboardSummary::CHECKING);
+        assert!(status.refresh_requested);
+        assert_eq!(status.generation, 3);
     }
 }

@@ -132,8 +132,9 @@ product-code changes and the version bump follow the completed 0.2.23 Promotion.
 - Build T1 before T2. Review one complete drag journey before expanding to the
   selected native matrix. Keep rename and clipboard fixes reviewable separately.
 - C1 development checkpoint: Windows x86_64 synthetic clipboard-status suite
-  passed four tests; removing image classification produced the expected mixed
-  Text + image failure, then the restored guard passed. The bounded platform
+  passed five tests; removing image classification and the stale-generation
+  guard each produced the expected failure, then the restored guards passed.
+  The bounded platform
   observer and localized status layout are integrated. Public GUI pixels,
   native format mutation/restore courts and the selected OS/ISA matrix remain
   open under PRD 25 CB-TYPE-01..03.
