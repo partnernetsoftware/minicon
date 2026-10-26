@@ -215,7 +215,7 @@ Intel resolver failure and Windows Cookie persistence requirement open under
 their owners. Only after these selected joins proceed to source freeze and
 exact-artifact release; the older Candidate cannot qualify changed source.
 
-### Current integration checkpoint (2026-10-25)
+### Retained integration checkpoint (2026-10-25)
 
 The [provider owner](../prd/PRD_02_31_01_provider_gateway.md#real-account-checkpoint-and-worker-defects-2026-10-25)
 records the actual DeepSeek grant/probe, retained worker failures and the
@@ -233,12 +233,14 @@ that the [control owner](../prd/PRD_02_26_con_control_cli.md) records with its
 repair. The `403dbf48` six-cell source checkpoint precedes that repair and is
 not final-source proof for it. Retain the cancelled `40126457516` unsigned-pack
 attempt as history; no Candidate was sealed from it.
-Root serializes Cargo, guard mutations and final integration. OpenCode account
-login is waiting for the owner in the
-browser; the physical keyboard court and full local workspace gate also wait
-for a preservable clipboard (the current unsupported formats were not changed).
-Finish those selected account/native interaction obligations and matching
-exact-source delivery gates. The prior
+Root serializes Cargo, guard mutations and final integration. The earlier live
+browser-login and owner-clipboard wait descriptions are superseded by the
+[public real-account inventory](../prd/PRD_02_31_01_02_provider_pool.md#public-real-account-readiness-inventory)
+and [native development evidence](../prd/PRD_02_32_dev_loop_crosscheck.md).
+Use those owners for current account availability, completed workspace gates
+and remaining native-input blockers; do not restart a login or repeat a gate
+from this historical checkpoint. Finish the selected account/native interaction
+obligations and matching exact-source delivery gates. The prior
 `7694388` pack and signatures are a scoped checkpoint, not reusable proof for
 changed source. No Candidate has been sealed from that checkpoint.
 
