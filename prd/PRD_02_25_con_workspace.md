@@ -38,7 +38,7 @@ minicon workspace and input
 ├── External composer input (exactly one focus owner)
 ├── Scrollbar and divider
 ├── Selection and clipboard
-│   └── [_] Clipboard status type and size (0.2.24) → section below
+│   └── [-] Clipboard status type and size (0.2.24) → section below
 ├── Configuration (minicon.json; themes; language; font size)
 │   ├── [-] terminal capability profile / advanced TERM override for new sessions
 │   │   invariant: choice survives reload; existing sessions retain their original contract
@@ -103,8 +103,18 @@ flowchart LR
 ## Clipboard status type and size (planned 0.2.24)
 
 Owner request, 2026-10-26: the existing clipboard status readout should show
-whether content is text or an image alongside its size. Status is `[_]`;
+whether content is text or an image alongside its size. Status is `[-]`;
 sequencing belongs to [the next-version plan](../plan/plan-v0.2.24.md).
+
+Windows x86_64 development evidence: the selected `clipboard_status::tests`
+suite passed four synthetic tests under `scripts/build.sh test-suite --bin
+minicon clipboard_status::tests`; removing image classification made the mixed
+case fail as Text rather than Text + image, and restoration passed. The status
+now observes native type names plus bounded text off the GUI thread, invalidates
+late results after a newer generation, renders an unknown image size honestly,
+and gives a narrow window one non-overlapping readout. Native clipboard
+mutation/restore courts, public GUI pixels and other OS/ISA cells remain open;
+this is a development checkpoint, not CB-TYPE-01..03 completion.
 
 - Outcome/invariant: at a glance distinguish Text, Image, Text + image,
   Empty and Other/Unknown from the same observed clipboard generation. Busy,

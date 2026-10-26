@@ -66,7 +66,7 @@ Outcome: improve daily workspace interaction and clipboard awareness
 │   evidence: TT-05/06 public press/move/release and native pointer journeys
 │   safe failure: stale/cancelled proposals leave no tree mutation
 │   dependency: R1/T1 and frozen observation seam; non-goal: OS file/URL/cross-window drag
-├── [_] C1 — clipboard type alongside labeled size
+├── [-] C1 — clipboard type alongside labeled size
 │   invariant/evidence/safe failure/dependency/non-goal: PRD 25, Clipboard status type and size
 │   sequence: bounded format summary, generation-safe status, localized native/pixel acceptance
 └── [_] Q — integrate and release exact 0.2.24 source
@@ -131,6 +131,12 @@ product-code changes and the version bump follow the completed 0.2.23 Promotion.
   owners are agreed; R1 and T2 cannot edit the shared pointer dispatch at once.
 - Build T1 before T2. Review one complete drag journey before expanding to the
   selected native matrix. Keep rename and clipboard fixes reviewable separately.
+- C1 development checkpoint: Windows x86_64 synthetic clipboard-status suite
+  passed four tests; removing image classification produced the expected mixed
+  Text + image failure, then the restored guard passed. The bounded platform
+  observer and localized status layout are integrated. Public GUI pixels,
+  native format mutation/restore courts and the selected OS/ISA matrix remain
+  open under PRD 25 CB-TYPE-01..03.
 - Use the existing three-subject daily smoke and requirement-selected tests.
   Each new critical guard needs a real failing counterexample. Archive weak
   duplicate tests only after review; do not add source-string assertions as proof.

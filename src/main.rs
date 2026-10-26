@@ -2231,11 +2231,12 @@ impl ConApp {
     /// travel together — marking without repainting leaves a stale frame until
     /// unrelated damage arrives, and repainting without marking can present an
     /// unchanged one — so the pair gets one spelling.
-    /// The status bar's clipboard-length text, in the UI's language.
-    fn clipboard_readout(&self) -> Option<String> {
+    /// The status bar's clipboard type and honest size, in the UI's language.
+    fn clipboard_readout(&self, available_width: u32) -> Option<String> {
         clipboard_status::readout(
-            self.clipboard_status.length(),
+            self.clipboard_status.summary(),
             !matches!(self.ui_language, ui::UiLanguage::English),
+            available_width < 560,
         )
     }
 
@@ -4906,7 +4907,7 @@ impl PixelWindowApplication for ConApp {
         // only starts a (background) read when the clipboard really changed.
         let waker = window.waker();
         if self.clipboard_status.poll(|limit| {
-            minicon_platform::clipboard::read_text_async(limit, move || {
+            minicon_platform::clipboard::read_observed_async(limit, move || {
                 let _ = waker.wake();
             })
             .ok()

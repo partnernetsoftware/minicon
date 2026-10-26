@@ -1,7 +1,6 @@
-//! What the status bar says about the clipboard: the length of its current
-//! text.
+//! Bounded, generation-safe clipboard type and size status.
 //!
-//! The clipboard changes from any process, so the length has to be re-read,
+//! The clipboard changes from any process, so its type and length are re-read,
 //! and reading the clipboard every frame would contend with whoever holds it.
 //! Two cheaper signals decide when to read:
 //!
@@ -18,12 +17,12 @@ use std::sync::{
 };
 
 use minicon_platform::{
-    clipboard::{self, ClipboardTextRead, ClipboardTextReadPoll},
-    contract::clipboard::{ClipboardError, ClipboardResult},
+    clipboard::{self, ClipboardObserved, ClipboardObservedRead, ClipboardObservedReadPoll},
+    contract::clipboard::ClipboardError,
 };
 
-/// The most the status bar will read to measure a length. Beyond it the
-/// readout says "over this" rather than holding megabytes to count them.
+/// The most text the status bar will retain to measure a length. Beyond it
+/// the readout says "over this" rather than holding megabytes to count them.
 pub(crate) const MEASURE_LIMIT_BYTES: usize = 8 * 1024 * 1024;
 
 /// What the readout shows.
@@ -37,8 +36,36 @@ pub(crate) enum ClipboardLength {
     Over,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ClipboardKind {
+    Checking,
+    Unavailable,
+    Empty,
+    Text,
+    Image,
+    TextAndImage,
+    Other,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ClipboardSummary {
+    pub(crate) kind: ClipboardKind,
+    pub(crate) length: ClipboardLength,
+}
+
+impl ClipboardSummary {
+    const CHECKING: Self = Self {
+        kind: ClipboardKind::Checking,
+        length: ClipboardLength::None,
+    };
+    const UNAVAILABLE: Self = Self {
+        kind: ClipboardKind::Unavailable,
+        length: ClipboardLength::None,
+    };
+}
+
 static OWN_WRITE_GENERATION: AtomicU64 = AtomicU64::new(0);
-static OWN_WRITE_CHARS: Mutex<usize> = Mutex::new(0);
+static OWN_WRITE_FACTS: Mutex<(usize, Option<u64>)> = Mutex::new((0, None));
 
 /// Put text on the clipboard. Every MiniCon copy goes through here so the
 /// status bar knows the new length without reading it back.
@@ -46,18 +73,20 @@ pub(crate) fn set_text(text: &str) -> bool {
     if clipboard::set_text(text).is_err() {
         return false;
     }
-    if let Ok(mut chars) = OWN_WRITE_CHARS.lock() {
-        *chars = text.chars().count();
+    if let Ok(mut facts) = OWN_WRITE_FACTS.lock() {
+        *facts = (text.chars().count(), clipboard::change_count());
     }
     OWN_WRITE_GENERATION.fetch_add(1, Ordering::Release);
     true
 }
 
 pub(crate) struct ClipboardStatus {
-    length: ClipboardLength,
+    summary: ClipboardSummary,
     seen_change: Option<u64>,
     seen_own_write: u64,
-    pending: Option<ClipboardTextRead>,
+    pending: Option<ClipboardObservedRead>,
+    pending_generation: u64,
+    generation: u64,
     /// Hosts without a counter still read once at start and on focus.
     refresh_requested: bool,
 }
@@ -65,23 +94,27 @@ pub(crate) struct ClipboardStatus {
 impl ClipboardStatus {
     pub(crate) fn new() -> Self {
         Self {
-            length: ClipboardLength::None,
+            summary: ClipboardSummary::CHECKING,
             seen_change: None,
             seen_own_write: OWN_WRITE_GENERATION.load(Ordering::Acquire),
             pending: None,
+            pending_generation: 0,
+            generation: 0,
             refresh_requested: true,
         }
     }
 
-    pub(crate) fn length(&self) -> ClipboardLength {
-        self.length
+    pub(crate) fn summary(&self) -> ClipboardSummary {
+        self.summary
     }
 
     /// Re-read on the next poll even if no counter moved -- on focus, where
     /// another program may have changed the clipboard while MiniCon was in
     /// the background on a host that cannot say so.
     pub(crate) fn request_refresh(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
         self.refresh_requested = true;
+        self.summary = ClipboardSummary::CHECKING;
     }
 
     /// Advances the readout. Returns true when what it shows changed, so the
@@ -89,94 +122,292 @@ impl ClipboardStatus {
     /// must start an asynchronous read that wakes the window when done.
     pub(crate) fn poll(
         &mut self,
-        start_read: impl FnOnce(usize) -> Option<ClipboardTextRead>,
+        start_read: impl FnOnce(usize) -> Option<ClipboardObservedRead>,
     ) -> bool {
-        let before = self.length;
+        let before = self.summary;
+        let current_change = clipboard::change_count();
 
         // MiniCon's own write: its length is already known.
         let own = OWN_WRITE_GENERATION.load(Ordering::Acquire);
         if own != self.seen_own_write {
             self.seen_own_write = own;
-            if let Ok(chars) = OWN_WRITE_CHARS.lock() {
-                self.length = ClipboardLength::Chars(*chars);
-            }
-            // The write moved the counter too; do not read it back.
-            self.seen_change = clipboard::change_count();
+            let facts = OWN_WRITE_FACTS.lock().ok().map(|facts| *facts);
+            self.seen_change = current_change;
             self.pending = None;
-            self.refresh_requested = false;
-            return self.length != before;
+            if facts
+                .is_none_or(|(_, own_change)| own_change.is_some() && own_change != current_change)
+            {
+                self.generation = self.generation.wrapping_add(1);
+                self.refresh_requested = true;
+                self.summary = ClipboardSummary::CHECKING;
+            } else {
+                self.refresh_requested = false;
+                self.summary = ClipboardSummary {
+                    kind: ClipboardKind::Text,
+                    length: ClipboardLength::Chars(facts.expect("facts checked above").0),
+                };
+            }
+        }
+
+        if current_change.is_some() && current_change != self.seen_change {
+            self.seen_change = current_change;
+            self.generation = self.generation.wrapping_add(1);
+            self.refresh_requested = true;
+            self.summary = ClipboardSummary::CHECKING;
         }
 
         if let Some(read) = &self.pending {
             match read.try_poll() {
-                ClipboardTextReadPoll::Pending => return false,
-                ClipboardTextReadPoll::Ready(result) => {
+                ClipboardObservedReadPoll::Pending => return self.summary != before,
+                ClipboardObservedReadPoll::Ready(result) => {
                     self.pending = None;
-                    self.length = length_of(result);
+                    if self.pending_generation == self.generation && !self.refresh_requested {
+                        match result {
+                            Ok(observed)
+                                if observed.change_count.is_none()
+                                    || observed.change_count == current_change =>
+                            {
+                                self.summary = classify(observed);
+                            }
+                            Err(ClipboardError::Failed { code, .. })
+                                if code == "clipboard_changed_during_read" =>
+                            {
+                                self.generation = self.generation.wrapping_add(1);
+                                self.refresh_requested = true;
+                                self.summary = ClipboardSummary::CHECKING;
+                            }
+                            Ok(_) => {
+                                self.generation = self.generation.wrapping_add(1);
+                                self.refresh_requested = true;
+                                self.summary = ClipboardSummary::CHECKING;
+                            }
+                            Err(_) => self.summary = ClipboardSummary::UNAVAILABLE,
+                        }
+                    }
                 }
             }
-            return self.length != before;
         }
-
-        let change = clipboard::change_count();
-        let moved = change.is_some() && change != self.seen_change;
-        if moved || self.refresh_requested {
-            self.seen_change = change;
+        if self.pending.is_none() && self.refresh_requested {
             self.refresh_requested = false;
+            self.pending_generation = self.generation;
             self.pending = start_read(MEASURE_LIMIT_BYTES);
+            if self.pending.is_none() {
+                self.summary = ClipboardSummary::UNAVAILABLE;
+            }
         }
-        self.length != before
+        self.summary != before
     }
 }
 
-fn length_of(result: ClipboardResult<String>) -> ClipboardLength {
-    match result {
-        Ok(text) if text.is_empty() => ClipboardLength::None,
-        Ok(text) => ClipboardLength::Chars(text.chars().count()),
-        // Every adapter reports a read over the bound with this code; any
-        // other failure (no text, clipboard busy) leaves nothing to show.
-        Err(ClipboardError::Failed { code, .. }) if code == "clipboard_too_large" => {
-            ClipboardLength::Over
-        }
-        Err(_) => ClipboardLength::None,
+fn classify(observed: ClipboardObserved) -> ClipboardSummary {
+    if observed.types.is_empty() && matches!(&observed.text, Ok(value) if value.is_empty()) {
+        return ClipboardSummary {
+            kind: ClipboardKind::Empty,
+            length: ClipboardLength::None,
+        };
     }
+    if observed.types.is_empty() && observed.text.is_err() {
+        return ClipboardSummary::UNAVAILABLE;
+    }
+    let image = observed.types.iter().any(|name| image_type(name));
+    let text_advertised = observed.types.iter().any(|name| text_type(name));
+    let text = text_advertised || matches!(&observed.text, Ok(value) if !value.is_empty());
+    if text
+        && matches!(&observed.text, Err(ClipboardError::Failed { code, .. }) if code != "clipboard_too_large")
+    {
+        return ClipboardSummary::UNAVAILABLE;
+    }
+    if text && matches!(&observed.text, Err(ClipboardError::Unsupported { .. })) {
+        return ClipboardSummary::UNAVAILABLE;
+    }
+    let kind = match (text, image) {
+        (true, true) => ClipboardKind::TextAndImage,
+        (true, false) => ClipboardKind::Text,
+        (false, true) => ClipboardKind::Image,
+        (false, false) => ClipboardKind::Other,
+    };
+    let length = if text {
+        match observed.text {
+            Ok(value) => ClipboardLength::Chars(value.chars().count()),
+            Err(ClipboardError::Failed { code, .. }) if code == "clipboard_too_large" => {
+                ClipboardLength::Over
+            }
+            Err(_) => ClipboardLength::None,
+        }
+    } else {
+        ClipboardLength::None
+    };
+    ClipboardSummary { kind, length }
 }
 
-/// The status bar's text for a length, fixed-width so the bar does not
-/// reflow as it changes.
-pub(crate) fn readout(length: ClipboardLength, chinese: bool) -> Option<String> {
-    let label = if chinese { "剪贴板" } else { "Clip" };
-    match length {
-        ClipboardLength::None => None,
-        ClipboardLength::Chars(chars) if chars > 999_999 => Some(format!("{label} >999999")),
-        ClipboardLength::Chars(chars) => Some(format!("{label} {chars:>7}")),
-        ClipboardLength::Over => Some(format!("{label} {:>7}", ">8MB")),
-    }
+fn text_type(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    matches!(
+        name.as_str(),
+        "cf_unicodetext"
+            | "cf_text"
+            | "cf_oemtext"
+            | "utf8_string"
+            | "string"
+            | "text"
+            | "«class utf8»"
+            | "unicode text"
+    ) || name.starts_with("text/")
+        || name.contains("plain-text")
+        || name == "public.html"
+}
+
+fn image_type(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    matches!(
+        name.as_str(),
+        "cf_bitmap"
+            | "cf_dib"
+            | "cf_dibv5"
+            | "cf_tiff"
+            | "cf_enhmetafile"
+            | "«class pngf»"
+            | "«class tiff»"
+            | "«class jpeg»"
+            | "«class pict»"
+    ) || name.starts_with("image/")
+        || name.starts_with("public.image")
+        || matches!(
+            name.as_str(),
+            "public.png" | "public.jpeg" | "public.tiff" | "public.heic"
+        )
+}
+
+/// Render a localized type and honest size. Image bytes are never read merely
+/// for this status, so image size remains explicitly unknown.
+pub(crate) fn readout(summary: ClipboardSummary, chinese: bool, compact: bool) -> Option<String> {
+    let prefix = if chinese && compact {
+        "剪"
+    } else if chinese {
+        "剪贴板"
+    } else {
+        "Clip"
+    };
+    let text_amount = match summary.length {
+        ClipboardLength::None => if chinese { "字数?" } else { "chars?" }.to_owned(),
+        ClipboardLength::Chars(n) if n > 999_999 => if chinese {
+            ">999999 字"
+        } else {
+            ">999999 chars"
+        }
+        .to_owned(),
+        ClipboardLength::Chars(n) if compact && chinese => format!("{n}字"),
+        ClipboardLength::Chars(n) if compact => format!("{n}c"),
+        ClipboardLength::Chars(n) if chinese => format!("{n:>7} 字"),
+        ClipboardLength::Chars(n) => format!("{n:>7} chars"),
+        ClipboardLength::Over => ">8 MiB".to_owned(),
+    };
+    let body = match summary.kind {
+        ClipboardKind::Checking => if chinese { "检测中" } else { "checking" }.to_owned(),
+        ClipboardKind::Unavailable => if chinese { "不可用" } else { "unavailable" }.to_owned(),
+        ClipboardKind::Empty => if chinese { "空" } else { "Empty" }.to_owned(),
+        ClipboardKind::Other => if chinese { "其他类型" } else { "Other" }.to_owned(),
+        ClipboardKind::Text => format!(
+            "{} {text_amount}",
+            if chinese && compact {
+                "文"
+            } else if chinese {
+                "文本"
+            } else if compact {
+                "T"
+            } else {
+                "Text"
+            }
+        ),
+        ClipboardKind::Image => format!(
+            "{} {}",
+            if chinese && compact {
+                "图"
+            } else if chinese {
+                "图片"
+            } else if compact {
+                "I"
+            } else {
+                "Image"
+            },
+            if compact {
+                "?"
+            } else if chinese {
+                "大小?"
+            } else {
+                "size ?"
+            }
+        ),
+        ClipboardKind::TextAndImage => {
+            if compact {
+                format!("{} {text_amount}/?", if chinese { "文+图" } else { "T+I" })
+            } else {
+                format!(
+                    "{} {text_amount} · {}",
+                    if chinese {
+                        "文本+图片"
+                    } else {
+                        "Text+Image"
+                    },
+                    if chinese {
+                        "图片大小?"
+                    } else {
+                        "image size ?"
+                    }
+                )
+            }
+        }
+    };
+    Some(format!("{prefix} {body}"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use minicon_platform::contract::clipboard::ClipboardResult;
+
+    fn observation(types: &[&str], text: ClipboardResult<&str>) -> ClipboardObserved {
+        ClipboardObserved {
+            types: types.iter().map(|name| (*name).to_owned()).collect(),
+            text: text.map(str::to_owned),
+            change_count: None,
+        }
+    }
 
     /// The readout is fixed-width for any length it can show, so the status
     /// bar never jitters as the clipboard changes.
     #[test]
-    fn the_readout_keeps_one_width() {
+    fn the_text_count_keeps_one_width_and_mixed_formats_stay_visible() {
         let widths: Vec<usize> = [0_usize, 7, 42, 1234, 999_999, 5_000_000]
             .iter()
-            .filter_map(|&chars| readout(ClipboardLength::Chars(chars), false))
-            .chain(readout(ClipboardLength::Over, false))
+            .filter_map(|&chars| {
+                readout(
+                    ClipboardSummary {
+                        kind: ClipboardKind::Text,
+                        length: ClipboardLength::Chars(chars),
+                    },
+                    false,
+                    false,
+                )
+            })
             .map(|text| text.chars().count())
             .collect();
         assert!(
             widths.windows(2).all(|pair| pair[0] == pair[1]),
             "{widths:?}"
         );
-        assert_eq!(readout(ClipboardLength::None, true), None);
-        assert_eq!(
-            readout(ClipboardLength::Chars(12), true).as_deref(),
-            Some("剪贴板      12")
+        let mixed = ClipboardSummary {
+            kind: ClipboardKind::TextAndImage,
+            length: ClipboardLength::Chars(12),
+        };
+        let shown = readout(mixed, false, false).unwrap();
+        assert!(
+            shown.contains("Text+Image")
+                && shown.contains("12 chars")
+                && shown.contains("image size ?")
         );
+        let chinese = readout(mixed, true, true).unwrap();
+        assert!(chinese.contains("文+图") && chinese.contains("12字"));
     }
 
     /// An own write is reflected on the next poll without any read, and a
@@ -186,8 +417,8 @@ mod tests {
         let mut status = ClipboardStatus::new();
         status.refresh_requested = false;
         status.seen_change = clipboard::change_count();
-        if let Ok(mut chars) = OWN_WRITE_CHARS.lock() {
-            *chars = 11;
+        if let Ok(mut facts) = OWN_WRITE_FACTS.lock() {
+            *facts = (11, clipboard::change_count());
         }
         OWN_WRITE_GENERATION.fetch_add(1, Ordering::Release);
         let mut reads = 0;
@@ -195,7 +426,13 @@ mod tests {
             reads += 1;
             None
         }));
-        assert_eq!(status.length(), ClipboardLength::Chars(11));
+        assert_eq!(
+            status.summary(),
+            ClipboardSummary {
+                kind: ClipboardKind::Text,
+                length: ClipboardLength::Chars(11)
+            }
+        );
         assert_eq!(reads, 0, "an own write was read back");
         assert!(!status.poll(|_| None));
     }
@@ -238,14 +475,54 @@ mod tests {
 
     /// Characters, not bytes: the user reads the readout as "how much text".
     #[test]
-    fn length_counts_characters() {
+    fn advertised_types_preserve_image_mixed_empty_and_failed_text_reads() {
         assert_eq!(
-            length_of(Ok("中文ab".to_owned())),
-            ClipboardLength::Chars(4)
+            classify(observation(
+                &["public.png", "public.utf8-plain-text"],
+                Ok("中文ab")
+            )),
+            ClipboardSummary {
+                kind: ClipboardKind::TextAndImage,
+                length: ClipboardLength::Chars(4)
+            }
         );
-        assert_eq!(length_of(Ok(String::new())), ClipboardLength::None);
         assert_eq!(
-            length_of(Err(ClipboardError::failed("clipboard_too_large", "big"))),
+            classify(observation(
+                &["CF_DIBV5"],
+                Err(ClipboardError::failed("clipboard_unavailable", "no text"))
+            ))
+            .kind,
+            ClipboardKind::Image
+        );
+        assert_eq!(
+            classify(observation(
+                &["«class PNGf»"],
+                Err(ClipboardError::failed("clipboard_unavailable", "no text"))
+            ))
+            .kind,
+            ClipboardKind::Image
+        );
+        assert_eq!(
+            classify(observation(&[], Ok(""))).kind,
+            ClipboardKind::Empty
+        );
+        assert_eq!(
+            classify(observation(&["CF_HDROP"], Ok(""))).kind,
+            ClipboardKind::Other
+        );
+        assert_eq!(
+            classify(observation(
+                &["CF_UNICODETEXT"],
+                Err(ClipboardError::failed("clipboard_busy", "busy"))
+            )),
+            ClipboardSummary::UNAVAILABLE
+        );
+        assert_eq!(
+            classify(observation(
+                &["text/plain"],
+                Err(ClipboardError::failed("clipboard_too_large", "big"))
+            ))
+            .length,
             ClipboardLength::Over
         );
     }

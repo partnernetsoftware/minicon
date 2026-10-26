@@ -121,6 +121,113 @@ pub fn read_text_async(
     Ok(ClipboardTextRead { receiver })
 }
 
+/// Type names and a bounded Unicode read observed by one background worker.
+/// A native change counter, where available, must be stable across both reads
+/// before the result can describe one clipboard generation.
+pub struct ClipboardObserved {
+    pub types: Vec<String>,
+    pub text: ClipboardResult<String>,
+    pub change_count: Option<u64>,
+}
+
+pub enum ClipboardObservedReadPoll {
+    Pending,
+    Ready(ClipboardResult<ClipboardObserved>),
+}
+
+pub struct ClipboardObservedRead {
+    receiver: Receiver<ClipboardResult<ClipboardObserved>>,
+}
+
+impl ClipboardObservedRead {
+    pub fn try_poll(&self) -> ClipboardObservedReadPoll {
+        match self.receiver.try_recv() {
+            Ok(result) => ClipboardObservedReadPoll::Ready(result),
+            Err(TryRecvError::Empty) => ClipboardObservedReadPoll::Pending,
+            Err(TryRecvError::Disconnected) => {
+                ClipboardObservedReadPoll::Ready(Err(ClipboardError::failed(
+                    "clipboard_worker_disconnected",
+                    "clipboard observation worker stopped without a result",
+                )))
+            }
+        }
+    }
+}
+
+/// Enumerate types and measure bounded Unicode text off the caller's thread.
+/// This never reads image bytes; products decide how native type names map to
+/// their own content labels.
+pub fn read_observed_async(
+    max_text_bytes: usize,
+    wake: impl FnOnce() + Send + 'static,
+) -> ClipboardResult<ClipboardObservedRead> {
+    let (sender, receiver) = mpsc::sync_channel(1);
+    threading::spawn_named_detached(
+        "agenterm-clipboard-observe",
+        Box::new(move || {
+            let completion = ClipboardObservedCompletion {
+                sender: Some(sender),
+                wake: Some(Box::new(wake)),
+            };
+            let result = (|| {
+                let before = change_count();
+                let types = available_types()?;
+                let text = get_text(max_text_bytes);
+                let after = change_count();
+                if before.is_some() && before != after {
+                    return Err(ClipboardError::failed(
+                        "clipboard_changed_during_read",
+                        "clipboard changed while reading its types and text",
+                    ));
+                }
+                Ok(ClipboardObserved {
+                    types,
+                    text,
+                    change_count: after,
+                })
+            })();
+            completion.complete(result);
+        }),
+    )
+    .map_err(|error| {
+        ClipboardError::failed(
+            "clipboard_worker_start",
+            format!("could not start clipboard observation worker: {error}"),
+        )
+    })?;
+    Ok(ClipboardObservedRead { receiver })
+}
+
+struct ClipboardObservedCompletion {
+    sender: Option<SyncSender<ClipboardResult<ClipboardObserved>>>,
+    wake: Option<Box<dyn FnOnce() + Send + 'static>>,
+}
+
+impl ClipboardObservedCompletion {
+    fn complete(mut self, result: ClipboardResult<ClipboardObserved>) {
+        if let Some(sender) = self.sender.take() {
+            let _ = sender.send(result);
+        }
+        if let Some(wake) = self.wake.take() {
+            wake();
+        }
+    }
+}
+
+impl Drop for ClipboardObservedCompletion {
+    fn drop(&mut self) {
+        if let Some(sender) = self.sender.take() {
+            let _ = sender.send(Err(ClipboardError::failed(
+                "clipboard_worker_panicked",
+                "clipboard observation worker panicked",
+            )));
+        }
+        if let Some(wake) = self.wake.take() {
+            wake();
+        }
+    }
+}
+
 /// Probe whether Unicode text is presently available without requiring a full
 /// payload read where the selected adapter can provide a cheaper probe.
 /// The type names currently on the clipboard, most-preferred first where

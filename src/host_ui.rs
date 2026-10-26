@@ -404,7 +404,7 @@ pub(crate) fn paint_two_line_button_label(
 }
 
 /// Paints the bottom status bar: an optional left label (the active tab), an
-/// optional fixed-width clipboard-length readout, and a
+/// optional clipboard type/size readout, and a
 /// fixed-width `L###:C###` cursor readout pinned to the right. The readout keeps
 /// a constant width (zero-padded, three digits) so the bar never reflows as the
 /// cursor moves — the same no-jitter rule the crosshair will rely on. Rows and
@@ -457,29 +457,37 @@ pub(crate) fn paint_status_bar(
         .saturating_sub(pad)
         .saturating_sub(readout_width)
         .max(bar.x);
-    paint_host_ui_text(
-        surface,
-        readout_x,
-        text_y,
-        &readout,
-        theme.muted,
-        font_size_px,
-        readout_width,
-    );
-    // The clipboard length, left of the cursor readout. It is fixed-width in
-    // characters, but CJK labels are two cells wide, so it is measured in
-    // cells rather than assumed.
-    let mut right_edge = readout_x;
-    if let Some(clipboard) = clipboard {
-        let cells: u32 = clipboard
+    // A narrow window must not paint two readouts over each other. Prefer
+    // clipboard type if it fits; otherwise retain the fixed cursor position.
+    let clipboard_width = clipboard.map(|label| {
+        let cells: u32 = label
             .chars()
             .map(|ch| if ch.is_ascii() { 1 } else { 2 })
             .sum();
-        let clipboard_width = cell_w.saturating_mul(cells);
-        let clipboard_x = readout_x
-            .saturating_sub(dip(16.0))
-            .saturating_sub(clipboard_width)
-            .max(bar.x);
+        cell_w.saturating_mul(cells)
+    });
+    let usable_width = bar.width.saturating_sub(pad.saturating_mul(2));
+    let both_fit = clipboard_width.is_some_and(|width| {
+        width
+            .saturating_add(dip(16.0))
+            .saturating_add(readout_width)
+            <= usable_width
+    });
+    let clipboard_only = !both_fit && clipboard_width.is_some_and(|width| width <= usable_width);
+    let mut right_edge = readout_x;
+    if both_fit || clipboard_only {
+        let clipboard = clipboard.expect("width requires a clipboard label");
+        let clipboard_width = clipboard_width.expect("label has a measured width");
+        let clipboard_x = if both_fit {
+            readout_x
+                .saturating_sub(dip(16.0))
+                .saturating_sub(clipboard_width)
+        } else {
+            bar.x
+                .saturating_add(bar.width)
+                .saturating_sub(pad)
+                .saturating_sub(clipboard_width)
+        };
         paint_host_ui_text(
             surface,
             clipboard_x,
@@ -490,6 +498,17 @@ pub(crate) fn paint_status_bar(
             clipboard_width,
         );
         right_edge = clipboard_x;
+    }
+    if !clipboard_only {
+        paint_host_ui_text(
+            surface,
+            readout_x,
+            text_y,
+            &readout,
+            theme.muted,
+            font_size_px,
+            readout_width.min(usable_width),
+        );
     }
     // Left: the active tab label, clipped so it never runs into the readouts.
     if !left_label.is_empty() {
