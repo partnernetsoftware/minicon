@@ -23,6 +23,11 @@ on:
         type: boolean
         required: false
         default: false
+      preparation_only:
+        description: "Diagnostic only: requires prepare_arm_default; ARM64 setup without product build or input"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -32,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.desktop_contrast && '[{"cell":"win-x86_64","runner":"windows-2025","triple":"x86_64-pc-windows-msvc"}]' || '[{"cell":"win-x86_64","runner":"windows-2025","triple":"x86_64-pc-windows-msvc"},{"cell":"win-aarch64","runner":"windows-11-arm","triple":"aarch64-pc-windows-msvc"}]') }}
+        include: ${{ fromJSON(inputs.preparation_only && '[{"cell":"win-aarch64","runner":"windows-11-arm","triple":"aarch64-pc-windows-msvc"}]' || inputs.desktop_contrast && '[{"cell":"win-x86_64","runner":"windows-2025","triple":"x86_64-pc-windows-msvc"}]' || '[{"cell":"win-x86_64","runner":"windows-2025","triple":"x86_64-pc-windows-msvc"},{"cell":"win-aarch64","runner":"windows-11-arm","triple":"aarch64-pc-windows-msvc"}]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
@@ -40,7 +45,17 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
+      - name: Validate preparation-only selection before setup
+        shell: pwsh
+        env:
+          PREPARATION_ONLY: ${{ inputs.preparation_only }}
+          PREPARE_ARM_DEFAULT: ${{ inputs.prepare_arm_default }}
+          DESKTOP_CONTRAST: ${{ inputs.desktop_contrast }}
+          ALLOCATED_FIRST: ${{ inputs.allocated_first }}
+        run: |
+          if ($env:PREPARATION_ONLY -eq 'true' -and ($env:PREPARE_ARM_DEFAULT -ne 'true' -or $env:DESKTOP_CONTRAST -eq 'true' -or $env:ALLOCATED_FIRST -eq 'true')) { throw 'preparation_only requires prepare_arm_default and excludes contrast/order options' }
       - name: Ensure the native WebView2 runtime is available
+        if: ${{ !inputs.preparation_only }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -56,6 +71,7 @@ jobs:
             if ($process.ExitCode -ne 0) { throw 'WebView2 installation failed' }
           }
       - name: Build the default product for this native target
+        if: ${{ !inputs.preparation_only }}
         shell: pwsh
         env:
           TRIPLE: ${{ matrix.triple }}
@@ -63,7 +79,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           cargo build --locked --bin minicon --target $env:TRIPLE
           if ($LASTEXITCODE -ne 0) { throw 'Native product build failed' }
-      - name: Run physical controls on the disposable hosted desktop
+      - name: Run selected preparation or physical controls on the disposable hosted desktop
         shell: pwsh
         env:
           CELL: ${{ matrix.cell }}
@@ -73,11 +89,13 @@ jobs:
           DESKTOP_CONTRAST: ${{ inputs.desktop_contrast }}
           ALLOCATED_FIRST: ${{ inputs.allocated_first }}
           PREPARE_ARM_DEFAULT: ${{ inputs.prepare_arm_default }}
+          PREPARATION_ONLY: ${{ inputs.preparation_only }}
         run: |
           $ErrorActionPreference = 'Stop'
           if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw 'Disposable hosted court required' }
           if ($env:ALLOCATED_FIRST -eq 'true' -and $env:DESKTOP_CONTRAST -ne 'true') { throw 'allocated_first requires desktop_contrast' }
           if ($env:PREPARE_ARM_DEFAULT -eq 'true' -and $env:DESKTOP_CONTRAST -eq 'true') { throw 'Default preparation cannot be combined with desktop contrast' }
+          if ($env:PREPARATION_ONLY -eq 'true' -and ($env:PREPARE_ARM_DEFAULT -ne 'true' -or $env:CELL -ne 'win-aarch64' -or $env:ALLOCATED_FIRST -eq 'true')) { throw 'Invalid preparation-only selection' }
           $output = Join-Path $env:RUNNER_TEMP 'minicon-native-controls'
           if (Test-Path -LiteralPath $output) { throw 'Court output must be fresh' }
           New-Item -ItemType Directory -Path $output | Out-Null
@@ -85,6 +103,7 @@ jobs:
           $registered = $false
           $restored = $false
           $courtExit = $null
+          $preparationOnlyObserved = $false
           try {
             # Pinyin is already installed on these courts. Register its exact
             # profile for this disposable user; never install a language pack.
@@ -106,7 +125,9 @@ jobs:
               if ($preparation.source_sha -cne $source -or $preparation.status -cne 'OBSERVED' -or $preparation.default_desktop_verified -ne $true) { throw 'Default preparation identity mismatch' }
               if ($env:RUNNER_ARCH -cne 'ARM64') { throw 'Shell preparation requires the hosted ARM64 cell' }
             }
-            if ($env:DESKTOP_CONTRAST -eq 'true') {
+            if ($env:PREPARATION_ONLY -eq 'true') {
+              $preparationOnlyObserved = $true
+            } elseif ($env:DESKTOP_CONTRAST -eq 'true') {
               $PSNativeCommandUseErrorActionPreference = $false
               if ($env:CELL -ne 'win-x86_64') { throw 'Desktop contrast requires the x64 court' }
               $imageHash = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -169,12 +190,19 @@ jobs:
                 language_pack_installed = $false
                 original_language_profiles_restored = $restored
                 explicit_arm_default_preparation = $env:PREPARE_ARM_DEFAULT -eq 'true' -and $env:CELL -eq 'win-aarch64'
+                preparation_only = $env:PREPARATION_ONLY -eq 'true'
+                preparation_only_observed = $preparationOnlyObserved
+                native_input_qualified = $false
                 native_court_exit = $courtExit
               }
               $report | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'setup.json') -Encoding utf8
             }
           }
           if (-not $restored) { throw 'Original language profiles were not restored' }
+          if ($env:PREPARATION_ONLY -eq 'true') {
+            if (-not $preparationOnlyObserved -or $null -ne $courtExit) { throw 'Preparation-only outcome mismatch' }
+            exit 0
+          }
           if ($courtExit -ne 0) { throw "Native controls court exited $courtExit; inspect its retained receipt" }
       - name: Upload bounded public observations and owned-window images
         if: always()

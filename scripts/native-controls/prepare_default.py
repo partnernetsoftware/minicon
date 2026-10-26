@@ -36,6 +36,7 @@ def prepare(report, allow_close, closed_roles):
         (u, 'GetClassNameW', c.c_int, [w.HWND, w.LPWSTR, c.c_int]),
         (u, 'IsWindowVisible', w.BOOL, [w.HWND]),
         (u, 'IsWindow', w.BOOL, [w.HWND]),
+        (u, 'IsIconic', w.BOOL, [w.HWND]),
         (u, 'GetWindowRect', w.BOOL, [w.HWND, c.POINTER(w.RECT)]),
         (u, 'WindowFromPoint', w.HWND, [w.POINT]),
         (u, 'SetThreadDpiAwarenessContext', w.HANDLE, [w.HANDLE]),
@@ -192,6 +193,29 @@ def prepare(report, allow_close, closed_roles):
                 or not checked('process_alive', k.WaitForSingleObject(handle, 0) == 0x102)):
             raise Blocked('known setup image/session/lifetime mismatch')
         report['known_setup_identity_verified'] = True
+
+        def presentation():
+            # Metadata only. Never use cloaking to relax admission/close acknowledgement.
+            state = {'exists': bool(u.IsWindow(hwnd)),
+                     'style_visible': bool(u.IsWindowVisible(hwnd)),
+                     'iconic': bool(u.IsIconic(hwnd)),
+                     'is_foreground': u.GetForegroundWindow() == hwnd}
+            try:
+                dwm = c.WinDLL('dwmapi', use_last_error=True)
+                read = dwm.DwmGetWindowAttribute
+                read.restype = c.c_int32
+                read.argtypes = [w.HWND, w.DWORD, c.c_void_p, w.DWORD]
+                cloaked = w.DWORD()
+                result = read(hwnd, 14, c.byref(cloaked), c.sizeof(cloaked))
+                state['cloaked_hresult'] = f'0x{result & 0xffffffff:08x}'
+                state['cloaked_status'] = 'observed' if result == 0 else 'unavailable'
+                if result == 0:
+                    state['cloaked_flags'] = cloaked.value
+            except (OSError, AttributeError):
+                state['cloaked_status'] = 'unavailable'
+            return state
+
+        report['presentation_before_close'] = presentation()
         current_pid = w.DWORD()
         current_thread = u.GetWindowThreadProcessId(hwnd, c.byref(current_pid))
         if (u.GetForegroundWindow() != hwnd or not u.IsWindowVisible(hwnd)
@@ -206,8 +230,10 @@ def prepare(report, allow_close, closed_roles):
         while time.monotonic() < end:
             if (not u.IsWindow(hwnd) or not u.IsWindowVisible(hwnd)) and u.GetForegroundWindow() != hwnd:
                 report['known_window_no_longer_visible'] = True
+                report['presentation_after_close'] = presentation()
                 return
             time.sleep(0.05)
+        report['presentation_after_close'] = presentation()
         raise Blocked('known setup window did not close within five seconds')
     finally:
         if handle:

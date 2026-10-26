@@ -61,6 +61,7 @@ dev-loop-crosscheck — agent cross-arch dev/test loop
 │   │       evidence: local pre-DLL refusal controls and actual hosted setup/input receipts
 │   │       safe failure: no close on mismatch; refused/ignored close remains BLOCKED
 │   │       dependency: disposable host and verified Default desktop/session; non-goal: owner desktop, force kill, permission bypass or input predicate changes
+│   │       └── [_] preparation-only presentation diagnosis: ARM64 setup receipt without product build or physical court; never input qualification
 │   ├── [-] explicit Windows fixture ACL comparison → PRD 28.01
 │   │   invariant: diagnostic entry requires exactly win-x86_64 and native_auth_context=false
 │   │   evidence: real workflow-plan consumer and separate diagnostic aggregate
@@ -106,6 +107,8 @@ flowchart LR
     NC --> ARM[ARM64 hosted-only allocated interactive desktop / contained controller]
     ARM --> RESTORE[Original input desktop restored / handles closed]
     NC --> CONTRAST[Explicit x64 same-image default / allocated contrast]
+    NC --> PREP[Explicit ARM64 preparation-only / DWM presentation observations]
+    PREP -->|diagnostic only; no product launch or input| L
     CONTRAST -->|both original receipts / no hidden failure| RESTORE
     RESTORE --> L
     NC -->|actual native input and cleanup; retain failures| L
@@ -1665,6 +1668,57 @@ and
 An initial local clock-shim NameError is retained separately as setup error,
 not an intended assertion failure. The failed native composition/timeout remains
 open until actual matching-source replay, independent of this mechanism proof.
+
+### Preparation-only presentation diagnosis
+
+[Run40256104057](https://github.com/partnernetsoftware/minicon/actions/runs/40256104057)
+at `f88c13b81b4aa3ae91a131d3042525cd41bd4b32` passes all five x64 physical
+rows. ARM64's corrected foreground wait finds Search after144ms, but its one
+verified WM_CLOSE has no hidden/gone acknowledgement within the unchanged
+five seconds. Both setup handles close; no ARM64 product is launched and no
+clipboard/input is used. This neither resolves the retained earlier x64
+timeout nor establishes ARM64 Pinyin. Receipts:
+`target-six/v0.2.23-provider/native-controls-ci-f88c13b/`.
+
+Next diagnostic leaf: explicitly selected `preparation_only` requires
+`prepare_arm_default=true` and excludes contrast/order options. It selects only
+the hosted ARM64 cell, skips product build/WebView installation, and runs the
+same guarded preparation and original-language restoration. Keep native-court
+exit null, mark the mode and `native_input_qualified=false`; preparation success
+means only OBSERVED setup, never a native controls pass. Refusal remains a
+nonzero outcome with retained diagnostics. No product, model, physical input,
+clipboard, force kill or additional service is introduced by this mode.
+
+After known-target identity verification, retain read-only presentation facts
+before the one close and at its success/timeout: window existence, style-visible,
+iconic, current foreground equality and `DWMWA_CLOAKED` HRESULT/value. Microsoft
+documents [DwmGetWindowAttribute](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/nf-dwmapi-dwmgetwindowattribute)
+and the [cloaked attribute](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute);
+cloaking is a hypothesis until observed here. Missing DWM metadata stays
+unavailable, not zero or a changed admission decision. These samples are
+sequential diagnostics, not an atomic desktop frame or proof a target accepts
+input. Do not relax the original visible/gone or native ownership predicates.
+Dependency: the same disposable Default-desktop/session/target guards. Safe
+failure: retain the refused preparation and all cleanup facts. Hot files:
+`scripts/native-controls/prepare_default.py` and the existing native workflow;
+integrate their admission and report semantics serially. Non-goal: declaring
+Search dismissible, adding another close attempt or qualifying product input.
+
+Local fully intercepted controls replay the three entry subjects/three faults
+and twenty identity/panel subjects/sixteen faults against this source. Four
+additional metadata subjects exercise actual flags, failed HRESULT, unavailable
+API and a cloaked window that ignores close. Three deliberate faults lose the
+flags, fabricate a value after failed query or acknowledge an ignored close;
+each fails its intended assertion and exact restoration passes. The initial
+no-ack assertion was too weak because a later repeated-role guard still refused
+the overall run; that mutant passed and is retained as non-evidence under
+`initial-weak-subject/`. The strengthened original assertion checks the timeout
+reason and absence of a false close acknowledgement. Receipts:
+`target-six/v0.2.23-provider/default-preparation-refusal-controls-presentation/receipt.json`,
+`target-six/v0.2.23-provider/default-preparation-identity-controls-presentation/receipt.json`
+and `target-six/v0.2.23-provider/default-preparation-metadata-controls/receipt.json`.
+All DLL/native calls, including the faulted paths, are intercepted; these are
+mechanism proofs, not actual desktop or product-input observations.
 
 ### Windows full standard workspace checkpoint
 
