@@ -2008,6 +2008,34 @@ currently selected gate. Real accounts, physical Pinyin, all-language/scale
 coverage, full-workspace/final-source and signed/public qualification remain
 separate obligations.
 
+### Account feedback and activity integration (2026-10-26)
+
+[Run40293546902](https://github.com/partnernetsoftware/minicon/actions/runs/40293546902)
+checks product source `a4f2e53f5e6e091b5931845709cc87a4eccdd54c`, using
+`test_filter=harness` on Linux x64, Windows ARM64 and macOS ARM64. This joins
+the sampled account-activity presentation and account-owned save feedback.
+
+Linux x64 and Windows ARM64 are terminal success: respectively31 and29
+selected suites,68 Settings cases each (zero failed/ignored), and22 canonical
+browser host checks each. The independent raw-log audit finds all ten selected
+named subjects, including the new account-save validation/receipt test, actual
+public save/retry/revert journey and sampled activity projection, plus existing
+menu/removal/navigation/reflow/panel regressions. Source identities and receipt
+hashes are checked independently of the job summary. Some subjects run in two
+selected suites; execution instances are not distinct-test counts.
+
+macOS ARM64 remains in progress at this checkpoint. The partial audit qualifies
+only the two explicitly listed completed cells. Local Windows x64 runtime
+held-lease tests and production fault controls remain with the product owners;
+the `harness` filter does not select every runtime/provider test.
+
+Receipts, raw logs and audit:
+`target-six/v0.2.23-provider/harness-ci-a4f2e53-full/selected-verification-index.json`.
+The failed short-SHA dispatch is retained separately under
+`harness-ci-a4f2e53/`; no product test ran there. This integration is not
+full-workspace/six-cell qualification, physical IME, real provider authorization
+or a signed/public release gate.
+
 ### Windows full standard workspace checkpoint
 
 [Run40252299740](https://github.com/partnernetsoftware/minicon/actions/runs/40252299740)
