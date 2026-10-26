@@ -49,6 +49,42 @@ flowchart LR
 
 ## Product experience
 
+### Product priority and first pilot
+
+The first product problem is the gap between a harness's file/command results
+and the application a user can actually see: inspect the selected application's
+current state, then verify one deliberate interaction. Start with developer
+inspection and application checks. General personal-assistant desktop tasks,
+unattended workflows and a marketplace of application recipes are later product
+decisions, not prerequisites for a useful preview.
+
+The initial pilot has two distinct acceptance steps:
+
+| Step | User outcome | Evidence and scope |
+| --- | --- | --- |
+| Deterministic native fixture | Discover, select and inspect one owned application; CU2 later changes one known control and verifies its effect | CU-02/03 establish target, coverage and failure behavior against an independently known expected state |
+| Explicitly selected real development application | Inspect a scratch document or test page, explain any missing controls, and later perform one supported reversible operation | A named application/version and OS/ISA journey demonstrates usefulness; it does not certify other applications or substitute for the fixture |
+
+Choose the real pilot application during CU0 from actual user work and available
+native courts. Use prepared scratch content, not account login or private
+production data. Do not lock the product to one application's titles, geometry
+or accessibility shape merely to make the pilot pass. The real-application
+observation journey is part of CU1 acceptance; its action extension belongs to
+CU2. Public claims name the application coverage actually exercised.
+
+Review the pilot by outcome: can the caller identify the right window, understand
+what was and was not observed, consume/delete the result, and recognize a lost
+target without guessing? For CU2, can the caller distinguish a verified effect
+from an unconfirmed input? Record bounded-result size, observation latency,
+startup/idle resource cost and required human setup alongside correctness.
+CU0 proposes numerical acceptance budgets from these measurements and the
+delivery owner's constraints; this design does not invent measured thresholds.
+
+If a pilot cannot complete that journey, reduce the advertised platforms or
+action families before adding a dashboard, service transport or agent loop.
+Model task-success benchmarks become relevant at CU3; local observation must
+already be useful and testable without them.
+
 ### Product role and first-preview acceptance
 
 Planning refinement, 2026-10-26: `minicon-cu` is the MiniCon family's selected

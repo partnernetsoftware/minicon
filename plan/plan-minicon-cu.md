@@ -72,6 +72,7 @@ the checklist here decides whether implementation is ready to start.
 | Native capability inventory | Name the first actual OS/ISA/native runtime, required permission states and synthetic fixture. Record capture, accessibility and input separately as source-only, runtime-observed, unsupported or BLOCKED; no implied parity |
 | Versioned request/result sketch | Walk capability discovery, target selection, one observation and artifact disposal through the same contract; resolve cross-invocation identity, limits and expiration |
 | Acceptance journey | Name CU-01/02 public tests and intended guard-removal failures for the PRD's selection/observation/resize/close/replacement journey |
+| Real-application pilot | Choose one development application/version with prepared scratch content; pair its useful observation journey with the deterministic fixture, and name the actual native court |
 | Packaging estimate | Compare optional companion and any proposed default-binary integration against the delivery owner's actual size/startup/resource budgets; measure rather than infer cost from crate size |
 | Integration ownership | Identify native versus CU versus host-UI hot files, the release integrator and exact qualification scope; use the existing PRD 28 reuse map |
 
@@ -109,6 +110,24 @@ Start with a semantic invoke or text operation if qualified; a capture pass
 does not unlock pointer/key/scroll. CU3 selection additionally resolves the
 actual model route and the PRD 38 modality/disclosure acceptance journey.
 None of these reviews changes the current release's selected requirements.
+
+### Review outcomes
+
+Record one of these outcomes at each candidate review, with the owning evidence
+and remaining work. Version placement is a planning choice, not an automatic
+promotion of a prototype.
+
+| Outcome | Required record | Next action |
+| --- | --- | --- |
+| Select the increment | Complete declared journey on the named target, including the PRD's real-application pilot, bounded resource measurements and failure evidence | Add that exact scope to the selected version plan and delivery artifact policy |
+| Narrow the increment | Complete journey exists for fewer targets, applications or action families than proposed | State the supported subset explicitly and retain other capabilities as planned/unsupported/BLOCKED as appropriate |
+| Move the candidate | Core target identity, useful observation, effect readback or required native court is missing | Keep the missing claim BLOCKED, preserve useful research and continue the already selected product work |
+
+Do not treat CU3's candidate version as a reason to start a second worker or
+model gateway. If H2 is not ready, the qualified external CLI can remain the
+delivery surface for CU1/2. Reconsider a separate repository only through
+PRD 38's consumer/cadence criteria; completing an increment alone does not
+trigger extraction.
 
 ## Preparation and integration
 
