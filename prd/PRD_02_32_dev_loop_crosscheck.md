@@ -1798,6 +1798,20 @@ original assertion and exact source restoration passes. Receipt:
 Native DLL calls, registry reads and Git identity are synthetic throughout;
 only the hosted replay can establish the actual desktop state on either cell.
 
+The read-only [run40258735893](https://github.com/partnernetsoftware/minicon/actions/runs/40258735893)
+at `393d6991781f89dfdc4983ce75bf7c5c6c284f06` terminates with both cells
+SETUP_REQUIRED: station visible, calling and opened desktop UOI_IO both true,
+matching names, no query error and owned input handle closed. The installed
+Pinyin profile is present but the Chinese keyboard layout is not loaded. This
+rules out an inactive calling desktop in these observed fresh images; it does
+not explain the separate ARM64 overlay failure or certify native input. Both
+typing observations retain Language.Basic NotPresent, TextInputManagementService
+Running/Auto, TabletInputService absent and one ctfmon. Earlier x64 physical
+passes with the same reported missing Basic payload still prevent attributing
+the ARM64 issue to that payload without a controlled contrast. No service,
+language, foreground, clipboard or keyboard is changed by this producer.
+Artifacts: `target-six/v0.2.23-provider/input-readiness-ci-393d699/`.
+
 ### Windows full standard workspace checkpoint
 
 [Run40252299740](https://github.com/partnernetsoftware/minicon/actions/runs/40252299740)
