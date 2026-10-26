@@ -605,7 +605,7 @@ mod tests {
         struct RestoreEmpty;
         impl Drop for RestoreEmpty {
             fn drop(&mut self) {
-                let _ = clipboard::clear();
+                let _ = clipboard::clear_with_timeout(std::time::Duration::from_millis(1_500));
             }
         }
         let _restore = RestoreEmpty;
@@ -648,7 +648,8 @@ mod tests {
         let image_format = "image/png";
         clipboard::set_type(image_format, ONE_PIXEL_PNG).expect("write native image format");
         assert_eq!(observe().kind, ClipboardKind::Image);
-        clipboard::clear().expect("restore empty clipboard");
+        clipboard::clear_with_timeout(std::time::Duration::from_millis(1_500))
+            .expect("restore empty clipboard");
         assert_eq!(
             clipboard::available_types().expect("verify native empty clipboard"),
             original

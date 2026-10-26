@@ -260,7 +260,14 @@ pub fn set_file(path: &str) -> ClipboardResult<()> {
 }
 
 pub fn clear() -> ClipboardResult<()> {
-    selected::clipboard::clear(DEFAULT_OPEN_TIMEOUT).map_err(selected::clipboard::map_error)
+    clear_with_timeout(DEFAULT_OPEN_TIMEOUT)
+}
+
+/// Clear native clipboard formats with a caller-selected bounded deadline.
+/// A cold macOS AppKit helper can take longer than the default 500 ms; an
+/// isolated native court may use the adapter's 1500 ms ceiling explicitly.
+pub fn clear_with_timeout(open_timeout: Duration) -> ClipboardResult<()> {
+    selected::clipboard::clear(open_timeout).map_err(selected::clipboard::map_error)
 }
 
 pub fn has_unicode_text() -> bool {

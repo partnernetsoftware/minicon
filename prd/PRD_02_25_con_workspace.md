@@ -120,7 +120,10 @@ late results after a newer generation, renders an unknown image size honestly,
 and gives a narrow window one non-overlapping readout. An opt-in native court
 is now wired to the disposable six-cell development workflow. It refuses a
 nonempty original clipboard before mutation, then checks text/PNG observations
-and exact empty restoration; its actual runtime results remain open. Public
+and exact empty restoration; its first macOS ARM64 run reached restoration but
+the default 500 ms cold AppKit clear timed out. The isolated court now requests
+the adapter's 1500 ms ceiling explicitly; its rerun and other runtime results
+remain open. Public
 GUI pixels and other OS/ISA cells remain open;
 this is a development checkpoint, not CB-TYPE-01..03 completion.
 
