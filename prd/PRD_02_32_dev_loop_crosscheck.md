@@ -17,6 +17,11 @@ dev-loop-crosscheck — agent cross-arch dev/test loop
 ├── Mechanism: GitHub-hosted native per-cell build + test on request
 │   ├── inputs: ref, cells, test_filter, native_auth_context, private_publication, windows_profile_acl_contrast, windows_cookie_lifetime_contrast
 │   ├── core and UI library tests, including each native ISA kernel
+│   ├── [v] Windows x64 full standard workspace / owned-fork checkpoint
+│   │   invariant: actual build.sh test outcome and raw execution counts remain distinct from filtered suites
+│   │   evidence: run40252299740 / full-workspace-ci-527fb5b/full-verification-index.json
+│   │   safe failure: preserve a failed standard gate; independent courts cannot override it
+│   │   dependency: isolated Windows desktop and locked native build; non-goal: ignored opt-ins, other full-platform gates, provider or release qualification
 │   ├── isolated minimal consumer; no workspace feature leakage
 │   ├── [-] provider / worker / HTTP mechanism and real CLI gateway courts (0.2.23)
 │   │   scope: provider/gateway/harness selection includes both default and custom-alias CLI gateway journeys
@@ -1619,3 +1624,68 @@ and
 `target-six/v0.2.23-provider/default-preparation-identity-controls-panels/receipt.json`.
 This replaces the active MinimizeAll path, not its retained failed evidence.
 Actual panel closing and unchanged native input remain unqualified until replay.
+
+The first panel-sequence [run40254080186](https://github.com/partnernetsoftware/minicon/actions/runs/40254080186)
+at `c58224c04612d32e2747a4daa0154e917ee1d504` fails both cells. ARM64 closes
+onboarding, then immediately treats a transient null foreground as its terminal
+no-action observation. Search/Start subsequently obscure GUI activation; the
+original court sends no input. X64 passes its page/header row but a ui-snapshot
+request times out at the unchanged five-second limit during the first editor's
+native IME journey. The later failure snapshot is readable and shows owned
+foreground, Chinese mode and only `n` preedit. This is not full composition and
+is not proven a transient infrastructure fault. Both GUIs exit0 and cleanup/
+language restoration pass. Artifacts:
+`target-six/v0.2.23-provider/native-controls-ci-c58224c/`.
+
+Before treating no foreground as terminal, wait read-only for a non-null
+foreground for at most five seconds on each bounded decision observation.
+This retains the four-decision/three-distinct-close budget and records elapsed
+wait, without another close to the same role or any focus/input request.
+The deterministic late-panel baseline reproduces the first-close early return
+at `c58224c` and fails the original complete-sequence assertion with every native
+call intercepted. For the independent x64 timeout, retain at most16 public CLI
+command-name/phase/process-outcome/duration records and the active editor;
+no arguments, replies or secrets enter that diagnostic. Keep the original
+five-second CLI and full-preedit predicates and add no automatic retry.
+After failure, additionally sample the existing bounded native keyboard-focus
+window facts to distinguish host, renderer and foreign focus. It is a later
+observation, not an atomic sample of the failed request or its presented frame;
+no titles, full paths or window content are collected.
+
+The corrected source passes the original late-panel subject and two deliberate
+faults: restoring the early return fails the original complete-sequence assertion;
+extending the wait to60 seconds fails its original five-second-budget assertion.
+Native responses and time are simulated, not relaxed in the hosted court.
+The existing three entry/twenty panel subjects and nineteen faults also replay
+with exact restoration. Receipts:
+`target-six/v0.2.23-provider/default-preparation-late-panel-controls/receipt.json`,
+`target-six/v0.2.23-provider/default-preparation-refusal-controls-foreground-wait/receipt.json`
+and
+`target-six/v0.2.23-provider/default-preparation-identity-controls-foreground-wait/receipt.json`.
+An initial local clock-shim NameError is retained separately as setup error,
+not an intended assertion failure. The failed native composition/timeout remains
+open until actual matching-source replay, independent of this mechanism proof.
+
+### Windows full standard workspace checkpoint
+
+[Run40252299740](https://github.com/partnernetsoftware/minicon/actions/runs/40252299740)
+at `527fb5b66829f636f9d8696e869220d1fbed06e6` completes successfully on
+Windows x64 with an empty test filter. Its actual `scripts/build.sh test`
+workspace/owned-fork gate has38 libtest summaries:2024 passing execution
+instances,0 failed and87 explicitly ignored. The independent audit recomputes
+those counts from the archived raw standard log and checks the producer's
+command/source/target/counts and the actual terminal step/run outcome. Counts
+include overlap and zero doc-test groups, not distinct tests; ignored cases
+remain unqualified.
+
+All87 ignored execution names/reasons are retained in that audit's
+`ignored-tests.json`, with its digest in the combined index. They are explicit
+missing qualifications for their own selected capabilities, not silent passes.
+
+The same audit verifies the official API ZIP digest and every extracted member,
+all27 selected-suite outcomes,22 shared browser host observations, ten named
+original public/UI subject witnesses and all four Windows shutdown subjects.
+Index: `target-six/v0.2.23-provider/full-workspace-ci-527fb5b/full-verification-index.json`.
+This closes the Windows standard-gate development replay at that source. Actual
+three-account/native/scaling, other full-platform and exact signed/public gates
+retain their own obligations; the separate failed physical run above is retained.

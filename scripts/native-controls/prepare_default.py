@@ -137,6 +137,11 @@ def prepare(report, allow_close, closed_roles):
             return visible_root_hit(target)
 
         hwnd = u.GetForegroundWindow()
+        foreground_start = time.monotonic()
+        while not hwnd and time.monotonic() - foreground_start < 5:
+            time.sleep(0.05)
+            hwnd = u.GetForegroundWindow()
+        report['foreground_wait_ms'] = round((time.monotonic() - foreground_start) * 1000)
         if not hwnd:
             report['action'] = 'none-no-foreground'
             return

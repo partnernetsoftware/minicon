@@ -690,9 +690,20 @@ def main():
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise Blocked("total 240-second court deadline exhausted")
-        result = subprocess.run([str(binary), "cli", "--control", endpoint, *arguments],
-                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                timeout=min(5, remaining), encoding="utf-8", errors="strict")
+        started = time.monotonic()
+        observation = {"command": arguments[0], "phase": phase, "status": "unavailable"}
+        try:
+            result = subprocess.run([str(binary), "cli", "--control", endpoint, *arguments],
+                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                    timeout=min(5, remaining), encoding="utf-8", errors="strict")
+            observation['status'] = 'ok' if result.returncode == 0 else 'rejected'
+        except subprocess.TimeoutExpired:
+            observation['status'] = 'timeout'
+            raise
+        finally:
+            observation['elapsed_ms'] = round((time.monotonic() - started) * 1000)
+            receipt.setdefault('public_cli_observations', []).append(observation)
+            del receipt['public_cli_observations'][:-16]
         if result.returncode:
             raise RuntimeError("public CLI failed: " + arguments[0])
         return json.loads(result.stdout)
@@ -744,6 +755,7 @@ def main():
         native.chord(0x11, 0x56)
 
     def edit_court(name, target):
+        receipt['active_editor'] = name
         native.click(geo()[target])
         wait(lambda: editor(name)["focused"], name + " focus")
         native.ime(False)
@@ -1006,6 +1018,10 @@ def main():
                 (output / "failure.json").write_text(json.dumps(failed_state, ensure_ascii=False, indent=2), encoding="utf-8")
                 receipt["failure_snapshot"] = "failure.json"
                 if native is not None:
+                    focus = GuiThreadInfo(size=c.sizeof(GuiThreadInfo))
+                    receipt['keyboard_focus_after_failure'] = (
+                        native.window_fact(focus.focus)
+                        if native.u.GetGUIThreadInfo(0, c.byref(focus)) else {'observed': False})
                     receipt["owned_window_foreground_at_failure"] = native.u.GetForegroundWindow() == native.hwnd
                     foreground_pid = w.DWORD()
                     native.u.GetWindowThreadProcessId(native.u.GetForegroundWindow(), c.byref(foreground_pid))
