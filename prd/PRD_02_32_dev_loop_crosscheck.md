@@ -1720,6 +1720,48 @@ and `target-six/v0.2.23-provider/default-preparation-metadata-controls/receipt.j
 All DLL/native calls, including the faulted paths, are intercepted; these are
 mechanism proofs, not actual desktop or product-input observations.
 
+The preparation-only [run40257874636](https://github.com/partnernetsoftware/minicon/actions/runs/40257874636)
+at `f25fcc31905ba3a11a43afc979a6b381201d1734` actually skips both WebView setup
+and product build and preserves a nonzero preparation result. Onboarding has
+cloaked_flags0 before its successful close; the vanished window's later query
+returns HRESULT0x80070006 and remains unavailable. Search appears after304ms:
+style-visible, not iconic, cloaked_flags2 (Shell) before and after its ignored
+close. Foreground equality changes to false, but visibility never acknowledges
+close. All handles/DPI and original language profiles restore. Court exit is
+null; no product/input/clipboard or input qualification. Receipts:
+`target-six/v0.2.23-provider/preparation-only-ci-f25fcc3/`.
+
+Next explicit experiment: `hide_arm_cloaked_panels` requires Default preparation
+and excludes contrast. Its separate CLI opt-in permits one asynchronous SW_HIDE
+instead of WM_CLOSE only for the verified Search/Start role with a successful
+DWM query and exact Shell-cloaked value2. Recheck target foreground/process/
+thread/lifetime immediately before the request. Onboarding and other states
+retain the original one-close path; unavailable/other cloaking never unlocks
+hide. Count hides, closes and total interventions separately; retain four
+decisions/three distinct roles and reject reappearing roles before any repeat.
+Success still requires actual gone/style-hidden acknowledgement and changed
+foreground within five seconds. Do not accept cloaking itself as that outcome
+or relax the original physical court. This changes only the disposable VM's
+already cloaked, allowlisted setup panels; no window restoration is claimed.
+Safe failure remains retained refusal plus bounded cleanup; force kill, global
+input, extra retry, unknown windows and owner-desktop execution remain excluded.
+
+The hide experiment has eight local intercepted subjects and seven actual
+faults: remove opt-in, widen role, accept another cloak value, fabricate a value
+on failed query, acknowledge without visibility change, omit the terminal
+observation after hide, and repeat an intervention for a reappearing role.
+Every fault fails its original assertion and exact restore passes. The initial
+role-mutation selector matched two source locations and stopped before making
+that mutation; it is setup failure, not RED. Existing three entry and twenty
+identity/panel subjects with nineteen faults also replay against the restored
+source. Receipts:
+`target-six/v0.2.23-provider/default-preparation-cloaked-hide-controls/receipt.json`,
+`target-six/v0.2.23-provider/default-preparation-refusal-controls-cloaked-hide/receipt.json`
+and `target-six/v0.2.23-provider/default-preparation-identity-controls-cloaked-hide/receipt.json`.
+All actual DLL calls are intercepted, including the deliberately weakened paths.
+Actual hide, subsequent desktop readiness and complete ARM64 native input are
+still open until their hosted observations; no local owner input was performed.
+
 ### Windows full standard workspace checkpoint
 
 [Run40252299740](https://github.com/partnernetsoftware/minicon/actions/runs/40252299740)

@@ -13,7 +13,7 @@ import time
 from run import Blocked, require_hosted
 
 
-def prepare(report, allow_close, closed_roles):
+def prepare(report, allow_close, closed_roles, allow_hide=False):
     require_hosted()  # Must precede all native DLL access.
     if not allow_close:
         raise Blocked('explicit known-setup-window close option required')
@@ -41,6 +41,7 @@ def prepare(report, allow_close, closed_roles):
         (u, 'WindowFromPoint', w.HWND, [w.POINT]),
         (u, 'SetThreadDpiAwarenessContext', w.HANDLE, [w.HANDLE]),
         (u, 'PostMessageW', w.BOOL, [w.HWND, w.UINT, w.WPARAM, w.LPARAM]),
+        (u, 'ShowWindowAsync', w.BOOL, [w.HWND, c.c_int]),
         (k, 'GetCurrentThreadId', w.DWORD, []),
         (k, 'GetCurrentProcessId', w.DWORD, []),
         (k, 'ProcessIdToSessionId', w.BOOL, [w.DWORD, c.POINTER(w.DWORD)]),
@@ -222,10 +223,18 @@ def prepare(report, allow_close, closed_roles):
                 or current_pid.value != pid.value or current_thread != thread
                 or k.WaitForSingleObject(handle, 0) != 0x102):
             raise Blocked('foreground changed before graceful close')
-        if not u.PostMessageW(hwnd, 0x10, 0, 0):
-            raise Blocked('known setup graceful close denied')
-        report['close_requests'] = 1
-        report['action'] = 'one-known-setup-window-WM_CLOSE'
+        if (allow_hide and role in ('search', 'start-menu')
+                and report['presentation_before_close'].get('cloaked_flags') == 2):
+            if not u.ShowWindowAsync(hwnd, 0):  # SW_HIDE; only the verified Shell-cloaked panel
+                raise Blocked('known cloaked setup hide denied')
+            report['hide_requests'] = 1
+            report['action'] = 'one-known-cloaked-panel-SW_HIDE'
+        else:
+            if not u.PostMessageW(hwnd, 0x10, 0, 0):
+                raise Blocked('known setup graceful close denied')
+            report['close_requests'] = 1
+            report['action'] = 'one-known-setup-window-WM_CLOSE'
+        report['intervention_requests'] = 1
         end = time.monotonic() + 5
         while time.monotonic() < end:
             if (not u.IsWindow(hwnd) or not u.IsWindowVisible(hwnd)) and u.GetForegroundWindow() != hwnd:
@@ -248,6 +257,7 @@ def main():
     parser.add_argument('--receipt', type=Path, required=True)
     parser.add_argument('--source-sha', required=True)
     parser.add_argument('--close-known-setup-windows', action='store_true')
+    parser.add_argument('--hide-known-cloaked-panels', action='store_true')
     args = parser.parse_args()
     path = args.receipt.resolve()
     if path.exists():
@@ -255,6 +265,7 @@ def main():
     path.parent.mkdir(parents=True, exist_ok=True)
     report = {'kind': 'hosted-arm64-default-preparation', 'source_sha': args.source_sha,
               'status': 'BLOCKED', 'native_input_qualified': False, 'close_requests': 0,
+              'hide_requests': 0, 'intervention_requests': 0,
               'force_kill': False, 'clipboard_or_input_used': False,
               'setup_windows_restored': False, 'restoration_scope': 'disposable VM only; no window restoration claim'}
     observations = []
@@ -263,10 +274,10 @@ def main():
         if len(args.source_sha) != 40 or any(ch not in '0123456789abcdef' for ch in args.source_sha):
             raise Blocked('exact lowercase source SHA required')
         for _ in range(4):
-            observation = {'close_requests': 0}
+            observation = {'close_requests': 0, 'hide_requests': 0, 'intervention_requests': 0}
             observations.append(observation)
-            prepare(observation, args.close_known_setup_windows, closed_roles)
-            if observation['close_requests'] == 0:
+            prepare(observation, args.close_known_setup_windows, closed_roles, args.hide_known_cloaked_panels)
+            if observation['intervention_requests'] == 0:
                 report['status'] = 'OBSERVED'
                 break
             closed_roles.add(observation['role'])
@@ -278,6 +289,8 @@ def main():
         report['reason'] = 'preparation error: ' + type(error).__name__
     report['observations'] = observations
     report['close_requests'] = sum(item['close_requests'] for item in observations)
+    report['hide_requests'] = sum(item['hide_requests'] for item in observations)
+    report['intervention_requests'] = sum(item['intervention_requests'] for item in observations)
     report['default_desktop_verified'] = bool(observations) and all(item.get('default_desktop_verified', False) for item in observations)
     for field in ('input_desktop_handle_closed', 'process_handle_closed', 'observation_thread_dpi_restored'):
         report[field] = all(item.get(field, True) for item in observations)
