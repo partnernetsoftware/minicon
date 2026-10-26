@@ -50,6 +50,7 @@ dev-loop-crosscheck — agent cross-arch dev/test loop
 │   │       evidence: actual native rows plus desktop create/switch/readback/restore and owned process cleanup
 │   │       safe failure: refuse unavailable desktop/permission; no input to onboarding; restoration failure cannot pass
 │   │       dependency: Windows desktop APIs and the existing contained launch/controls; non-goal: secure-desktop bypass, onboarding changes or local execution
+│   │       └── [-] same-image x64 desktop contrast: preserve both original outcomes and all cleanup; no diagnostic pass substitutes for qualification
 │   ├── [-] explicit Windows fixture ACL comparison → PRD 28.01
 │   │   invariant: diagnostic entry requires exactly win-x86_64 and native_auth_context=false
 │   │   evidence: real workflow-plan consumer and separate diagnostic aggregate
@@ -94,6 +95,8 @@ flowchart LR
     INPUT --> NC[Separate isolated Windows physical controls court]
     NC --> ARM[ARM64 hosted-only allocated interactive desktop / contained controller]
     ARM --> RESTORE[Original input desktop restored / handles closed]
+    NC --> CONTRAST[Explicit x64 same-image default / allocated contrast]
+    CONTRAST -->|both original receipts / no hidden failure| RESTORE
     RESTORE --> L
     NC -->|actual native input and cleanup; retain failures| L
     W -. never .-> R["release / GHCR / tag / version"]
@@ -1308,3 +1311,23 @@ does not imply installed typing payload or a running input framework. Microsoft
 The observer starts/stops no service, installs no component, changes no input
 state and grants no native-input pass. Its finite `input-services.json` is
 retained beside `input-readiness.json` for both actual hosted architectures.
+
+The read-only [run40248399115](https://github.com/partnernetsoftware/minicon/actions/runs/40248399115)
+at `50a85b0` records Basic Chinese typing as `NotPresent` on **both** targets,
+with TextInputManagementService Running/Auto and one Ctfmon process. Actual OS
+builds are26100 on x64 and26200 on ARM64. Since x64 actually composes in the
+physical court, this metadata does not establish missing typing payload as the
+ARM64 cause. The readiness workflow's original setup-required failure remains;
+its service observations are not a native pass. Artifacts:
+`target-six/v0.2.23-provider/input-readiness-ci-50a85b0/`.
+
+Before starting or altering a service, select `desktop_contrast=true` in the
+physical workflow for one x64 job: build once, run the unchanged full court on
+the default desktop, then on an allocated desktop, retaining each original
+outcome even if the first fails. Verify source and measured image before/after
+both arms, retain both receipt hashes, desktop restoration and language cleanup.
+The contrast aggregate is OBSERVED and never native-qualified; any failed arm
+still fails the job. This distinguishes an allocated-desktop limitation from
+an unsupported ARM/OS-version inference without changing product input or
+terminating pre-existing system processes. Normal dispatch retains its two-cell
+matrix and original court semantics.

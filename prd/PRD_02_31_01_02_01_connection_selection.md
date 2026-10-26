@@ -796,3 +796,15 @@ This is a presentation correction in `src/harness_settings_ui.rs`, reusing its
 existing row/geometry/pager and language machinery; no runtime state, grant or
 new native mechanism is introduced. The existing native fields, profile-return,
 cost-caption and public Settings journeys must replay after integration.
+
+The integrated `9881b24` x64 physical replay
+[run40247804581](https://github.com/partnernetsoftware/minicon/actions/runs/40247804581)
+passes its complete browser/Harness input and cleanup scope. The field and
+key-status PNGs were visually reviewed: choose-account/model guidance, applied
+summary, separate draft meaning, Save draft/Retry saving and both cost/automatic-
+action disclosure lines are complete and readable. No internal validation enum
+or key bytes appears in those views. Its compound model-choice row still clips
+long combined alias/model/status text; this is not full arbitrary-label or
+narrow-layout qualification. Local images and receipts:
+`target-six/v0.2.23-provider/native-controls-ci-9881b24/`. This is English at
+the observed1000-permille viewport, not other-language/scale or final bytes.
