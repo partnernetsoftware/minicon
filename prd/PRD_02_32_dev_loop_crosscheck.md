@@ -1966,6 +1966,37 @@ aggregate; it does not resolve ARM64 physical input, real accounts or signatures
 Subsequent test-scheduling/archive changes have their own scope under PRD33;
 do not repeat this broad build merely for the documentation or schedule edit.
 
+### Account actions native integration (2026-10-26)
+
+[Run40287280947](https://github.com/partnernetsoftware/minicon/actions/runs/40287280947)
+checks product source `7eb16231e4e80f08e994bcff182ca717c52b5886` after the
+account-removal review and account-action menu joins. It selects Linux x64,
+Windows ARM64 and macOS ARM64 with the existing `harness` filter; local Windows
+x64 requirement/guard evidence stays with the
+[experience owner](PRD_02_31_01_01_harness_experience.md#account-action-menu-2026-10-26).
+This is one three-target development checkpoint, not a six-cell release gate.
+
+All three jobs and the overall run finish successfully. The downloaded
+receipts contain31 Linux x64,29 Windows ARM64 and27 macOS ARM64 selected-suite
+outcomes respectively, all successful.
+Each target actually executes67 Settings component cases with zero failed or
+ignored. The raw job logs independently contain both new component subjects
+and the public menu/removal journey, alongside the panel/navigation/reflow
+witnesses. Linux/Windows canonical browser receipts contain22 passing host
+checks each; macOS contains23. The macOS owned-window receipt also reports
+PASS at this source. This does not qualify physical keyboard/IME input.
+
+Receipts, raw logs, hashes, stage timings and the explicitly scoped audit:
+`target-six/v0.2.23-provider/harness-ci-7eb1623/`.
+Linux selected suites take231s and Windows ARM selected suites237s at step
+level (the Windows per-suite sum is233s). Those times include compilation and
+the existing broader suite selection; they are not daily-smoke costs. The
+completed macOS browser and window-placement steps take249s and213s. These
+measurements inform later selection work under PRD33 without removing a
+currently selected gate. Real accounts, physical Pinyin, all-language/scale
+coverage, full-workspace/final-source and signed/public qualification remain
+separate obligations.
+
 ### Windows full standard workspace checkpoint
 
 [Run40252299740](https://github.com/partnernetsoftware/minicon/actions/runs/40252299740)

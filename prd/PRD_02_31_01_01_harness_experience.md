@@ -643,6 +643,8 @@ subjects, plus fmt and strict all-target Clippy. The English menu screenshot
 was visually inspected. This establishes Windows x64 synthetic interaction;
 native platform/scale/language coverage, per-account live activity observation,
 real-provider reconnect and the full experience acceptance remain open.
+The subsequent three-target native join and its actual named executions are
+owned by [PRD32](PRD_02_32_dev_loop_crosscheck.md#account-actions-native-integration-2026-10-26).
 
 ### Account removal review (2026-10-26)
 
