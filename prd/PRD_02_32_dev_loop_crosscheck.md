@@ -8,6 +8,17 @@ recurring dev-loop need: an agent session (typically Linux-only, with no
 osx/win host of its own) that must develop a cross-arch fix and prove it
 against a real runtime, using nothing beyond default GitHub Actions access.
 
+## Exact-source dispatch
+
+When selecting a commit through the workflow's `ref` input, resolve it with
+`git rev-parse HEAD` and pass the full 40-character SHA. Keep the dispatch
+workflow ref (`--ref main`) distinct from the source input (`-f ref=<full SHA>`).
+The checkout action interprets an abbreviated SHA as a branch/tag pattern.
+Observed 2026-10-26: run `40293341702` passed `a4f2e53`; all three selected
+cells failed checkout before compilation. Retain that failed run as dispatch
+evidence, not a product-test failure or pass. The same-source corrected dispatch
+is run `40293546902`; its product result must be assessed independently.
+
 ## Map
 
 ```text

@@ -252,6 +252,8 @@ and [focused form sections](../prd/PRD_02_31_01_01_harness_experience.md#focused
 and then [cached pool/account presentation](../prd/PRD_02_31_01_01_harness_experience.md#cached-pool-status-and-account-readings-2026-10-26)
 and [account removal review](../prd/PRD_02_31_01_01_harness_experience.md#account-removal-review-2026-10-26)
 and [account action menu](../prd/PRD_02_31_01_01_harness_experience.md#account-action-menu-2026-10-26)
+and [sampled account activity](../prd/PRD_02_31_01_02_provider_pool.md#sampled-account-activity-2026-10-26)
+and [account save feedback](../prd/PRD_02_31_01_01_harness_experience.md#account-save-feedback-2026-10-26)
 in the existing Settings form. Their scoped evidence and remaining presentation
 work live with that owner. Use daily smoke plus requirement-selected subjects; do not
 repeat a whole native matrix for this slice before the integration checkpoint.
