@@ -5,6 +5,7 @@
 #
 # Usage: scripts/test-tier.sh <tier> [filter]
 #        scripts/test-tier.sh --list|--plan|--profile NAME [--phase PHASE]
+#        scripts/test-tier.sh smoke [--plan] (also the no-argument default)
 #   l0  lint            workspace/all-targets clippy -D warnings (no tests run)
 #   l1  focused units   root/core/UI units + minicon_alignment + reuse consumer
 #                       (not a claim of pure/no-process coverage)
@@ -27,6 +28,12 @@ set -euo pipefail
 
 repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repo_root"
+
+# The owner-selected daily default is the small smoke profile; broad tiers are explicit.
+if [[ $# -eq 0 || "${1:-}" == smoke ]]; then
+  if [[ $# -gt 0 ]]; then shift; fi
+  set -- --profile smoke "$@"
+fi
 
 if [[ "${1:-}" == --* ]]; then
   for python_bin in python3 python py; do

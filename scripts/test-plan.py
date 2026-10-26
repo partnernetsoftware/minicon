@@ -16,6 +16,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 
@@ -108,10 +109,10 @@ def plan(inventory: dict, profiles: list[str], phase: str, reasons: dict[str, li
     }
 
 
-def run_command(command: list[str]) -> str:
+def run_command(command: list[str], env: dict[str, str] | None = None) -> str:
     print("+ " + " ".join(command), flush=True)
     completed = subprocess.run(
-        command, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        command, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding="utf-8", errors="replace", check=False,
     )
     if completed.returncode:
@@ -122,29 +123,35 @@ def run_command(command: list[str]) -> str:
 
 def execute(inventory_plan: dict) -> None:
     bash = choose_bash()
-    for task in inventory_plan["tasks"]:
-        started = time.monotonic()
-        if task["kind"] == "cargo-test":
-            base = [bash, "scripts/build.sh", "test-suite", *task["args"]]
-            listing = run_command([*base, "--", "--list"])
-            discovered = [line for line in listing.splitlines() if line.endswith(": test")]
-            if not discovered:
-                raise RuntimeError(f"{task['name']}: no tests discovered; refusing an empty pass")
-            output = run_command(base)
-            match = re.search(r"test result: ok\. (\d+) passed; 0 failed; (\d+) ignored;", output)
-            if not match or int(match.group(1)) == 0:
-                raise RuntimeError(f"{task['name']}: no executed passing tests")
-            observed = int(match.group(1))
-            ignored = int(match.group(2))
-            if observed + ignored != len(discovered):
-                raise RuntimeError(
-                    f"{task['name']}: listed {len(discovered)} tests but observed {observed} passed and {ignored} ignored"
-                )
-            print(f"PASS {task['name']}: {observed} passed, {ignored} ignored, {time.monotonic() - started:.1f}s")
-        else:
-            command = [bash, task["path"], *task.get("args", [])]
-            run_command(command)
-            print(f"PASS {task['name']}: {time.monotonic() - started:.1f}s")
+    with tempfile.TemporaryDirectory(prefix="minicon-test-plan-") as temporary:
+        for task in inventory_plan["tasks"]:
+            environment = None
+            if task.get("isolated_config"):
+                environment = dict(os.environ)
+                environment["MINICON_CONFIG_DIR"] = str(Path(temporary) / task["name"] / "config")
+                environment["MINICON_BROWSER_PROFILE_ROOT"] = str(Path(temporary) / task["name"] / "browser")
+            started = time.monotonic()
+            if task["kind"] == "cargo-test":
+                base = [bash, "scripts/build.sh", "test-suite", *task["args"]]
+                listing = run_command([*base, *([] if "--" in task["args"] else ["--"]), "--list"], env=environment)
+                discovered = [line for line in listing.splitlines() if line.endswith(": test")]
+                if not discovered:
+                    raise RuntimeError(f"{task['name']}: no tests discovered; refusing an empty pass")
+                output = run_command(base, env=environment)
+                match = re.search(r"test result: ok\. (\d+) passed; 0 failed; (\d+) ignored;", output)
+                if not match or int(match.group(1)) == 0:
+                    raise RuntimeError(f"{task['name']}: no executed passing tests")
+                observed = int(match.group(1))
+                ignored = int(match.group(2))
+                if observed + ignored != len(discovered):
+                    raise RuntimeError(
+                        f"{task['name']}: listed {len(discovered)} tests but observed {observed} passed and {ignored} ignored"
+                    )
+                print(f"PASS {task['name']}: {observed} passed, {ignored} ignored, {time.monotonic() - started:.1f}s")
+            else:
+                command = [bash, task["path"], *task.get("args", [])]
+                run_command(command, env=environment)
+                print(f"PASS {task['name']}: {time.monotonic() - started:.1f}s")
 
 
 def main() -> int:

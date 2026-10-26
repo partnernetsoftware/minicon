@@ -54,7 +54,19 @@ def main():
                 assert fork == ["test", "--locked", "--manifest-path", f"third_party/{name}/Cargo.toml",
                                 "--config", lint_config, "--lib", *forwarded], fork
             assert "build.rustflags=[\"-D\",\"dead_code\",\"-D\",\"unused_variables\",\"-D\",\"unused_must_use\"]" in workspace
-        print("build feature forwarding: 3 black-box cases passed")
+        log.unlink()
+        selected = ["--test", "minicon_control", "smoke_case", "--", "--exact"]
+        result = subprocess.run([bash, str(script), "test-suite", *selected], cwd=fixture,
+                                env=env, capture_output=True, text=True, timeout=30)
+        assert result.returncode == 0, result.stderr
+        calls = [part.strip().splitlines()[:-1] for part in log.read_text().split("CALL\n")[1:]]
+        assert calls == [["test", "--locked", "--config", lint_config, *selected]], calls
+        log.unlink()
+        result = subprocess.run([bash, str(script), "definitely-not-a-mode"], cwd=fixture,
+                                env=env, capture_output=True, text=True, timeout=30)
+        assert result.returncode == 2 and "usage: scripts/build.sh" in result.stderr, result
+        assert not log.exists(), "an invalid mode must not invoke Cargo"
+        print("build feature forwarding: 5 isolated black-box cases passed")
     finally:
         # Explicit owned files/directories only; never recursively remove paths.
         for path in [fixture / "calls.log", script, python_stub, cargo_stub]:

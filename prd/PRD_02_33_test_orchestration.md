@@ -57,6 +57,82 @@ flowchart TD
 
 ## Contracts
 
+### Owner-selected development loop (2026-10-26)
+
+The owner requests a small daily smoke set plus tests chosen for the current
+requirement, and archival of redundant or ineffective checks. This changes the
+default development schedule now, not the selected product's required behavior.
+
+```text
+Outcome: get useful feedback before spending another full build/court round
+├── [v] SMOKE — a few real product entry/session/worker journeys
+│   invariant: exact discovered tests execute once; no provider login or physical desktop input
+│   evidence: named cases, actual counts and elapsed times from the existing planner
+│   safe failure: zero tests or unsupported required environment fails its claim
+│   dependency: current native product and isolated fixtures; non-goal: broad GUI/browser/IME qualification
+├── [-] FEATURE — explicit requirement-owned profile or exact test selection
+│   invariant: the changed behavior and its failure/recovery assertion own the selection
+│   evidence: real selected journey and a meaningful counterexample for its guard
+│   safe failure: retain uncovered/unknown dependencies in the report
+│   dependency: capability PRD and known test names; non-goal: automatically rerunning every suite
+└── [v] RETIRE — first reviewed redundant/weak checks archived
+    invariant: source/reason and replacement remain reviewable; required behavior is retained
+    evidence: archive inventory, surviving runtime checks and updated active test count
+    safe failure: keep an unreviewed check; never delete a failing assertion to report green
+    dependency: inspect what each test actually proves; non-goal: deleting useful regressions by age/size alone
+```
+
+```mermaid
+flowchart LR
+    CHANGE[Requirement / changed mechanism] --> SMOKE[Small explicit smoke]
+    CHANGE --> FEATURE[Named feature tests]
+    SMOKE & FEATURE --> REVIEW[Code and result review]
+    REVIEW --> NEXT[Continue feature work]
+    REVIEW --> JOIN[Selected integration / release checkpoint]
+    JOIN --> RELEASE[Required native / exact-artifact release gates]
+    WEAK[Reviewed weak or duplicate check] --> ARCHIVE[Preserved source and replacement]
+    ARCHIVE --> FEATURE
+    DIAG[Optional diagnostic] -. explicit unresolved question only .-> FEATURE
+```
+
+Daily invocation is `scripts/test-tier.sh smoke`, followed by an explicit
+profile or `scripts/build.sh test-suite ... CASE -- --exact` for the requirement.
+The smoke inventory lives only in `scripts/test-profiles.json`. It reuses
+existing public journeys; it is not a new framework or an all-target suite.
+Run ordinary fixtures with fresh configuration/browser-profile roots. Batch
+related assertions into the same owned journey and reuse matching build output.
+Do not rerun full gates, all OS/ISA cells or guard-mutation batches after every
+small edit. Select a native diagnostic only for a concrete unresolved question,
+record its result and stop repeating an unchanged failed experiment. Integration
+and release run their selected obligations at a deliberate source checkpoint.
+
+First archival review: the source-text lint/doc spelling check duplicates the
+actual build-wrapper argument court and does not prove compiler behavior.
+The "documented modes" test only checks an invalid mode and can return a pass
+without Bash; it also invokes real build cleanup from an alignment test.
+Preserve both original tests under `tests/archive/`; the existing isolated
+build-wrapper selftest owns selected-suite lint forwarding and invalid-mode
+refusal. Product wire/queue, lifecycle, actual regressions and real native
+failures retain their required scopes. Archival reduces the active alignment
+set by two; runtime replacement belongs to the scripts profile, not every edit.
+
+Evidence for this first checkpoint: the Windows smoke executes exactly three
+discovered cases,0 ignored, in3.7/4.0/6.1 seconds (13.8 seconds summed task time
+with the existing build cache). Receipt:
+`target-six/v0.2.23-provider/test-loop-smoke/receipt.json`. It is development
+feedback, not a cold-build budget, all-platform GUI claim or release receipt.
+The active alignment suite now executes16 cases instead of18, all passing.
+The wrapper selftest executes five isolated cases; removing selected-suite lint
+forwarding or accepting an invalid mode makes its original assertions fail,
+and exact source restoration passes. Receipt:
+`target-six/v0.2.23-provider/test-loop-wrapper-controls/receipt.json`.
+The planner's actual execution selftest also rejects inherited owner profile
+roots and an extra libtest argument boundary; both deliberate faults fail and
+restore. Receipt:
+`target-six/v0.2.23-provider/test-loop-selection-controls/receipt.json`.
+Other unreviewed tests remain active. This checkpoint does not claim a completed
+repository-wide test-quality audit or automatic changed-path selection.
+
 ### Implementation ownership (partial)
 
 | Component | Responsibility | Boundary |

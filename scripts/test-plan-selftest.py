@@ -54,4 +54,24 @@ with mock.patch.object(planner, "choose_bash", return_value="bash"), mock.patch.
 ):
     planner.execute({"tasks": [{"name": "one-ignored", "kind": "cargo-test", "args": []}]})
 
+calls = []
+original_config = planner.os.environ.get("MINICON_CONFIG_DIR")
+original_browser = planner.os.environ.get("MINICON_BROWSER_PROFILE_ROOT")
+
+
+def exact_isolated_command(command, env=None):
+    assert command.count("--") == 1 and "--exact" in command[command.index("--") + 1:], "exact selector must have one libtest boundary"
+    assert env is not None and env["MINICON_CONFIG_DIR"] != "owner-config" and env["MINICON_BROWSER_PROFILE_ROOT"] != "owner-browser", "smoke must not inherit owner profiles"
+    calls.append((command, dict(env)))
+    return "one: test\n" if "--list" in command else "test result: ok. 1 passed; 0 failed; 0 ignored;\n"
+
+
+with mock.patch.dict(planner.os.environ, {"MINICON_CONFIG_DIR": "owner-config", "MINICON_BROWSER_PROFILE_ROOT": "owner-browser"}), mock.patch.object(
+    planner, "choose_bash", return_value="bash"
+), mock.patch.object(planner, "run_command", side_effect=exact_isolated_command):
+    planner.execute({"tasks": [{"name": "isolated-exact", "kind": "cargo-test", "isolated_config": True,
+                               "args": ["--test", "example", "one", "--", "--exact"]}]})
+assert len(calls) == 2 and "--list" in calls[0][0] and "--list" not in calls[1][0], "discover and execute exactly once"
+assert planner.os.environ.get("MINICON_CONFIG_DIR") == original_config and planner.os.environ.get("MINICON_BROWSER_PROFILE_ROOT") == original_browser, "fixture environment must restore"
+
 print("test-plan selftest: PASS")

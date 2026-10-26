@@ -1898,6 +1898,21 @@ files: product-local control reply/perf/dispatch/main plus the native fixture.
 Native backend ownership, shared OS/ISA APIs and features are unchanged.
 No new provider or window authority is added; unknown latency remains open.
 
+The first timed [run40260764521](https://github.com/partnernetsoftware/minicon/actions/runs/40260764521)
+at `649253f776902618966108f3c251c5757d43259f` passes all five x64 physical
+rows. Its completed page factory is sampled once at2653619us, with0 failures;
+133 dispatched request samples have a maximum wait2560422us. This successful
+run supplies measurements, not causality or closure for the older timeouts.
+ARM64 remains BLOCKED at the original foreign hit before input:0 completed
+page factories and three request samples/max64516us. A zero factory count does
+not mean a measured zero-cost factory. Receipts:
+`target-six/v0.2.23-provider/native-controls-ci-649253f/`.
+The already-dispatched six-cell build [run40260760263](https://github.com/partnernetsoftware/minicon/actions/runs/40260760263)
+also completes successfully at that source, including the six-identity
+aggregate; it does not resolve ARM64 physical input, real accounts or signatures.
+Subsequent test-scheduling/archive changes have their own scope under PRD33;
+do not repeat this broad build merely for the documentation or schedule edit.
+
 ### Windows full standard workspace checkpoint
 
 [Run40252299740](https://github.com/partnernetsoftware/minicon/actions/runs/40252299740)

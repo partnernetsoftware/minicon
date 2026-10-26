@@ -107,12 +107,18 @@ under `~/.claude/skills/` is invisible to every future session — register it.
 From the repository root:
 
 ```bash
+./scripts/test-tier.sh smoke   # daily development default; scoped real journeys
 ./scripts/build.sh dev
 ./scripts/build.sh release
 ./scripts/build.sh test
 ./scripts/selftest.sh          # the checks that guard the scripts, not the product
 ./scripts/six-cell-qualify.sh
 ```
+
+The daily loop is smoke plus the current requirement's named profile/exact
+tests. Test selection, reviewed archives and integration/release scheduling are
+owned by `prd/PRD_02_33_test_orchestration.md`; consult it before dispatching a
+broad suite or repeating a native diagnostic.
 
 Run `six-cell` **before** pushing, not after CI fails. It is the only thing that
 cross-compiles, and 0.1.20 lost three build rounds to changes that a macOS build

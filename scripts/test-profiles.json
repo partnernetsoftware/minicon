@@ -1,42 +1,67 @@
 {
   "schema": 1,
-  "phases": ["edit", "integration", "release"],
+  "phases": [
+    "edit",
+    "integration",
+    "release"
+  ],
   "tasks": {
     "control-units": {
       "phase": "edit",
       "owner": "PRD 02.26 control request lifetime",
       "kind": "cargo-test",
-      "args": ["--bin", "minicon", "control_pending::tests"]
+      "args": [
+        "--bin",
+        "minicon",
+        "control_pending::tests"
+      ]
     },
     "control-cli": {
       "phase": "integration",
       "owner": "PRD 02.26 native control endpoint",
       "kind": "cargo-test",
-      "args": ["--test", "minicon_control"]
+      "args": [
+        "--test",
+        "minicon_control"
+      ]
     },
     "gui-blackbox": {
       "phase": "integration",
       "owner": "PRD 02.24 GUI frame and control journey",
       "kind": "cargo-test",
-      "args": ["--test", "minicon_blackbox"]
+      "args": [
+        "--test",
+        "minicon_blackbox"
+      ]
     },
     "terminal-paint-units": {
       "phase": "edit",
       "owner": "PRD 02.24 terminal raster",
       "kind": "cargo-test",
-      "args": ["--bin", "minicon", "terminal_paint::tests"]
+      "args": [
+        "--bin",
+        "minicon",
+        "terminal_paint::tests"
+      ]
     },
     "console-agent": {
       "phase": "integration",
       "owner": "PRD 02.24 classic Windows backend",
       "kind": "cargo-test",
-      "args": ["--test", "minicon_console_agent"]
+      "args": [
+        "--test",
+        "minicon_console_agent"
+      ]
     },
     "docs-links": {
       "phase": "edit",
       "owner": "PRD index and public documentation links",
       "kind": "cargo-test",
-      "args": ["--test", "minicon_alignment", "documentation_links_resolve"]
+      "args": [
+        "--test",
+        "minicon_alignment",
+        "documentation_links_resolve"
+      ]
     },
     "reuse-consumer": {
       "phase": "edit",
@@ -55,27 +80,166 @@
       "owner": "PRD 02.33 canonical complete local gate",
       "kind": "script",
       "path": "scripts/test-tier.sh",
-      "args": ["l3"]
+      "args": [
+        "l3"
+      ]
+    },
+    "smoke-cli": {
+      "phase": "edit",
+      "owner": "PRD 02.33 smoke: offline public CLI",
+      "kind": "cargo-test",
+      "args": [
+        "--test",
+        "minicon_blackbox",
+        "version_and_help_are_synchronous_and_never_open_a_window",
+        "--",
+        "--exact"
+      ],
+      "isolated_config": true
+    },
+    "smoke-session": {
+      "phase": "edit",
+      "owner": "PRD 02.33 smoke: owned session and public control",
+      "kind": "cargo-test",
+      "args": [
+        "--test",
+        "minicon_control",
+        "a_headless_start_runs_a_session_and_can_grow_a_window_later",
+        "--",
+        "--exact"
+      ],
+      "isolated_config": true
+    },
+    "smoke-worker": {
+      "phase": "edit",
+      "owner": "PRD 02.33 smoke: file/exec through controlled model peer",
+      "kind": "cargo-test",
+      "args": [
+        "--test",
+        "minicon_harness",
+        "gateway_worker_runs_its_own_tools_and_refuses_changed_resume_binding",
+        "--",
+        "--exact"
+      ],
+      "isolated_config": true
+    },
+    "control-wire-units": {
+      "phase": "edit",
+      "owner": "PRD 02.26 wire and queue behavior",
+      "kind": "cargo-test",
+      "args": [
+        "--bin",
+        "minicon",
+        "control::"
+      ]
+    },
+    "perf-units": {
+      "phase": "edit",
+      "owner": "PRD 02.24 performance ledger",
+      "kind": "cargo-test",
+      "args": [
+        "--bin",
+        "minicon",
+        "perf::"
+      ]
     }
   },
   "profiles": {
-    "control": ["control-units", "control-cli", "gui-blackbox"],
-    "terminal": ["terminal-paint-units", "console-agent", "gui-blackbox"],
-    "docs": ["docs-links"],
-    "reuse": ["reuse-consumer"],
-    "scripts": ["script-selftests"],
-    "full": ["full-local"]
+    "control": [
+      "control-units",
+      "control-cli",
+      "gui-blackbox"
+    ],
+    "terminal": [
+      "terminal-paint-units",
+      "console-agent",
+      "gui-blackbox"
+    ],
+    "docs": [
+      "docs-links"
+    ],
+    "reuse": [
+      "reuse-consumer"
+    ],
+    "scripts": [
+      "script-selftests"
+    ],
+    "full": [
+      "full-local"
+    ],
+    "smoke": [
+      "smoke-cli",
+      "smoke-session",
+      "smoke-worker"
+    ],
+    "performance": [
+      "perf-units"
+    ],
+    "control-wire": [
+      "control-wire-units"
+    ]
   },
   "changed_path_rules": [
-    {"glob": "src/control_pending.rs", "profiles": ["control"]},
-    {"glob": "src/control_dispatch.rs", "profiles": ["control"]},
-    {"glob": "src/terminal_paint.rs", "profiles": ["terminal"]},
-    {"glob": "docs/control-cli.html", "profiles": ["docs", "control"]},
-    {"glob": "docs/**", "profiles": ["docs"]},
-    {"glob": "prd/**", "profiles": ["docs"]},
-    {"glob": "plan/**", "profiles": ["docs"]},
-    {"glob": "scripts/**", "profiles": ["full"]},
-    {"glob": "Cargo.toml", "profiles": ["full"]},
-    {"glob": "Cargo.lock", "profiles": ["full"]}
+    {
+      "glob": "src/control_pending.rs",
+      "profiles": [
+        "control"
+      ]
+    },
+    {
+      "glob": "src/control_dispatch.rs",
+      "profiles": [
+        "control"
+      ]
+    },
+    {
+      "glob": "src/terminal_paint.rs",
+      "profiles": [
+        "terminal"
+      ]
+    },
+    {
+      "glob": "docs/control-cli.html",
+      "profiles": [
+        "docs",
+        "control"
+      ]
+    },
+    {
+      "glob": "docs/**",
+      "profiles": [
+        "docs"
+      ]
+    },
+    {
+      "glob": "prd/**",
+      "profiles": [
+        "docs"
+      ]
+    },
+    {
+      "glob": "plan/**",
+      "profiles": [
+        "docs"
+      ]
+    },
+    {
+      "glob": "scripts/**",
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "glob": "Cargo.toml",
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "glob": "Cargo.lock",
+      "profiles": [
+        "full"
+      ]
+    }
   ]
 }
