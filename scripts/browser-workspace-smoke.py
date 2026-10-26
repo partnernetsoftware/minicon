@@ -636,6 +636,22 @@ print(String(decoding: raw, as: UTF8.self))
 
         def click_harness(row_id: str, column: int):
             # Navigate only published rows/targets; never duplicate row order.
+            geometry = cli("ui-snapshot")["geometry"]
+            state = geometry["harness_settings"]
+            destination = {
+                "port": ("service", "overview_service"),
+                "model_input": ("clients", "overview_allocations"),
+                "key_actions": ("clients", "overview_allocations"),
+            }.get(row_id)
+            if destination and state["section"] != destination[0]:
+                if state["navigation_mode"] == "selector" and not state["section_picker_open"]:
+                    click_rectangle(state["section_selector"], geometry, "Harness section selector")
+                geometry = cli("ui-snapshot")["geometry"]
+                navigation = next(n for n in geometry["harness_settings"]["navigation"]
+                                  if n["id"] == destination[1])
+                assert navigation["visible"], "Harness navigation must be visible before input"
+                click_rectangle(navigation["rect"], geometry, destination[1])
+                assert harness()["section"] == destination[0], "Harness section did not change"
             for _ in range(80):
                 geometry = cli("ui-snapshot")["geometry"]
                 state = geometry["harness_settings"]
@@ -902,7 +918,7 @@ print(String(decoding: raw, as: UTF8.self))
         links = []
         for index, section, card_id, row_id in ((0, "Overview", "service", "local_api"),
                                                 (1, "Accounts", "accounts", "accounts"),
-                                                (2, "Clients", "connection", "model"),
+                                                (2, "Clients", "client:default", "model"),
                                                 (3, "Usage", "monitoring", "monitoring")):
             _, geometry, workspace = state()
             click_rectangle(workspace["navigation"][index], geometry, section)
@@ -927,13 +943,15 @@ print(String(decoding: raw, as: UTF8.self))
                           "H0 Settings metadata", 12)
             settings = opened["geometry"]["harness_settings"]
             assert opened["settings_open"] and opened["geometry"]["settings_section"] == "harness"
-            assert any(row["id"] == row_id for row in settings["rows"]), f"H0 deep link missed {row_id}"
-            if card_id in ("connection", "monitoring"):
-                # A late section marker may clamp at the last full page,
-                # but it must never be the default Service position.
-                assert settings["scroll"] > 0, f"H0 {card_id} deep link stayed at Service"
-            else:
-                assert settings["rows"][0]["id"] == row_id, f"H0 deep link did not position {row_id}"
+            target = next((row for row in settings["rows"] if row["id"] == row_id), None)
+            assert target is not None and target["rect"]["height"] > 0, f"H0 deep link missed {row_id}"
+            expected_section = {"service": "service", "accounts": "accounts",
+                                "client:default": "clients", "monitoring": "monitoring"}[card_id]
+            assert settings["section"] == expected_section, f"H0 deep link opened the wrong form for {card_id}"
+            if card_id == "client:default":
+                assert settings["connection_profile"] == "default", "H0 lost the exact selected client"
+            # A selected form can fit completely, or clamp at its last full page.
+            # Visibility and exact section identity own the contract, not top-row position.
             assert settings["listener"] == "stopped" and settings["actual_port"] is None and not settings["login_active"]
             assert settings["accounts"] == [] and not settings["local_key_exists"] and settings["selected_account"] is None
             if index == 0:

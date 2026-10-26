@@ -135,6 +135,40 @@ publishes anywhere, and never needs `packages: write` or `contents: write`.
 Compiling here is for development feedback only, never a substitute for the
 exact-source qualification `prd/PRD_02_27_con_delivery.md` owns.
 
+## Harness presentation integration checkpoint (2026-10-26)
+
+The deliberate six-cell Harness-filtered integration run
+[40275973697](https://github.com/partnernetsoftware/minicon/actions/runs/40275973697)
+checks `ca4923b002aeeee291a32397825a0b59effd6145`. All six native product/build
+steps complete, but every cell fails the mandatory browser workspace court
+before the later selected suites. Do not report this run as Harness acceptance.
+Its retained public failure snapshots show Accounts selected while the fixture
+searches that form for `model_input`; the canonical browser fixture had not
+joined the persistent form navigation. Local replay after that correction also
+exposes stale H0 assumptions about first-row position and the generic connection
+card, now replaced by a named client card. The product contract remains exact
+form/entity selection and visible reachable controls, with normal pager clamp.
+
+The repair stays in `scripts/browser-workspace-smoke.py`: use published section
+navigation, require the intended selected form and visible target, and target
+the actual `client:default` card in a fresh profile. Do not increase deadlines,
+skip host/H0 journeys, or change native input guards to accommodate the fixture.
+Original failed receipts and the local replays are retained under
+`target-six/v0.2.23-provider/harness-ci-ca4923b/`. Their outcomes remain separate
+from a subsequent changed-source integration result. This court has no real
+provider grant, physical-input or release-artifact authority.
+
+The repaired canonical browser script completes the original nonphysical
+Windows public journey with an isolated no-activate host and fresh synthetic
+profiles. Receipt:
+`harness-ci-ca4923b/local-fixture-integrated/receipt.json` below the same evidence
+root. Browser navigation/proxy recovery, independent drafts, failed-save retry,
+narrow Harness controls, exact H0 form/client handoff and retained live-document
+return all pass. The two earlier local failures are retained separately; their
+snapshots show the Service form entirely visible at scroll0 and the actual
+`client:default` card. This repairs the consumers, not the product or its
+asserted behavior; the six-cell changed-fixture result remains pending.
+
 ## Mechanism: `.github/workflows/dev-loop-crosscheck.yml`
 
 Push a fix to `main`, dispatch this workflow, and each requested cell builds
