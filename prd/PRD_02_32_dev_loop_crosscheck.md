@@ -1847,6 +1847,45 @@ These do not prove desktop readiness or exercise real input. Python/YAML and
 the workflow's actual extracted PowerShell blocks parse; hosted execution
 remains the next evidence for presentation metadata and original court outcomes.
 
+The original physical [run40259237174](https://github.com/partnernetsoftware/minicon/actions/runs/40259237174)
+at `9270012595cdc239dd72676fde095d93374c67b1` is terminal failure on both
+cells. ARM64 closes onboarding once, then records the verified Shell-cloaked
+Search panel without another close. Setup is OBSERVED and the original product
+court launches. At activation failure, both sampled Search foreground and
+Start-menu hit are style-visible with successful DWM cloak value0; the owned
+GUI also has value0. The Start-menu hit remains foreign after the one owned
+topmost presentation. Thus the actual obstruction is not explained by treating
+this later hit as an already cloaked ghost. No ARM64 input is sent and no row
+completes. Preparation observations and later native samples are distinct
+times; Search changing2 ->0 is observed, not attributed to a specific cause.
+
+X64 also completes no row: a setup-phase list-tabs request exceeds the
+unchanged five-second fixture deadline (5015ms); the later ui-snapshot succeeds
+in2281ms with owned GUI foreground and native keyboard focus. This repeats a
+public responsiveness symptom after the earlier c58224c editor timeout, but at
+a different phase. Do not label either transient or solved by a neighboring
+pass. The owned client-DC failure image shows the terminal/New menu while the
+later public failure state names Browser@2/address focus. These sequential
+samples do not prove an atomic frame mismatch or native page readiness; the
+failure image is not a successful browser-pixel qualification.
+
+Both products exit0 and restore clipboard/presentation/TSF ownership, remove
+synthetic profiles and join the page thread; both language lists restore.
+Official ZIP digests, every extracted member and exact native script/source
+binding are independently checked in
+`target-six/v0.2.23-provider/native-controls-ci-9270012/verification-index.json`.
+That audit PASS certifies archive integrity and retained failures, not input.
+
+Next responsiveness investigation must identify the actual blocked interval.
+Source inspection finds synchronous NativePageHost construction in
+ConApp::ensure_native_page; that is a candidate, not measured causality for
+either timeout. The product's control GUI_RESPONSE_TIMEOUT is125 seconds;
+five seconds here is this physical fixture's per-command deadline, not an
+established product-wide response SLA. Retain both values and the original
+court predicates. Measure creation and dispatch/wake timing before changing
+thread ownership or declaring a startup/readiness fault; no timeout increase,
+automatic retry or unqualified cached reply closes this failed court.
+
 ### Windows full standard workspace checkpoint
 
 [Run40252299740](https://github.com/partnernetsoftware/minicon/actions/runs/40252299740)
