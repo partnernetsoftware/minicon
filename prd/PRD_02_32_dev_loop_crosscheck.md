@@ -1353,3 +1353,19 @@ hashes and all cleanup against one measured image; no input predicate changes,
 service intervention or pre-existing-process termination. Reject that option
 unless `desktop_contrast=true`. This tests order sensitivity; even a passing
 x64 comparison cannot replace ARM64's original native composition requirement.
+
+The reverse-order [run40250189629](https://github.com/partnernetsoftware/minicon/actions/runs/40250189629)
+at `a53356b890483de8402f026378ea474a19e5a83b` also ends FAIL. With measured
+image `f6248fb0f549e00fe4b6a3c683d23d597c92fabb3573e8be7b385222d0fc9d71`,
+allocated-first still fails the original page-ready setup predicate; the later
+Default arm passes all five actual physical-input rows. Both GUI exits are0
+and every inner/outer cleanup check passes. Receipt, screenshot and identity
+hash verification is retained in
+`target-six/v0.2.23-provider/desktop-contrast-ci-a53356b/verification-index.json`.
+Its integrity PASS does not turn the failed contrast into native qualification.
+Changing order did not remove the observed setup failure; this still cannot
+diagnose ARM64 composition. Do not repeat the unchanged allocated-desktop path.
+The next native court prerequisite is a usable ordinary ARM64 desktop with the
+original target/focus/clipboard/input criteria intact. Any new hosted-only
+setup intervention needs its explicit bounded contract here before execution;
+the owner desktop remains outside physical court operation.
