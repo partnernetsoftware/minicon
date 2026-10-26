@@ -244,6 +244,12 @@ changed source. No Candidate has been sealed from that checkpoint.
 
 ### Harness product redesign before publication
 
+The next development checkpoint implements the
+[orientation delivery slice](../prd/PRD_02_31_01_01_harness_experience.md#orientation-delivery-slice-2026-10-26)
+in the existing Settings form. Its scoped evidence and remaining presentation
+work live with that owner. Use daily smoke plus its two named subjects; do not
+repeat a whole native matrix for this slice before the integration checkpoint.
+
 Behavior and acceptance IDs belong to
 [experience HU-01..09](../prd/PRD_02_31_01_01_harness_experience.md),
 [pool PP-01..06](../prd/PRD_02_31_01_02_provider_pool.md) and

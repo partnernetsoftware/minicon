@@ -2,8 +2,9 @@
 
 Parent: [provider gateway](PRD_02_31_01_provider_gateway.md). Sequence:
 [0.2.23 plan](../plan/plan-v0.2.23.md#harness-product-redesign-before-publication).
-Status: `[_]` product redesign specified after owner feedback, 2026-10-25;
-implementation and acceptance remain open. Existing gateway receipts do not
+Status: `[-]` product redesign specified after owner feedback, 2026-10-25;
+orientation has a scoped Windows development checkpoint; full implementation
+and acceptance remain open. Existing gateway receipts do not
 qualify this experience.
 
 This module owns Harness information architecture, visible state, first use,
@@ -20,7 +21,7 @@ both surfaces use the same account/profile/measurement state.
 
 ```text
 Outcome: manage an account pool and give each local tool a usable, observable connection
-├── [_] ORIENT — one visible next action and a persistent current connection
+├── [-] ORIENT — one visible next action and a persistent current connection
 │   invariant: authorization, model validation, local service and client use are distinct
 │   evidence: HU-01 empty/partial/returning journeys without operator explanations
 │   safe failure: name the incomplete step; preserve the last working connection
@@ -86,8 +87,8 @@ flowchart TD
 
 ## Problem and product decisions
 
-The current `src/harness_settings_ui.rs` presents listener/port controls before
-accounts, mixes a manually typed model ID with a long catalogue, and separates
+Before the orientation delivery slice, `src/harness_settings_ui.rs` presented listener/port controls before
+accounts, mixed a manually typed model ID with a long catalogue, and separated
 the key from a command template that alone cannot connect a client. A shared
 `busy`/status presentation does not tell the user which operation completed.
 `provider_runtime.rs` can open a provider completion URL after credentials have
@@ -150,6 +151,43 @@ without scrolling through every model. Keyboard focus follows visible order;
 Tab, Shift+Tab, Enter, Escape and native IME keep their workspace semantics.
 
 ## Settings layout and form design
+
+### Orientation delivery slice (2026-10-26)
+
+Implement ORIENT first in the existing scrolling form: show pool counts,
+listener state, the selected **applied** connection and one next-step link
+before account forms. Keep operation feedback visible in the overview as well
+as at the local service controls. Provide direct links to accounts, allocations, monitoring
+and Local API. Put port/start controls after the product forms. Navigation only
+reveals existing controls; it never authorizes, probes, creates keys, starts the
+listener or copies secrets. Loading/unavailable observations remain explicit.
+A dirty draft cannot replace the applied summary. Cached account readiness is
+not fresh inference evidence. Keyboard focus follows the visible links and
+Enter/Space uses the same navigation action as pointer input.
+
+This slice does not complete the expandable-section design or HU-01 through
+HU-11 acceptance. Shared prerequisites are the existing runtime View, selected
+form identity and row geometry; hot files are `harness_settings_ui.rs` and its
+product-private orientation module. No shared platform mechanism changes.
+
+Windows development evidence:
+`harness_orientation_links_do_not_start_login_listener_or_key_creation`
+drives the public CLI against a fresh-config, no-activate owned GUI. It checks
+empty first use, keyboard next-step navigation, reverse monitoring/port traversal,
+wrap to the overview, account/allocation/service links and reopen without login,
+key creation or listener start. The empty built-in Default placeholder counts
+as zero configured clients; the actual rendered PNG was visually reviewed.
+`orientation_preserves_applied_identity_and_requires_verified_enabled_accounts`
+checks the returning applied/draft distinction, account disable, cached readiness
+versus model evidence and separate key/service/handoff stages. These add one
+binary subject (870 total) and one control integration subject (35 total).
+
+`target-six/v0.2.23-provider/orientation-controls/receipt.json` records both
+passes, two actual production faults rejected by the original assertions,
+byte-exact restoration and both restored passes. This is scoped development
+feedback, not real-provider, physical-input, all-language/scale or final-artifact
+acceptance. The full pool availability/attention summary and collapsible section
+presentation remain open under ORIENT.
 
 The global gear opens the existing anchored chrome panel. Keep the top-level
 Console / Web / Harness routes. Harness begins with a compact setup/service

@@ -1652,6 +1652,72 @@ fn open_harness(host: &BrowserGui) -> Value {
     }
 }
 
+pub(super) fn harness_orientation_links_do_not_start_login_listener_or_key_creation() {
+    let mut host = BrowserGui::spawn(true, None, None);
+    let initial = open_harness(&host);
+    assert_eq!(initial["next_step"], "connect_account");
+    assert_eq!(
+        initial["configured_clients"], 0,
+        "the empty default is not a configured client"
+    );
+    assert_eq!(initial["scroll"], 0, "first use must begin at the overview");
+    let first_row = &initial["rows"][0];
+    assert_eq!(first_row["id"], "overview_0");
+    let shot = host
+        .gui
+        .screenshot
+        .with_file_name("orientation.png")
+        .to_string_lossy()
+        .into_owned();
+    host.cli(&["screenshot-pane", "--output", &shot]);
+    host.cli(&["send-ui-keys", "Tab"]);
+    assert_eq!(harness_snapshot(&host)["overview_focused"], true);
+    host.cli(&["send-ui-keys", "Shift+Tab"]);
+    assert_eq!(harness_snapshot(&host)["port_editor"]["focused"], true);
+    host.cli(&["send-ui-keys", "Shift+Tab", "Tab"]);
+    assert_eq!(
+        harness_snapshot(&host)["port_editor"]["focused"],
+        true,
+        "reverse traversal into monitoring must return to Local API"
+    );
+    host.cli(&["send-ui-keys", "Tab"]);
+    assert_eq!(
+        harness_snapshot(&host)["overview_focused"],
+        true,
+        "the final form field must wrap to the visible overview"
+    );
+    host.cli(&["send-ui-keys", "Enter"]);
+    let next = harness_snapshot(&host);
+    assert_eq!(next["rows"][0]["id"], "accounts");
+    for (link, destination) in [
+        ("overview_allocations", "model"),
+        ("overview_service", "local_api"),
+        ("overview_accounts", "accounts"),
+    ] {
+        click_harness(&host, link, 0);
+        let state = harness_snapshot(&host);
+        assert!(
+            state["rows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|row| row["id"] == destination),
+            "link {link} must reveal {destination}: {state}"
+        );
+        assert_eq!(state["next_step"], "connect_account");
+        assert_eq!(state["login_active"], false);
+        assert_eq!(state["listener"], "stopped");
+        assert_eq!(state["local_key_exists"], false);
+        assert!(state["accounts"].as_array().unwrap().is_empty());
+    }
+    host.click_geometry("settings");
+    let reopened = open_harness(&host);
+    assert_eq!(reopened["next_step"], "connect_account");
+    assert_eq!(reopened["login_active"], false);
+    assert_eq!(reopened["listener"], "stopped");
+    host.close_and_wait();
+}
+
 fn click_harness(host: &BrowserGui, id: &str, column: usize) {
     // Find a published target by navigating the real panel. The court never
     // re-derives product row order, position, count or hit geometry.

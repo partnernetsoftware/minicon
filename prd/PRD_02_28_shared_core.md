@@ -228,6 +228,10 @@ publication seam and Gateway-to-Store lock join now consume the existing shared
 atomic-write result for plain Apply under development; account authority and
 profile policy remain private to MiniCon. Acceptance and scoped evidence remain
 with that owner.
+Settings orientation stays product-private in `harness_settings_ui/overview.rs`;
+it consumes the existing typed View, form identity, row geometry and field-focus
+route, with no shared OS/ISA API. Behavior and scoped Windows evidence belong
+to [the experience owner](PRD_02_31_01_01_harness_experience.md#orientation-delivery-slice-2026-10-26).
 Report presentation reuses the existing pure
 `minicon_platform::contract::local_clock::civil_from_unix_seconds` conversion;
 UTC labels and unavailable-time meaning remain product-owned in

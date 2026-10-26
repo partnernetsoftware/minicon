@@ -16,6 +16,11 @@ mod owned_console_gui;
 mod browser_windows;
 
 #[test]
+fn harness_orientation_links_do_not_start_login_listener_or_key_creation() {
+    browser_windows::harness_orientation_links_do_not_start_login_listener_or_key_creation();
+}
+
+#[test]
 fn h0_harness_destination_preserves_console_and_web_drafts_and_observes_only() {
     browser_windows::h0_harness_destination_preserves_console_and_web_drafts_and_observes_only();
 }

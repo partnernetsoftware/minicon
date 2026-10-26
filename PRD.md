@@ -52,7 +52,7 @@ MiniCon — one-file local terminal
 │   ├── [_] Future selected-window computer use → prd/PRD_02_38_computer_use.md
 │   └── bounded mux/harness composition → prd/PRD_02_31_v0_2_horizon.md
 │       └── [-] Harness settings / provider-pool / model API → prd/PRD_02_31_01_provider_gateway.md
-│           ├── [_] Guided connection experience and recovery → prd/PRD_02_31_01_01_harness_experience.md
+│           ├── [-] Guided connection experience and recovery → prd/PRD_02_31_01_01_harness_experience.md
 │           ├── [-] Multi-account pool / account networks / client allocation → prd/PRD_02_31_01_02_provider_pool.md
 │           │   ├── [-] Applied-profile private keys → prd/PRD_02_31_01_02_02_profile_keys.md
 │           │   └── [-] Account catalogues / drafts / verified atomic apply → prd/PRD_02_31_01_02_01_connection_selection.md

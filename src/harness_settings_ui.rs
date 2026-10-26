@@ -2,6 +2,7 @@
 use super::*;
 mod connection_forms;
 mod monitoring;
+mod overview;
 mod profile_keys;
 use connection_forms::{ConnectionForms, FormFocus, ProfileField};
 use minicon_core::field_editor::{self, Command, Intent, Limits};
@@ -21,6 +22,7 @@ const MODEL_LIMITS: Limits = Limits {
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum Field {
+    Overview(overview::Link),
     Port,
     Model,
     Profile(ProfileField),
@@ -35,6 +37,8 @@ enum Field {
 
 #[derive(Clone, Copy)]
 enum Row {
+    Overview(u8),
+    OverviewLink(overview::Link),
     Local,
     Listener,
     Port,
@@ -197,6 +201,7 @@ impl AccountDraft {
 
 fn row_field(row: Row) -> Option<Field> {
     match row {
+        Row::OverviewLink(link) => Some(Field::Overview(link)),
         Row::Port => Some(Field::Port),
         Row::ModelInput => Some(Field::Model),
         Row::Model => Some(Field::ProfileChooser),
@@ -209,7 +214,7 @@ fn field_limits(field: Field) -> Limits {
     match field {
         Field::Port => PORT_LIMITS,
         Field::Model => MODEL_LIMITS,
-        Field::ProfileChooser => Limits {
+        Field::ProfileChooser | Field::Overview(_) => Limits {
             max_bytes: 0,
             preedit_chars: 0,
         },
@@ -492,11 +497,16 @@ impl HarnessSettings {
     }
     fn rows(&self) -> Vec<Row> {
         let mut rows = vec![
-            Row::Local,
-            Row::Listener,
-            Row::Status,
-            Row::Port,
-            Row::ListenerActions,
+            Row::Overview(0),
+            Row::OverviewLink(overview::Link::Next),
+            Row::Overview(4),
+            Row::Overview(1),
+            Row::Overview(2),
+            Row::Overview(3),
+            Row::OverviewLink(overview::Link::Accounts),
+            Row::OverviewLink(overview::Link::Allocations),
+            Row::OverviewLink(overview::Link::Monitoring),
+            Row::OverviewLink(overview::Link::Service),
             Row::Accounts,
             Row::ConnectInput(Field::ConnectLabel),
             Row::ConnectInput(Field::ConnectLoginProxy),
@@ -615,6 +625,13 @@ impl HarnessSettings {
                 .into_iter()
                 .map(Row::Monitoring),
         );
+        rows.extend([
+            Row::Local,
+            Row::Listener,
+            Row::Status,
+            Row::Port,
+            Row::ListenerActions,
+        ]);
         rows
     }
 
@@ -646,7 +663,9 @@ impl HarnessSettings {
                 .forms
                 .current()
                 .map_or(&self.model, |form| form.model()),
-            Field::ProfileChooser => unreachable!("profile chooser is not a text editor"),
+            Field::ProfileChooser | Field::Overview(_) => {
+                unreachable!("navigation is not a text editor")
+            }
             Field::Profile(field) => self
                 .forms
                 .current()
@@ -668,7 +687,9 @@ impl HarnessSettings {
                 .forms
                 .current_mut()
                 .map_or(&mut self.model, |form| form.model_mut()),
-            Field::ProfileChooser => unreachable!("profile chooser is not a text editor"),
+            Field::ProfileChooser | Field::Overview(_) => {
+                unreachable!("navigation is not a text editor")
+            }
             Field::Profile(field) => self
                 .forms
                 .current_mut()
@@ -1111,6 +1132,7 @@ impl HarnessSettings {
     }
     fn submit(&mut self, field: Field) {
         match field {
+            Field::Overview(link) => self.overview_link(link),
             Field::Port if self.port_editable() => {
                 if let Ok(port) = self.port.text.parse::<u16>()
                     && port >= 1024
@@ -1154,6 +1176,7 @@ impl HarnessSettings {
             return None;
         }
         match row {
+            Row::OverviewLink(link) => self.overview_link(link),
             Row::Monitoring(monitoring::Item::Threshold(i)) if column == 1 => {
                 self.monitoring_action(monitoring::Item::RemoveThreshold(i))
             }
@@ -1439,6 +1462,19 @@ fn row_columns(row: Row) -> usize {
 
 fn row_id(row: Row) -> String {
     match row {
+        Row::Overview(index) => return format!("overview_{index}"),
+        Row::OverviewLink(link) => {
+            return format!(
+                "overview_{}",
+                match link {
+                    overview::Link::Next => "next",
+                    overview::Link::Accounts => "accounts",
+                    overview::Link::Allocations => "allocations",
+                    overview::Link::Monitoring => "monitoring",
+                    overview::Link::Service => "service",
+                }
+            );
+        }
         Row::Monitoring(item) => return monitoring::MonitoringUi::id(item),
         Row::Local => "local_api",
         Row::Listener => "listener",
@@ -1589,6 +1625,16 @@ impl ConApp {
             let mut label = String::new();
             let mut heading = false;
             match row {
+                Row::Overview(index) => {
+                    label = settings.overview_label(index, self.ui_language);
+                    heading = index == 0;
+                }
+                Row::OverviewLink(link) => button(
+                    surface,
+                    rect,
+                    overview::link_caption(link, settings.orientation_step(), self.ui_language),
+                    settings.focused == Some(Field::Overview(link)),
+                ),
                 Row::Monitoring(item) => {
                     let summary = self
                         .presented_harness_usage()
@@ -2639,6 +2685,9 @@ impl ConApp {
         // Whitelist observations: no credentials, labels, device URL/code or recipe key.
         json::object(vec![
             ("panel", rect(geometry.panel)),
+            ("next_step", settings.orientation_step().id().into()),
+            ("configured_clients", settings.configured_client_count().into()),
+            ("overview_focused", (active && matches!(settings.focused, Some(Field::Overview(_)))).into()),
             ("monitoring", settings.monitoring.snapshot(&settings.view)),
             ("monitoring_usage_revision", self.presented_harness_usage().map_or(json::JsonValue::Null,|s|s.revision.into())),
             ("port", settings.view.port.into()),
@@ -2928,6 +2977,7 @@ impl ConApp {
             Some(Field::Model) => "harness_model",
             Some(Field::Profile(_)) => "harness_connection",
             Some(Field::ProfileChooser) => "harness_connection_picker",
+            Some(Field::Overview(_)) => "harness_overview",
             Some(Field::AccountLabel) => "harness_account_label",
             Some(Field::LoginProxy) => "harness_login_proxy",
             Some(Field::ServiceProxy) => "harness_service_proxy",
@@ -3136,8 +3186,29 @@ impl ConApp {
                         settings.scroll = geometry.rows.reveal(index);
                     }
                 } else {
-                    settings.focused = Some(Field::Port);
-                    if let Some(index) = rows.iter().position(|r| matches!(r, Row::Port)) {
+                    let boundary = rows
+                        .iter()
+                        .position(|r| matches!(r, Row::Monitoring(_)))
+                        .unwrap_or(0);
+                    let fields: Vec<_> = rows
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(index, row)| {
+                            row_field(*row)
+                                .filter(|field| *field != Field::Port || settings.port_editable())
+                                .map(|field| (index, field))
+                        })
+                        .collect();
+                    let destination = if backwards {
+                        fields.iter().rev().find(|(index, _)| *index < boundary)
+                    } else {
+                        fields
+                            .iter()
+                            .find(|(index, _)| *index > boundary)
+                            .or_else(|| fields.first())
+                    };
+                    if let Some(&(index, field)) = destination {
+                        settings.focused = Some(field);
                         settings.scroll = geometry.rows.reveal(index);
                     }
                 }
@@ -3403,12 +3474,32 @@ impl ConApp {
                         (None, true) => fields.len() - 1,
                         (None, false) => 0,
                     };
-                    if current.is_some_and(|i| i + 1 == fields.len()) && !key.modifiers.shift {
+                    let boundary = rows
+                        .iter()
+                        .position(|r| matches!(r, Row::Monitoring(_)))
+                        .unwrap_or(rows.len());
+                    let current_row = current
+                        .and_then(|i| rows.iter().position(|r| row_field(*r) == Some(fields[i])));
+                    let next_row = rows
+                        .iter()
+                        .position(|r| row_field(*r) == Some(fields[next_index]))
+                        .unwrap_or(0);
+                    let cross_monitoring = current_row.is_some_and(|index| {
+                        if key.modifiers.shift {
+                            index > boundary && next_row < boundary
+                        } else {
+                            index < boundary && next_row > boundary
+                        }
+                    });
+                    if cross_monitoring {
                         settings.blur();
-                        settings.monitoring.enter();
-                        if let Some(index) = rows.iter().position(|r| {
-                            matches!(r, Row::Monitoring(monitoring::Item::OpenReport))
-                        }) {
+                        let item = settings
+                            .monitoring
+                            .navigate(key.modifiers.shift, &settings.view);
+                        if let Some(index) = rows
+                            .iter()
+                            .position(|r| matches!(r, Row::Monitoring(i) if Some(*i) == item))
+                        {
                             settings.scroll = geometry.rows.reveal(index);
                         }
                     } else {
@@ -3423,6 +3514,27 @@ impl ConApp {
                     }
                 }
             }
+            PixelWindowEvent::Keyboard(key)
+                if matches!(settings.focused, Some(Field::Overview(_))) =>
+            {
+                if key.state == KeyPressState::Pressed {
+                    match &key.logical {
+                        LogicalKey::Named(NamedKey::Enter | NamedKey::Space) => {
+                            if let Some(Field::Overview(link)) = settings.focused {
+                                settings.overview_link(link);
+                            }
+                        }
+                        LogicalKey::Character(text) if text == " " => {
+                            if let Some(Field::Overview(link)) = settings.focused {
+                                settings.overview_link(link);
+                            }
+                        }
+                        LogicalKey::Named(NamedKey::Escape) => settings.blur(),
+                        _ => {}
+                    }
+                }
+            }
+            PixelWindowEvent::Ime(_) if matches!(settings.focused, Some(Field::Overview(_))) => {}
             PixelWindowEvent::Keyboard(key) if settings.focused == Some(Field::ProfileChooser) => {
                 if key.state == KeyPressState::Pressed {
                     match &key.logical {
@@ -3511,7 +3623,7 @@ impl ConApp {
         settings.remember_connection_focus();
         if let Some(field) = settings
             .focused
-            .filter(|field| *field != Field::ProfileChooser)
+            .filter(|field| !matches!(field, Field::ProfileChooser | Field::Overview(_)))
         {
             let index = rows
                 .iter()
@@ -4290,6 +4402,86 @@ mod tests {
             dirty: false,
             error: None,
             allocations: vec![],
+        }
+    }
+
+    #[test]
+    fn orientation_preserves_applied_identity_and_requires_verified_enabled_accounts() {
+        use overview::Step;
+        let mut settings = HarnessSettings::default();
+        assert_eq!(settings.orientation_step(), Step::Loading);
+        settings.view.load_state = provider_runtime::LoadState::Loaded;
+        assert_eq!(settings.orientation_step(), Step::Account);
+        settings.view.accounts.push(AccountSummary {
+            id: "account".into(),
+            provider: Provider::DeepSeek,
+            label: "Saved account".into(),
+            state: provider_accounts::AccountState::AccountReady,
+        });
+        settings
+            .view
+            .account_preferences
+            .push(("account".into(), AccountPreferences::legacy("account")));
+        settings.view.connection_profile = "default".into();
+        let mut profile = connection_profile("default", "account");
+        profile.applied = Some(profile.input.clone());
+        settings.view.connection_profiles.push(profile);
+        settings.forms.sync(&settings.view);
+        assert_eq!(
+            settings.orientation_step(),
+            Step::Allocation,
+            "cached AccountReady alone is not current model verification"
+        );
+        settings.view.connection_profiles[0].allocations.push(
+            provider_selection::ConnectionAllocationView {
+                slot: 0,
+                upstream_model: Some("same-catalogue-id".into()),
+                protocol: None,
+                availability: provider_runtime::ConnectionAvailability::Available,
+                evidence: provider_runtime::ConnectionEvidence::Verified,
+                checked_unix_ms: Some(1),
+            },
+        );
+        settings.forms.sync(&settings.view);
+        assert_eq!(settings.orientation_step(), Step::Key);
+        settings
+            .view
+            .profile_keys
+            .push(provider_runtime::ProfileKeyMetadata {
+                profile: "default".into(),
+                state: provider_runtime::ProfileKeyState::Created,
+                exists: true,
+                epoch: 1,
+                durability_unconfirmed: false,
+            });
+        assert_eq!(settings.orientation_step(), Step::Service);
+        settings.view.listener = ListenerState::Listening;
+        settings.view.actual_port = Some(28789);
+        assert_eq!(settings.orientation_step(), Step::Handoff);
+        let applied = settings.overview_label(3, ui::UiLanguage::English);
+        settings.forms.current_mut().unwrap().label.text = "Unapplied draft".into();
+        assert_eq!(settings.orientation_step(), Step::Draft);
+        assert_eq!(settings.overview_label(3, ui::UiLanguage::English), applied);
+        settings.view.account_preferences[0].1.enabled = false;
+        assert_eq!(settings.orientation_step(), Step::AccountRepair);
+        settings.view.login_active = true;
+        assert_eq!(settings.orientation_step(), Step::Authorization);
+        let before = settings.view.clone();
+        for link in [
+            overview::Link::Accounts,
+            overview::Link::Allocations,
+            overview::Link::Service,
+            overview::Link::Next,
+        ] {
+            settings.overview_link(link);
+            assert_eq!(
+                settings.view, before,
+                "navigation must not mutate runtime authority"
+            );
+            assert!(
+                settings.error.is_none(),
+                "navigation must not try to use absent runtime"
+            );
         }
     }
 
