@@ -13,7 +13,7 @@ import time
 from run import Blocked, require_hosted
 
 
-def prepare(report, allow_close, closed_roles):
+def prepare(report, allow_close, closed_roles, observe_cloaked=False):
     require_hosted()  # Must precede all native DLL access.
     if not allow_close:
         raise Blocked('explicit known-setup-window close option required')
@@ -216,6 +216,10 @@ def prepare(report, allow_close, closed_roles):
             return state
 
         report['presentation_before_close'] = presentation()
+        if (observe_cloaked and role in ('search', 'start-menu')
+                and report['presentation_before_close'].get('cloaked_flags') == 2):
+            report['action'] = 'none-observed-shell-cloaked-panel'
+            return  # Observation only; original physical court still owns every input admission.
         current_pid = w.DWORD()
         current_thread = u.GetWindowThreadProcessId(hwnd, c.byref(current_pid))
         if (u.GetForegroundWindow() != hwnd or not u.IsWindowVisible(hwnd)
@@ -248,6 +252,7 @@ def main():
     parser.add_argument('--receipt', type=Path, required=True)
     parser.add_argument('--source-sha', required=True)
     parser.add_argument('--close-known-setup-windows', action='store_true')
+    parser.add_argument('--observe-known-cloaked-panels', action='store_true')
     args = parser.parse_args()
     path = args.receipt.resolve()
     if path.exists():
@@ -255,6 +260,7 @@ def main():
     path.parent.mkdir(parents=True, exist_ok=True)
     report = {'kind': 'hosted-arm64-default-preparation', 'source_sha': args.source_sha,
               'status': 'BLOCKED', 'native_input_qualified': False, 'close_requests': 0,
+              'observe_known_cloaked_panels': args.observe_known_cloaked_panels,
               'force_kill': False, 'clipboard_or_input_used': False,
               'setup_windows_restored': False, 'restoration_scope': 'disposable VM only; no window restoration claim'}
     observations = []
@@ -265,7 +271,7 @@ def main():
         for _ in range(4):
             observation = {'close_requests': 0}
             observations.append(observation)
-            prepare(observation, args.close_known_setup_windows, closed_roles)
+            prepare(observation, args.close_known_setup_windows, closed_roles, args.observe_known_cloaked_panels)
             if observation['close_requests'] == 0:
                 report['status'] = 'OBSERVED'
                 break

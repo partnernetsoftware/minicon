@@ -28,6 +28,11 @@ on:
         type: boolean
         required: false
         default: false
+      observe_cloaked_panels:
+        description: "Default preparation only: observe known Shell-cloaked panels without close; retain all original input guards"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -52,8 +57,10 @@ jobs:
           PREPARE_ARM_DEFAULT: ${{ inputs.prepare_arm_default }}
           DESKTOP_CONTRAST: ${{ inputs.desktop_contrast }}
           ALLOCATED_FIRST: ${{ inputs.allocated_first }}
+          OBSERVE_CLOAKED_PANELS: ${{ inputs.observe_cloaked_panels }}
         run: |
           if ($env:PREPARATION_ONLY -eq 'true' -and ($env:PREPARE_ARM_DEFAULT -ne 'true' -or $env:DESKTOP_CONTRAST -eq 'true' -or $env:ALLOCATED_FIRST -eq 'true')) { throw 'preparation_only requires prepare_arm_default and excludes contrast/order options' }
+          if ($env:OBSERVE_CLOAKED_PANELS -eq 'true' -and ($env:PREPARE_ARM_DEFAULT -ne 'true' -or $env:DESKTOP_CONTRAST -eq 'true' -or $env:ALLOCATED_FIRST -eq 'true')) { throw 'Cloaked-panel observation requires Default preparation without contrast' }
       - name: Ensure the native WebView2 runtime is available
         if: ${{ !inputs.preparation_only }}
         shell: pwsh
@@ -90,12 +97,14 @@ jobs:
           ALLOCATED_FIRST: ${{ inputs.allocated_first }}
           PREPARE_ARM_DEFAULT: ${{ inputs.prepare_arm_default }}
           PREPARATION_ONLY: ${{ inputs.preparation_only }}
+          OBSERVE_CLOAKED_PANELS: ${{ inputs.observe_cloaked_panels }}
         run: |
           $ErrorActionPreference = 'Stop'
           if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw 'Disposable hosted court required' }
           if ($env:ALLOCATED_FIRST -eq 'true' -and $env:DESKTOP_CONTRAST -ne 'true') { throw 'allocated_first requires desktop_contrast' }
           if ($env:PREPARE_ARM_DEFAULT -eq 'true' -and $env:DESKTOP_CONTRAST -eq 'true') { throw 'Default preparation cannot be combined with desktop contrast' }
           if ($env:PREPARATION_ONLY -eq 'true' -and ($env:PREPARE_ARM_DEFAULT -ne 'true' -or $env:CELL -ne 'win-aarch64' -or $env:ALLOCATED_FIRST -eq 'true')) { throw 'Invalid preparation-only selection' }
+          if ($env:OBSERVE_CLOAKED_PANELS -eq 'true' -and ($env:PREPARE_ARM_DEFAULT -ne 'true' -or $env:DESKTOP_CONTRAST -eq 'true' -or $env:ALLOCATED_FIRST -eq 'true')) { throw 'Invalid cloaked-panel observation selection' }
           $output = Join-Path $env:RUNNER_TEMP 'minicon-native-controls'
           if (Test-Path -LiteralPath $output) { throw 'Court output must be fresh' }
           New-Item -ItemType Directory -Path $output | Out-Null
@@ -119,7 +128,9 @@ jobs:
             $source = (git rev-parse HEAD).Trim()
             $binary = Join-Path $PWD "target/$env:TRIPLE/debug/minicon.exe"
             if ($env:PREPARE_ARM_DEFAULT -eq 'true' -and $env:CELL -eq 'win-aarch64') {
-              python -B -X utf8 scripts/native-controls/prepare_default.py --receipt (Join-Path $output 'default-preparation.json') --source-sha $source --close-known-setup-windows
+              $preparationArgs = @('--receipt', (Join-Path $output 'default-preparation.json'), '--source-sha', $source, '--close-known-setup-windows')
+              if ($env:OBSERVE_CLOAKED_PANELS -eq 'true') { $preparationArgs += '--observe-known-cloaked-panels' }
+              python -B -X utf8 scripts/native-controls/prepare_default.py @preparationArgs
               if ($LASTEXITCODE -ne 0) { throw 'Default desktop preparation refused; inspect its retained receipt' }
               $preparation = Get-Content -Raw -LiteralPath (Join-Path $output 'default-preparation.json') | ConvertFrom-Json
               if ($preparation.source_sha -cne $source -or $preparation.status -cne 'OBSERVED' -or $preparation.default_desktop_verified -ne $true) { throw 'Default preparation identity mismatch' }
@@ -191,6 +202,7 @@ jobs:
                 original_language_profiles_restored = $restored
                 explicit_arm_default_preparation = $env:PREPARE_ARM_DEFAULT -eq 'true' -and $env:CELL -eq 'win-aarch64'
                 preparation_only = $env:PREPARATION_ONLY -eq 'true'
+                observe_cloaked_panels = $env:OBSERVE_CLOAKED_PANELS -eq 'true' -and $env:CELL -eq 'win-aarch64'
                 preparation_only_observed = $preparationOnlyObserved
                 native_input_qualified = $false
                 native_court_exit = $courtExit

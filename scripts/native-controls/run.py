@@ -409,7 +409,22 @@ class Native:
                     process_name = Path(image.value).name
             finally:
                 self.k.CloseHandle(handle)
+        presentation = {"style_visible": bool(self.u.IsWindowVisible(hwnd)),
+                        "cloaked_status": "unavailable"}
+        try:
+            dwm = c.WinDLL('dwmapi', use_last_error=True)
+            read = dwm.DwmGetWindowAttribute
+            read.restype = c.c_int32
+            read.argtypes = [w.HWND, w.DWORD, c.c_void_p, w.DWORD]
+            cloaked = w.DWORD()
+            result = read(hwnd, 14, c.byref(cloaked), c.sizeof(cloaked))
+            presentation['cloaked_hresult'] = f'0x{result & 0xffffffff:08x}'
+            if result == 0:
+                presentation.update(cloaked_status='observed', cloaked_flags=cloaked.value)
+        except (OSError, AttributeError):
+            pass
         return {"present": True, "same_process_as_gui": owner.value == expected.value,
+                "presentation": presentation,
                 "owned_root": self.u.GetAncestor(hwnd, 2) == self.hwnd,
                 "in_owned_job": in_owned_job,
                 "package": package,

@@ -1812,6 +1812,41 @@ the ARM64 issue to that payload without a controlled contrast. No service,
 language, foreground, clipboard or keyboard is changed by this producer.
 Artifacts: `target-six/v0.2.23-provider/input-readiness-ci-393d699/`.
 
+### Observe cloaked setup panels before the original physical court
+
+The next explicit `observe_cloaked_panels` option requires ARM64 Default
+preparation, excludes desktop contrast and does not send another close/hide.
+After the existing package/image/session/desktop/lifetime checks, a known
+Search/Start panel with successful exact Shell-cloaked value2 can terminate
+setup as an observation-only no-action result. Unknown/query-failed/other-role
+states retain the original path. Setup OBSERVED does not assert that the
+desktop is ready or authorize any physical input. Its dependency is the
+verified target and explicit option; safe failure remains the original refusal
+and cleanup. Non-goal: changing target selection, accepting a foreign hit or
+substituting preparation for an input pass.
+
+Retain DWM HRESULT/nullable flags and style visibility for the original court's
+owned GUI, actual foreground and hit windows in its bounded focus metadata.
+No screenshots of foreign windows, titles, full paths or handles are exported.
+These sequential read-only samples distinguish the not-yet-observed Start-menu
+hit from Search and the actual owned window. Missing DWM data remains unavailable;
+it changes no owned-foreground, private-job, ancestry, hit or Pinyin predicate.
+Hot files are the existing workflow and native preparation/control fixtures;
+integrate serially, with intercepted local controls before hosted replay.
+
+Local controls exercise five observation subjects: qualified no-action,
+missing option, onboarding role, another cloak value and failed query. Four
+actual faults remove the option, widen the role, change the cloak value or
+fabricate a value after failed query; each fails the original selection
+assertion and exact restore passes. The existing three entry and twenty
+identity/panel positive subjects also replay with all native calls intercepted.
+Receipts:
+`target-six/v0.2.23-provider/default-preparation-observe-cloaked-controls/receipt.json`
+and `target-six/v0.2.23-provider/default-preparation-observe-compatibility/receipt.json`.
+These do not prove desktop readiness or exercise real input. Python/YAML and
+the workflow's actual extracted PowerShell blocks parse; hosted execution
+remains the next evidence for presentation metadata and original court outcomes.
+
 ### Windows full standard workspace checkpoint
 
 [Run40252299740](https://github.com/partnernetsoftware/minicon/actions/runs/40252299740)
