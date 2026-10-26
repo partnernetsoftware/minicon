@@ -1430,8 +1430,10 @@ language profiles restore. Artifacts:
 The corrected target-desktop check uses bounded
 [EnumDesktopWindows](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-enumdesktopwindows)
 membership on the held, named input-desktop handle, with only READOBJECTS and
-ENUMERATE rights. It must find that exact foreground root within256 callbacks;
-failure, truncation or absence refuses the request. This replaces the unavailable
+ENUMERATE rights. The initial version requires that exact foreground root within256 callbacks;
+failure, truncation or absence refuses the request. The later visible-root
+amendment below adds a second explicit witness only after completed enumeration.
+This replaces the unavailable
 foreign-thread desktop-name query without dropping the target-desktop binding.
 Package/image/session/lifetime and immediate foreground/PID/thread revalidation
 remain required. No switch, application input or new permission is introduced.
@@ -1489,3 +1491,57 @@ to the audit's initial OS-independent count assumptions. Counts are scoped
 observations, not unique tests or physical input. This run selects `harness`
 and does not select native-auth-context, full workspace, real provider grants,
 native IME, signing or release qualification.
+
+### Visible-root desktop witness after completed enumeration
+
+The diagnostic [run40251765031](https://github.com/partnernetsoftware/minicon/actions/runs/40251765031)
+at `3526441d71963a48d6fe62916d45f0987acfe17e` passes x64's full court.
+ARM64 records system-image=true, same-session=true and input-desktop-member=false.
+Enumeration completes without the foreground root; no close, GUI, clipboard or
+input occurs. Handles close and language profiles restore. Receipt:
+`target-six/v0.2.23-provider/native-controls-ci-3526441/`.
+This identifies the refusing observation; it does not establish why the native
+enumeration omits that foreground window or diagnose product IME behavior.
+
+The explicitly selected second desktop witness applies only when enumeration
+completes without finding the target. On the verified calling/input Default
+desktop, temporarily use per-monitor thread DPI and query the bounded visible
+foreground target rectangle and its center's actual
+[WindowFromPoint](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-windowfrompoint)
+root. It must equal the exact target. Restore the thread DPI even on refusal;
+failed restoration refuses closure. Record the witness method and booleans,
+without moving the pointer, capturing foreign pixels or issuing input. This
+reuses the native court's existing foreground/hit observation mechanism.
+
+Failed or over-budget enumeration still refuses without this fallback. An
+absent/hidden/obscured target, invalid geometry, unavailable DPI or mismatched
+hit refuses. Exact package/system-image/session/lifetime and immediate final
+foreground/PID/thread validation remain mandatory. A successful observation
+only admits the already selected single graceful close; it grants no general
+desktop input, process-kill or system-setting authority. Actual original native
+composition and cleanup remain separate acceptance requirements.
+
+Local intercepted qualification passes three pre-DLL and fourteen identity/
+visibility subjects. Fifteen guard-removal failures reach the original no-native-
+access/no-close assertions, then pass after byte-exact restoration. Coverage
+includes enumerated and visible-root matching, foreign hit, invalid bounds,
+unavailable DPI and failed DPI restoration. All native functions are intercepted
+even for matching/removed-guard cases. Receipts:
+`target-six/v0.2.23-provider/default-preparation-refusal-controls-visible-root/receipt.json`
+and
+`target-six/v0.2.23-provider/default-preparation-identity-controls-visible-root/receipt.json`.
+These controls do not qualify actual hosted closure or product input.
+
+```mermaid
+flowchart LR
+    HOST[Hosted ARM64 / explicit option / Default desktop] --> ID[Exact package / system image / session]
+    ID --> ENUM{Bounded desktop enumeration}
+    ENUM -->|target found| LIVE[Process alive / final foreground PID and thread]
+    ENUM -->|completed without target| HIT[Read-only physical-coordinate visible root hit]
+    HIT -->|exact target / DPI restored| LIVE
+    LIVE --> CLOSE[One WM_CLOSE / actual hidden or gone readback]
+    CLOSE --> COURT[Original native page / Pinyin / Harness court]
+    ENUM -->|error or overflow| REFUSE[BLOCKED / close handles / retain receipt]
+    HIT -->|mismatch or failure| REFUSE
+    LIVE -->|changed| REFUSE
+```

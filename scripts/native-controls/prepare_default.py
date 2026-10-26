@@ -36,6 +36,9 @@ def prepare(report, allow_close):
         (u, 'GetClassNameW', c.c_int, [w.HWND, w.LPWSTR, c.c_int]),
         (u, 'IsWindowVisible', w.BOOL, [w.HWND]),
         (u, 'IsWindow', w.BOOL, [w.HWND]),
+        (u, 'GetWindowRect', w.BOOL, [w.HWND, c.POINTER(w.RECT)]),
+        (u, 'WindowFromPoint', w.HWND, [w.POINT]),
+        (u, 'SetThreadDpiAwarenessContext', w.HANDLE, [w.HANDLE]),
         (u, 'PostMessageW', w.BOOL, [w.HWND, w.UINT, w.WPARAM, w.LPARAM]),
         (k, 'GetCurrentThreadId', w.DWORD, []),
         (k, 'GetCurrentProcessId', w.DWORD, []),
@@ -76,6 +79,33 @@ def prepare(report, allow_close):
             raise Blocked('non-secure Default input desktop required')
         report['default_desktop_verified'] = True
 
+        def visible_root_hit(target):
+            previous_dpi = u.SetThreadDpiAwarenessContext(c.c_void_p(-4))
+            if not previous_dpi:
+                raise Blocked('physical-coordinate observation unavailable')
+            report['observation_thread_dpi_restored'] = False
+            try:
+                bounds = w.RECT()
+                if (u.GetForegroundWindow() != target or not u.IsWindowVisible(target)
+                        or not u.GetWindowRect(target, c.byref(bounds))
+                        or not 0 < bounds.right - bounds.left <= 16384
+                        or not 0 < bounds.bottom - bounds.top <= 16384
+                        or any(abs(value) > 131072 for value in
+                               [bounds.left, bounds.top, bounds.right, bounds.bottom])):
+                    return False
+                point = w.POINT((bounds.left + bounds.right) // 2,
+                                (bounds.top + bounds.bottom) // 2)
+                hit = u.WindowFromPoint(point)
+                matched = bool(hit and u.GetAncestor(hit, 2) == target)
+                report['foreground_visible_root_hit'] = matched
+                if matched:
+                    report['target_desktop_binding'] = 'foreground-visible-root-hit'
+                return matched
+            finally:
+                report['observation_thread_dpi_restored'] = bool(u.SetThreadDpiAwarenessContext(previous_dpi))
+                if not report['observation_thread_dpi_restored']:
+                    raise Blocked('observation thread DPI restoration failed')
+
         def contains_window(target):
             count, found, overflow = 0, False, False
 
@@ -94,10 +124,12 @@ def prepare(report, allow_close):
             completed = u.EnumDesktopWindows(desktop, visit, 0)
             if found:
                 report['target_on_input_desktop_verified'] = True
+                report['target_desktop_binding'] = 'input-desktop-enumeration'
                 return True
             if not completed or overflow:
                 raise Blocked('bounded input-desktop window enumeration unavailable')
-            return False
+            report['input_desktop_enumeration_target_found'] = False
+            return visible_root_hit(target)
 
         hwnd = u.GetForegroundWindow()
         if not hwnd:
