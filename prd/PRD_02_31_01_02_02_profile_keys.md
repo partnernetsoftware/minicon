@@ -401,3 +401,30 @@ counterexamples or native qualification. The rejection and exact source
 restoration are recorded in
 `target-six/v0.2.23-provider/k3-recipe-model-adjudication.json`. The original
 synchronous recipe path and all result/content assertions remain unchanged.
+
+### Persistent-form fixture integration (2026-10-26)
+
+The Windows x86_64 job in
+[40277134811](https://github.com/partnernetsoftware/minicon/actions/runs/40277134811),
+source `f60e216f13dbe4570cc42abf0a8fce93a10300ea`, passes the canonical browser
+journey and then fails the key-handoff fixture before its first key check:
+`public-row-unreachable:key_actions`. Its safe receipt is
+`target-six/v0.2.23-provider/harness-ci-f60e216/win-x86_64/profile-key-handoff.json`.
+The fixture still searched the current Accounts form instead of first selecting
+Clients. Key, Copy and adapter behavior remains unqualified by that stopped court.
+
+`scripts/profile-key-handoff-smoke.py` now uses published persistent section
+targets before revealing its client/key/recipe and service rows. It requires a
+visible target and confirmed selected form; existing row bounds, request fences,
+key isolation/revocation, native clipboard policy and cleanup are unchanged.
+No extra retries, timeouts or provider requests are introduced.
+
+The repaired original nonclipboard replay passes seven checks on an isolated
+no-activate Windows GUI: default and two custom keys, actual local admissions,
+profile isolation, scoped revoke/recreate, orphan-draft refusal and no upstream
+service requests. It makes26 loopback GETs and records zero rejecting-proxy
+requests, zero provider POSTs and empty cleanup errors. Safe receipt:
+`target-six/v0.2.23-provider/profile-key-section-repair/receipt.json`.
+This local replay performs no OS clipboard operation. The five clipboard-mode
+checks still require the existing disposable CI desktop; these seven passes
+must not be relabeled as the twelve-check native handoff court.

@@ -687,6 +687,8 @@ jobs:
             probe-logs/minicon-harness-cached.log
             probe-logs/minicon-harness-cached-public.log
             probe-logs/minicon-harness-panel-public.log
+            probe-logs/minicon-harness-navigation-public.log
+            probe-logs/minicon-harness-explanations-public.log
             probe-logs/minicon-web-context.log
             probe-logs/minicon-web-process-selector.log
             probe-logs/minicon-web-native-profile.log

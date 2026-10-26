@@ -169,6 +169,15 @@ snapshots show the Service form entirely visible at scroll0 and the actual
 `client:default` card. This repairs the consumers, not the product or its
 asserted behavior; the six-cell changed-fixture result remains pending.
 
+The subsequent Harness-filtered run
+[40277134811](https://github.com/partnernetsoftware/minicon/actions/runs/40277134811)
+reaches later courts on the repaired source. Its Windows x86_64 key-handoff
+fixture has a separate persistent-form consumer omission, owned with its
+original failure, local seven-check replay and pending isolated-clipboard
+qualification by [profile keys](PRD_02_31_01_02_02_profile_keys.md#persistent-form-fixture-integration-2026-10-26).
+Repair that selected consumer and recheck Windows x86_64; do not rerun unchanged
+successful cells solely because this Windows-only fixture changes.
+
 ## Mechanism: `.github/workflows/dev-loop-crosscheck.yml`
 
 Push a fix to `main`, dispatch this workflow, and each requested cell builds

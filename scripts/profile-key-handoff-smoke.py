@@ -332,6 +332,22 @@ class Replay:
         self.click(geometry[name], geometry)
 
     def row(self, name, column=0):
+        destination = None
+        if name == "listener_actions":
+            destination = ("service", "overview_service")
+        elif name.startswith("connection_") or name in ("model_input", "key_actions", "recipe", "recipe_pi"):
+            destination = ("clients", "overview_allocations")
+        geometry = self.geometry()
+        state = geometry["harness_settings"]
+        if destination and state["section"] != destination[0]:
+            if state["navigation_mode"] == "selector" and not state["section_picker_open"]:
+                self.click(state["section_selector"], geometry)
+            geometry = self.geometry()
+            navigation = next(n for n in geometry["harness_settings"]["navigation"]
+                              if n["id"] == destination[1])
+            require(navigation["visible"], "public-section-target-hidden")
+            self.click(navigation["rect"], geometry)
+            require(self.state()["section"] == destination[0], "public-section-not-selected")
         ascending, visited = False, set()
         for _ in range(128):
             geometry = self.geometry()

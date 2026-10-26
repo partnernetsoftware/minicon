@@ -569,3 +569,15 @@ provider proof. A second actual DeepSeek account and OpenCode Go remain absent
 from this observation; their requested real login/network/allocation journeys
 still need those authorizations. This inventory neither completes PP-01..03 nor
 substitutes a synthetic grant for the missing accounts.
+
+The same bounded public observer revalidates this inventory at
+`f60e216f13dbe4570cc42abf0a8fce93a10300ea`: one Ready DeepSeek, zero OpenCode,
+no active login and a stopped listener. Nine public commands execute; the owned
+no-activate GUI exits normally with code0, its Job closes and real-use roots
+remain intact. Receipt:
+`target-six/v0.2.23-provider/real-account-readiness-f60e216/receipt.json`.
+The build is selected by Cargo's compiler-artifact record with a matching
+measured hash, not file time. Its prepared review copy and build receipt live
+under `target-six/v0.2.23-provider/owner-review-f60e216/`. No authorization,
+inference or metadata-refresh action was requested; only aggregate public
+state is retained. The missing real-account journeys remain open.
