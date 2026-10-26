@@ -134,6 +134,7 @@ impl Step {
 impl HarnessSettings {
     pub(super) fn toggle_section_picker(&mut self) {
         self.cancel_removal();
+        self.cancel_account_menu();
         let open = !self.section_picker_open;
         self.blur();
         self.section_picker_open = open;
@@ -164,6 +165,12 @@ impl HarnessSettings {
                 targets.push(FocusTarget::Field(Field::AccountRemoval(true)));
             }
             return targets;
+        }
+        if self.account_menu.is_some() {
+            return account_menu::Item::ACTIONS
+                .into_iter()
+                .map(|item| FocusTarget::Field(Field::AccountAction(item)))
+                .collect();
         }
         let mut targets = Vec::new();
         if !rail && !self.section_picker_open {
@@ -231,6 +238,7 @@ impl HarnessSettings {
         self.section_picker_open = false;
         if self.section != section {
             self.cancel_removal();
+            self.cancel_account_menu();
             self.blur();
             self.section = section;
             self.scroll = 0;

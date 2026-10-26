@@ -1,5 +1,6 @@
 //! Harness settings presentation. Runtime authority stays with provider_runtime.
 use super::*;
+mod account_menu;
 mod account_removal;
 use account_removal::Removal;
 mod connection_forms;
@@ -26,6 +27,7 @@ const MODEL_LIMITS: Limits = Limits {
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum Field {
+    AccountAction(account_menu::Item),
     AccountRemoval(bool),
     SectionSelector,
     Overview(overview::Link),
@@ -43,6 +45,8 @@ enum Field {
 
 #[derive(Clone, Copy)]
 enum Row {
+    AccountMenuInfo(usize),
+    AccountMenu(account_menu::Item),
     AccountRemovalInfo(usize),
     AccountRemoval(bool),
     TextContinuation { source: usize, line: usize },
@@ -216,6 +220,8 @@ fn row_field(row: Row) -> Option<Field> {
     match row {
         Row::OverviewLink(link) => Some(Field::Overview(link)),
         Row::AccountRemoval(confirm) => Some(Field::AccountRemoval(confirm)),
+        Row::Account(index) => Some(Field::AccountAction(account_menu::Item::Open(index))),
+        Row::AccountMenu(item) => Some(Field::AccountAction(item)),
         Row::Port => Some(Field::Port),
         Row::ModelInput => Some(Field::Model),
         Row::Model => Some(Field::ProfileChooser),
@@ -228,7 +234,8 @@ fn field_limits(field: Field) -> Limits {
     match field {
         Field::Port => PORT_LIMITS,
         Field::Model => MODEL_LIMITS,
-        Field::AccountRemoval(_)
+        Field::AccountAction(_)
+        | Field::AccountRemoval(_)
         | Field::ProfileChooser
         | Field::Overview(_)
         | Field::SectionSelector => Limits {
@@ -270,6 +277,7 @@ pub(super) struct HarnessSettings {
     section_picker_open: bool,
     text_presentation: Option<text::Presentation>,
     removal: Removal,
+    account_menu: Option<String>,
     open_usage: bool,
     pending_workspace_target: Option<super::harness_workspace_ui::SettingsTarget>,
     profile_navigation: Option<usize>,
@@ -505,6 +513,7 @@ impl HarnessSettings {
             section_picker_open: false,
             text_presentation: None,
             removal: Removal::default(),
+            account_menu: None,
             open_usage: false,
             pending_workspace_target: None,
             profile_navigation: None,
@@ -581,6 +590,17 @@ impl HarnessSettings {
         for index in 0..self.view.accounts.len() {
             rows.extend([Row::Account(index), Row::AccountStatus(index)]);
         }
+        if self.account_menu.is_some() {
+            rows.extend(
+                (0..self.account_menu_labels(ui::UiLanguage::English).len())
+                    .map(Row::AccountMenuInfo),
+            );
+            rows.extend(
+                account_menu::Item::ACTIONS
+                    .into_iter()
+                    .map(Row::AccountMenu),
+            );
+        }
         if !matches!(self.removal, Removal::Closed) {
             rows.extend(
                 (0..self.removal_labels(ui::UiLanguage::English).len())
@@ -607,7 +627,6 @@ impl HarnessSettings {
                 Row::AccountNetworkSeparation,
                 Row::AccountActions,
                 Row::AccountConnection,
-                Row::AccountReconnect,
                 Row::AccountReconnectHint,
                 Row::AccountReconnectVerification,
                 Row::CatalogueStatus,
@@ -760,7 +779,8 @@ impl HarnessSettings {
                 .forms
                 .current()
                 .map_or(&self.model, |form| form.model()),
-            Field::AccountRemoval(_)
+            Field::AccountAction(_)
+            | Field::AccountRemoval(_)
             | Field::ProfileChooser
             | Field::Overview(_)
             | Field::SectionSelector => {
@@ -787,7 +807,8 @@ impl HarnessSettings {
                 .forms
                 .current_mut()
                 .map_or(&mut self.model, |form| form.model_mut()),
-            Field::AccountRemoval(_)
+            Field::AccountAction(_)
+            | Field::AccountRemoval(_)
             | Field::ProfileChooser
             | Field::Overview(_)
             | Field::SectionSelector => {
@@ -1053,6 +1074,7 @@ impl HarnessSettings {
         };
         if self.account_focus.as_deref() != Some(id) {
             self.cancel_removal();
+            self.cancel_account_menu();
             if self.section == overview::Section::Accounts {
                 self.blur();
             }
@@ -1097,6 +1119,13 @@ impl HarnessSettings {
 
     fn sync_account_drafts(&mut self) {
         self.reconcile_removal();
+        if self
+            .account_menu
+            .as_ref()
+            .is_some_and(|id| !self.view.accounts.iter().any(|a| &a.id == id))
+        {
+            self.cancel_account_menu();
+        }
         for account in &self.view.accounts {
             if let Some((_, preferences)) = self
                 .view
@@ -1243,6 +1272,7 @@ impl HarnessSettings {
     }
     fn submit(&mut self, field: Field) {
         match field {
+            Field::AccountAction(item) => self.account_menu_action(item),
             Field::AccountRemoval(false) => self.cancel_removal(),
             Field::AccountRemoval(true) => self.confirm_removal(),
             Field::SectionSelector => self.toggle_section_picker(),
@@ -1275,6 +1305,15 @@ impl HarnessSettings {
     fn activate(&mut self, row: Row, column: usize) -> Option<String> {
         if !matches!(
             row,
+            Row::AccountMenu(_)
+                | Row::AccountMenuInfo(_)
+                | Row::AccountReconnect
+                | Row::TextContinuation { .. }
+        ) {
+            self.cancel_account_menu();
+        }
+        if !matches!(
+            row,
             Row::AccountRemoval(_) | Row::AccountRemovalInfo(_) | Row::TextContinuation { .. }
         ) {
             self.cancel_removal();
@@ -1296,6 +1335,7 @@ impl HarnessSettings {
             return None;
         }
         match row {
+            Row::AccountMenu(item) => self.account_menu_action(item),
             Row::AccountRemoval(confirm) => self.submit(Field::AccountRemoval(confirm)),
             Row::OverviewLink(link) => self.overview_link(link),
             Row::Monitoring(monitoring::Item::Threshold(i)) if column == 1 => {
@@ -1338,7 +1378,7 @@ impl HarnessSettings {
                 if column == 0 {
                     self.focus_account(&id);
                 } else {
-                    self.begin_removal(&id);
+                    self.account_menu_action(account_menu::Item::Open(index));
                 }
             }
             Row::AccountMonitoring => {
@@ -1359,16 +1399,13 @@ impl HarnessSettings {
                     self.focus_account(&id);
                 }
             }
-            Row::AccountConnection if column == 0 => {
+            Row::AccountConnection => {
                 self.select_section(overview::Section::Clients);
                 self.scroll = self
                     .rows()
                     .iter()
                     .position(|row| matches!(row, Row::Model))
                     .unwrap_or(0);
-            }
-            Row::AccountConnection => {
-                self.account_draft.enabled = !self.account_draft.enabled;
             }
             Row::AccountReconnect => {
                 if self.account_draft.dirty() || self.account_draft.submitted.is_some() {
@@ -1546,6 +1583,7 @@ fn invalidate_key_for_settings_route(settings: Option<&mut HarnessSettings>, vis
     if !visible && let Some(settings) = settings {
         settings.keys.invalidate_copy();
         settings.cancel_removal();
+        settings.cancel_account_menu();
     }
 }
 
@@ -1602,7 +1640,6 @@ fn row_columns(row: Row) -> usize {
         | Row::ChallengeActions
         | Row::Account(_)
         | Row::AccountActions
-        | Row::AccountConnection
         | Row::ModelInput
         | Row::ModelActions
         | Row::ProfileInput(_)
@@ -1648,6 +1685,8 @@ fn row_id(row: Row) -> String {
         Row::AccountRemovalInfo(index) => return format!("account_removal_info_{index}"),
         Row::AccountRemoval(false) => "account_removal_cancel",
         Row::AccountRemoval(true) => "account_removal_confirm",
+        Row::AccountMenuInfo(index) => return format!("account_menu_info_{index}"),
+        Row::AccountMenu(item) => item.id(),
         Row::Accounts => "accounts",
         Row::ConnectInput(Field::ConnectLabel) => "connect_label",
         Row::ConnectInput(Field::ConnectLoginProxy) => "connect_login_proxy",
@@ -1973,11 +2012,23 @@ impl ConApp {
                     button(
                         surface,
                         cell(1, 2),
-                        tr("Review removal", "复核移除", "覆核移除"),
-                        false,
+                        settings.account_menu_caption(
+                            account_menu::Item::Open(account_index),
+                            self.ui_language,
+                        ),
+                        settings.focused
+                            == Some(Field::AccountAction(account_menu::Item::Open(
+                                account_index,
+                            ))),
                     );
                 }
 
+                Row::AccountMenu(item) => button(
+                    surface,
+                    rect,
+                    settings.account_menu_caption(item, self.ui_language),
+                    settings.focused == Some(Field::AccountAction(item)),
+                ),
                 Row::AccountRemoval(confirm) => button(
                     surface,
                     rect,
@@ -2035,24 +2086,12 @@ impl ConApp {
                     );
                     button(surface, cell(1, 2), "Revert changes", false);
                 }
-                Row::AccountConnection => {
-                    button(
-                        surface,
-                        cell(0, 2),
-                        tr("Open connection drafts", "打开连接草稿", "開啟連線草稿"),
-                        settings.account_focus == settings.view.selected_account,
-                    );
-                    button(
-                        surface,
-                        cell(1, 2),
-                        if settings.account_draft.enabled {
-                            "Disable (save to apply)"
-                        } else {
-                            "Enable (save to apply)"
-                        },
-                        false,
-                    );
-                }
+                Row::AccountConnection => button(
+                    surface,
+                    rect,
+                    tr("Open connection drafts", "打开连接草稿", "開啟連線草稿"),
+                    false,
+                ),
 
                 Row::AccountReconnect => {
                     button(surface, cell(0, 1), "Reconnect this account", false);
@@ -2623,6 +2662,7 @@ impl ConApp {
             ("next_step", settings.orientation_step().id().into()),
             ("section", settings.section.id().into()),
             ("account_removal", settings.removal_observation()),
+            ("account_menu", settings.account_menu.as_deref().map_or(json::JsonValue::Null, Into::into)),
             ("configured_clients", settings.configured_client_count().into()),
             ("pool", pool::summary(&settings.view).map_or(json::JsonValue::Null, |s| json::object(vec![
                 ("stored", s.stored.into()), ("previously_tested", s.tested.into()),
@@ -2930,6 +2970,7 @@ impl ConApp {
             Some(Field::Profile(_)) => "harness_connection",
             Some(Field::ProfileChooser) => "harness_connection_picker",
             Some(Field::Overview(_)) => "harness_overview",
+            Some(Field::AccountAction(_)) => "harness_account_actions",
             Some(Field::AccountRemoval(_)) => "harness_account_removal",
             Some(Field::SectionSelector) => "harness_section_selector",
             Some(Field::AccountLabel) => "harness_account_label",
@@ -2971,6 +3012,7 @@ impl ConApp {
         let presentation_changed = settings.configure_text(presentation);
         if !self.settings_open || self.settings_section != ui::SettingsSection::Harness {
             settings.cancel_removal();
+            settings.cancel_account_menu();
             settings.section_picker_open = false;
             settings.keys.invalidate_copy();
             settings.monitoring.blur();
@@ -3139,6 +3181,14 @@ impl ConApp {
         let mut consumed = true;
         match event {
             PixelWindowEvent::Keyboard(key)
+                if settings.account_menu.is_some()
+                    && key.logical == LogicalKey::Named(NamedKey::Escape) =>
+            {
+                if key.state == KeyPressState::Pressed {
+                    settings.account_menu_action(account_menu::Item::Close);
+                }
+            }
+            PixelWindowEvent::Keyboard(key)
                 if !matches!(settings.removal, Removal::Closed)
                     && key.logical == LogicalKey::Named(NamedKey::Escape) =>
             {
@@ -3147,8 +3197,10 @@ impl ConApp {
                 }
             }
             PixelWindowEvent::Keyboard(key)
-                if matches!(settings.focused, Some(Field::AccountRemoval(_)))
-                    && key.logical != LogicalKey::Named(NamedKey::Tab) =>
+                if matches!(
+                    settings.focused,
+                    Some(Field::AccountRemoval(_) | Field::AccountAction(_))
+                ) && key.logical != LogicalKey::Named(NamedKey::Tab) =>
             {
                 if key.state == KeyPressState::Pressed
                     && !key.modifiers.control
@@ -3164,7 +3216,10 @@ impl ConApp {
                 }
             }
             PixelWindowEvent::Ime(_)
-                if matches!(settings.focused, Some(Field::AccountRemoval(_))) => {}
+                if matches!(
+                    settings.focused,
+                    Some(Field::AccountRemoval(_) | Field::AccountAction(_))
+                ) => {}
             PixelWindowEvent::Keyboard(key)
                 if key.logical == LogicalKey::Named(NamedKey::Tab)
                     && !key.modifiers.control
@@ -3345,6 +3400,7 @@ impl ConApp {
                 let y = (position.y * scale).max(0.0) as u32;
                 if geometry.close.contains(x, y) {
                     settings.cancel_removal();
+                    settings.cancel_account_menu();
                     settings.section_picker_open = false;
                     settings.blur();
                     let _ = window.set_pointer_capture(false);
@@ -3410,11 +3466,13 @@ impl ConApp {
                             };
                             if field == Some(Field::ProfileChooser) {
                                 settings.cancel_removal();
+                                settings.cancel_account_menu();
                                 settings.blur();
                                 settings.focused = Some(Field::ProfileChooser);
                                 settings.navigate_connection_profiles(0);
                             } else if let Some(field) = field {
                                 settings.cancel_removal();
+                                settings.cancel_account_menu();
                                 let rect = geometry.cell(index, 0, columns, scale);
                                 let offset = super::browser_ui::host_field_offset(
                                     settings.editor(field),
@@ -3630,7 +3688,8 @@ impl ConApp {
         if let Some(field) = settings.focused.filter(|field| {
             !matches!(
                 field,
-                Field::AccountRemoval(_)
+                Field::AccountAction(_)
+                    | Field::AccountRemoval(_)
                     | Field::ProfileChooser
                     | Field::Overview(_)
                     | Field::SectionSelector
@@ -4428,6 +4487,7 @@ mod tests {
         profile.applied = Some(profile.input.clone());
         settings.view.connection_profiles.push(profile);
         settings.activate(Row::Account(0), 1);
+        settings.activate(Row::AccountMenu(account_menu::Item::Remove), 0);
         assert!(
             settings.error.is_none(),
             "opening review must not enqueue logout"
@@ -4466,6 +4526,59 @@ mod tests {
         assert!(settings.removal_action().is_none());
         settings.begin_removal("account-a");
         settings.select_section(overview::Section::Clients);
+        assert!(matches!(settings.removal, Removal::Closed));
+    }
+
+    #[test]
+    fn account_menu_targets_named_draft_and_refuses_pending_or_dirty_reconnect() {
+        use account_menu::Item;
+        let mut settings = HarnessSettings::default();
+        settings.view.busy = false;
+        for id in ["a", "b"] {
+            settings.view.accounts.push(AccountSummary {
+                id: id.into(),
+                provider: Provider::OpenCode,
+                label: id.into(),
+                state: provider_accounts::AccountState::CredentialStored,
+            });
+            settings
+                .view
+                .account_preferences
+                .push((id.into(), AccountPreferences::legacy(id)));
+        }
+        settings.account_menu_action(Item::Open(1));
+        assert_eq!(settings.account_menu.as_deref(), Some("b"));
+        assert!(settings.focused == Some(Field::AccountAction(Item::Close)));
+        settings.account_draft.submitted = Some(1);
+        settings.account_menu_action(Item::Toggle);
+        assert!(settings.account_draft.enabled);
+        settings.account_draft.submitted = None;
+        settings.account_menu_action(Item::Toggle);
+        assert!(!settings.account_draft.enabled);
+        assert!(
+            settings
+                .view
+                .account_preferences
+                .iter()
+                .all(|(_, p)| p.enabled)
+        );
+        settings.account_menu_action(Item::Open(1));
+        settings.account_menu_action(Item::Reconnect);
+        assert!(
+            settings.error.is_none(),
+            "dirty reconnect must never enqueue a runtime action"
+        );
+        assert_eq!(settings.account_menu.as_deref(), Some("b"));
+        settings.account_menu_action(Item::Open(0));
+        assert!(
+            settings.account_draft.enabled,
+            "another account's draft must be unchanged"
+        );
+        settings.account_menu_action(Item::Open(1));
+        assert!(!settings.account_draft.enabled);
+        settings.view.accounts.retain(|a| a.id != "b");
+        settings.account_menu_action(Item::Remove);
+        assert!(settings.account_menu.is_none());
         assert!(matches!(settings.removal, Removal::Closed));
     }
 

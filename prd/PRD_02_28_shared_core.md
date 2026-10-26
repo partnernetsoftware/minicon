@@ -240,6 +240,10 @@ Persistent section navigation uses those same product rectangles, typed
 section actions and existing editor/monitoring focus owners; the public and
 native fixtures consume published navigation targets. Its behavior and evidence
 belong to [persistent navigation](PRD_02_31_01_01_harness_experience.md#persistent-section-navigation-2026-10-26).
+The binary-private `harness_settings_ui/account_menu.rs` owns the account action
+menu and keyboard focus; it delegates draft changes, reconnect and removal to
+the existing product owners. No shared native API is added. Behavior and scoped
+evidence belong to [account action menu](PRD_02_31_01_01_harness_experience.md#account-action-menu-2026-10-26).
 The binary-private `harness_settings_ui/account_removal.rs` owns transient
 account-removal review and applied-client identity binding. It adds no shared
 platform API or native adapter; runtime logout/storage authority is unchanged.

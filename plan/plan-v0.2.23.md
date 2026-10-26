@@ -249,6 +249,7 @@ Development checkpoints implement the
 and [focused form sections](../prd/PRD_02_31_01_01_harness_experience.md#focused-form-sections-2026-10-26)
 and then [cached pool/account presentation](../prd/PRD_02_31_01_01_harness_experience.md#cached-pool-status-and-account-readings-2026-10-26)
 and [account removal review](../prd/PRD_02_31_01_01_harness_experience.md#account-removal-review-2026-10-26)
+and [account action menu](../prd/PRD_02_31_01_01_harness_experience.md#account-action-menu-2026-10-26)
 in the existing Settings form. Their scoped evidence and remaining presentation
 work live with that owner. Use daily smoke plus requirement-selected subjects; do not
 repeat a whole native matrix for this slice before the integration checkpoint.

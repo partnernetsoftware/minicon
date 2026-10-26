@@ -585,6 +585,65 @@ reconnecting. Saving a changed policy does not reroute active work or silently
 start a new authorization attempt. Link failed login/network state directly to
 the relevant setting; do not ask the user to diagnose a generic busy status.
 
+### Account action menu (2026-10-26)
+
+```text
+Outcome: find rare account actions without accidentally applying them
+└── [v] Account-scoped inline action menu (Windows x64 development evidence below)
+    invariant: opening/dismissing is read-only; every action belongs to the named account
+    evidence: public two-account menu switching, keyboard cancellation, draft-only toggle and removal-review join
+    safe failure: missing account closes; busy/save/login refuses mutation; dirty reconnect requires save/revert
+    dependency: saved account projection, applied clients, existing account draft/reconnect/removal owners
+    non-goal: new logout transport, automatic save, reassignment or inference
+```
+
+```mermaid
+flowchart LR
+    A[Account Actions] --> M[Named account / affected applied clients]
+    M --> D[Enable or disable draft]
+    D --> S[Existing explicit Save]
+    M --> R[Reconnect with saved settings]
+    R --> G{No unapplied edits or pending save?}
+    G -->|yes| L[Existing login owner]
+    G -->|no| K[Keep draft; explain recovery]
+    M --> V[Existing removal review]
+    M --> C[Close or Escape; retain drafts]
+```
+
+Use an inline menu with full-width actions in the same readable pager. Default
+focus is Close; Tab traverses only the open menu, and Escape closes it. Account
+switches, section changes and settings close discard the menu. Show affected
+applied client names privately. The available active-request count is explicitly
+service-wide; account-specific live counts are unavailable and must not be
+inferred from completed usage records. Public observations expose the opaque
+menu account, not private labels or networks. The account list's Actions button
+replaces its direct removal-review button; removal still needs its own explicit
+review. Remove duplicate rare-action buttons from the normal detail form.
+
+Development evidence (2026-10-26):
+`account_menu_targets_named_draft_and_refuses_pending_or_dirty_reconnect`
+exercises named-account targeting, pending-save refusal, unapplied enable/disable,
+dirty reconnect, separate drafts and missing-account dismissal. It adds one
+binary subject (877 -> 878). The existing public
+`host_harness_account_removal_reviews_cancel_and_exact_confirmation` journey now
+enters through Actions and additionally proves default Close, Escape/Enter
+return, keyboard draft toggle, unchanged applied pool, cross-account draft
+isolation, dirty reconnect refusal and explicit revert before removal review.
+The first run used an incorrect fixture row ID for Revert; it failed before
+removal and was corrected to the existing published `account_edit_actions` ID.
+No product condition or deadline was relaxed.
+
+Two production faults were rejected: allowing a draft toggle during pending
+save fails the component assertion; binding the menu to the first account fails
+the public exact-account observation before any provider action. Exact source
+bytes were restored. Final evidence in
+`target-six/v0.2.23-provider/account-action-menu/` contains both RED logs and
+passing 2 component / 1 public menu-removal / 1 navigation / 3 daily smoke
+subjects, plus fmt and strict all-target Clippy. The English menu screenshot
+was visually inspected. This establishes Windows x64 synthetic interaction;
+native platform/scale/language coverage, per-account live activity observation,
+real-provider reconnect and the full experience acceptance remain open.
+
 ### Account removal review (2026-10-26)
 
 ```text
@@ -615,8 +674,8 @@ the account summary, saved preferences and affected applied allocation contents
 at confirmation; unrelated usage updates do not invalidate it. Close/section
 changes discard review intent and preserve ordinary drafts. Existing removal
 and cancellation semantics stay with the pool/gateway owners. The broader
-account-specific rare-action menu remains selected; this delivery leaf first
-eliminates one-click destruction. Hot files are Harness presentation/input,
+account-specific menu now delegates to this review, with its evidence owned
+by the preceding section. Hot files are Harness presentation/input,
 the shared account projection consumer and its existing public fixtures.
 
 Development evidence (2026-10-26):
@@ -640,7 +699,8 @@ The affected persistent-navigation journey, three-case daily smoke, formatting
 and strict all-target Clippy also passed. This is Windows x64 synthetic
 development evidence; other native targets, real-account logout and signed
 release qualification are not established by these checks. The full product
-experience and rare-action menu remain open.
+experience remains open; the subsequent account-menu integration has its own
+evidence above.
 
 ### Client allocation form
 

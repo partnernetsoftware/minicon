@@ -18,6 +18,14 @@ pub(super) fn label(
     let mut label = String::new();
     let mut heading = false;
     match row {
+        Row::AccountMenuInfo(index) => {
+            label = settings
+                .account_menu_labels(language)
+                .get(index)
+                .cloned()
+                .unwrap_or_default();
+            heading = index == 0;
+        }
         Row::AccountRemovalInfo(index) => {
             label = settings
                 .removal_labels(language)

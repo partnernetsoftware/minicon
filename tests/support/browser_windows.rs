@@ -2014,6 +2014,50 @@ fn host_harness_account_removal_reviews_cancel_and_exact_confirmation() {
     let mut host = BrowserGui::spawn_with_config(true, None, None, Some(root));
     let before = open_harness(&host);
     click_harness(&host, "account_2", 1);
+    let menu = harness_snapshot(&host);
+    assert_eq!(menu["account_menu"], "cccccccccccccccccccccccccccccccc");
+    assert_eq!(menu["account_removal"]["state"], "closed");
+    assert_eq!(menu["accounts"], before["accounts"]);
+    assert_eq!(menu["login_active"], false);
+    host.cli(&["send-ui-keys", "Enter"]);
+    assert_eq!(harness_snapshot(&host)["account_menu"], Value::Null);
+    // Escape restores the named Actions target; Enter can reopen without a mouse.
+    host.cli(&["send-ui-keys", "Enter"]);
+    assert_eq!(
+        harness_snapshot(&host)["account_menu"],
+        menu["account_menu"]
+    );
+    host.cli(&["send-ui-keys", "Escape"]);
+    host.cli(&["send-ui-keys", "Enter"]);
+    let menu_shot = host
+        .gui
+        .screenshot
+        .with_file_name("account-actions-menu.png");
+    host.cli(&["screenshot-pane", "--output", &menu_shot.to_string_lossy()]);
+    host.cli(&["send-ui-keys", "Tab"]);
+    host.cli(&["send-ui-keys", "Enter"]);
+    let toggled = harness_snapshot(&host);
+    assert_eq!(toggled["account_menu"], Value::Null);
+    assert_eq!(toggled["account_draft_dirty"], true);
+    assert_eq!(
+        toggled["pool"], before["pool"],
+        "toggle cannot save account policy implicitly"
+    );
+    click_harness(&host, "account_0", 0);
+    assert_eq!(harness_snapshot(&host)["account_draft_dirty"], false);
+    click_harness(&host, "account_2", 1);
+    assert_eq!(harness_snapshot(&host)["account_draft_dirty"], true);
+    click_harness(&host, "account_menu_reconnect", 0);
+    assert_eq!(harness_snapshot(&host)["login_active"], false);
+    assert_eq!(
+        harness_snapshot(&host)["account_menu"],
+        menu["account_menu"]
+    );
+    click_harness(&host, "account_menu_close", 0);
+    click_harness(&host, "account_edit_actions", 1);
+    assert_eq!(harness_snapshot(&host)["account_draft_dirty"], false);
+    click_harness(&host, "account_2", 1);
+    click_harness(&host, "account_menu_remove", 0);
     let review = harness_snapshot(&host);
     assert_eq!(
         review["accounts"], before["accounts"],
@@ -2030,6 +2074,7 @@ fn host_harness_account_removal_reviews_cancel_and_exact_confirmation() {
         "closed"
     );
     click_harness(&host, "account_0", 1);
+    click_harness(&host, "account_menu_remove", 0);
     assert_eq!(
         harness_snapshot(&host)["account_removal"]["affected_clients"],
         1
@@ -2046,6 +2091,7 @@ fn host_harness_account_removal_reviews_cancel_and_exact_confirmation() {
     );
     assert_eq!(host.cli(&["ui-snapshot"])["settings_open"], true);
     click_harness(&host, "account_2", 1);
+    click_harness(&host, "account_menu_remove", 0);
     click_harness(&host, "overview_service", 0);
     click_harness(&host, "overview_accounts", 0);
     assert_eq!(
@@ -2053,6 +2099,7 @@ fn host_harness_account_removal_reviews_cancel_and_exact_confirmation() {
         "closed"
     );
     click_harness(&host, "account_2", 1);
+    click_harness(&host, "account_menu_remove", 0);
     let snapshot = host.cli(&["ui-snapshot"]);
     host.click_rect(
         &snapshot["geometry"]["harness_settings"]["close"],
@@ -2061,6 +2108,7 @@ fn host_harness_account_removal_reviews_cancel_and_exact_confirmation() {
     );
     assert_eq!(open_harness(&host)["account_removal"]["state"], "closed");
     click_harness(&host, "account_2", 1);
+    click_harness(&host, "account_menu_remove", 0);
     assert_eq!(
         harness_snapshot(&host)["account_removal"]["affected_clients"],
         0
