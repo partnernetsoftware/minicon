@@ -1961,6 +1961,13 @@ fn host_harness_account_save_feedback_stays_with_its_draft() {
     harness_synthetic_pool(&root);
     let mut host = BrowserGui::spawn_with_config(true, None, None, Some(root));
     open_harness(&host);
+    click_harness(&host, "port", 0);
+    host.cli(&["send-ui-keys", "Ctrl+a"]);
+    host.cli(&["send-ui-ime", "commit", "1"]);
+    assert_eq!(harness_snapshot(&host)["port_editor"]["text"], "1");
+    click_harness(&host, "port", 1);
+    let port_error = harness_snapshot(&host)["status"].clone();
+    assert_eq!(port_error, "Enter a port from 1024 to 65535.");
     click_harness(&host, "account_0", 0);
     click_harness(&host, "account_login_proxy", 0);
     host.cli(&["send-ui-keys", "Ctrl+a"]);
@@ -1994,6 +2001,10 @@ fn host_harness_account_save_feedback_stays_with_its_draft() {
     click_harness(&host, "account_edit_actions", 0);
     let saved = wait_harness(&host, |value| value["account_save_state"] == "saved");
     assert_eq!(saved["account_draft_dirty"], false);
+    assert_eq!(
+        saved["status"], port_error,
+        "account save cannot erase another operation's failure"
+    );
     click_harness(&host, "account_label", 0);
     host.cli(&["send-ui-ime", "commit", " later"]);
     assert_eq!(
@@ -2003,6 +2014,7 @@ fn host_harness_account_save_feedback_stays_with_its_draft() {
     click_harness(&host, "account_edit_actions", 1);
     let reverted = harness_snapshot(&host);
     assert_eq!(reverted["account_save_state"], "idle");
+    assert_eq!(reverted["status"], port_error);
     assert_eq!(reverted["listener"], "stopped");
     assert_eq!(reverted["login_active"], false);
     let public = serde_json::to_string(&reverted).unwrap();

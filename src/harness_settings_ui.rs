@@ -877,6 +877,10 @@ impl HarnessSettings {
     }
 
     fn act(&mut self, action: Action) {
+        self.error = self.dispatch(action).err().map(|error| error.to_string());
+    }
+
+    fn dispatch(&mut self, action: Action) -> Result<(), provider_runtime::RuntimeError> {
         if matches!(action, Action::Stop) {
             self.keys.invalidate_copy();
         }
@@ -892,7 +896,7 @@ impl HarnessSettings {
                 self.account_draft.save_error = Some(error);
             }
         }
-        self.error = result.err().map(|error| error.to_string());
+        result
     }
 
     fn current_catalogue(&self) -> Option<&provider_runtime::AccountCatalogueView> {
@@ -1124,6 +1128,11 @@ impl HarnessSettings {
             .or_else(|| self.auth_error.as_ref().map(|(_, message)| message.clone()))
             .or_else(|| self.account_draft.save_error.map(|error| error.to_string()))
             .or_else(|| {
+                self.account_draft
+                    .validation
+                    .map(|_| self.account_save_label(ui::UiLanguage::English).to_owned())
+            })
+            .or_else(|| {
                 self.view
                     .config_durability_unconfirmed
                     .then(|| provider_runtime::CONFIG_DURABILITY_WARNING.to_owned())
@@ -1211,17 +1220,14 @@ impl HarnessSettings {
         };
         let (Ok(login), Ok(service)) = (login, service) else {
             self.account_draft.validation = issue;
-            self.error =
-                Some("Use a plain HTTP proxy URL, or leave the field empty for Direct.".into());
             return;
         };
         let Some(request) = self.account_save_sequence.checked_add(1) else {
             self.account_draft.validation = Some(account_feedback::Validation::Sequence);
-            self.error = Some("Account save sequence exhausted. Reopen MiniCon.".into());
             return;
         };
         self.account_save_sequence = request;
-        self.act(Action::SaveAccount {
+        let result = self.dispatch(Action::SaveAccount {
             request,
             edit: Box::new(AccountEdit {
                 account,
@@ -1233,7 +1239,7 @@ impl HarnessSettings {
                 expected_label: self.account_draft.applied_label.clone(),
             }),
         });
-        if self.error.is_none() {
+        if result.is_ok() {
             self.account_draft.submitted = Some(request);
             self.account_draft.save_error = None;
         }
@@ -5332,9 +5338,11 @@ mod tests {
         ];
         settings.focus_account(&original.id);
         assert_eq!(settings.account_save_state(), "idle");
+        settings.error = Some("Unrelated port error".into());
         settings.account_draft.login.text = "invalid-private-proxy".into();
         settings.save_account();
         assert_eq!(settings.account_save_state(), "invalid_login_proxy");
+        assert_eq!(settings.error.as_deref(), Some("Unrelated port error"));
         assert_eq!(settings.account_draft.submitted, None);
         settings.focus_account(&other.id);
         assert_eq!(settings.account_save_state(), "idle");
@@ -5345,6 +5353,14 @@ mod tests {
         settings.save_account();
         assert_eq!(settings.account_save_state(), "invalid_service_proxy");
         settings.account_draft.service.text.clear();
+        settings.save_account();
+        assert_eq!(settings.account_save_state(), "failed");
+        assert_eq!(
+            settings.account_draft.save_error,
+            Some(provider_runtime::RuntimeError::WorkerUnavailable)
+        );
+        assert_eq!(settings.error.as_deref(), Some("Unrelated port error"));
+        settings.account_draft.save_error = None;
         settings.account_draft.validation = None;
         settings.account_draft.submitted = Some(2);
         assert_eq!(settings.account_save_state(), "saving");

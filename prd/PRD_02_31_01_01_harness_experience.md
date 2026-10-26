@@ -831,6 +831,15 @@ status remains a separate compatibility channel; this leaf does not complete
 all HU-09 feedback requirements. Hot files are account draft/acknowledgement,
 save dispatch, text projection and their public fixture.
 
+Account validation and enqueue results must use the account draft channel,
+including when the runtime is unavailable. Dispatch success must be read from
+the enqueue result, never inferred from whether a global error happens to be
+empty. An unrelated port/client error survives invalid input, rejected enqueue
+and accepted account save. The global status may project the account-owned
+failure as a fallback; it must not acquire a stale copy that survives Revert.
+This is the dispatch boundary of the same leaf above, with no new runtime or
+platform authority.
+
 Implemented local Windows x64 evidence (2026-10-26):
 `account_save_feedback_follows_validation_navigation_and_matching_receipts`
 and the existing
@@ -850,6 +859,21 @@ authorization, other native platforms or completion of HU-09/HU-10.
 The subsequent [three-platform integration](PRD_02_32_dev_loop_crosscheck.md#account-feedback-and-activity-integration-2026-10-26)
 passes this component and actual public journey on Linux x64, Windows ARM64
 and macOS ARM64 at `a4f2e53`; its exact-source logs and scope are owned by PRD32.
+
+Follow-up dispatch isolation is locally verified after that native checkpoint.
+The extended existing component test first fails against the original product:
+account proxy validation replaces an unrelated port error. After separating
+typed dispatch from global feedback, both selected component subjects pass;
+runtime-unavailable account enqueue also retains the unrelated error. The
+extended public journey enters port `1`, observes its actual validation error,
+then saves an account through the runtime and verifies the port error survives
+Save and Revert. A first fixture attempt used letters that the numeric editor
+rejects; that setup failure is retained and is not product RED evidence.
+Receipts: `target-six/v0.2.23-provider/account-save-isolation/`
+(`baseline-red.log`, `green.log`, `public-port-green.log`, `smoke.log`).
+The three-subject smoke and strict Clippy pass. Existing test subjects are
+extended, not duplicated; the binary count remains881. This follow-up has local
+Windows x64 evidence only and is not covered by the earlier native source SHA.
 
 ## Visible state and primary action
 
