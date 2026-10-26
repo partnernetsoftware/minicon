@@ -5,7 +5,8 @@ Parent: [0.2.x horizon](PRD_02_31_v0_2_horizon.md). Product boundary:
 [0.2.23 plan](../plan/plan-v0.2.23.md). Status: `[-]` implementation active;
 existing harness/browser mechanisms are inputs, not qualification of this feature.
 Account-auth implementation is now in progress; the owner goal authorizes
-development through public 0.2.23 without changing the evidence requirements.
+development through public 0.2.23. The experimental-release amendment below
+now governs the real-provider acceptance boundary.
 
 This module owns provider account identity and authentication, the local
 inference API, and the selection seam for a future `llm-gate`. Its
@@ -98,6 +99,23 @@ flowchart LR
 ```
 
 ## Decisions and first delivery
+
+### 0.2.23 experimental release amendment (2026-10-26)
+
+The owner accepts shipping the rapidly evolving Harness/provider pool as an
+experimental feature without waiting for complete real-account acceptance.
+The two-DeepSeek-plus-OpenCode scenario and complete real-client journeys remain
+open acceptance work carried into 0.2.24; their absence no longer blocks 0.2.23.
+They are not marked passed. Synthetic tests do not establish broad OAuth,
+entitlement, balance or external-client compatibility. Public release notes must
+disclose this scope. Native/build correctness, credential isolation, required
+artifact qualification, signing, Defender and no-rebuild Promotion remain
+required; missing native evidence is not converted to PASS.
+
+The owner also selects [independently versioned dynamic logic](PRD_02_31_01_04_dynamic_logic.md)
+after unisacc/ujs maturity, so fast Harness policy changes need not always ship
+a new native client. That module owns host boundaries, updates, rollback and
+dependency gates. No engine is embedded in 0.2.23.
 
 Owner direction, 2026-10-24: add Harness beside Console and Web, configure a
 local API port, support OpenAI and Anthropic model protocols, and start a

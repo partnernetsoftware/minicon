@@ -1,5 +1,10 @@
 # Module ownership, abstraction and reuse
 
+Planned ujs/WASM host-module boundaries and independent logic delivery are owned
+by [PRD31.01.04](PRD_02_31_01_04_dynamic_logic.md). No runtime dependency or
+shared crate is added by that design; map concrete engine capabilities here
+before implementation after unisacc/ujs readiness is established.
+
 Owner of the question "what can another product take from MiniCon, through
 which boundary, and where do OS and ISA differences live?" Parent:
 [MiniCon product requirements](../PRD.md). Source inventory reviewed

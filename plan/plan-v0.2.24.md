@@ -26,18 +26,18 @@ the existing [workspace plan](plan-harness-workspace.md).
 | P0 | Repair the reported rename click regression before adding drag | PRD25.03 TT-01/02; inside click and selection retain edit/IME ownership |
 | P0 | Show clipboard type together with clearly labeled size | PRD25 CB-TYPE-01..03; text/image/empty/unknown handling, no clipboard mutation |
 | P1 | Tab subtree reorder/reparent, preview and cancellation | PRD25.03 TT-03..07; same live sessions and stable IDs, invalid/cancelled drops leave topology unchanged |
-| Conditional carry | Complete any explicitly deferred 0.2.23 Harness acceptance | PRD31.01.01 HU, pool PP and monitoring UM owners; only an explicit scope decision can move a release obligation |
+| Carry | Complete deferred real-account and continuous-client Harness acceptance | Owner-approved amendment in PRD31.01; original HU / PP / UM identities stay open |
+| Design milestone | Versioned ujs / WASM host contract and first bounded policy experiment | PRD31.01.04; embedding depends on actual unisacc/ujs readiness, not the version date |
 | Design milestone | Define H2's first local task journey and cluster C0 boundaries | Existing Harness/cluster plans; task submission, Stop and result ownership designed before implementation selection |
 | Later | CU implementation, cross-machine execution and dynamic llm-gate | Existing CU/cluster/engine owners; not required to ship this version |
 
-0.2.23 is not yet published at this planning checkpoint. Its current gates
-remain authoritative. The owner's conditional "publish if possible" instruction
-does not itself mark missing account/native evidence complete. A proposed
-experimental Harness release with deferred three-account acceptance is awaiting
-an explicit owner scope decision; it is not selected here. If accepted, update
-the owning PRDs and 0.2.23 plan first, state the unverified capabilities in public
-release notes, and keep the original acceptance IDs open in the carry row above.
-Signing, Defender and exact-source/no-rebuild release requirements still apply.
+0.2.23 is not yet published at this planning checkpoint. The owner has accepted
+the [experimental-release amendment](../prd/PRD_02_31_01_provider_gateway.md#0223-experimental-release-amendment-2026-10-26).
+Real-account and continuous-client acceptance carries forward without a passed
+claim. Signing, Defender and exact-source/no-rebuild release requirements still
+apply. [Dynamic logic](../prd/PRD_02_31_01_04_dynamic_logic.md) owns the future
+host/module split, separate logic releases, compatibility and rollback; 0.2.24
+starts design/readiness work without promising an immature engine integration.
 
 The H2/C0 design milestone is not a second feature bundle on the release's
 critical path. Its output is an agreed first journey, authority boundary and

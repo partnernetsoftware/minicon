@@ -212,7 +212,7 @@ resetting its session/history; Escape cancels editing. Manage saved choices
 in **Settings → Web**; **Console** keeps the terminal settings. Select
 **Use configured proxy** to clear the override.
 
-The 0.2.23 development build adds **Settings → Harness** for optional provider
+The 0.2.23 line adds experimental **Settings → Harness** for optional provider
 accounts and an explicitly started local model API. Its connection steps and
 current qualification limits are owned by the
 [Harness requirements](prd/PRD_02_31_01_provider_gateway.md).
@@ -220,6 +220,8 @@ Use the robot button to the left of **Settings** to view the
 [Harness dashboard](prd/PRD_02_36_harness_workspace.md). Configure accounts,
 client allocations, usage monitoring and the local API in **Settings → Harness**.
 Opening either view does not start the model API or run a task.
+Complete real multi-account and external-client acceptance is still pending;
+see the [experimental scope](prd/PRD_02_31_01_provider_gateway.md#0223-experimental-release-amendment-2026-10-26).
 
 ---
 

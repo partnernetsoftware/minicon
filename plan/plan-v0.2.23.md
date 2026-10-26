@@ -10,10 +10,13 @@ development through **public 0.2.23**, subject to the selected evidence gates;
 no second publication approval is needed for that named version. Installation remains deferred for
 coordinated AgenTerm planning.
 
-Owner feedback on 2026-10-25 reopens the Harness product experience before
-publication. The [redesign sequence](#harness-product-redesign-before-publication)
-is the next Harness work; successful signing/Candidate/scan/dry-run preparation
-does not close product acceptance or authorize publishing the rejected experience.
+The [experimental-release amendment](../prd/PRD_02_31_01_provider_gateway.md#0223-experimental-release-amendment-2026-10-26)
+records the owner's latest decision: publish the improved Harness as experimental
+without waiting for complete real-account acceptance. Carry the open real-account
+and continuous-client cases into 0.2.24 without marking them passed. The earlier
+redesign sequence below remains implementation history and acceptance ownership;
+it no longer makes those deferred cases a publication prerequisite. Exact-source
+build/native artifact, signing, scan and Promotion gates still apply.
 
 Behavior belongs to [browser controls](../prd/PRD_02_25_02_browser_controls.md)
 and [preferences](../prd/PRD_02_25_01_browser_preferences.md). Harness settings,

@@ -191,11 +191,12 @@ Enter 应用并重新加载（重置页面会话和历史），Escape 取消编�
 **设置 → Web** 增删保存的候选项，**Console** 保留终端设置；选择
 **使用配置的代理** 可清除本次覆盖。
 
-0.2.23 开发版增加 **设置 → Harness**，可按需连接模型服务账号，并手动启动本地模型 API。
+0.2.23 增加实验性的 **设置 → Harness**，可按需连接模型服务账号，并手动启动本地模型 API。
 连接步骤与当前验证范围见 [Harness 需求](prd/PRD_02_31_01_provider_gateway.md)。
 点击 **设置** 左侧的机器人按钮，查看 [Harness 大屏](prd/PRD_02_36_harness_workspace.md)；
 账号、客户端分配、用量监控和本地 API 在 **设置 → Harness** 中配置。
 打开这两个入口不会启动模型 API 或执行任务。
+完整真实多账号与外部客户端验收仍待补齐，详见 [实验功能范围](prd/PRD_02_31_01_provider_gateway.md#0223-experimental-release-amendment-2026-10-26)。
 
 ---
 

@@ -30,6 +30,11 @@ What the product does today, and how to drive it, are in the
 
 ## Downloads
 
+Harness/provider-pool is experimental and evolving. Complete real multi-account
+and external-client acceptance is pending; availability depends on the provider
+and account. See the [current Harness scope](https://github.com/partnernetsoftware/minicon/blob/main/prd/PRD_02_31_01_provider_gateway.md#0223-experimental-release-amendment-2026-10-26).
+
+
 Pick your platform and run the file — there is no installer.
 
 | Platform | Download |

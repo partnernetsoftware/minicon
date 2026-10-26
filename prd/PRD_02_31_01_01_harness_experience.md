@@ -1057,6 +1057,11 @@ placeholders and cannot be labeled as a runnable, complete task.
 
 ## Errors, diagnostics and acceptance
 
+Release selection follows the parent's
+[experimental-release amendment](PRD_02_31_01_provider_gateway.md#0223-experimental-release-amendment-2026-10-26).
+The acceptance cases below retain their original evidence requirements and
+open status even where full real-account acceptance is deferred past 0.2.23.
+
 Put errors beside the affected action, with a plain-language result and one
 useful recovery action. Keep optional typed details expandable. Do not leave
 an old global footer error above a successfully recovered connection. Sign-out
