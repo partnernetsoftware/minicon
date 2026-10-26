@@ -836,3 +836,13 @@ subjects and is explicitly rejected as evidence; the four public executions
 come from `minicon_control`. Native pixels for the new rows and matching-source
 cross-platform feedback remain open. Long user-supplied identifiers still use
 the existing bounded single-line presentation and selected field editors.
+
+An isolated, no-activate default build at `a53356b` then creates a new draft and
+model entry through public CLI events. Its host-frame PNG was visually reviewed:
+the entry button, separate model label, Choose an account and Not verified are
+complete in the observed English viewport. The GUI closes normally with exit0;
+no physical input, clipboard or provider request is used. Receipt/image:
+`target-six/v0.2.23-provider/settings-entry-rows-pixels-attempt-2/`.
+The preceding attempt had no model entry in its fresh configuration, failed
+fixture preparation and contributes no pixel evidence. This host-frame check
+does not qualify native compositor pixels, long identifiers or other locales.
