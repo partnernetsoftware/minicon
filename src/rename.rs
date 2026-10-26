@@ -48,6 +48,8 @@ impl ConApp {
         // the common case is "type the new name", not "append to the old one".
         composer::select_all(&mut editor);
         self.rename = Some(RenameState { target: id, editor });
+        self.rename_selecting = false;
+        self.rename_clicks = Default::default();
         self.composer.focused = false;
         let _ = self.update_rename_ime_anchor(window);
         self.mark_host_ui_full_and_repaint(window);
@@ -58,6 +60,7 @@ impl ConApp {
     /// A no-op when nothing is being renamed; a target tab that closed mid-edit
     /// makes the workspace rename refuse, which is likewise ignored.
     pub(super) fn commit_rename(&mut self, window: &PixelWindow) {
+        self.rename_selecting = false;
         if let Some(rename) = self.rename.take() {
             self.workspace.rename(rename.target, &rename.editor.text);
             self.mark_host_ui_full_and_repaint(window);
@@ -66,6 +69,7 @@ impl ConApp {
 
     /// Discards the in-progress rename, leaving the tree unchanged.
     fn cancel_rename(&mut self, window: &PixelWindow) {
+        self.rename_selecting = false;
         if self.rename.take().is_some() {
             self.mark_host_ui_full_and_repaint(window);
         }
@@ -181,9 +185,8 @@ impl ConApp {
     /// The rename editor's ownership of one keyboard or IME event.
     ///
     /// While a rename is live it owns the keyboard and IME entirely, so a
-    /// keystroke edits the label instead of reaching the terminal; a left
-    /// press already committed the rename before this runs, and non-text
-    /// events fall through so window-level handling still works.
+    /// keystroke edits the label instead of reaching the terminal. Pointer
+    /// ownership is handled separately before outside presses can blur it.
     ///
     /// Returns `None` when the event was not consumed, and a
     /// [`TextInputOutcome`] — with the tree damage already marked — when it
@@ -221,6 +224,171 @@ impl ConApp {
         }
     }
 
+    pub(super) fn rename_editor_geometry(
+        &self,
+        window: &PixelWindow,
+    ) -> Result<Option<(ui::TreeRenameGeometry, u32)>, PixelWindowError> {
+        let Some(rename) = self.rename.as_ref() else {
+            return Ok(None);
+        };
+        let Some(index) = self
+            .workspace
+            .nodes()
+            .iter()
+            .position(|node| node.id == rename.target)
+        else {
+            return Ok(None);
+        };
+        let Some(visible_row) = index.checked_sub(self.tree_scroll_offset) else {
+            return Ok(None);
+        };
+        let metrics = window.metrics()?;
+        let scale = metrics.scale_factor.max(1.0);
+        let layout = self.layout(
+            metrics.physical_width,
+            metrics.physical_height,
+            metrics.scale_factor,
+        );
+        if layout.sidebar_collapsed || visible_row >= layout.tree_capacity() {
+            return Ok(None);
+        }
+        let font_size = scaled_host_ui_font(HOST_UI_TAB_SIZE_PX, self.host_font_logical(), scale);
+        let cell = font::cell_metrics(font_size);
+        let depth = self.workspace.depths().get(index).copied().unwrap_or(0);
+        let geometry = layout.tree_rename_geometry(visible_row, depth, cell.height.max(1));
+        Ok((geometry.text_width > 0).then_some((geometry, cell.width.max(1))))
+    }
+
+    fn rename_offset_at(
+        &self,
+        window: &PixelWindow,
+        position: &LogicalPoint,
+    ) -> Result<Option<usize>, PixelWindowError> {
+        let Some((geometry, cell_width)) = self.rename_editor_geometry(window)? else {
+            return Ok(None);
+        };
+        let Some(editor) = self.rename.as_ref().map(|rename| &rename.editor) else {
+            return Ok(None);
+        };
+        let visible = composer::visible_window(
+            &editor.text,
+            &editor.preedit,
+            editor.caret,
+            1,
+            (geometry.text_width / cell_width).max(1) as usize,
+        );
+        let scale = window.metrics()?.scale_factor.max(1.0);
+        let physical_x = minicon_core::numeric::round_f64(position.x * scale).max(0.0) as u32;
+        let origin = geometry
+            .text_x
+            .saturating_add(u32::from(visible.truncated).saturating_mul(cell_width));
+        let column = physical_x.saturating_sub(origin) / cell_width;
+        Ok(Some(composer::caret_at_cell(
+            &editor.text,
+            visible.text,
+            column as usize,
+        )))
+    }
+
+    /// Consume pointer work inside the active tree editor before the general
+    /// left-press path commits on outside blur or selects a tab row.
+    pub(super) fn route_rename_pointer(
+        &mut self,
+        window: &PixelWindow,
+        event: &PixelWindowEvent,
+    ) -> Result<bool, PixelWindowError> {
+        if self.rename.is_none() || self.settings_open {
+            return Ok(false);
+        }
+        if self.rename_selecting {
+            match event {
+                PixelWindowEvent::PointerMoved { position, .. } => {
+                    if let Some(offset) = self.rename_offset_at(window, position)? {
+                        if let Some(rename) = self.rename.as_mut() {
+                            rename.editor.caret = offset;
+                        }
+                        let _ = self.update_rename_ime_anchor(window);
+                        self.mark_tree_dirty();
+                        self.request_dirty_redraw(window);
+                    }
+                    return Ok(true);
+                }
+                PixelWindowEvent::PointerButton {
+                    button: PointerButton::Left,
+                    state: PointerButtonState::Released,
+                    ..
+                } => {
+                    self.rename_selecting = false;
+                    if let Some(rename) = self.rename.as_mut()
+                        && rename.editor.anchor == Some(rename.editor.caret)
+                    {
+                        rename.editor.anchor = None;
+                    }
+                    self.mark_tree_dirty();
+                    self.request_dirty_redraw(window);
+                    return Ok(true);
+                }
+                _ => {}
+            }
+        }
+        let PixelWindowEvent::PointerButton {
+            button: PointerButton::Left,
+            state: PointerButtonState::Pressed,
+            position: Some(position),
+            modifiers,
+            ..
+        } = event
+        else {
+            return Ok(false);
+        };
+        let Some((geometry, _)) = self.rename_editor_geometry(window)? else {
+            return Ok(false);
+        };
+        let scale = window.metrics()?.scale_factor.max(1.0);
+        let x = minicon_core::numeric::round_f64(position.x * scale).max(0.0) as u32;
+        let y = minicon_core::numeric::round_f64(position.y * scale).max(0.0) as u32;
+        if !geometry.plate.contains(x, y) {
+            return Ok(false);
+        }
+        let Some(offset) = self.rename_offset_at(window, position)? else {
+            return Ok(false);
+        };
+        let count = if modifiers.shift {
+            1
+        } else {
+            self.rename_clicks.register(offset, Instant::now())
+        };
+        if let Some(rename) = self.rename.as_mut() {
+            let editor = &mut rename.editor;
+            if modifiers.shift {
+                editor.anchor.get_or_insert(editor.caret);
+                editor.caret = offset;
+                editor.select_all = false;
+                self.rename_selecting = true;
+            } else {
+                match count {
+                    1 => {
+                        editor.caret = offset;
+                        editor.anchor = Some(offset);
+                        editor.select_all = false;
+                        self.rename_selecting = true;
+                    }
+                    2 => {
+                        let (start, end) = composer::word_bounds(&editor.text, offset);
+                        editor.anchor = Some(start);
+                        editor.caret = end;
+                        editor.select_all = false;
+                    }
+                    _ => composer::select_all(editor),
+                }
+            }
+        }
+        let _ = self.update_rename_ime_anchor(window);
+        self.mark_tree_dirty();
+        self.request_dirty_redraw(window);
+        Ok(true)
+    }
+
     /// Anchors the IME candidate window at the inline rename editor's caret.
     ///
     /// Mirrors [`ConApp::update_composer_ime_anchor`], but on a tab row instead
@@ -230,44 +398,10 @@ impl ConApp {
         let Some(rename) = self.rename.as_ref() else {
             return Ok(());
         };
-        let Some(node_index) = self
-            .workspace
-            .nodes()
-            .iter()
-            .position(|node| node.id == rename.target)
-        else {
+        let Some((geometry, cell_w)) = self.rename_editor_geometry(window)? else {
             return Ok(());
         };
-        let Some(visible_row) = node_index.checked_sub(self.tree_scroll_offset) else {
-            return Ok(());
-        };
-        let metrics = window.metrics()?;
-        let scale = metrics.scale_factor.max(1.0);
-        let layout = self.layout(
-            metrics.physical_width,
-            metrics.physical_height,
-            metrics.scale_factor,
-        );
-        let font_size = scaled_host_ui_font(
-            HOST_UI_TAB_SIZE_PX,
-            self.active_session()?.font_size_logical,
-            scale,
-        );
-        let cell_w = font::cell_metrics(font_size).width.max(1);
-        let depth = self
-            .workspace
-            .depths()
-            .get(node_index)
-            .copied()
-            .unwrap_or(0)
-            .min(8);
-        let indent = 14 + depth * 18;
-        let avail = layout
-            .sidebar
-            .width
-            .saturating_sub(8)
-            .saturating_sub(indent);
-        let cells = (avail / cell_w).max(1) as usize;
+        let cells = (geometry.text_width / cell_w).max(1) as usize;
         let window_text = composer::visible_window(
             &rename.editor.text,
             &rename.editor.preedit,
@@ -282,13 +416,13 @@ impl ConApp {
         let caret_cells = usize::from(window_text.truncated)
             + composer::cells(&rename.editor.text[window_text.text..caret])
             + composer::cells(&rename.editor.preedit[window_text.preedit..]);
-        let row_y = layout.tree_header_height.saturating_add(
-            u32::try_from(visible_row)
-                .unwrap_or(u32::MAX)
-                .saturating_mul(layout.tree_row_height),
-        );
-        let x = f64::from(indent.saturating_add(cell_w.saturating_mul(caret_cells as u32))) / scale;
-        let y = f64::from(row_y.saturating_add(7)) / scale;
+        let scale = window.metrics()?.scale_factor.max(1.0);
+        let x = f64::from(
+            geometry
+                .text_x
+                .saturating_add(cell_w.saturating_mul(caret_cells as u32)),
+        ) / scale;
+        let y = f64::from(geometry.text_y) / scale;
         let _ = window.set_ime_cursor_area(minicon_platform::window_host::LogicalRect::new(
             x, y, 2.0, 20.0,
         ));

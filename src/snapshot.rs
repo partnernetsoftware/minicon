@@ -105,6 +105,15 @@ impl ConApp {
                             ("tree_header_height", layout.tree_header_height.into()),
                             ("tree_row_height", layout.tree_row_height.into()),
                             (
+                                "tree_rename_editor",
+                                self.rename_editor_geometry(window)
+                                    .ok()
+                                    .flatten()
+                                    .map_or(json::JsonValue::Null, |(geometry, _)| {
+                                        rect_obj(geometry.plate)
+                                    }),
+                            ),
+                            (
                                 "tree_edit_button",
                                 // Where the active row's rename (pencil)
                                 // button sits, in window physical pixels —
@@ -638,6 +647,20 @@ impl ConApp {
                                     ("tab", tab_id_json(Some(rename.target))),
                                     ("text", rename.editor.text.as_str().into()),
                                     ("preedit", rename.editor.preedit.as_str().into()),
+                                    ("caret", (rename.editor.caret as u64).into()),
+                                    (
+                                        "selection",
+                                        composer::selection_bounds(&rename.editor).map_or(
+                                            json::JsonValue::Null,
+                                            |(start, end)| {
+                                                json::object(vec![
+                                                    ("start", (start as u64).into()),
+                                                    ("end", (end as u64).into()),
+                                                ])
+                                            },
+                                        ),
+                                    ),
+                                    ("selecting", self.rename_selecting.into()),
                                 ])
                             }),
                     ),

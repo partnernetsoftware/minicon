@@ -3580,6 +3580,84 @@ fn the_rename_editor_renders_typed_text_and_the_caret() {
     let _ = session.child.kill();
 }
 
+/// The user-reported pencil -> click inside the visible editor journey must
+/// keep the editor alive, place a caret and route the next key into the label.
+#[cfg(windows)]
+#[test]
+fn clicking_inside_the_tree_rename_editor_keeps_editing() {
+    let _guard = gui_test_guard();
+    let dir = scratch_dir("rename-inside-click");
+    let args = command_shell_args("ping -n 60 127.0.0.1 >nul");
+    let mut session = ConSession::spawn(&dir, &args);
+    session.wait_for(Duration::from_secs(10), |snapshot| {
+        snapshot["child_alive"] == true
+    });
+    let snapshot = session.control_json(&["ui-snapshot"]);
+    let geometry = &snapshot["geometry"];
+    let pencil = &geometry["tree_edit_button"];
+    let scale = geometry["scale_permille"].as_f64().expect("scale") / 1000.0;
+    let point = |x: f64, y: f64| ((x / scale).round() as u16, (y / scale).round() as u16);
+    let click = |session: &ConSession, x: u16, y: u16| {
+        session.control_json(&[
+            "send-ui-mouse",
+            "--action",
+            "click",
+            "--button",
+            "left",
+            "--column",
+            &x.to_string(),
+            "--row",
+            &y.to_string(),
+        ]);
+    };
+    let (pencil_x, pencil_y) = point(
+        pencil["x"].as_f64().expect("pencil x")
+            + pencil["width"].as_f64().expect("pencil width") / 2.0,
+        pencil["y"].as_f64().expect("pencil y")
+            + pencil["height"].as_f64().expect("pencil height") / 2.0,
+    );
+    click(&session, pencil_x, pencil_y);
+    let entered =
+        session.wait_for_ui_snapshot(Duration::from_secs(5), |state| !state["rename"].is_null());
+    let target = entered["rename"]["tab"].clone();
+    let original = entered["rename"]["text"].as_str().expect("seeded label");
+
+    // The host reports the painted editor plate. Clicking its centre must
+    // collapse the entry selection and retain the same tab's editor.
+    let editor = &entered["geometry"]["tree_rename_editor"];
+    assert!(
+        editor.is_object(),
+        "missing painted rename geometry: {entered}"
+    );
+    let (editor_x, editor_y) = point(
+        editor["x"].as_f64().expect("editor x")
+            + editor["width"].as_f64().expect("editor width") / 2.0,
+        editor["y"].as_f64().expect("editor y")
+            + editor["height"].as_f64().expect("editor height") / 2.0,
+    );
+    click(&session, editor_x, editor_y);
+    let held = session.control_json(&["ui-snapshot"]);
+    assert_eq!(
+        held["rename"]["tab"], target,
+        "inside click blurred: {held}"
+    );
+    assert_eq!(held["rename"]["text"], original);
+    assert!(held["rename"]["selection"].is_null());
+    session.control_json(&["send-ui-keys", "Q"]);
+    let edited = session.wait_for_ui_snapshot(Duration::from_secs(5), |state| {
+        state["rename"]["tab"] == target
+            && state["rename"]["text"]
+                .as_str()
+                .is_some_and(|text| text.contains('Q'))
+    });
+    assert_ne!(edited["rename"]["text"], original);
+    session.control_json(&["send-ui-keys", "Enter"]);
+    let committed =
+        session.wait_for_ui_snapshot(Duration::from_secs(5), |state| state["rename"].is_null());
+    assert!(committed["rename"].is_null());
+    let _ = session.child.kill();
+}
+
 /// Zoom out to the smallest font and the terminal must still show its text.
 ///
 /// Every zoom test before this one asked whether the process survived. Going

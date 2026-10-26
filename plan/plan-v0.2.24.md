@@ -1,11 +1,9 @@
 # v0.2.24 — tab-tree interactions and clipboard status
 
-Status: `[_]` selected next-version scope, 2026-10-25; planning refined at the
-owner's 2026-10-26 request to publish 0.2.23 when eligible and plan 0.2.24.
-The owner requests these changes in the next 0.2.x version. This document
-authorizes planning scope, not an automatic 0.2.24 implementation or publication.
-Current release policy remains 0.2.23 until its release join;
-this plan does not bump or mix the two versions' source/artifact evidence.
+Status: `[-]` active 0.2.24 delivery after public
+[0.2.23](../prd/archive/v0.2.23-release-history.md). The owner's current
+goal authorizes development and public release of 0.2.24. The two versions'
+source and artifact evidence remain separate.
 
 Behavior: [tab-tree interaction owner](../prd/PRD_02_25_03_tab_tree_interactions.md).
 Existing hierarchy/naming/focus: [PRD 25](../prd/PRD_02_25_con_workspace.md).
@@ -31,7 +29,7 @@ the existing [workspace plan](plan-harness-workspace.md).
 | Design milestone | Define H2's first local task journey and cluster C0 boundaries | Existing Harness/cluster plans; task submission, Stop and result ownership designed before implementation selection |
 | Later | CU implementation, cross-machine execution and dynamic llm-gate | Existing CU/cluster/engine owners; not required to ship this version |
 
-0.2.23 is not yet published at this planning checkpoint. The owner has accepted
+0.2.23 is public. The owner has accepted
 the [experimental-release amendment](../prd/PRD_02_31_01_provider_gateway.md#0223-experimental-release-amendment-2026-10-26).
 Real-account and continuous-client acceptance carries forward without a passed
 claim. Signing, Defender and exact-source/no-rebuild release requirements still
@@ -48,12 +46,12 @@ task runner, remote pairing or computer use in 0.2.24.
 
 ```text
 Outcome: improve daily workspace interaction and clipboard awareness
-├── [-] R0 — preserve owner rename regression and version/source baseline
+├── [v] R0 — preserve owner rename regression and version/source baseline
 │   invariant: source inspection and injected/physical evidence stay distinct
 │   evidence: retained baseline receipt linked in PRD 25.03
 │   safe failure: unresolved native scope remains BLOCKED
 │   dependency: isolated public GUI control; non-goal: changing the user's login window/clipboard
-├── [_] R1 — fix inside-editor pointer ownership first
+├── [-] R1 — fix inside-editor pointer ownership first
 │   invariant: inside click/selection stays editing, outside blur keeps its policy
 │   evidence: TT-01/02 and actual runtime counterexample with guard removed
 │   safe failure: draft/focus retained and no terminal input
@@ -124,9 +122,8 @@ mouse/focus/geometry ownership and join serially. T1's pure move mechanism can
 be independent only after its intent and file ownership are agreed. One controller
 owns Cargo/GUI/capture/mutation resources and final integration.
 
-No product-code change, version bump or publish is implied by the planning
-checkpoint. The active goal selects 0.2.23 publication; implementing and publishing this
-next-version scope is a later delivery join.
+The active goal selects implementation and public release of this version;
+product-code changes and the version bump follow the completed 0.2.23 Promotion.
 
 ## Development cadence and cut line
 

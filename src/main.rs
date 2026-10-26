@@ -974,10 +974,14 @@ struct ConApp {
     /// so pointer motion extends a mouse selection there instead of reaching
     /// the terminal. Cleared on release.
     composer_selecting: bool,
+    /// A press in the inline tree editor owns motion and release until the
+    /// selection gesture ends, even if the pointer leaves the painted plate.
+    rename_selecting: bool,
     /// Time, byte offset and streak of the last composer press, for
     /// double-click (word) and triple-click (all) selection — the composer's
     /// own counterpart to the terminal's click streak.
     composer_clicks: minicon_core::click::ClickCounter<usize>,
+    rename_clicks: minicon_core::click::ClickCounter<usize>,
     /// The language MiniCon labels its own host UI in. Child output is never
     /// touched by this.
     ui_language: ui::UiLanguage,
@@ -1491,8 +1495,10 @@ impl ConApp {
             composer: composer::ComposerState::default(),
             input_surface: InputSurface::default(),
             composer_selecting: false,
+            rename_selecting: false,
             clipboard_status: clipboard_status::ClipboardStatus::new(),
             composer_clicks: Default::default(),
+            rename_clicks: Default::default(),
             ui_language: ui::UiLanguage::default(),
             ui_theme: theme::ThemeChoice::default(),
             config: ConConfig::default(),
@@ -4072,9 +4078,13 @@ impl PixelWindowApplication for ConApp {
             return Ok(PixelWindowDirective::Continue);
         }
         if matches!(event, PixelWindowEvent::PointerCaptureLost) {
+            self.rename_selecting = false;
             self.cancel_harness_pointer();
             self.cancel_pointer_gestures_for_activation(window);
             return Ok(PixelWindowDirective::Continue);
+        }
+        if matches!(event, PixelWindowEvent::FocusChanged(false)) {
+            self.rename_selecting = false;
         }
         // Another program may have changed the clipboard while MiniCon was in
         // the background, on a host that has no counter to say so.
@@ -4111,6 +4121,9 @@ impl PixelWindowApplication for ConApp {
             return Ok(PixelWindowDirective::Continue);
         }
         if self.consume_harness_settings_input(window, &event) {
+            return Ok(PixelWindowDirective::Continue);
+        }
+        if self.route_rename_pointer(window, &event)? {
             return Ok(PixelWindowDirective::Continue);
         }
         if self.handle_sidebar_resize(window, &event)? {
@@ -4290,7 +4303,7 @@ impl PixelWindowApplication for ConApp {
             ..
         } = &event
         {
-            // Any left press finishes an in-progress rename and, unless the
+            // An outside left press finishes an in-progress rename and, unless the
             // press lands in the notes area (which re-focuses below), drops
             // notes focus on its way out. The click still does whatever it
             // would have; saving on blur is what keeps the scratchpad found.

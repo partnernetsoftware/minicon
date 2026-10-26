@@ -837,6 +837,44 @@ impl Layout {
             height: child.height,
         }
     }
+
+    /// The painted inline rename plate and its text origin. Pointer editing,
+    /// painting and the IME anchor must all use this same geometry.
+    pub fn tree_rename_geometry(
+        self,
+        visible_row: usize,
+        depth: u32,
+        cell_height: u32,
+    ) -> TreeRenameGeometry {
+        let text_x = 14u32.saturating_add(depth.min(8) * 18);
+        let text_width = self.sidebar.width.saturating_sub(8).saturating_sub(text_x);
+        let row_y = self.tree_header_height.saturating_add(
+            u32::try_from(visible_row)
+                .unwrap_or(u32::MAX)
+                .saturating_mul(self.tree_row_height),
+        );
+        let plate_height = cell_height.saturating_add(6);
+        let plate_y = row_y.saturating_add(self.tree_row_height.saturating_sub(plate_height) / 2);
+        TreeRenameGeometry {
+            plate: Rect {
+                x: text_x.saturating_sub(3),
+                y: plate_y,
+                width: text_width.saturating_add(6),
+                height: plate_height,
+            },
+            text_x,
+            text_y: plate_y.saturating_add(3),
+            text_width,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TreeRenameGeometry {
+    pub plate: Rect,
+    pub text_x: u32,
+    pub text_y: u32,
+    pub text_width: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

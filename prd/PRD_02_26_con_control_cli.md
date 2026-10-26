@@ -125,12 +125,17 @@ observations distinguish owned built-in runs from externally observed model
 requests and expose only the evidence-supported lifecycle. Freeze/register the
 actual additive schema with implementation; this prose adds no public verb.
 
-`[_]` [PRD 25.03](PRD_02_25_03_tab_tree_interactions.md) needs additive rename
-caret/selection/focus and tree-drag phase/source/target/validity geometry for
-the next 0.2.x version. Existing `send-ui-mouse` press/move/release must observe
-the production gesture path. Freeze/register actual schemas with implementation;
-no new move verb is advertised by this planning entry. The retained old-source
-inside-click reproduction is an input baseline, not evidence of a repair.
+`[-]` [PRD 25.03](PRD_02_25_03_tab_tree_interactions.md) now publishes
+`ui-snapshot.geometry.tree_rename_editor` as the nullable physical-pixel plate
+of an active terminal tab's inline editor. The existing nullable `rename`
+object adds UTF-8 byte `caret`, nullable `selection` (`start`/`end`) and
+boolean `selecting` to its stable `tab`/`text`/`preedit` fields. The Windows
+x86_64 host-injected pencil → inside click → type → Enter test and a
+guard-removal RED establish this first rename observation. Browser-tab
+geometry, physical mouse/IME and the remaining selection/blur cases remain
+open. Tree-drag phase/source/target/validity geometry is still `[_]`; no new
+move verb is advertised. The retained old-source inside-click reproduction
+remains the input baseline.
 
 ### Existing command evidence
 

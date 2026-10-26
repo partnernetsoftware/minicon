@@ -1,10 +1,9 @@
 # Tab-tree drag and inline editing
 
 Parent: [workspace and input](PRD_02_25_con_workspace.md). Sequence:
-[0.2.24 plan](../plan/plan-v0.2.24.md). Status: `[_]` scheduled for 0.2.24
-by the owner's next-0.2.x request, 2026-10-25. The active release goal remains
-0.2.23; these interactions are the next-version delivery scope. No implemented
-drag or rename-fix claim is made here.
+[0.2.24 plan](../plan/plan-v0.2.24.md). Status: `[-]` active for 0.2.24
+after public 0.2.23. The first Windows host-injected rename click repair is
+implemented; native IME/selection and tree drag remain open.
 
 This module owns pointer interactions for moving tabs and editing their names.
 The parent retains tab identity, naming precedence, hierarchy/lifecycle rules
@@ -15,7 +14,7 @@ to PRD 28. A tree relationship does not become process ownership.
 
 ```text
 Outcome: arrange tab branches and edit their labels without losing input or sessions
-├── [_] RENAME — pointer actions inside the editor remain editing
+├── [-] RENAME — pointer actions inside the editor remain editing
 │   invariant: inside press/caret/selection never commits the rename or reaches the PTY
 │   evidence: TT-01/02 owner regression, public pointer/IME and native editing journey
 │   safe failure: preserve draft/caret on rejected input; closed target cannot redirect edits
@@ -80,6 +79,25 @@ Receipt: `target-six/v0.2.24-tree/rename-click-baseline.json`; raw public
 snapshots and the replay script are beside it. The isolated GUI exited cleanly.
 This is host mouse injection at 1000 permille, not physical mouse/native IME
 qualification; no provider login, foreground injection or clipboard access.
+
+### 0.2.24 first rename implementation checkpoint
+
+The active editor's painted plate, pointer hit and IME anchor now share
+`Layout::tree_rename_geometry`. Pressing inside it keeps the same TabId's
+editor, places a caret and owns motion/release for text selection; an outside
+press retains the existing commit-on-blur path. `ui-snapshot` exposes the
+nullable painted editor rectangle plus caret/selection/selecting state; the
+actual additive schema is registered in [PRD 26](PRD_02_26_con_control_cli.md).
+
+The Windows x86_64 public GUI test
+`clicking_inside_the_tree_rename_editor_keeps_editing` starts a real host,
+clicks the pencil and the published painted editor rectangle, types into that
+same editor and commits. It passed after the repair. Reversing the production
+inside-hit guard made this same test fail at the original `rename=null` result;
+after byte-exact restoration of the inverted guard in `src/rename.rs`, it
+passed again. A later Settings ownership guard also passed the same test and
+strict all-target Clippy. This is a host-injected Windows x86_64 checkpoint, not
+physical mouse/IME, cross-ISA or exact release-artifact qualification.
 
 ### Correct editing behavior
 
@@ -160,7 +178,7 @@ all coordinates, scrolling and work to existing tree bounds; no paint-thread I/O
 
 | Status / journey | Required observable result |
 | --- | --- |
-| `[_]` TT-01 | Pencil -> inside click -> caret/edit remains active; typing changes only that label; Enter commits and Escape restores |
+| `[-]` TT-01 | Pencil -> inside click -> caret/edit remains active; typing changes only that label; Enter commits and Escape restores. Windows x86_64 injected click/typing/Enter and guard-removal RED pass; Escape and selected native scope remain open |
 | `[_]` TT-02 | UTF-8, selected replacement, bounds, native IME, selection drag and outside blur preserve one focus owner; no PTY/browser/Harness leakage |
 | `[_]` TT-03 | Root/child reorder, reparent and root promotion preserve preorder/depth/IDs and source subtree internal links/order |
 | `[_]` TT-04 | Self/descendant/cycle/missing/Browser-nesting/no-op cases are atomic; existing close/promotion and session/page identities remain correct |

@@ -1064,8 +1064,8 @@ impl ConApp {
                 let metrics = font::cell_metrics(font_size);
                 let cell_w = metrics.width.max(1);
                 let cell_h = metrics.height.max(1);
-                let editor_right = tree_width.saturating_sub(8);
-                let avail = editor_right.saturating_sub(indent);
+                let geometry = layout.tree_rename_geometry(visible_index, depth, cell_h);
+                let avail = geometry.text_width;
                 if avail > 0 {
                     let editor = &rename.editor;
                     let cells = (avail / cell_w).max(1) as usize;
@@ -1077,24 +1077,34 @@ impl ConApp {
                         cells,
                     );
                     let caret = editor.caret.clamp(window.text, editor.text.len());
-                    let plate_h = cell_h.saturating_add(6);
                     // Centre the single-line editor in the taller row; while the
                     // rename is live there is no title line to sit under.
-                    let plate_y = y.saturating_add(row_height.saturating_sub(plate_h) / 2);
-                    let text_y = plate_y.saturating_add(3);
+                    let plate_y = geometry.plate.y;
+                    let plate_h = geometry.plate.height;
+                    let text_y = geometry.text_y;
                     surface.fill_rect(
-                        indent.saturating_sub(3),
+                        geometry.plate.x,
                         plate_y,
-                        avail.saturating_add(6),
+                        geometry.plate.width,
                         plate_h,
                         composer_bg.to_xrgb(),
                     );
                     let lead = usize::from(window.truncated);
                     let cell_x = |cells_used: usize| {
-                        indent.saturating_add(cell_w.saturating_mul((lead + cells_used) as u32))
+                        geometry
+                            .text_x
+                            .saturating_add(cell_w.saturating_mul((lead + cells_used) as u32))
                     };
                     if window.truncated {
-                        paint_host_ui_text(surface, indent, text_y, "…", text, font_size, cell_w);
+                        paint_host_ui_text(
+                            surface,
+                            geometry.text_x,
+                            text_y,
+                            "…",
+                            text,
+                            font_size,
+                            cell_w,
+                        );
                     }
                     // A selection is drawn as an inverted span — accent plate
                     // with the text in the editor background color — rather than
