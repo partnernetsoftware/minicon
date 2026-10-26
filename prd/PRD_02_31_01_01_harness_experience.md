@@ -3,7 +3,7 @@
 Parent: [provider gateway](PRD_02_31_01_provider_gateway.md). Sequence:
 [0.2.23 plan](../plan/plan-v0.2.23.md#harness-product-redesign-before-publication).
 Status: `[-]` product redesign specified after owner feedback, 2026-10-25;
-orientation has a scoped Windows development checkpoint; full implementation
+presentation has scoped native development checkpoints below; full implementation
 and acceptance remain open. Existing gateway receipts do not
 qualify this experience.
 
@@ -962,3 +962,39 @@ still-blocked ARM64 scope belong to
 Clipped explanation rows and technical draft-status wording observed in that
 fixture remain open presentation work; native field success does not close
 the complete first-use/readability acceptance gate.
+
+### Native development join for panel, navigation and explanations (2026-10-26)
+
+The original failed canonical-fixture run and its repaired consumers belong to
+[PRD32](PRD_02_32_dev_loop_crosscheck.md#harness-presentation-integration-checkpoint-2026-10-26).
+The following development evidence extends the local Windows checkpoints above;
+it does not complete HU-08 or the continuous real-provider first-use journey.
+
+| Source / run | Native execution scope | Observed result |
+| --- | --- | --- |
+| `f60e216`, run `40277134811` | Linux x86_64 / ARM64, Windows ARM64, macOS ARM64 | Four successful jobs;31 /31 /29 /27 selected suite results respectively |
+| Same source / run | macOS x86_64 | All27 selected suites pass in emitted stdout; job fails only at CreateArtifact upload. Original nested artifact files/PNGs are `BLOCKED`, not retrieved or visually reviewed |
+| `189b74c`, run `40278242091` | Windows x86_64 after its separate key-fixture correction | Successful job;29 selected suites and the original12 isolated-clipboard key-handoff checks pass |
+
+Each platform actually executes the65 Settings-component subjects with zero
+failed/ignored, the Unicode/font-width subject, and the named public responsive
+panel, persistent navigation and explanation-reflow journeys. Those three public
+journeys execute twice in the current schedule; repeated execution is not a count
+of distinct tests. Canonical browser host checks pass22 cases on Windows/Linux
+and23 on macOS. Receipts and raw job logs were inspected, rather than inferring
+test execution from compilation or job colour.
+
+The four archived-artifact cell audits are
+`target-six/v0.2.23-provider/harness-ci-f60e216/selected-verification-index.json`.
+The macOS x86_64 stdout payload recovery and its explicit unavailable-file scope
+are `harness-ci-f60e216/osx-x86_64-stdout-recovered/recovery-receipt.json` under
+the same evidence root. The corrected Windows x86_64 audit is
+`harness-ci-189b74c/verification-index.json`. Source IDs remain separate: the
+repair changes a fixture, its log upload list and documentation; product Rust
+does not change. These receipts are not one exact-source signed Candidate.
+
+Public logical pointer/keyboard/IME injection is not native physical input.
+These default-language development journeys do not qualify every selected
+language/scale, real DeepSeek/Go grants or reads, Pi/tool use, the blocked ARM64
+physical Pinyin path, or final signed/downloaded artifacts. Those obligations
+remain selected in their original owners and the 0.2.23 plan.

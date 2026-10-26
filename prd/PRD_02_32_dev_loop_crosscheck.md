@@ -167,7 +167,7 @@ narrow Harness controls, exact H0 form/client handoff and retained live-document
 return all pass. The two earlier local failures are retained separately; their
 snapshots show the Service form entirely visible at scroll0 and the actual
 `client:default` card. This repairs the consumers, not the product or its
-asserted behavior; the six-cell changed-fixture result remains pending.
+asserted behavior. The source-bound integration outcomes below follow that local replay.
 
 The subsequent Harness-filtered run
 [40277134811](https://github.com/partnernetsoftware/minicon/actions/runs/40277134811)
@@ -177,6 +177,16 @@ original failure, local seven-check replay and pending isolated-clipboard
 qualification by [profile keys](PRD_02_31_01_02_02_profile_keys.md#persistent-form-fixture-integration-2026-10-26).
 Repair that selected consumer and recheck Windows x86_64; do not rerun unchanged
 successful cells solely because this Windows-only fixture changes.
+
+Final execution and unavailable-artifact scopes for this integration join are
+owned by [Harness experience](PRD_02_31_01_01_harness_experience.md#native-development-join-for-panel-navigation-and-explanations-2026-10-26).
+Both workflow runs are terminal. The first stays failed: its original Windows
+key fixture fails, and the macOS x86_64 upload step exhausts five CreateArtifact
+attempts with a request timeout. The latter cell's actual emitted suite/browser
+JSON and named test-pass lines are recovered from its completed raw job log;
+original nested receipt/PNG files remain `BLOCKED`. Do not reinterpret the job
+as green, infer missing files, or repeat all tests only to repair that upload.
+The separate Windows repair run succeeds with its original clipboard court.
 
 ## Mechanism: `.github/workflows/dev-loop-crosscheck.yml`
 

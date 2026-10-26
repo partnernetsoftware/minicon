@@ -428,3 +428,17 @@ requests, zero provider POSTs and empty cleanup errors. Safe receipt:
 This local replay performs no OS clipboard operation. The five clipboard-mode
 checks still require the existing disposable CI desktop; these seven passes
 must not be relabeled as the twelve-check native handoff court.
+
+The repaired isolated Windows x86_64 replay now passes all twelve original
+checks at `189b74ceb1523b8b6d60a9e7ad072f9554fe4971`, run
+[40278242091](https://github.com/partnernetsoftware/minicon/actions/runs/40278242091).
+Its safe receipt confirms actual clipboard mode, all three selected-profile
+Copy targets, applied-alias/bound-port recipes, stopped-service recipe state,
+real adapter contention followed by a new explicit Copy, and selection/close
+reopen refusal. Rejecting-proxy requests and provider POSTs remain zero;
+cleanup errors are empty and only `receipt.json` is upload-allowed.
+`target-six/v0.2.23-provider/harness-ci-189b74c/verification-index.json` records
+the inspected safe receipt and raw-log identities. The original failed source
+receipt above remains a failure. This closes the persistent-form fixture join
+for the synthetic clipboard court; it is not a real account grant, native
+Pinyin/physical keyboard journey, Pi execution or final signed-artifact proof.
