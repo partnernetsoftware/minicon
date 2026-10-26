@@ -13,10 +13,10 @@ import time
 from run import Blocked, require_hosted
 
 
-def prepare(report, allow_close):
+def prepare(report, allow_close, closed_roles):
     require_hosted()  # Must precede all native DLL access.
     if not allow_close:
-        raise Blocked('explicit known-onboarding close option required')
+        raise Blocked('explicit known-setup-window close option required')
     if os.environ.get('RUNNER_ARCH') != 'ARM64':
         raise Blocked('hosted ARM64 preparation required')
     u = c.WinDLL('user32', use_last_error=True)
@@ -107,6 +107,11 @@ def prepare(report, allow_close):
                     raise Blocked('observation thread DPI restoration failed')
 
         def contains_window(target):
+            if role in ('search', 'start-menu'):
+                matched = bool(u.GetForegroundWindow() == target and u.IsWindowVisible(target))
+                if matched:
+                    report['target_desktop_binding'] = 'default-input-foreground-system-panel'
+                return matched
             count, found, overflow = 0, False, False
 
             @window_callback
@@ -151,24 +156,37 @@ def prepare(report, allow_close):
         family = c.create_unicode_buffer(512)
         length = w.DWORD(len(family))
         code = k.GetPackageFamilyName(handle, c.byref(length), family)
-        if code != 0 or family.value != 'Microsoft.Windows.CloudExperienceHost_cw5n1h2txyewy':
+        known = {
+            'Microsoft.Windows.CloudExperienceHost_cw5n1h2txyewy':
+                ('onboarding', ('System32', 'WWAHost.exe')),
+            'MicrosoftWindows.Client.CBS_cw5n1h2txyewy':
+                ('search', ('SystemApps', 'MicrosoftWindows.Client.CBS_cw5n1h2txyewy', 'SearchHost.exe')),
+            'Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy':
+                ('start-menu', ('SystemApps', 'Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy', 'StartMenuExperienceHost.exe')),
+        }
+        if code != 0 or family.value not in known:
             report['action'] = 'none-unrecognized-package'
             return
+        role, relative_image = known[family.value]
+        report['role'] = role
+        if role in closed_roles:
+            raise Blocked('known setup role reappeared; no repeated close')
         image = c.create_unicode_buffer(32768)
         length = w.DWORD(len(image))
         system_root = os.environ.get('SystemRoot')
+        expected_image = Path(system_root).joinpath(*relative_image) if system_root else None
 
         def checked(name, value):
             report.setdefault('target_identity_checks', {})[name] = bool(value)
             return value
 
         if (not system_root or not k.QueryFullProcessImageNameW(handle, 0, image, c.byref(length))
-                or not checked('system_image', os.path.normcase(image.value) == os.path.normcase(str(Path(system_root) / 'System32' / 'WWAHost.exe')))
+                or not checked('system_image', os.path.normcase(image.value) == os.path.normcase(str(expected_image)))
                 or not checked('same_session', session(pid.value) == session(k.GetCurrentProcessId()))
                 or not checked('input_desktop_member', contains_window(hwnd))
                 or not checked('process_alive', k.WaitForSingleObject(handle, 0) == 0x102)):
-            raise Blocked('known onboarding image/session/lifetime mismatch')
-        report['known_onboarding_identity_verified'] = True
+            raise Blocked('known setup image/session/lifetime mismatch')
+        report['known_setup_identity_verified'] = True
         current_pid = w.DWORD()
         current_thread = u.GetWindowThreadProcessId(hwnd, c.byref(current_pid))
         if (u.GetForegroundWindow() != hwnd or not u.IsWindowVisible(hwnd)
@@ -176,16 +194,16 @@ def prepare(report, allow_close):
                 or k.WaitForSingleObject(handle, 0) != 0x102):
             raise Blocked('foreground changed before graceful close')
         if not u.PostMessageW(hwnd, 0x10, 0, 0):
-            raise Blocked('known onboarding graceful close denied')
+            raise Blocked('known setup graceful close denied')
         report['close_requests'] = 1
-        report['action'] = 'one-known-onboarding-WM_CLOSE'
+        report['action'] = 'one-known-setup-window-WM_CLOSE'
         end = time.monotonic() + 5
         while time.monotonic() < end:
             if (not u.IsWindow(hwnd) or not u.IsWindowVisible(hwnd)) and u.GetForegroundWindow() != hwnd:
                 report['known_window_no_longer_visible'] = True
                 return
             time.sleep(0.05)
-        raise Blocked('known onboarding did not close within five seconds')
+        raise Blocked('known setup window did not close within five seconds')
     finally:
         if handle:
             report['process_handle_closed'] = bool(k.CloseHandle(handle))
@@ -198,7 +216,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--receipt', type=Path, required=True)
     parser.add_argument('--source-sha', required=True)
-    parser.add_argument('--close-known-onboarding', action='store_true')
+    parser.add_argument('--close-known-setup-windows', action='store_true')
     args = parser.parse_args()
     path = args.receipt.resolve()
     if path.exists():
@@ -207,16 +225,31 @@ def main():
     report = {'kind': 'hosted-arm64-default-preparation', 'source_sha': args.source_sha,
               'status': 'BLOCKED', 'native_input_qualified': False, 'close_requests': 0,
               'force_kill': False, 'clipboard_or_input_used': False,
-              'onboarding_restored': False, 'restoration_scope': 'disposable VM only; no onboarding restoration claim'}
+              'setup_windows_restored': False, 'restoration_scope': 'disposable VM only; no window restoration claim'}
+    observations = []
+    closed_roles = set()
     try:
         if len(args.source_sha) != 40 or any(ch not in '0123456789abcdef' for ch in args.source_sha):
             raise Blocked('exact lowercase source SHA required')
-        prepare(report, args.close_known_onboarding)
-        report['status'] = 'OBSERVED'
+        for _ in range(4):
+            observation = {'close_requests': 0}
+            observations.append(observation)
+            prepare(observation, args.close_known_setup_windows, closed_roles)
+            if observation['close_requests'] == 0:
+                report['status'] = 'OBSERVED'
+                break
+            closed_roles.add(observation['role'])
+        else:
+            raise Blocked('known setup observation budget exhausted')
     except Blocked as error:
         report['reason'] = str(error)
     except Exception as error:
         report['reason'] = 'preparation error: ' + type(error).__name__
+    report['observations'] = observations
+    report['close_requests'] = sum(item['close_requests'] for item in observations)
+    report['default_desktop_verified'] = bool(observations) and all(item.get('default_desktop_verified', False) for item in observations)
+    for field in ('input_desktop_handle_closed', 'process_handle_closed', 'observation_thread_dpi_restored'):
+        report[field] = all(item.get(field, True) for item in observations)
     path.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
     print(json.dumps(report))
     return 0 if report['status'] == 'OBSERVED' else 2

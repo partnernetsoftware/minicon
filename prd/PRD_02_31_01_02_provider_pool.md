@@ -550,3 +550,22 @@ not a certified fix. The retained index is
 `target-six/v0.2.23-provider/ci-8937d9b-native/verification-index.json`.
 This filtered development run is not a release gate or native evidence for the
 subsequent account/network/browser changes.
+
+### Public real-account readiness inventory
+
+A bounded no-activate default build at
+`8eba92523facc543df29b1fe6e6319c7ea08ad52` reads loaded account state through
+nine public CLI commands, using the existing real-use roots. It observes one
+stored DeepSeek account reporting Ready, zero OpenCode accounts, no active login
+and a stopped listener. The owned GUI exits normally with code0 and its Job
+closes; original roots are retained. Only aggregate counts, enums and booleans
+are recorded. Receipt:
+`target-six/v0.2.23-provider/real-account-readiness-8eba925/receipt.json`.
+
+The verifier reads no private account/token/profile file and requests no
+authorization, inference or metadata refresh; normal product startup may resume
+previously opted-in monitoring. Ready is the observed public state, not a fresh
+provider proof. A second actual DeepSeek account and OpenCode Go remain absent
+from this observation; their requested real login/network/allocation journeys
+still need those authorizations. This inventory neither completes PP-01..03 nor
+substitutes a synthetic grant for the missing accounts.

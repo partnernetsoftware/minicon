@@ -1569,3 +1569,53 @@ journey. Receipt status OBSERVED acknowledges the method call, not desktop
 readiness or input qualification. No original-window-placement restoration is
 claimed for this disposable host. Original owned foreground/point checks and
 complete Pinyin/page/Harness assertions continue deciding actual acceptance.
+
+The actual [run40252991988](https://github.com/partnernetsoftware/minicon/actions/runs/40252991988)
+at `8eba92523facc543df29b1fe6e6319c7ea08ad52` still refuses ARM64 setup.
+The one onboarding close and one Shell.MinimizeAll call complete, including
+COM-reference release, but the same SearchHost foreground / StartMenuExperienceHost
+hit remains. No input occurs; clipboard unchanged, GUI exit0 and all owned
+cleanup/language checks pass. X64's entire court passes. Artifacts:
+`target-six/v0.2.23-provider/native-controls-ci-8eba925/`.
+Do not repeat MinimizeAll or infer it made the desktop usable.
+
+### Bounded known-system-panel preparation
+
+Replace the ineffective MinimizeAll step with an explicitly selected finite
+sequence of known setup-panel closes. This remains disposable-host preparation,
+never an ordinary product operation or a change to the input court.
+
+| Role | Exact package family | Expected system image relative to SystemRoot | Desktop observation |
+| --- | --- | --- | --- |
+| Onboarding | `Microsoft.Windows.CloudExperienceHost_cw5n1h2txyewy` | `System32/WWAHost.exe` | Existing enumeration or physical visible-root witness |
+| Search panel | `MicrosoftWindows.Client.CBS_cw5n1h2txyewy` | `SystemApps/MicrosoftWindows.Client.CBS_cw5n1h2txyewy/SearchHost.exe` | Actual visible foreground root on the verified calling/input Default desktop |
+| Start menu | `Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy` | `SystemApps/Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy/StartMenuExperienceHost.exe` | Actual visible foreground root on the verified calling/input Default desktop |
+
+The Search/Start panel close is a named WM_CLOSE operation, so it may dismiss
+the identified foreground panel while another shell surface covers its center.
+It sends no click/key to that point. Do not carry this preparation exception
+into the actual court's owned-foreground/owned-hit input admission.
+
+Use the explicit `--close-known-setup-windows` entry. Reopen/read back the
+Default input descriptor for each observation, with unchanged hosted/ARM64/
+explicit-option guards. Each role must pass exact class/package/system-image,
+same-session and live-handle checks, plus immediate foreground/PID/thread
+revalidation. Request at most one WM_CLOSE per role and observe hidden/gone
+within five seconds. Four observations allow up to three distinct closes plus
+one terminal no-action observation. A reappearing role or exhausted budget
+refuses; an unknown foreground is left alone for the original court to assess.
+All per-observation outcomes and handle/DPI cleanup remain in the bounded
+receipt. No force kill, process-name-only targeting, shell-wide operation,
+service/registry/permission change, foreign input or owner-desktop action.
+
+Local intercepted qualification passes three entry and twenty identity/panel
+subjects. Nineteen deliberate source faults fail original assertions and pass
+after exact restoration: these include a weakened package allowlist, both
+additional roles' wrong-image refusals, repeated-role refusal and the complete
+three-close/terminal-observation sequence. Every native call is intercepted.
+Receipts:
+`target-six/v0.2.23-provider/default-preparation-refusal-controls-panels/receipt.json`
+and
+`target-six/v0.2.23-provider/default-preparation-identity-controls-panels/receipt.json`.
+This replaces the active MinimizeAll path, not its retained failed evidence.
+Actual panel closing and unchanged native input remain unqualified until replay.
