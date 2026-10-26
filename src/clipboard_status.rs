@@ -206,14 +206,15 @@ impl ClipboardStatus {
 }
 
 fn classify(observed: ClipboardObserved) -> ClipboardSummary {
-    if observed.types.is_empty() && matches!(&observed.text, Ok(value) if value.is_empty()) {
-        return ClipboardSummary {
-            kind: ClipboardKind::Empty,
-            length: ClipboardLength::None,
+    if observed.types.is_empty() {
+        return if matches!(&observed.text, Ok(value) if !value.is_empty()) {
+            ClipboardSummary::UNAVAILABLE
+        } else {
+            ClipboardSummary {
+                kind: ClipboardKind::Empty,
+                length: ClipboardLength::None,
+            }
         };
-    }
-    if observed.types.is_empty() && observed.text.is_err() {
-        return ClipboardSummary::UNAVAILABLE;
     }
     let image = observed.types.iter().any(|name| image_type(name));
     let text_advertised = observed.types.iter().any(|name| text_type(name));
@@ -532,6 +533,18 @@ mod tests {
             ClipboardKind::Empty
         );
         assert_eq!(
+            classify(observation(
+                &[],
+                Err(ClipboardError::failed("clipboard_unavailable", "empty"))
+            ))
+            .kind,
+            ClipboardKind::Empty
+        );
+        assert_eq!(
+            classify(observation(&[], Ok("new content"))).kind,
+            ClipboardKind::Unavailable
+        );
+        assert_eq!(
             classify(observation(&["CF_HDROP"], Ok(""))).kind,
             ClipboardKind::Other
         );
@@ -571,5 +584,74 @@ mod tests {
         assert_eq!(status.summary(), ClipboardSummary::CHECKING);
         assert!(status.refresh_requested);
         assert_eq!(status.generation, 3);
+    }
+
+    /// Run only on a disposable hosted desktop. The original clipboard must
+    /// be empty, so exact restoration is another empty type inventory.
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    #[test]
+    #[ignore = "requires an isolated CI desktop and explicit clipboard-court flag"]
+    fn native_empty_text_and_png_status_restore_empty_clipboard() {
+        assert_eq!(
+            std::env::var("MINICON_NATIVE_CLIPBOARD_COURT").as_deref(),
+            Ok("1")
+        );
+        assert_eq!(std::env::var("GITHUB_ACTIONS").as_deref(), Ok("true"));
+        let original = clipboard::available_types().expect("native clipboard format listing");
+        assert!(
+            original.is_empty(),
+            "BLOCKED: hosted clipboard was not empty before the native court"
+        );
+        struct RestoreEmpty;
+        impl Drop for RestoreEmpty {
+            fn drop(&mut self) {
+                let _ = clipboard::clear();
+            }
+        }
+        let _restore = RestoreEmpty;
+        let observe = || {
+            let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+            let pending = clipboard::read_observed_async(MEASURE_LIMIT_BYTES, move || {
+                let _ = sender.send(());
+            })
+            .expect("start native clipboard observation");
+            receiver
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .expect("native clipboard observation wake");
+            match pending.try_poll() {
+                ClipboardObservedReadPoll::Ready(Ok(observed)) => classify(observed),
+                ClipboardObservedReadPoll::Ready(Err(error)) => {
+                    panic!("native clipboard observation failed: {error:?}")
+                }
+                ClipboardObservedReadPoll::Pending => panic!("wake arrived before result"),
+            }
+        };
+        assert_eq!(observe().kind, ClipboardKind::Empty);
+        clipboard::set_text("中文a").expect("write native text");
+        assert_eq!(
+            observe(),
+            ClipboardSummary {
+                kind: ClipboardKind::Text,
+                length: ClipboardLength::Chars(3),
+            }
+        );
+        const ONE_PIXEL_PNG: &[u8] = &[
+            137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1,
+            8, 4, 0, 0, 0, 181, 28, 12, 2, 0, 0, 0, 11, 73, 68, 65, 84, 120, 218, 99, 252, 255, 31,
+            0, 2, 235, 1, 245, 141, 27, 146, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+        ];
+        #[cfg(windows)]
+        let image_format = "PNG";
+        #[cfg(target_os = "macos")]
+        let image_format = "«class PNGf»";
+        #[cfg(target_os = "linux")]
+        let image_format = "image/png";
+        clipboard::set_type(image_format, ONE_PIXEL_PNG).expect("write native image format");
+        assert_eq!(observe().kind, ClipboardKind::Image);
+        clipboard::clear().expect("restore empty clipboard");
+        assert_eq!(
+            clipboard::available_types().expect("verify native empty clipboard"),
+            original
+        );
     }
 }

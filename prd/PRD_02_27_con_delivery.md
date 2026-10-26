@@ -1644,7 +1644,7 @@ file below is on the routine v0.2.x path -- that's noted per row.
 
 | file | role |
 | --- | --- |
-| `.github/workflows/dev-loop-crosscheck.yml` | the routine credential-free dev loop: real build + `cargo test` on hosted six-cell runners, for a session (e.g. a Linux cloud agent) that cannot compile locally at all |
+| `.github/workflows/dev-loop-crosscheck.yml` | the routine credential-free dev loop: real build + `cargo test` on hosted six-cell runners, for a session (e.g. a Linux cloud agent) that cannot compile locally at all; its opt-in native clipboard court runs only on disposable hosted desktops and requires an initially empty clipboard |
 | `scripts/ci-build.sh` / `scripts/ci-test.sh` | thin `gh workflow run` wrappers over `dev-loop-crosscheck.yml` (build-only vs. build+test) |
 | `.github/workflows/release-smoke-test.yml` | post-publish black-box check against a published Release's *actual* downloaded assets (not a rebuild), one job per OS on its own native runner |
 | `.github/workflows/six-grid-runtime.yml` | executes a `six-grid-cloud-build.yml` GHCR body on six native runners -- the runtime counterpart to that cloud build |

@@ -30,6 +30,11 @@ on:
         description: "Optional Rust test-name substring filter, applied to every suite"
         required: false
         default: ""
+      native_clipboard_court:
+        description: "Explicit empty-clipboard native type court on disposable hosted desktops"
+        type: boolean
+        required: false
+        default: false
       private_publication:
         description: "Run native private-publication source tests and actual guard counterexamples"
         type: boolean
@@ -164,6 +169,17 @@ jobs:
       - name: Build the cell's product and harnesses
         shell: bash
         run: cargo build --locked --workspace --all-targets --target "${{ matrix.triple }}"
+
+      - name: Qualify native clipboard type and exact empty restoration
+        if: inputs.native_clipboard_court
+        shell: bash
+        env:
+          MINICON_NATIVE_CLIPBOARD_COURT: '1'
+        run: |
+          set -euo pipefail
+          bash scripts/build.sh test-suite --target '${{ matrix.triple }}' --bin minicon \
+            clipboard_status::tests::native_empty_text_and_png_status_restore_empty_clipboard \
+            -- --exact --ignored --test-threads 1
 
       - name: Run the standard workspace and owned-fork gate on the isolated desktop
         id: standard_workspace

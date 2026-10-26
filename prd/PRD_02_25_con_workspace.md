@@ -117,13 +117,18 @@ bar; forcing the cursor to paint over the narrow clipboard readout made the
 original assertion fail, then the restored guard passed. The status
 now observes native type names plus bounded text off the GUI thread, invalidates
 late results after a newer generation, renders an unknown image size honestly,
-and gives a narrow window one non-overlapping readout. Native clipboard
-mutation/restore courts, public GUI pixels and other OS/ISA cells remain open;
+and gives a narrow window one non-overlapping readout. An opt-in native court
+is now wired to the disposable six-cell development workflow. It refuses a
+nonempty original clipboard before mutation, then checks text/PNG observations
+and exact empty restoration; its actual runtime results remain open. Public
+GUI pixels and other OS/ISA cells remain open;
 this is a development checkpoint, not CB-TYPE-01..03 completion.
 
 - Outcome/invariant: at a glance distinguish Text, Image, Text + image,
   Empty and Other/Unknown from the same observed clipboard generation. Busy,
-  denied or unsupported reads show unavailable, not Empty or a stale type.
+  denied or unsupported type enumeration shows unavailable, not Empty or a
+  stale type. An empty native format list remains Empty even when a separate
+  text read reports unavailable because there is no text to read.
 - Presentation: localize type and units. Text uses character count (the current
   number is characters, not bytes), for example `Clip Text 123 chars`; images
   show `Clip Image 240 KiB` only when that representation's byte size is known.
