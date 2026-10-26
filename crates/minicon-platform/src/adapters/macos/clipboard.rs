@@ -12,6 +12,9 @@ use std::{
 
 /// Adapter ceiling for a caller-supplied clipboard deadline.
 pub(crate) const HELPER_TIMEOUT: Duration = Duration::from_millis(1_500);
+/// Cold AppKit loading for exact format clearing can exceed the text helper
+/// ceiling on hosted Intel macOS, so this path has its own finite bound.
+const CLEAR_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Bound for the type-name probe (a list of names, never a paste payload).
 const TYPE_LIST_LIMIT_BYTES: usize = 16 * 1024;
@@ -189,11 +192,14 @@ pub(crate) fn set_file(path: &str, timeout: Duration) -> Result<(), ClipboardErr
 pub(crate) fn clear(timeout: Duration) -> Result<(), ClipboardError> {
     // AppleScript `set the clipboard to ""` leaves a string flavour.
     // NSPasteboard clearContents matches MCU.
+    if timeout.is_zero() {
+        return Err(ClipboardError::Timeout { timeout });
+    }
     write_via_command_script(
         "osascript",
         "use framework \"AppKit\"\n\
          current application's NSPasteboard's generalPasteboard()'s clearContents()\n",
-        timeout,
+        timeout.min(CLEAR_TIMEOUT),
     )
 }
 

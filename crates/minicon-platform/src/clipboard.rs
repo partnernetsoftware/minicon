@@ -265,7 +265,7 @@ pub fn clear() -> ClipboardResult<()> {
 
 /// Clear native clipboard formats with a caller-selected bounded deadline.
 /// A cold macOS AppKit helper can take longer than the default 500 ms; an
-/// isolated native court may use the adapter's 1500 ms ceiling explicitly.
+/// isolated native court may request the adapter's separate finite clear bound.
 pub fn clear_with_timeout(open_timeout: Duration) -> ClipboardResult<()> {
     selected::clipboard::clear(open_timeout).map_err(selected::clipboard::map_error)
 }
