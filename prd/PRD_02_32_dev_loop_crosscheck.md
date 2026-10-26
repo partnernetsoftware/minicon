@@ -1268,3 +1268,23 @@ Space commit. The original four-second composition oracle, final Chinese text
 and no-submit predicates remain unchanged. Retain finite method/readback facts
 per editor; an unavailable modern TSF profile stays BLOCKED rather than accepting
 Latin input or enabling an unverified compatibility setting.
+
+That mode-only follow-up, exact `b1ebd61`,
+[run40246784815](https://github.com/partnernetsoftware/minicon/actions/runs/40246784815),
+passes x86_64 again. ARM64 records known/available/open/native=true before
+typing through IMM setup, but then commits Latin `nihao`, exposes no preedit
+and returns to open/native=false. It remains BLOCKED at the unchanged complete
+preedit oracle. Original desktop, input, clipboard, GUI and language cleanup
+pass. Local evidence: `target-six/v0.2.23-provider/native-controls-ci-b1ebd61/`.
+A transient IMM mode readback does not establish an active Pinyin text service.
+
+For the allocated desktop only, next inspect and explicitly select the exact
+registered Microsoft Pinyin TSF profile with `ITfInputProcessorProfileMgr`.
+Its [ActivateProfile](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfinputprocessorprofilemgr-activateprofile)
+desktop scope is `TF_IPPMF_FORSESSION`; no registry-enable or system-wide flag
+is admitted. Bind this operation to the allocator's actual calling-thread
+desktop identity, capture the previous keyboard-category profile first, verify
+the selected profile and restore/read back the original before COM release.
+No default-desktop TSF mutation is added to the passing x86_64 path. Record
+finite profile-type/language/exact-Pinyin equality facts and HRESULTs; profile
+selection is setup, with actual preedit/commit and cleanup still mandatory.

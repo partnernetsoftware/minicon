@@ -251,6 +251,8 @@ class Native:
         self.presentation_topmost = False
         self.presentation_restored = True
         self.focus_observations = []
+        self.tsf_profile = None
+        self.tsf_profile_restored = True
         self.pressed = set()
         self.original_layout = None
         self.thread = None
@@ -485,6 +487,14 @@ class Native:
     def ime(self, enabled):
         self.foreground()
         if enabled:
+            allocated = os.environ.get('MINICON_COURT_ALLOCATED_DESKTOP')
+            if allocated:
+                from tsf_profile import AllocatedTsfProfile, TsfUnavailable
+                try:
+                    if self.tsf_profile is None:
+                        self.tsf_profile = AllocatedTsfProfile(self.u, self.k, allocated)
+                except TsfUnavailable as error:
+                    raise Blocked(str(error)) from error
             import winreg
             # Microsoft documents this exact Pinyin TIP/profile pair. Merely
             # having a Chinese language name is not an installation oracle.
@@ -507,6 +517,11 @@ class Native:
             if not chinese:
                 raise Blocked("Pinyin/Simplified Chinese layout is not already loaded")
             self.message(self.hwnd, 0x50, 0, chinese[0])
+            if self.tsf_profile is not None:
+                try:
+                    self.tsf_profile.select_pinyin(chinese[0])
+                except TsfUnavailable as error:
+                    raise Blocked(str(error)) from error
         ime_window = self.i.ImmGetDefaultIMEWnd(self.hwnd)
         if not ime_window:
             raise Blocked("owned window has no native IME window")
@@ -628,6 +643,8 @@ class Native:
             self.clipboard_diagnostics.update(self.clipboard_snapshot.diagnostics)
             return True
         finally:
+            if self.tsf_profile is not None:
+                self.tsf_profile_restored = self.tsf_profile.close()
             if self.presentation_topmost:
                 if self.u.IsWindow(self.hwnd) and self.owned_hit(self.hwnd):
                     self.presentation_restored = bool(self.u.SetWindowPos(
@@ -1001,12 +1018,15 @@ def main():
         if native is not None:
             receipt["native_focus_observations"] = native.focus_observations
             receipt["owned_topmost_for_presentation"] = native.presentation_topmost
+            if native.tsf_profile is not None:
+                receipt["tsf_profile_observations"] = native.tsf_profile.records
             try:
                 cleanup["clipboard_restored"] = native.restore()
             except (OSError, Blocked):
                 cleanup["clipboard_restored"] = False
             cleanup["clipboard"] = native.clipboard_diagnostics
             cleanup["owned_presentation_restored"] = native.presentation_restored
+            cleanup["tsf_profile_restored"] = native.tsf_profile_restored
         if child is not None:
             if child.poll() is None:
                 try:

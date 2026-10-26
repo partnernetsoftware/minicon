@@ -99,11 +99,13 @@ def main():
         if not input_matches(name):
             raise Blocked('allocated input desktop identity did not match')
         report['allocated_input_desktop_verified'] = True
+        environment = os.environ.copy()
+        environment['MINICON_COURT_ALLOCATED_DESKTOP'] = name
         child = OwnedProcess(Path(sys.executable),
                              ['-B', '-X', 'utf8', str(Path(__file__).with_name('run.py')),
                               '--binary', str(args.binary.resolve(strict=True)),
                               '--output', str(args.output.resolve()), '--source-sha', args.source_sha],
-                             os.environ.copy(), desktop='WinSta0\\' + name)
+                             environment, desktop='WinSta0\\' + name)
         report['controller_reaped'] = False
         report['controller_job_closed'] = False
         code = child.wait(timeout=300)
