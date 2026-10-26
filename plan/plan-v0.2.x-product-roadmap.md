@@ -24,8 +24,9 @@ Outcome: improve daily use without losing open product obligations
 ├── [-] 0.2.23 browser controls and first harness connection → current version plan
 │   ├── browser control consistency → PRD 25.02
 │   └── Harness settings / manual pool / local model API → PRD 31.01
-├── [_] 0.2.24 tab-tree drag and reliable inline rename → next version plan
-│   └── reported inside-click repair first; atomic subtree move and native gestures → PRD 25.03
+├── [_] 0.2.24 tab-tree interactions and clipboard status → next version plan
+│   ├── reported inside-click repair first; atomic subtree move and native gestures → PRD 25.03
+│   └── clipboard type/size → PRD 25; explicit carry decisions and H2/C0 design sequencing → version plan
 ├── [-] Modern-agent / Windows provider / terminal-library qualification → PRD 24.01/34/35
 ├── [-] Test inventory, selection, composition and measured feedback → PRD 33
 ├── [-] RSS, artifact size and exact-source delivery costs → PRD 27

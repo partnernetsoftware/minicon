@@ -1,8 +1,9 @@
 # v0.2.24 — tab-tree interactions and clipboard status
 
-Status: `[_]` selected next-version scope, 2026-10-25. The owner requests these
-changes in the next 0.2.x version. The current active owner goal now selects
-only development/publication of 0.2.23; this next-version scope stays planned.
+Status: `[_]` selected next-version scope, 2026-10-25; planning refined at the
+owner's 2026-10-26 request to publish 0.2.23 when eligible and plan 0.2.24.
+The owner requests these changes in the next 0.2.x version. This document
+authorizes planning scope, not an automatic 0.2.24 implementation or publication.
 Current release policy remains 0.2.23 until its release join;
 this plan does not bump or mix the two versions' source/artifact evidence.
 
@@ -11,6 +12,37 @@ Existing hierarchy/naming/focus: [PRD 25](../prd/PRD_02_25_con_workspace.md).
 Reuse: [PRD 28](../prd/PRD_02_28_shared_core.md). Observation: PRD 26.
 Other subsequent-version Harness/cluster work keeps its own staged scope;
 it is not automatically promised as complete in this tree-interaction release.
+
+## Product priorities and release boundary
+
+The release outcome is predictable everyday interaction: editing a tab name
+works, branches can be arranged without losing live sessions, and clipboard
+status tells the user what kind of content is present. Harness remains the
+core product direction, with its next task-operation design progressing behind
+the existing [workspace plan](plan-harness-workspace.md).
+
+| Priority | Delivery | Acceptance owner / completion condition |
+| --- | --- | --- |
+| P0 | Repair the reported rename click regression before adding drag | PRD25.03 TT-01/02; inside click and selection retain edit/IME ownership |
+| P0 | Show clipboard type together with clearly labeled size | PRD25 CB-TYPE-01..03; text/image/empty/unknown handling, no clipboard mutation |
+| P1 | Tab subtree reorder/reparent, preview and cancellation | PRD25.03 TT-03..07; same live sessions and stable IDs, invalid/cancelled drops leave topology unchanged |
+| Conditional carry | Complete any explicitly deferred 0.2.23 Harness acceptance | PRD31.01.01 HU, pool PP and monitoring UM owners; only an explicit scope decision can move a release obligation |
+| Design milestone | Define H2's first local task journey and cluster C0 boundaries | Existing Harness/cluster plans; task submission, Stop and result ownership designed before implementation selection |
+| Later | CU implementation, cross-machine execution and dynamic llm-gate | Existing CU/cluster/engine owners; not required to ship this version |
+
+0.2.23 is not yet published at this planning checkpoint. Its current gates
+remain authoritative. The owner's conditional "publish if possible" instruction
+does not itself mark missing account/native evidence complete. A proposed
+experimental Harness release with deferred three-account acceptance is awaiting
+an explicit owner scope decision; it is not selected here. If accepted, update
+the owning PRDs and 0.2.23 plan first, state the unverified capabilities in public
+release notes, and keep the original acceptance IDs open in the carry row above.
+Signing, Defender and exact-source/no-rebuild release requirements still apply.
+
+The H2/C0 design milestone is not a second feature bundle on the release's
+critical path. Its output is an agreed first journey, authority boundary and
+acceptance cases in the existing owning modules. It does not promise a visual
+task runner, remote pairing or computer use in 0.2.24.
 
 ## Outcome tree DAG
 
@@ -59,6 +91,9 @@ flowchart LR
     V[Complete0.2.23 source/release join] --> FREEZE[Select0.2.24 version and freeze matching source]
     N --> FREEZE
     CLIP[PRD25 clipboard type / labeled size / asynchronous summary] --> FREEZE
+    DECISION[Explicit owner decision on any deferred Harness acceptance] --> CARRY[Keep original HU / PP / UM identities open]
+    CARRY --> FREEZE
+    H2[H2 / C0 design in existing owners] -. later implementation selection .-> FUTURE[Future task and cluster releases]
     FREEZE --> Q[Exact artifact qualification and authorized no-rebuild publication]
     MISS[Missing required evidence] --> BLOCK[BLOCKED exact claim]
 ```
@@ -92,3 +127,18 @@ owns Cargo/GUI/capture/mutation resources and final integration.
 No product-code change, version bump or publish is implied by the planning
 checkpoint. The active goal selects 0.2.23 publication; implementing and publishing this
 next-version scope is a later delivery join.
+
+## Development cadence and cut line
+
+- Start with R1. C1 may proceed independently once its platform-summary and UI
+  owners are agreed; R1 and T2 cannot edit the shared pointer dispatch at once.
+- Build T1 before T2. Review one complete drag journey before expanding to the
+  selected native matrix. Keep rename and clipboard fixes reviewable separately.
+- Use the existing three-subject daily smoke and requirement-selected tests.
+  Each new critical guard needs a real failing counterexample. Archive weak
+  duplicate tests only after review; do not add source-string assertions as proof.
+- Run cross-platform integration at the completed feature join and required
+  exact-source gates at the release boundary, not once per small UI edit.
+- A missing selected acceptance case stays open. Do not silently exchange drag,
+  account validation or native input for an easier fixture. Any scope deferral
+  needs an explicit owner decision before freezing release source.
