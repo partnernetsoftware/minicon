@@ -664,6 +664,59 @@ impl ConApp {
                                 ])
                             }),
                     ),
+                    (
+                        "tree_drag",
+                        self.tree_drag.map_or(json::JsonValue::Null, |drag| {
+                            let (target, position) = match drag.proposal {
+                                Some(workspace::MovePlacement::Before(target)) => {
+                                    (Some(target), "before")
+                                }
+                                Some(workspace::MovePlacement::Into(target)) => {
+                                    (Some(target), "into")
+                                }
+                                Some(workspace::MovePlacement::After(target)) => {
+                                    (Some(target), "after")
+                                }
+                                Some(workspace::MovePlacement::RootTail) => (None, "root_tail"),
+                                None => (None, "none"),
+                            };
+                            let row = target
+                                .and_then(|id| {
+                                    self.workspace.nodes().iter().position(|node| node.id == id)
+                                })
+                                .and_then(|index| index.checked_sub(self.tree_scroll_offset))
+                                .filter(|visible| *visible < layout.tree_capacity())
+                                .map(|visible| ui::Rect {
+                                    x: layout.sidebar.x,
+                                    y: layout.tree_header_height.saturating_add(
+                                        layout.tree_row_height.saturating_mul(visible as u32),
+                                    ),
+                                    width: layout.sidebar.width,
+                                    height: layout.tree_row_height,
+                                });
+                            json::object(vec![
+                                ("source", tab_id_json(Some(drag.source))),
+                                ("revision", drag.revision.into()),
+                                (
+                                    "phase",
+                                    if drag.dragging { "dragging" } else { "armed" }.into(),
+                                ),
+                                ("target", tab_id_json(target)),
+                                ("position", position.into()),
+                                (
+                                    "valid",
+                                    (drag.proposal.is_some() && drag.refusal.is_none()).into(),
+                                ),
+                                (
+                                    "reason",
+                                    drag.refusal.map_or(json::JsonValue::Null, |error| {
+                                        format!("{error:?}").into()
+                                    }),
+                                ),
+                                ("target_row", row.map_or(json::JsonValue::Null, rect_obj)),
+                            ])
+                        }),
+                    ),
                     ("composer_focused", self.composer.focused.into()),
                     ("composer_text", self.composer.text.as_str().into()),
                     ("composer_preedit", self.composer.preedit.as_str().into()),

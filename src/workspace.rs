@@ -28,6 +28,25 @@ pub enum TabKind {
     Browser,
 }
 
+/// A release-only tree-drop intent. Targets use stable ids, never row indexes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MovePlacement {
+    Before(TabId),
+    Into(TabId),
+    After(TabId),
+    RootTail,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MoveError {
+    Stale,
+    MissingSource,
+    MissingTarget,
+    SelfOrDescendant,
+    BrowserNesting,
+    MalformedTree,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TabNode {
     pub id: TabId,
@@ -49,12 +68,13 @@ pub struct TabNode {
 /// Parent cycles are impossible because a node can only be created beneath an
 /// existing node. Closing a parent promotes its direct children, preserving
 /// their sessions instead of treating hierarchy as ownership of a PTY.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Workspace {
     nodes: Vec<TabNode>,
     depths: Vec<u32>,
     active: Option<TabId>,
     next_id: u64,
+    topology_revision: u64,
 }
 
 impl Default for Workspace {
@@ -64,6 +84,7 @@ impl Default for Workspace {
             depths: Vec::new(),
             active: None,
             next_id: 1,
+            topology_revision: 0,
         }
     }
 }
@@ -79,6 +100,134 @@ impl Workspace {
 
     pub const fn active(&self) -> Option<TabId> {
         self.active
+    }
+
+    pub const fn topology_revision(&self) -> u64 {
+        self.topology_revision
+    }
+
+    pub fn preview_move(
+        &self,
+        source: TabId,
+        placement: MovePlacement,
+        expected_revision: u64,
+    ) -> Result<bool, MoveError> {
+        self.clone()
+            .move_subtree(source, placement, expected_revision)
+    }
+
+    /// Move a complete preorder branch without touching any session or page
+    /// host. Validation and construction happen on a copy; only a successful,
+    /// nontrivial move replaces the visible tree.
+    pub fn move_subtree(
+        &mut self,
+        source: TabId,
+        placement: MovePlacement,
+        expected_revision: u64,
+    ) -> Result<bool, MoveError> {
+        if expected_revision != self.topology_revision {
+            return Err(MoveError::Stale);
+        }
+        if !Self::valid_preorder(&self.nodes, &self.depths) {
+            return Err(MoveError::MalformedTree);
+        }
+        let source_index = self
+            .nodes
+            .iter()
+            .position(|node| node.id == source)
+            .ok_or(MoveError::MissingSource)?;
+        let source_end = Self::branch_end(&self.depths, source_index);
+        let (insertion, parent) = match placement {
+            MovePlacement::RootTail => (self.nodes.len(), None),
+            MovePlacement::Before(target)
+            | MovePlacement::After(target)
+            | MovePlacement::Into(target) => {
+                let target_index = self
+                    .nodes
+                    .iter()
+                    .position(|node| node.id == target)
+                    .ok_or(MoveError::MissingTarget)?;
+                if (source_index..source_end).contains(&target_index) {
+                    return Err(MoveError::SelfOrDescendant);
+                }
+                match placement {
+                    MovePlacement::Before(_) => (target_index, self.nodes[target_index].parent),
+                    MovePlacement::After(_) => (
+                        Self::branch_end(&self.depths, target_index),
+                        self.nodes[target_index].parent,
+                    ),
+                    MovePlacement::Into(_) => {
+                        (Self::branch_end(&self.depths, target_index), Some(target))
+                    }
+                    MovePlacement::RootTail => unreachable!(),
+                }
+            }
+        };
+        if self.nodes[source_index].kind == TabKind::Browser && parent.is_some() {
+            return Err(MoveError::BrowserNesting);
+        }
+        let mut candidate = self.nodes.clone();
+        let mut branch: Vec<TabNode> = candidate.drain(source_index..source_end).collect();
+        branch[0].parent = parent;
+        let insertion = insertion.saturating_sub(if insertion > source_index {
+            source_end - source_index
+        } else {
+            0
+        });
+        candidate.splice(insertion..insertion, branch);
+        let depths = minicon_core::tree::compute_tree_depths_by(
+            &candidate,
+            |node| node.id,
+            |node| node.parent,
+        )
+        .map_err(|_| MoveError::MalformedTree)?;
+        if !Self::valid_preorder(&candidate, &depths) {
+            return Err(MoveError::MalformedTree);
+        }
+        if candidate == self.nodes {
+            return Ok(false);
+        }
+        self.nodes = candidate;
+        self.depths = depths;
+        self.topology_revision = self.topology_revision.wrapping_add(1);
+        Ok(true)
+    }
+
+    fn branch_end(depths: &[u32], start: usize) -> usize {
+        let depth = depths[start];
+        start
+            + 1
+            + depths[start + 1..]
+                .iter()
+                .take_while(|&&candidate| candidate > depth)
+                .count()
+    }
+
+    fn valid_preorder(nodes: &[TabNode], depths: &[u32]) -> bool {
+        if nodes.len() != depths.len() {
+            return false;
+        }
+        let Ok(computed) =
+            minicon_core::tree::compute_tree_depths_by(nodes, |node| node.id, |node| node.parent)
+        else {
+            return false;
+        };
+        if computed != depths {
+            return false;
+        }
+        let mut ancestry = Vec::new();
+        for (node, &depth) in nodes.iter().zip(depths) {
+            let depth = depth as usize;
+            if depth > ancestry.len() {
+                return false;
+            }
+            ancestry.truncate(depth);
+            if node.parent != ancestry.last().copied() {
+                return false;
+            }
+            ancestry.push(node.id);
+        }
+        true
     }
 
     pub fn node(&self, id: TabId) -> Option<&TabNode> {
@@ -168,6 +317,7 @@ impl Workspace {
             }
         }
         self.depths = self.recompute_depths();
+        self.topology_revision = self.topology_revision.wrapping_add(1);
         if self.active == Some(id) {
             self.active = self
                 .nodes
@@ -229,6 +379,7 @@ impl Workspace {
             },
         );
         self.depths.insert(insertion_index, depth);
+        self.topology_revision = self.topology_revision.wrapping_add(1);
         self.active = Some(id);
         Some(id)
     }
@@ -237,6 +388,126 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn moving_a_branch_keeps_preorder_identity_and_active_session() {
+        let mut workspace = Workspace::default();
+        let first = workspace.add_root("first".into()).unwrap();
+        let branch = workspace.add_child(first, "branch".into()).unwrap();
+        let leaf = workspace.add_child(branch, "leaf".into()).unwrap();
+        let peer = workspace.add_child(first, "peer".into()).unwrap();
+        let second = workspace.add_root("second".into()).unwrap();
+        let browser = workspace.add_browser_root().unwrap();
+        assert!(workspace.set_active(leaf));
+        let revision = workspace.topology_revision();
+        assert_eq!(
+            workspace.move_subtree(branch, MovePlacement::Into(second), revision),
+            Ok(true)
+        );
+        assert_eq!(
+            workspace
+                .nodes()
+                .iter()
+                .map(|node| node.id)
+                .collect::<Vec<_>>(),
+            vec![first, peer, second, branch, leaf, browser]
+        );
+        assert_eq!(workspace.depths(), &[0, 1, 0, 1, 2, 0]);
+        assert_eq!(workspace.node(branch).unwrap().parent, Some(second));
+        assert_eq!(workspace.node(leaf).unwrap().parent, Some(branch));
+        assert_eq!(workspace.active(), Some(leaf));
+        assert_eq!(workspace.browser_tab(), Some(browser));
+
+        let revision = workspace.topology_revision();
+        assert_eq!(
+            workspace.move_subtree(second, MovePlacement::Before(first), revision),
+            Ok(true)
+        );
+        assert_eq!(
+            workspace
+                .nodes()
+                .iter()
+                .map(|node| node.id)
+                .collect::<Vec<_>>(),
+            vec![second, branch, leaf, first, peer, browser]
+        );
+        assert_eq!(workspace.depths(), &[0, 1, 2, 0, 1, 0]);
+        assert_eq!(
+            workspace.move_subtree(
+                branch,
+                MovePlacement::RootTail,
+                workspace.topology_revision()
+            ),
+            Ok(true)
+        );
+        assert_eq!(workspace.node(branch).unwrap().parent, None);
+        assert_eq!(workspace.depths(), &[0, 0, 1, 0, 0, 1]);
+        assert_eq!(workspace.active(), Some(leaf));
+    }
+
+    #[test]
+    fn refused_or_noop_branch_moves_are_atomic() {
+        let mut workspace = Workspace::default();
+        let root = workspace.add_root("root".into()).unwrap();
+        let child = workspace.add_child(root, "child".into()).unwrap();
+        let grandchild = workspace.add_child(child, "grandchild".into()).unwrap();
+        let browser = workspace.add_browser_root().unwrap();
+        let before = workspace.nodes().to_vec();
+        let depths = workspace.depths().to_vec();
+        let active = workspace.active();
+        let revision = workspace.topology_revision();
+        for (source, placement, expected) in [
+            (
+                root,
+                MovePlacement::Into(grandchild),
+                MoveError::SelfOrDescendant,
+            ),
+            (
+                child,
+                MovePlacement::Before(child),
+                MoveError::SelfOrDescendant,
+            ),
+            (
+                browser,
+                MovePlacement::Into(root),
+                MoveError::BrowserNesting,
+            ),
+            (
+                TabId::new(999),
+                MovePlacement::RootTail,
+                MoveError::MissingSource,
+            ),
+            (
+                root,
+                MovePlacement::After(TabId::new(999)),
+                MoveError::MissingTarget,
+            ),
+        ] {
+            assert_eq!(
+                workspace.move_subtree(source, placement, revision),
+                Err(expected)
+            );
+            assert_eq!(workspace.nodes(), before);
+            assert_eq!(workspace.depths(), depths);
+            assert_eq!(workspace.active(), active);
+            assert_eq!(workspace.topology_revision(), revision);
+        }
+        assert_eq!(
+            workspace.move_subtree(browser, MovePlacement::RootTail, revision),
+            Ok(false)
+        );
+        assert_eq!(workspace.topology_revision(), revision);
+        assert_eq!(
+            workspace.move_subtree(child, MovePlacement::RootTail, revision.wrapping_sub(1)),
+            Err(MoveError::Stale)
+        );
+        assert_eq!(workspace.nodes(), before);
+        workspace.nodes[0].parent = Some(grandchild);
+        assert_eq!(
+            workspace.move_subtree(child, MovePlacement::RootTail, revision),
+            Err(MoveError::MalformedTree)
+        );
+    }
 
     #[test]
     fn closing_parent_promotes_direct_children_and_keeps_them_live() {

@@ -133,8 +133,14 @@ boolean `selecting` to its stable `tab`/`text`/`preedit` fields. The Windows
 x86_64 host-injected pencil → inside click → type → Enter test and a
 guard-removal RED establish this first rename observation. Browser-tab
 geometry, physical mouse/IME and the remaining selection/blur cases remain
-open. Tree-drag phase/source/target/validity geometry is still `[_]`; no new
-move verb is advertised. The retained old-source inside-click reproduction
+open. `ui-snapshot.tree_drag` is now nullable when idle and publishes stable
+`source`, `revision`, `phase` (`armed`/`dragging`), nullable `target`,
+`position` (`before`/`into`/`after`/`root_tail`/`none`), `valid`, nullable
+typed `reason` and nullable painted `target_row` geometry while a tree pointer
+gesture is held. The Windows x86_64 public GUI click/drag/invalid/Escape
+journey passed with a release-commit guard-removal RED; physical pointer and
+native matrix remain open. No new move verb is advertised. The retained
+old-source inside-click reproduction
 remains the input baseline.
 
 ### Existing command evidence

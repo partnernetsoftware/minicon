@@ -996,6 +996,7 @@ struct ConApp {
     /// Absolute node index the pointer is hovering in the tree, or None.
     /// The per-row close button shows only for the active or hovered row.
     hovered_tree_row: Option<usize>,
+    tree_drag: Option<pointer::TreeDrag>,
     /// The header icon button (New / Settings) the pointer is over, for hover
     /// feedback. `None` when the pointer is elsewhere.
     hovered_header: Option<HeaderIcon>,
@@ -1503,6 +1504,7 @@ impl ConApp {
             ui_theme: theme::ThemeChoice::default(),
             config: ConConfig::default(),
             hovered_tree_row: None,
+            tree_drag: None,
             hovered_header: None,
             settings_open: false,
             settings_section: ui::SettingsSection::default(),
@@ -4109,6 +4111,9 @@ impl PixelWindowApplication for ConApp {
         ) && self.refresh_ime_status()
         {
             self.request_dirty_redraw(window);
+        }
+        if self.route_tree_drag(window, &event)? {
+            return Ok(PixelWindowDirective::Continue);
         }
         if self.consume_menu_gesture(&event) || self.route_harness_workspace(window, &event)? {
             return Ok(PixelWindowDirective::Continue);

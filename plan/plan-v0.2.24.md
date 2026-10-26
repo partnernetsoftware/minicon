@@ -56,12 +56,12 @@ Outcome: improve daily workspace interaction and clipboard awareness
 │   evidence: TT-01/02 and actual runtime counterexample with guard removed
 │   safe failure: draft/focus retained and no terminal input
 │   dependency: shared editor geometry; non-goal: renaming authority/schema redesign
-├── [_] T1 — atomic product Workspace subtree move
+├── [-] T1 — atomic product Workspace subtree move
 │   invariant: stable identity and complete topology/session preservation
 │   evidence: TT-03/04 legal/invalid/no-op move matrix
 │   safe failure: invalid move changes nothing
 │   dependency: parent invariants and typed topology checks; non-goal: session restart or persistence
-├── [_] T2 — pointer state, preview, scrolling and cancellation
+├── [-] T2 — pointer state, preview, scrolling and cancellation
 │   invariant: one gesture owner and release-only mutation
 │   evidence: TT-05/06 public press/move/release and native pointer journeys
 │   safe failure: stale/cancelled proposals leave no tree mutation
@@ -137,6 +137,11 @@ product-code changes and the version bump follow the completed 0.2.23 Promotion.
   observer and localized status layout are integrated. Public GUI pixels,
   native format mutation/restore courts and the selected OS/ISA matrix remain
   open under PRD 25 CB-TYPE-01..03.
+- T1/T2 development checkpoint: Windows x86_64 Workspace branch matrix (17
+  tests) and the public GUI drag/cancel/refusal journey passed. Removing the
+  parent update and the release-only commit each produced their expected RED
+  result before restoration. PRD 25.03 retains native pointer, full preview,
+  scroll/capture/stale cases and exact-source qualification as open evidence.
 - Use the existing three-subject daily smoke and requirement-selected tests.
   Each new critical guard needs a real failing counterexample. Archive weak
   duplicate tests only after review; do not add source-string assertions as proof.

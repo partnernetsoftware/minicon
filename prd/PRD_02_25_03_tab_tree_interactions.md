@@ -2,8 +2,8 @@
 
 Parent: [workspace and input](PRD_02_25_con_workspace.md). Sequence:
 [0.2.24 plan](../plan/plan-v0.2.24.md). Status: `[-]` active for 0.2.24
-after public 0.2.23. The first Windows host-injected rename click repair is
-implemented; native IME/selection and tree drag remain open.
+after public 0.2.23. Windows host-injected rename click and drag development
+checkpoints are implemented; native IME/selection and full drag acceptance remain open.
 
 This module owns pointer interactions for moving tabs and editing their names.
 The parent retains tab identity, naming precedence, hierarchy/lifecycle rules
@@ -20,13 +20,13 @@ Outcome: arrange tab branches and edit their labels without losing input or sess
 │   safe failure: preserve draft/caret on rejected input; closed target cannot redirect edits
 │   dependency: one shared editor geometry and existing bounded field/IME mechanisms
 │   non-goal: changing custom-title precedence or opening a rename dialog
-├── [_] MOVE — same-parent reorder, reparent and promote to root
+├── [-] MOVE — same-parent reorder, reparent and promote to root
 │   invariant: one validated atomic subtree move preserves stable IDs and live content
 │   evidence: TT-03/04 root/child/subtree matrix and unchanged session/browser identities
 │   safe failure: invalid/self/descendant/missing target leaves the tree unchanged
 │   dependency: product Workspace move intent and typed shared topology validation
 │   non-goal: restarting PTYs, cross-window/cross-machine moves or restoring a persistent workspace
-├── [_] GESTURE — threshold, preview, scrolling and cancellation
+├── [-] GESTURE — threshold, preview, scrolling and cancellation
 │   invariant: text selection, row buttons, row clicks and node drag have one owner
 │   evidence: TT-05/06 press/move/release, capture loss, edge scroll and stale topology
 │   safe failure: Escape/outside release/capture loss cancels without any move
@@ -98,6 +98,26 @@ after byte-exact restoration of the inverted guard in `src/rename.rs`, it
 passed again. A later Settings ownership guard also passed the same test and
 strict all-target Clippy. This is a host-injected Windows x86_64 checkpoint, not
 physical mouse/IME, cross-ISA or exact release-artifact qualification.
+
+### 0.2.24 drag development checkpoint
+
+`Workspace::move_subtree` validates preorder topology, source, target,
+Browser-root rule and topology revision before atomically replacing a complete
+branch. Parent and depth change together; IDs, active selection and
+session/browser stores are untouched. Windows x86_64 ran 17 Workspace tests;
+removing the parent update made the branch-move test fail, then restoration
+passed.
+
+The expanded tree now arms on a row-body press, crosses a 6 DIP threshold,
+shows source/target and invalid previews, scrolls at tree edges, and applies a
+validated move only on release. Escape, focus loss and capture loss cancel.
+`ui-snapshot.tree_drag` reports stable source/proposal/reason while armed. The
+Windows x86_64 public GUI test
+`tree_drag_commits_only_on_release_and_escape_cancels` passed click selection,
+deferred root promotion, Escape and invalid-target refusal. Removing the
+release commit made the same test fail; the guard was restored and the test
+passed. Physical pointer, native matrix, scale/scroll pixel review and exact
+artifact qualification remain open under TT-03..07.
 
 ### Correct editing behavior
 
@@ -180,10 +200,10 @@ all coordinates, scrolling and work to existing tree bounds; no paint-thread I/O
 | --- | --- |
 | `[-]` TT-01 | Pencil -> inside click -> caret/edit remains active; typing changes only that label; Enter commits and Escape restores. Windows x86_64 injected click/typing/Enter and guard-removal RED pass; Escape and selected native scope remain open |
 | `[_]` TT-02 | UTF-8, selected replacement, bounds, native IME, selection drag and outside blur preserve one focus owner; no PTY/browser/Harness leakage |
-| `[_]` TT-03 | Root/child reorder, reparent and root promotion preserve preorder/depth/IDs and source subtree internal links/order |
-| `[_]` TT-04 | Self/descendant/cycle/missing/Browser-nesting/no-op cases are atomic; existing close/promotion and session/page identities remain correct |
-| `[_]` TT-05 | Below-threshold click, icon press, text-selection drag, valid/invalid preview and release produce exactly the intended effect |
-| `[_]` TT-06 | Scroll, capture loss, Escape, outside release and concurrent tree change cancel safely; no stuck capture or accidental close/new-child |
+| `[-]` TT-03 | Root/child reorder, reparent and root promotion preserve preorder/depth/IDs and source subtree internal links/order; Workspace matrix passed on Windows x86_64 |
+| `[-]` TT-04 | Self/descendant/cycle/missing/Browser-nesting/no-op cases are atomic; Workspace rejection matrix passed, native session/page identity remains open |
+| `[-]` TT-05 | Below-threshold click, icon press, text-selection drag, valid/invalid preview and release produce exactly the intended effect; injected click/valid-invalid release passed |
+| `[-]` TT-06 | Scroll, capture loss, Escape, outside release and concurrent tree change cancel safely; injected Escape passed, other paths remain open |
 | `[_]` TT-07 | Same-frame geometry/hits/observations and native pointer/keyboard/IME at actual claimed OS/ISA/scales/viewport sizes; exact-artifact behavior separately qualified |
 
 Additive observations need source ID, drag phase, proposal target/position,

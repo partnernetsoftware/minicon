@@ -6,6 +6,31 @@
 
 use super::*;
 
+#[derive(Clone, Copy, Debug)]
+pub(super) struct TreeDrag {
+    pub source: workspace::TabId,
+    pub revision: u64,
+    start_x: f64,
+    start_y: f64,
+    pub dragging: bool,
+    pub proposal: Option<workspace::MovePlacement>,
+    pub refusal: Option<workspace::MoveError>,
+}
+
+impl TreeDrag {
+    fn armed(source: workspace::TabId, revision: u64, point: &LogicalPoint) -> Self {
+        Self {
+            source,
+            revision,
+            start_x: point.x,
+            start_y: point.y,
+            dragging: false,
+            proposal: None,
+            refusal: None,
+        }
+    }
+}
+
 impl ConApp {
     pub(super) fn cancel_pointer_gesture_for_tab(
         &mut self,
@@ -21,6 +46,9 @@ impl ConApp {
     }
 
     pub(super) fn cancel_pointer_gestures_for_activation(&mut self, window: &PixelWindow) {
+        if self.tree_drag.take().is_some() {
+            let _ = window.set_pointer_capture(false);
+        }
         let owner = self.control_pointer_owner;
         if let Some(owner) = owner {
             self.cancel_pointer_gesture_for_tab(window, owner);
@@ -137,6 +165,14 @@ impl ConApp {
                 self.mark_host_ui_full();
             }
             ui::TreeHit::Select(index) => {
+                if !layout.sidebar_collapsed {
+                    self.tree_drag = Some(TreeDrag::armed(
+                        ids[index],
+                        self.workspace.topology_revision(),
+                        position,
+                    ));
+                    return Ok(true);
+                }
                 self.activate_session(window, ids[index]);
                 self.reveal_active_tree_row(window)?;
                 self.mark_host_ui_full();
@@ -148,6 +184,214 @@ impl ConApp {
         window.focus();
         window.request_redraw();
         Ok(true)
+    }
+
+    pub(super) fn route_tree_drag(
+        &mut self,
+        window: &PixelWindow,
+        event: &PixelWindowEvent,
+    ) -> Result<bool, PixelWindowError> {
+        let Some(mut drag) = self.tree_drag else {
+            return Ok(false);
+        };
+        match event {
+            PixelWindowEvent::Keyboard(key)
+                if key.state == KeyPressState::Pressed
+                    && key.logical == LogicalKey::Named(NamedKey::Escape) =>
+            {
+                self.tree_drag = None;
+                if drag.dragging {
+                    let _ = window.set_pointer_capture(false);
+                }
+                self.mark_tree_dirty();
+                self.request_dirty_redraw(window);
+                Ok(true)
+            }
+            PixelWindowEvent::FocusChanged(false) => {
+                self.tree_drag = None;
+                self.mark_tree_dirty();
+                self.request_dirty_redraw(window);
+                Ok(true)
+            }
+            PixelWindowEvent::Keyboard(_) | PixelWindowEvent::Ime(_) if drag.dragging => Ok(true),
+            PixelWindowEvent::PointerButton {
+                state: PointerButtonState::Pressed,
+                ..
+            } => {
+                self.tree_drag = None;
+                if drag.dragging {
+                    let _ = window.set_pointer_capture(false);
+                }
+                self.mark_tree_dirty();
+                self.request_dirty_redraw(window);
+                Ok(false)
+            }
+            PixelWindowEvent::MouseWheel { .. } if drag.dragging => Ok(true),
+            PixelWindowEvent::PointerMoved { position, .. } => {
+                if !drag.dragging {
+                    let distance_sq =
+                        (position.x - drag.start_x).powi(2) + (position.y - drag.start_y).powi(2);
+                    if distance_sq < 36.0 {
+                        return Ok(true);
+                    }
+                    if window.set_pointer_capture(true).is_err() {
+                        self.tree_drag = None;
+                        return Ok(true);
+                    }
+                    drag.dragging = true;
+                }
+                let metrics = window.metrics()?;
+                let scale = metrics.scale_factor.max(1.0);
+                let layout = self.layout(
+                    metrics.physical_width,
+                    metrics.physical_height,
+                    metrics.scale_factor,
+                );
+                let x = (position.x * scale).max(0.0) as u32;
+                let y = (position.y * scale).max(0.0) as u32;
+                let top = layout.tree_header_height;
+                let bottom = top.saturating_add(
+                    layout
+                        .tree_row_height
+                        .saturating_mul(layout.tree_capacity() as u32),
+                );
+                let edge = (12.0 * scale) as u32;
+                if layout.sidebar.contains(x, y) && y >= top && y < bottom {
+                    let scroll = if y < top.saturating_add(edge) {
+                        -1
+                    } else if y >= bottom.saturating_sub(edge) {
+                        1
+                    } else {
+                        0
+                    };
+                    if scroll != 0 {
+                        self.tree_scroll_offset = ui::scroll_tree(
+                            self.tree_scroll_offset,
+                            scroll,
+                            self.workspace.nodes().len(),
+                            layout.tree_capacity(),
+                        );
+                    }
+                }
+                drag.proposal = self.tree_drop_at(layout, x, y);
+                drag.refusal = drag.proposal.and_then(|proposal| {
+                    self.workspace
+                        .preview_move(drag.source, proposal, drag.revision)
+                        .err()
+                });
+                if self.workspace.topology_revision() != drag.revision {
+                    drag.proposal = None;
+                    drag.refusal = Some(workspace::MoveError::Stale);
+                }
+                self.tree_drag = Some(drag);
+                self.mark_tree_dirty();
+                self.request_dirty_redraw(window);
+                Ok(true)
+            }
+            PixelWindowEvent::PointerButton {
+                button: PointerButton::Left,
+                state: PointerButtonState::Released,
+                position,
+                ..
+            } => {
+                self.tree_drag = None;
+                if drag.dragging {
+                    let _ = window.set_pointer_capture(false);
+                    if let Some(position) = position {
+                        let metrics = window.metrics()?;
+                        let scale = metrics.scale_factor.max(1.0);
+                        let layout = self.layout(
+                            metrics.physical_width,
+                            metrics.physical_height,
+                            metrics.scale_factor,
+                        );
+                        let x = (position.x * scale).max(0.0) as u32;
+                        let y = (position.y * scale).max(0.0) as u32;
+                        if let Some(proposal) = self.tree_drop_at(layout, x, y) {
+                            match self
+                                .workspace
+                                .move_subtree(drag.source, proposal, drag.revision)
+                            {
+                                Ok(true) => {
+                                    self.tree_scroll_offset = ui::clamp_tree_scroll(
+                                        self.tree_scroll_offset,
+                                        self.workspace.nodes().len(),
+                                        layout.tree_capacity(),
+                                    );
+                                }
+                                Ok(false) => {}
+                                Err(error) => {
+                                    self.host_notice =
+                                        Some(format!("Tab move was not applied: {error:?}"))
+                                }
+                            }
+                        }
+                    }
+                    self.mark_host_ui_full_and_repaint(window);
+                } else if let Some(position) = position {
+                    let metrics = window.metrics()?;
+                    let scale = metrics.scale_factor.max(1.0);
+                    let layout = self.layout(
+                        metrics.physical_width,
+                        metrics.physical_height,
+                        metrics.scale_factor,
+                    );
+                    let x = (position.x * scale).max(0.0) as u32;
+                    let y = (position.y * scale).max(0.0) as u32;
+                    let index = self
+                        .workspace
+                        .nodes()
+                        .iter()
+                        .position(|node| node.id == drag.source);
+                    if self.workspace.topology_revision() == drag.revision
+                        && matches!(
+                            ui::tree_hit(
+                                layout,
+                                x,
+                                y,
+                                self.tree_scroll_offset,
+                                self.workspace.nodes().len(),
+                                scale,
+                            ),
+                            ui::TreeHit::Select(hit) if Some(hit) == index
+                        )
+                    {
+                        self.activate_session(window, drag.source);
+                        self.reveal_active_tree_row(window)?;
+                        self.mark_host_ui_full();
+                        self.apply_active_geometry(metrics)?;
+                        self.composer.focused = false;
+                        self.refresh_title(window)?;
+                        window.focus();
+                        window.request_redraw();
+                    }
+                }
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+
+    fn tree_drop_at(&self, layout: ui::Layout, x: u32, y: u32) -> Option<workspace::MovePlacement> {
+        let top = layout.tree_header_height;
+        let capacity = layout.tree_capacity();
+        let bottom = top.saturating_add(layout.tree_row_height.saturating_mul(capacity as u32));
+        if layout.sidebar_collapsed || !layout.sidebar.contains(x, y) || y < top || y >= bottom {
+            return None;
+        }
+        let row = ((y - top) / layout.tree_row_height) as usize;
+        let index = self.tree_scroll_offset.saturating_add(row);
+        let Some(target) = self.workspace.nodes().get(index) else {
+            return Some(workspace::MovePlacement::RootTail);
+        };
+        let within = (y - top) % layout.tree_row_height;
+        if within < layout.tree_row_height / 4 {
+            Some(workspace::MovePlacement::Before(target.id))
+        } else if within >= layout.tree_row_height.saturating_mul(3) / 4 {
+            Some(workspace::MovePlacement::After(target.id))
+        } else {
+            Some(workspace::MovePlacement::Into(target.id))
+        }
     }
 
     /// Records which region the pointer just acted on, so paste is scoped to

@@ -43,7 +43,7 @@ MiniCon — one-file local terminal
 │   │   └── prd/PRD_02_25_con_workspace.md
 │   │       ├── [v] Browser proxy preferences / Console-Web routes → prd/PRD_02_25_01_browser_preferences.md
 │   │       ├── [-] Consistent browser controls → prd/PRD_02_25_02_browser_controls.md
-│   │       ├── [_] Tab-tree drag / reliable inline editing (0.2.24) → prd/PRD_02_25_03_tab_tree_interactions.md
+│   │       ├── [-] Tab-tree drag / reliable inline editing (0.2.24) → prd/PRD_02_25_03_tab_tree_interactions.md
 │   │       └── [-] macOS owned-window half shortcuts → prd/PRD_02_25_04_window_shortcuts.md
 │   ├── local CLI, waits, structured snapshots and screenshots
 │   │   └── prd/PRD_02_26_con_control_cli.md

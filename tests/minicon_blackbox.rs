@@ -3152,6 +3152,7 @@ fn the_ui_snapshot_keeps_a_fixed_top_level_key_set() {
         "pending_control_screenshots",
         "pending_control_waits",
         "rename",
+        "tree_drag",
         "terminal_clipboard_paste",
         "terminal_ime_preedit",
         "ui_language",
@@ -3655,6 +3656,96 @@ fn clicking_inside_the_tree_rename_editor_keeps_editing() {
     let committed =
         session.wait_for_ui_snapshot(Duration::from_secs(5), |state| state["rename"].is_null());
     assert!(committed["rename"].is_null());
+    let _ = session.child.kill();
+}
+
+#[cfg(windows)]
+#[test]
+fn tree_drag_commits_only_on_release_and_escape_cancels() {
+    let _guard = gui_test_guard();
+    let dir = scratch_dir("tree-drag-release");
+    let args = command_shell_args("ping -n 60 127.0.0.1 >nul");
+    let mut session = ConSession::spawn(&dir, &args);
+    session.wait_for(Duration::from_secs(10), |snapshot| {
+        snapshot["child_alive"] == true
+    });
+    session.control_json(&["send-ui-keys", "Ctrl+Shift+N"]);
+    let tabs = session.control_json(&["list-tabs"]);
+    let tabs = tabs["tabs"].as_array().expect("tabs");
+    assert_eq!(tabs.len(), 2, "child creation did not finish: {tabs:?}");
+    let root = tabs[0]["id"].clone();
+    let child = tabs[1]["id"].clone();
+    assert_eq!(tabs[1]["parent"], root);
+    let ui = session.control_json(&["ui-snapshot"]);
+    let geometry = &ui["geometry"];
+    let scale = geometry["scale_permille"].as_f64().expect("scale") / 1000.0;
+    let header = geometry["tree_header_height"].as_f64().expect("header");
+    let row_height = geometry["tree_row_height"].as_f64().expect("row height");
+    let x = (48.0 / scale).round() as u16;
+    let point = |row: f64| ((header + row_height * row) / scale).round() as u16;
+    let mouse = |session: &ConSession, action: &str, row: f64| {
+        session.control_json(&[
+            "send-ui-mouse",
+            "--action",
+            action,
+            "--button",
+            if action == "move" { "none" } else { "left" },
+            "--column",
+            &x.to_string(),
+            "--row",
+            &point(row).to_string(),
+        ]);
+    };
+    mouse(&session, "click", 0.5);
+    assert_eq!(session.control_json(&["ui-snapshot"])["active"], root);
+    mouse(&session, "click", 1.5);
+    assert_eq!(session.control_json(&["ui-snapshot"])["active"], child);
+    mouse(&session, "press", 1.5);
+    let armed = session.control_json(&["ui-snapshot"]);
+    assert_eq!(armed["tree_drag"]["source"], child);
+    assert_eq!(armed["tree_drag"]["phase"], "armed");
+    mouse(&session, "move", 2.5);
+    let dragging = session.control_json(&["ui-snapshot"]);
+    assert_eq!(dragging["tree_drag"]["phase"], "dragging");
+    assert_eq!(dragging["tree_drag"]["position"], "root_tail");
+    assert_eq!(dragging["tree_drag"]["valid"], true);
+    let pending = session.control_json(&["list-tabs"]);
+    assert_eq!(
+        pending["tabs"][1]["parent"], root,
+        "hover mutated tree: {pending}"
+    );
+    mouse(&session, "release", 2.5);
+    let moved = session.control_json(&["list-tabs"]);
+    assert_eq!(moved["tabs"][1]["id"], child);
+    assert!(
+        moved["tabs"][1]["parent"].is_null(),
+        "drop did not promote: {moved}"
+    );
+    assert_eq!(moved["tabs"][1]["active"], true);
+    assert!(session.control_json(&["ui-snapshot"])["tree_drag"].is_null());
+
+    mouse(&session, "press", 1.5);
+    mouse(&session, "move", 0.5);
+    let preview = session.control_json(&["ui-snapshot"]);
+    assert_eq!(preview["tree_drag"]["position"], "into");
+    session.control_json(&["send-ui-keys", "Escape"]);
+    assert!(session.control_json(&["ui-snapshot"])["tree_drag"].is_null());
+    let cancelled = session.control_json(&["list-tabs"]);
+    assert!(
+        cancelled["tabs"][1]["parent"].is_null(),
+        "Escape moved tree: {cancelled}"
+    );
+    mouse(&session, "press", 1.25);
+    mouse(&session, "move", 1.5);
+    let invalid = session.control_json(&["ui-snapshot"]);
+    assert_eq!(invalid["tree_drag"]["valid"], false);
+    assert_eq!(invalid["tree_drag"]["reason"], "SelfOrDescendant");
+    mouse(&session, "release", 1.5);
+    let refused = session.control_json(&["list-tabs"]);
+    assert!(
+        refused["tabs"][1]["parent"].is_null(),
+        "invalid drop moved tree: {refused}"
+    );
     let _ = session.child.kill();
 }
 

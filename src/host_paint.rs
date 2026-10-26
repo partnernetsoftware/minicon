@@ -1275,6 +1275,111 @@ impl ConApp {
             }
         }
 
+        if let Some(drag) = self.tree_drag.filter(|drag| drag.dragging) {
+            let capacity = layout.tree_capacity();
+            let row_y = |index: usize| {
+                index
+                    .checked_sub(self.tree_scroll_offset)
+                    .filter(|&visible| visible <= capacity)
+                    .map(|visible| {
+                        header_height.saturating_add(row_height.saturating_mul(visible as u32))
+                    })
+            };
+            if let Some(source_index) = nodes.iter().position(|node| node.id == drag.source) {
+                let source_depth = depths[source_index];
+                let branch_len = 1 + depths[source_index + 1..]
+                    .iter()
+                    .take_while(|&&depth| depth > source_depth)
+                    .count();
+                if let Some(y) = row_y(source_index) {
+                    surface.fill_rect(0, y, 4, row_height, muted.to_xrgb());
+                    let ghost = format!("{branch_len} tabs");
+                    paint_host_ui_text(
+                        surface,
+                        tree_width.saturating_sub(84),
+                        y.saturating_add(2),
+                        &ghost,
+                        muted,
+                        host_ui_size(HOST_UI_STATUS_SIZE_PX),
+                        80,
+                    );
+                }
+            }
+            if let Some(proposal) = drag.proposal {
+                let color = if drag.refusal.is_some() {
+                    error_accent
+                } else {
+                    accent
+                };
+                match proposal {
+                    workspace::MovePlacement::RootTail => {
+                        if let Some(y) = row_y(nodes.len()) {
+                            surface.fill_rect(
+                                4,
+                                y,
+                                tree_width.saturating_sub(8),
+                                3,
+                                color.to_xrgb(),
+                            );
+                        }
+                    }
+                    workspace::MovePlacement::Before(target)
+                    | workspace::MovePlacement::After(target)
+                    | workspace::MovePlacement::Into(target) => {
+                        if let Some(index) = nodes.iter().position(|node| node.id == target) {
+                            match proposal {
+                                workspace::MovePlacement::Before(_) => {
+                                    if let Some(y) = row_y(index) {
+                                        surface.fill_rect(
+                                            4,
+                                            y,
+                                            tree_width.saturating_sub(8),
+                                            3,
+                                            color.to_xrgb(),
+                                        );
+                                    }
+                                }
+                                workspace::MovePlacement::Into(_) => {
+                                    if let Some(y) = row_y(index) {
+                                        stroke_rect(
+                                            surface,
+                                            ui::Rect {
+                                                x: 4,
+                                                y,
+                                                width: tree_width.saturating_sub(8),
+                                                height: row_height,
+                                            },
+                                            2,
+                                            color,
+                                        );
+                                    }
+                                }
+                                workspace::MovePlacement::After(_) => {
+                                    let depth = depths[index];
+                                    let end = index
+                                        + 1
+                                        + depths[index + 1..]
+                                            .iter()
+                                            .take_while(|&&candidate| candidate > depth)
+                                            .count();
+                                    if let Some(y) = row_y(end) {
+                                        surface.fill_rect(
+                                            4,
+                                            y,
+                                            tree_width.saturating_sub(8),
+                                            3,
+                                            color.to_xrgb(),
+                                        );
+                                    }
+                                }
+                                workspace::MovePlacement::RootTail => unreachable!(),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if let Some((visible_row, title)) = rail_tooltip {
             let tip_size = host_ui_size(HOST_UI_TAB_SIZE_PX);
             let text_width = host_ui_text_width(&title, tip_size);
