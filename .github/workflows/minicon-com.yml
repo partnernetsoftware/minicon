@@ -31,7 +31,7 @@ jobs:
           - {cell: lnx-x86_64, runner: ubuntu-24.04}
           - {cell: lnx-aarch64, runner: ubuntu-24.04-arm}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
         with:
@@ -45,7 +45,7 @@ jobs:
           key: browser-helper-${{ matrix.cell }}-${{ hashFiles('Cargo.lock', 'crates/minicon-web/**') }}
           restore-keys: browser-helper-${{ matrix.cell }}-
       - name: Provision WebKitGTK build dependencies
-        timeout-minutes: 5
+        timeout-minutes: 15
         shell: bash
         run: |
           set -euo pipefail
@@ -53,7 +53,7 @@ jobs:
             sudo python3 - <<'PY'
           import re
           from pathlib import Path
-          for path in (Path('/etc/apt/sources.list.d/ubuntu.sources'), Path('/etc/apt/sources.list')):
+          for path in (Path('/etc/apt/sources.list.d/ubuntu.sources'), Path('/etc/apt/sources.list'), Path('/etc/apt/apt-mirrors.txt')):
               if not path.is_file():
                   continue
               original = path.read_bytes()

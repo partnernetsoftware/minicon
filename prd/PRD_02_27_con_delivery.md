@@ -1542,11 +1542,14 @@ inside each Linux payload before packing. This preserves the single executable
 download and the no-compile runtime matrix. The Linux GUI launches the embedded
 helper through an anonymous executable file; no sibling installation is required.
 Canonical Linux `build.sh dev/release` builds and embeds that helper as well.
-CI provisions GTK metadata in a separately named five-minute step, with bounded
-APT retries and HTTP timeouts. The x86_64 runner uses Ubuntu's main archive
-instead of the Azure mirror; the source's signature trust configuration stays
-intact. This addresses a measured package-download stall, not a Rust build
-failure (the incident is preserved in the archived 0.2.21 plan).
+CI provisions GTK metadata in a separately named bounded step, with APT
+retries and HTTP timeouts. The x86_64 runner rewrites both traditional APT
+source files and Ubuntu's runner mirror list to use the main archive instead
+of the Azure mirror; the source's signature trust configuration stays intact.
+The 0.2.24 source qualification observed the older five-minute provision step
+time out while downloading WebKitGTK dependencies, before any Rust build. Its
+provision limit is now 15 minutes within a 45-minute helper job. The earlier
+incident is preserved in the archived 0.2.21 plan.
 The CI helper is built on Ubuntu 24.04 and requires GTK 3 / WebKitGTK 4.1;
 its browser-runtime compatibility is narrower than the terminal's Linux ELF
 baseline. Those libraries are loaded by the helper, so missing browser runtime
