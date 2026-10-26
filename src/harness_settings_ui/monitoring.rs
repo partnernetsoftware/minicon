@@ -923,7 +923,10 @@ impl MonitoringUi {
     pub(super) fn current(&self) -> Option<Item> {
         self.navigation
     }
-    fn interactive(item: Item) -> bool {
+    pub(super) fn focus_item(&mut self, item: Item) {
+        self.navigation = Some(item);
+    }
+    pub(super) fn interactive(item: Item) -> bool {
         matches!(
             item,
             Item::OpenReport
@@ -936,25 +939,6 @@ impl MonitoringUi {
                 | Item::Refresh
                 | Item::Resume
         )
-    }
-    pub(super) fn navigate(&mut self, backwards: bool, view: &View) -> Option<Item> {
-        let items: Vec<_> = self
-            .rows(view)
-            .into_iter()
-            .filter(|item| Self::interactive(*item))
-            .collect();
-        let index = self
-            .navigation
-            .and_then(|a| items.iter().position(|b| *b == a));
-        let next = match (index, backwards) {
-            (None, false) => Some(0),
-            (None, true) => items.len().checked_sub(1),
-            (Some(i), true) => i.checked_sub(1),
-            (Some(i), false) => Some(i + 1).filter(|i| *i < items.len()),
-        };
-        self.blur();
-        self.navigation = next.and_then(|i| items.get(i).copied());
-        self.navigation
     }
     pub(super) fn edit(&mut self, event: &PixelWindowEvent) -> bool {
         let Some((id, index)) = self.focused.clone() else {

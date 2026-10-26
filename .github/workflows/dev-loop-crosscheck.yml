@@ -413,6 +413,7 @@ jobs:
             run_suite minicon-harness-cached bash scripts/build.sh test-suite --target "$triple" --bin minicon harness_workspace_ui::tests::h1_cached_cards_keep_stale_wallets_and_applied_client_identity -- --exact --test-threads 1
             run_suite minicon-harness-cached-public bash scripts/build.sh test-suite --target "$triple" --test minicon_control browser_windows::host_harness_dashboard_reuses_account_state_and_targets_named_client -- --exact --test-threads 1
             run_suite minicon-harness-panel-public bash scripts/build.sh test-suite --target "$triple" --test minicon_control browser_windows::host_harness_responsive_panel_close_preserves_drafts_and_running_service -- --exact --test-threads 1
+            run_suite minicon-harness-navigation-public bash scripts/build.sh test-suite --target "$triple" --test minicon_control browser_windows::host_harness_persistent_navigation_keeps_picker_input_and_drafts_local -- --exact --test-threads 1
             run_suite minicon-web-context bash scripts/build.sh test-suite --target "$triple" -p minicon-web --lib profile::tests -- --test-threads 1
             run_suite minicon-web-process-selector bash scripts/build.sh test-suite --target "$triple" -p minicon-web --lib embedded_process_ -- --test-threads 1
             if [[ "$CELL" == win-* || "$CELL" == osx-* ]]; then

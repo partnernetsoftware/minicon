@@ -840,6 +840,13 @@ def main():
         return geo()["harness_settings"]
 
     def harness_cell(row_id, column=0):
+        state = harness()
+        if any(n["id"] == row_id for n in state["navigation"]):
+            if state["navigation_mode"] == "selector" and not state["section_picker_open"]:
+                native.click(state["section_selector"])
+            nav = next(n for n in harness()["navigation"] if n["id"] == row_id)
+            assert nav["visible"], "Harness navigation must be visible before input"
+            return nav["rect"]
         destination = {
             "port": ("service", "overview_service"),
             "model_input": ("clients", "overview_allocations"),

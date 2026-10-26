@@ -1734,6 +1734,32 @@ pub(super) fn harness_orientation_links_do_not_start_login_listener_or_key_creat
 }
 
 fn click_harness(host: &BrowserGui, id: &str, column: usize) {
+    let snapshot = host.cli(&["ui-snapshot"]);
+    let state = &snapshot["geometry"]["harness_settings"];
+    if state["navigation"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|n| n["id"] == id)
+    {
+        if state["navigation_mode"] == "selector" && state["section_picker_open"] == false {
+            host.click_rect(
+                &state["section_selector"],
+                "Harness section selector",
+                &snapshot["geometry"],
+            );
+        }
+        let snapshot = host.cli(&["ui-snapshot"]);
+        let nav = snapshot["geometry"]["harness_settings"]["navigation"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["id"] == id)
+            .unwrap();
+        assert_eq!(nav["visible"], true);
+        host.click_rect(&nav["rect"], id, &snapshot["geometry"]);
+        return;
+    }
     if !id.starts_with("overview_") {
         let (section, link) = if id.starts_with("monitoring") {
             ("monitoring", "overview_monitoring")
@@ -2122,6 +2148,111 @@ fn host_harness_dashboard_reuses_account_state_and_targets_named_client() {
             .unwrap()
             .contains("synthetic-dashboard-token")
     );
+    host.close_and_wait();
+}
+
+#[test]
+fn host_harness_persistent_navigation_keeps_picker_input_and_drafts_local() {
+    fn resized(host: &BrowserGui, width: &str, mode: &str) -> Value {
+        host.cli(&["resize-window", "--width", width, "--height", "700"]);
+        let deadline = Instant::now() + Duration::from_secs(8);
+        loop {
+            let snapshot = host.cli(&["ui-snapshot"]);
+            if snapshot["geometry"]["harness_settings"]["navigation_mode"] == mode {
+                return snapshot;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "navigation did not adapt: {snapshot}"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+    let mut host = BrowserGui::spawn(true, None, None);
+    open_harness(&host);
+    resized(&host, "1000", "rail");
+    click_harness(&host, "model_input", 0);
+    host.cli(&["send-ui-keys", "Ctrl+a"]);
+    host.cli(&["send-ui-ime", "commit", "navigation-draft-中"]);
+    let wide = host.cli(&["ui-snapshot"]);
+    let nav = &wide["geometry"]["harness_settings"]["navigation"];
+    assert!(nav.as_array().unwrap().iter().all(|n| n["visible"] == true));
+    let shot = host.gui.screenshot.with_file_name("navigation-rail.png");
+    host.cli(&["screenshot-pane", "--output", &shot.to_string_lossy()]);
+    let narrow = resized(&host, "420", "selector");
+    let h = &narrow["geometry"]["harness_settings"];
+    assert!(
+        h["navigation"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|n| n["visible"] == false)
+    );
+    host.click_rect(
+        &h["section_selector"],
+        "section selector",
+        &narrow["geometry"],
+    );
+    assert_eq!(harness_snapshot(&host)["section_picker_open"], true);
+    host.cli(&["send-ui-ime", "commit", "must-not-edit-hidden-field"]);
+    assert_eq!(
+        harness_snapshot(&host)["model_editor"]["text"],
+        "navigation-draft-中"
+    );
+    // Four menu items wrap within the picker, never entering the form below it.
+    for _ in 0..4 {
+        host.cli(&["send-ui-keys", "Tab"]);
+    }
+    let menu = host.cli(&["ui-snapshot"]);
+    assert!(
+        menu["geometry"]["harness_settings"]["navigation"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|n| n["id"] == "overview_allocations" && n["focused"] == true)
+    );
+    let shot = host.gui.screenshot.with_file_name("navigation-picker.png");
+    host.cli(&["screenshot-pane", "--output", &shot.to_string_lossy()]);
+    let scroll = harness_snapshot(&host)["scroll"].clone();
+    host.click_rect(
+        &menu["geometry"]["harness_settings"]["next"],
+        "dismiss picker over pager",
+        &menu["geometry"],
+    );
+    assert_eq!(harness_snapshot(&host)["section_picker_open"], false);
+    assert_eq!(harness_snapshot(&host)["scroll"], scroll);
+    host.cli(&["send-ui-keys", "Tab"]);
+    host.cli(&["send-ui-keys", "Enter"]);
+    assert_eq!(harness_snapshot(&host)["section_picker_open"], true);
+    host.cli(&["send-ui-keys", "Down"]);
+    host.cli(&["send-ui-keys", "Enter"]);
+    let chosen = harness_snapshot(&host);
+    assert_eq!(chosen["section"], "monitoring");
+    assert_eq!(chosen["section_picker_open"], false);
+    let snapshot = host.cli(&["ui-snapshot"]);
+    host.click_rect(
+        &snapshot["geometry"]["harness_settings"]["section_selector"],
+        "section selector",
+        &snapshot["geometry"],
+    );
+    host.cli(&["send-ui-keys", "Escape"]);
+    let dismissed = host.cli(&["ui-snapshot"]);
+    assert_eq!(dismissed["settings_open"], true);
+    assert_eq!(harness_snapshot(&host)["section_picker_open"], false);
+    assert_eq!(harness_snapshot(&host)["section_selector_focused"], true);
+    host.cli(&["send-ui-keys", "Enter"]);
+    assert_eq!(harness_snapshot(&host)["section_picker_open"], true);
+    let reopened = resized(&host, "1000", "rail");
+    assert_eq!(
+        reopened["geometry"]["harness_settings"]["section_picker_open"],
+        false
+    );
+    let final_state = harness_snapshot(&host);
+    assert_eq!(final_state["section"], "monitoring");
+    assert_eq!(final_state["model_editor"]["text"], "navigation-draft-中");
+    assert_eq!(final_state["listener"], "stopped");
+    assert_eq!(final_state["login_active"], false);
+    assert_eq!(final_state["local_key_exists"], false);
     host.close_and_wait();
 }
 

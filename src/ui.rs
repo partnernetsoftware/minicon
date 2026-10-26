@@ -1511,6 +1511,9 @@ pub struct HarnessSettingsLayout {
     pub panel: Rect,
     pub routes: [Rect; 3],
     pub close: Rect,
+    pub navigation_rail: bool,
+    pub section_selector: Rect,
+    pub navigation: [Rect; 4],
     pub rows: MenuLayout,
     pub previous: Rect,
     pub next: Rect,
@@ -1608,38 +1611,81 @@ impl Layout {
             scale,
         );
         let top = panel.y.saturating_add(dip(48.0, scale));
+        let navigation_rail = panel.width >= dip(640.0, scale) && panel.height >= dip(232.0, scale);
+        let section_selector = if navigation_rail {
+            Rect::default()
+        } else {
+            Rect {
+                x: panel.x + pad,
+                y: top,
+                width: panel.width.saturating_sub(pad * 2),
+                height: dip(32.0, scale).min(panel.height.saturating_sub(dip(48.0, scale))),
+            }
+        };
+        let nav_stride = dip(36.0, scale).min(
+            panel
+                .y
+                .saturating_add(panel.height)
+                .saturating_sub(top + pad)
+                / 4,
+        );
+        let navigation = std::array::from_fn(|i| Rect {
+            x: panel.x + pad,
+            y: top + i as u32 * nav_stride,
+            width: if navigation_rail {
+                dip(176.0, scale)
+            } else {
+                panel.width.saturating_sub(pad * 2)
+            },
+            height: nav_stride.saturating_sub(dip(4.0, scale)),
+        });
+        let content_x = panel.x
+            + pad
+            + if navigation_rail {
+                dip(176.0, scale) + pad
+            } else {
+                0
+            };
+        let content_top = top + if navigation_rail { 0 } else { dip(40.0, scale) };
+        let content_width = panel
+            .x
+            .saturating_add(panel.width)
+            .saturating_sub(content_x + pad);
         let footer_y = panel
             .y
             .saturating_add(panel.height)
             .saturating_sub(dip(40.0, scale));
         let rows = MenuLayout::fit(
             Rect {
-                x: panel.x + pad,
-                y: top,
-                width: panel.width.saturating_sub(pad * 2),
-                height: footer_y.saturating_sub(top),
+                x: content_x,
+                y: content_top,
+                width: content_width,
+                height: footer_y.saturating_sub(content_top),
             },
             dip(36.0, scale),
             0,
             count,
             start,
         );
-        let width = panel.width.saturating_sub(pad * 3) / 2;
+        let width = content_width.saturating_sub(pad) / 2;
         let previous = Rect {
-            x: panel.x + pad,
-            y: footer_y.max(top),
+            x: content_x,
+            y: footer_y.max(content_top),
             width,
             height: dip(28.0, scale).min(
                 panel
                     .y
                     .saturating_add(panel.height)
-                    .saturating_sub(footer_y.max(top)),
+                    .saturating_sub(footer_y.max(content_top)),
             ),
         };
         HarnessSettingsLayout {
             panel,
             routes,
             close,
+            navigation_rail,
+            section_selector,
+            navigation,
             rows,
             previous,
             next: Rect {

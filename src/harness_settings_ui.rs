@@ -23,6 +23,7 @@ const MODEL_LIMITS: Limits = Limits {
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum Field {
+    SectionSelector,
     Overview(overview::Link),
     Port,
     Model,
@@ -219,7 +220,7 @@ fn field_limits(field: Field) -> Limits {
     match field {
         Field::Port => PORT_LIMITS,
         Field::Model => MODEL_LIMITS,
-        Field::ProfileChooser | Field::Overview(_) => Limits {
+        Field::ProfileChooser | Field::Overview(_) | Field::SectionSelector => Limits {
             max_bytes: 0,
             preedit_chars: 0,
         },
@@ -255,6 +256,7 @@ pub(super) struct HarnessSettings {
     keys: KeyUi,
     monitoring: monitoring::MonitoringUi,
     section: overview::Section,
+    section_picker_open: bool,
     open_usage: bool,
     pending_workspace_target: Option<super::harness_workspace_ui::SettingsTarget>,
     profile_navigation: Option<usize>,
@@ -288,6 +290,7 @@ impl HarnessSettings {
         self.pending_workspace_target =
             (self.view.load_state == provider_runtime::LoadState::Loading).then(|| target.clone());
         self.blur();
+        self.section_picker_open = false;
         let marker = match target {
             SettingsTarget::Service => {
                 self.select_section(overview::Section::Service);
@@ -486,6 +489,7 @@ impl HarnessSettings {
             keys: KeyUi::default(),
             monitoring: Default::default(),
             section: Default::default(),
+            section_picker_open: false,
             open_usage: false,
             pending_workspace_target: None,
             profile_navigation: None,
@@ -533,10 +537,6 @@ impl HarnessSettings {
             Row::Overview(5),
             Row::Overview(6),
             Row::Overview(7),
-            Row::OverviewLink(overview::Link::Accounts),
-            Row::OverviewLink(overview::Link::Allocations),
-            Row::OverviewLink(overview::Link::Monitoring),
-            Row::OverviewLink(overview::Link::Service),
             Row::Accounts,
             Row::AccountFieldCaption(Field::ConnectLabel),
             Row::ConnectInput(Field::ConnectLabel),
@@ -727,7 +727,7 @@ impl HarnessSettings {
                 .forms
                 .current()
                 .map_or(&self.model, |form| form.model()),
-            Field::ProfileChooser | Field::Overview(_) => {
+            Field::ProfileChooser | Field::Overview(_) | Field::SectionSelector => {
                 unreachable!("navigation is not a text editor")
             }
             Field::Profile(field) => self
@@ -751,7 +751,7 @@ impl HarnessSettings {
                 .forms
                 .current_mut()
                 .map_or(&mut self.model, |form| form.model_mut()),
-            Field::ProfileChooser | Field::Overview(_) => {
+            Field::ProfileChooser | Field::Overview(_) | Field::SectionSelector => {
                 unreachable!("navigation is not a text editor")
             }
             Field::Profile(field) => self
@@ -1202,6 +1202,7 @@ impl HarnessSettings {
     }
     fn submit(&mut self, field: Field) {
         match field {
+            Field::SectionSelector => self.toggle_section_picker(),
             Field::Overview(link) => self.overview_link(link),
             Field::Port if self.port_editable() => {
                 if let Ok(port) = self.port.text.parse::<u16>()
@@ -1727,6 +1728,34 @@ impl ConApp {
             );
         };
         button(surface, geometry.close, tr("Close", "关闭", "關閉"), false);
+        if geometry.navigation_rail {
+            for (index, link) in overview::Link::NAVIGATION.into_iter().enumerate() {
+                let target = geometry.navigation[index];
+                button(
+                    surface,
+                    target,
+                    overview::link_caption(link, settings.orientation_step(), self.ui_language),
+                    link.section() == Some(settings.section),
+                );
+                if settings.focused == Some(Field::Overview(link)) {
+                    stroke_rect(surface, target, scale.max(1.0) as u32, theme.accent);
+                }
+            }
+        } else {
+            button(
+                surface,
+                geometry.section_selector,
+                &format!(
+                    "{}  ▾",
+                    overview::link_caption(
+                        settings.section.link(),
+                        settings.orientation_step(),
+                        self.ui_language,
+                    ),
+                ),
+                settings.focused == Some(Field::SectionSelector) || settings.section_picker_open,
+            );
+        }
         let account_details = settings.account_details(self.ui_language);
         for (index, &row) in rows
             .iter()
@@ -2771,6 +2800,25 @@ impl ConApp {
         }
         button(surface, geometry.previous, "Previous", false);
         button(surface, geometry.next, "Next", false);
+        if settings.section_picker_open && !geometry.navigation_rail {
+            let first = geometry.navigation[0];
+            let last = geometry.navigation[3];
+            surface.fill_rect(
+                first.x,
+                first.y,
+                first.width,
+                last.y.saturating_add(last.height).saturating_sub(first.y),
+                theme.panel_bg.to_xrgb(),
+            );
+            for (index, link) in overview::Link::NAVIGATION.into_iter().enumerate() {
+                button(
+                    surface,
+                    geometry.navigation[index],
+                    overview::link_caption(link, settings.orientation_step(), self.ui_language),
+                    settings.focused == Some(Field::Overview(link)),
+                );
+            }
+        }
     }
 
     pub(super) fn harness_settings_snapshot(
@@ -2818,6 +2866,16 @@ impl ConApp {
         json::object(vec![
             ("panel", rect(geometry.panel)),
             ("close", rect(geometry.close)),
+            ("navigation_mode", if geometry.navigation_rail { "rail" } else { "selector" }.into()),
+            ("section_selector", rect(geometry.section_selector)),
+            ("section_picker_open", settings.section_picker_open.into()),
+            ("section_selector_focused", (active && settings.focused == Some(Field::SectionSelector)).into()),
+            ("navigation", json::JsonValue::Array(overview::Link::NAVIGATION.into_iter().enumerate().map(|(index, link)| json::object(vec![
+                ("id", row_id(Row::OverviewLink(link)).into()), ("rect", rect(geometry.navigation[index])),
+                ("visible", (active && (geometry.navigation_rail || settings.section_picker_open)).into()),
+                ("selected", (link.section() == Some(settings.section)).into()),
+                ("focused", (active && settings.focused == Some(Field::Overview(link))).into()),
+            ])).collect())),
             ("next_step", settings.orientation_step().id().into()),
             ("section", settings.section.id().into()),
             ("configured_clients", settings.configured_client_count().into()),
@@ -3065,6 +3123,7 @@ impl ConApp {
 
     pub(super) fn blur_harness_fields(&mut self) {
         if let Some(settings) = &mut self.harness_settings {
+            settings.section_picker_open = false;
             settings.blur();
         }
     }
@@ -3092,6 +3151,7 @@ impl ConApp {
 
     pub(super) fn cancel_harness_pointer(&mut self) {
         if let Some(settings) = &mut self.harness_settings {
+            settings.section_picker_open = false;
             settings.drag = None;
             field_editor::apply(&mut settings.port, Command::Blur, PORT_LIMITS);
             field_editor::apply(&mut settings.model, Command::Blur, MODEL_LIMITS);
@@ -3124,6 +3184,7 @@ impl ConApp {
             Some(Field::Profile(_)) => "harness_connection",
             Some(Field::ProfileChooser) => "harness_connection_picker",
             Some(Field::Overview(_)) => "harness_overview",
+            Some(Field::SectionSelector) => "harness_section_selector",
             Some(Field::AccountLabel) => "harness_account_label",
             Some(Field::LoginProxy) => "harness_login_proxy",
             Some(Field::ServiceProxy) => "harness_service_proxy",
@@ -3146,6 +3207,7 @@ impl ConApp {
             return;
         };
         if !self.settings_open || self.settings_section != ui::SettingsSection::Harness {
+            settings.section_picker_open = false;
             settings.keys.invalidate_copy();
             settings.monitoring.blur();
             // Menus suspend a settings field; real route changes explicitly blur.
@@ -3308,9 +3370,80 @@ impl ConApp {
         let rows = settings.rows();
         let geometry = layout.harness_settings(scale, rows.len(), settings.scroll);
         settings.scroll = geometry.rows.start;
+        settings.adapt_navigation(geometry.navigation_rail);
         let mut open_url = None;
         let mut consumed = true;
         match event {
+            PixelWindowEvent::Keyboard(key)
+                if key.logical == LogicalKey::Named(NamedKey::Tab)
+                    && !key.modifiers.control
+                    && !key.modifiers.alt
+                    && !key.modifiers.meta =>
+            {
+                if key.state == KeyPressState::Pressed {
+                    settings.move_focus(key.modifiers.shift, &rows, geometry);
+                }
+            }
+            PixelWindowEvent::Keyboard(key)
+                if settings.section_picker_open && !geometry.navigation_rail =>
+            {
+                if key.state == KeyPressState::Pressed {
+                    match &key.logical {
+                        LogicalKey::Named(NamedKey::ArrowUp | NamedKey::ArrowDown) => {
+                            let backwards = key.logical == LogicalKey::Named(NamedKey::ArrowUp);
+                            let current = overview::Link::NAVIGATION
+                                .iter()
+                                .position(|link| settings.focused == Some(Field::Overview(*link)));
+                            let next = match (current, backwards) {
+                                (Some(i), true) => (i + 3) % 4,
+                                (Some(i), false) => (i + 1) % 4,
+                                (None, true) => 3,
+                                (None, false) => 0,
+                            };
+                            settings.focused =
+                                Some(Field::Overview(overview::Link::NAVIGATION[next]));
+                        }
+                        LogicalKey::Named(NamedKey::Enter | NamedKey::Space) => {
+                            if let Some(Field::Overview(link)) = settings.focused {
+                                settings.overview_link(link);
+                            } else {
+                                settings.toggle_section_picker();
+                            }
+                        }
+                        LogicalKey::Character(value) if value == " " => {
+                            if let Some(Field::Overview(link)) = settings.focused {
+                                settings.overview_link(link);
+                            }
+                        }
+                        LogicalKey::Named(NamedKey::Escape) => {
+                            settings.section_picker_open = false;
+                            settings.blur();
+                            settings.focused = Some(Field::SectionSelector);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            PixelWindowEvent::Ime(_) | PixelWindowEvent::MouseWheel { .. }
+                if settings.section_picker_open && !geometry.navigation_rail => {}
+            PixelWindowEvent::Keyboard(key) if settings.focused == Some(Field::SectionSelector) => {
+                if key.state == KeyPressState::Pressed {
+                    match &key.logical {
+                        LogicalKey::Named(NamedKey::Enter | NamedKey::Space) => {
+                            settings.toggle_section_picker()
+                        }
+                        LogicalKey::Character(value) if value == " " => {
+                            settings.toggle_section_picker()
+                        }
+                        LogicalKey::Named(NamedKey::Escape) => {
+                            settings.blur();
+                            self.settings_open = false;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            PixelWindowEvent::Ime(_) if settings.focused == Some(Field::SectionSelector) => {}
             PixelWindowEvent::Keyboard(key)
                 if settings.monitoring.focused()
                     && key.state == KeyPressState::Pressed
@@ -3319,45 +3452,14 @@ impl ConApp {
                     && !key.modifiers.meta
                     && matches!(
                         key.logical,
-                        LogicalKey::Named(NamedKey::Tab | NamedKey::ArrowUp | NamedKey::ArrowDown)
+                        LogicalKey::Named(NamedKey::ArrowUp | NamedKey::ArrowDown)
                     ) =>
             {
-                let backwards =
-                    key.modifiers.shift || key.logical == LogicalKey::Named(NamedKey::ArrowUp);
-                if let Some(item) = settings.monitoring.navigate(backwards, &settings.view) {
-                    if let Some(index) = rows
-                        .iter()
-                        .position(|r| matches!(r, Row::Monitoring(i) if *i==item))
-                    {
-                        settings.scroll = geometry.rows.reveal(index);
-                    }
-                } else {
-                    let boundary = rows
-                        .iter()
-                        .position(|r| matches!(r, Row::Monitoring(_)))
-                        .unwrap_or(0);
-                    let fields: Vec<_> = rows
-                        .iter()
-                        .enumerate()
-                        .filter_map(|(index, row)| {
-                            row_field(*row)
-                                .filter(|field| *field != Field::Port || settings.port_editable())
-                                .map(|field| (index, field))
-                        })
-                        .collect();
-                    let destination = if backwards {
-                        fields.iter().rev().find(|(index, _)| *index < boundary)
-                    } else {
-                        fields
-                            .iter()
-                            .find(|(index, _)| *index > boundary)
-                            .or_else(|| fields.first())
-                    };
-                    if let Some(&(index, field)) = destination {
-                        settings.focused = Some(field);
-                        settings.scroll = geometry.rows.reveal(index);
-                    }
-                }
+                settings.move_focus(
+                    key.logical == LogicalKey::Named(NamedKey::ArrowUp),
+                    &rows,
+                    geometry,
+                );
             }
             PixelWindowEvent::Keyboard(key)
                 if settings.monitoring.focused()
@@ -3381,6 +3483,7 @@ impl ConApp {
                 settings.monitoring.edit(event);
             }
             PixelWindowEvent::FocusChanged(false) | PixelWindowEvent::PointerCaptureLost => {
+                settings.section_picker_open = false;
                 settings.blur();
                 let _ = window.set_pointer_capture(false);
             }
@@ -3450,9 +3553,24 @@ impl ConApp {
                 let x = (position.x * scale).max(0.0) as u32;
                 let y = (position.y * scale).max(0.0) as u32;
                 if geometry.close.contains(x, y) {
+                    settings.section_picker_open = false;
                     settings.blur();
                     let _ = window.set_pointer_capture(false);
                     self.settings_open = false;
+                } else if (geometry.navigation_rail || settings.section_picker_open)
+                    && let Some(index) = geometry
+                        .navigation
+                        .iter()
+                        .position(|rect| rect.contains(x, y))
+                {
+                    settings.overview_link(overview::Link::NAVIGATION[index]);
+                    let _ = window.set_pointer_capture(false);
+                } else if !geometry.navigation_rail && geometry.section_selector.contains(x, y) {
+                    settings.toggle_section_picker();
+                    let _ = window.set_pointer_capture(false);
+                } else if settings.section_picker_open && !geometry.navigation_rail {
+                    settings.section_picker_open = false;
+                    settings.blur();
                 } else if geometry.previous.contains(x, y) {
                     settings.blur();
                     settings.scroll = settings
@@ -3608,62 +3726,6 @@ impl ConApp {
                     .saturating_add_signed(-amount)
                     .min(rows.len().saturating_sub(geometry.rows.visible_rows));
             }
-            PixelWindowEvent::Keyboard(key) if key.logical == LogicalKey::Named(NamedKey::Tab) => {
-                if key.state == KeyPressState::Pressed {
-                    let fields: Vec<_> = rows
-                        .iter()
-                        .filter_map(|row| row_field(*row))
-                        .filter(|field| *field != Field::Port || settings.port_editable())
-                        .collect();
-                    let current = fields
-                        .iter()
-                        .position(|field| Some(*field) == settings.focused);
-                    let next_index = match (current, key.modifiers.shift) {
-                        (Some(index), true) => (index + fields.len() - 1) % fields.len(),
-                        (Some(index), false) => (index + 1) % fields.len(),
-                        (None, true) => fields.len() - 1,
-                        (None, false) => 0,
-                    };
-                    let boundary = rows
-                        .iter()
-                        .position(|r| matches!(r, Row::Monitoring(_)))
-                        .unwrap_or(rows.len());
-                    let current_row = current
-                        .and_then(|i| rows.iter().position(|r| row_field(*r) == Some(fields[i])));
-                    let next_row = rows
-                        .iter()
-                        .position(|r| row_field(*r) == Some(fields[next_index]))
-                        .unwrap_or(0);
-                    let cross_monitoring = current_row.is_some_and(|index| {
-                        if key.modifiers.shift {
-                            index > boundary && next_row < boundary
-                        } else {
-                            index < boundary && next_row > boundary
-                        }
-                    });
-                    if cross_monitoring {
-                        settings.blur();
-                        let item = settings
-                            .monitoring
-                            .navigate(key.modifiers.shift, &settings.view);
-                        if let Some(index) = rows
-                            .iter()
-                            .position(|r| matches!(r, Row::Monitoring(i) if Some(*i) == item))
-                        {
-                            settings.scroll = geometry.rows.reveal(index);
-                        }
-                    } else {
-                        let next = fields[next_index];
-                        settings.blur();
-                        settings.focused = Some(next);
-                        let index = rows
-                            .iter()
-                            .position(|row| row_field(*row) == Some(next))
-                            .unwrap_or(0);
-                        settings.scroll = geometry.rows.reveal(index);
-                    }
-                }
-            }
             PixelWindowEvent::Keyboard(key)
                 if matches!(settings.focused, Some(Field::Overview(_))) =>
             {
@@ -3771,10 +3833,12 @@ impl ConApp {
             form.visited = true;
         }
         settings.remember_connection_focus();
-        if let Some(field) = settings
-            .focused
-            .filter(|field| !matches!(field, Field::ProfileChooser | Field::Overview(_)))
-        {
+        if let Some(field) = settings.focused.filter(|field| {
+            !matches!(
+                field,
+                Field::ProfileChooser | Field::Overview(_) | Field::SectionSelector
+            )
+        }) {
             let index = rows
                 .iter()
                 .position(|row| row_field(*row) == Some(field))

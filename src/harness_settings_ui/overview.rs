@@ -11,6 +11,14 @@ pub(super) enum Section {
 }
 
 impl Section {
+    pub(super) fn link(self) -> Link {
+        match self {
+            Self::Accounts => Link::Accounts,
+            Self::Clients => Link::Allocations,
+            Self::Monitoring => Link::Monitoring,
+            Self::Service => Link::Service,
+        }
+    }
     pub(super) fn id(self) -> &'static str {
         match self {
             Self::Accounts => "accounts",
@@ -31,6 +39,12 @@ pub(super) enum Link {
 }
 
 impl Link {
+    pub(super) const NAVIGATION: [Self; 4] = [
+        Self::Accounts,
+        Self::Allocations,
+        Self::Monitoring,
+        Self::Service,
+    ];
     pub(super) fn section(self) -> Option<Section> {
         match self {
             Self::Next => None,
@@ -118,7 +132,95 @@ impl Step {
 }
 
 impl HarnessSettings {
+    pub(super) fn toggle_section_picker(&mut self) {
+        let open = !self.section_picker_open;
+        self.blur();
+        self.section_picker_open = open;
+        self.focused = Some(if open {
+            Field::Overview(self.section.link())
+        } else {
+            Field::SectionSelector
+        });
+    }
+
+    pub(super) fn adapt_navigation(&mut self, rail: bool) {
+        if rail {
+            self.section_picker_open = false;
+            if self.focused == Some(Field::SectionSelector) {
+                self.focused = Some(Field::Overview(self.section.link()));
+            }
+        } else if !self.section_picker_open
+            && matches!(self.focused, Some(Field::Overview(link)) if link != Link::Next)
+        {
+            self.focused = Some(Field::SectionSelector);
+        }
+    }
+
+    pub(super) fn focus_targets(&self, rows: &[Row], rail: bool) -> Vec<FocusTarget> {
+        let mut targets = Vec::new();
+        if !rail && !self.section_picker_open {
+            targets.push(FocusTarget::Field(Field::SectionSelector));
+        }
+        if rail || self.section_picker_open {
+            targets.extend(
+                Link::NAVIGATION
+                    .into_iter()
+                    .map(|link| FocusTarget::Field(Field::Overview(link))),
+            );
+        }
+        if !rail && self.section_picker_open {
+            return targets;
+        }
+        for &row in rows {
+            if let Row::Monitoring(item) = row {
+                if monitoring::MonitoringUi::interactive(item) {
+                    targets.push(FocusTarget::Monitoring(item));
+                }
+            } else if let Some(field) = row_field(row)
+                && (field != Field::Port || self.port_editable())
+            {
+                targets.push(FocusTarget::Field(field));
+            }
+        }
+        targets
+    }
+
+    pub(super) fn move_focus(
+        &mut self,
+        backwards: bool,
+        rows: &[Row],
+        geometry: ui::HarnessSettingsLayout,
+    ) {
+        let targets = self.focus_targets(rows, geometry.navigation_rail);
+        let current = self
+            .monitoring
+            .current()
+            .map(FocusTarget::Monitoring)
+            .or_else(|| self.focused.map(FocusTarget::Field));
+        let index =
+            current.and_then(|current| targets.iter().position(|target| *target == current));
+        let next = match (index, backwards) {
+            (Some(i), true) => (i + targets.len() - 1) % targets.len(),
+            (Some(i), false) => (i + 1) % targets.len(),
+            (None, true) => targets.len() - 1,
+            (None, false) => 0,
+        };
+        let target = targets[next];
+        self.blur();
+        match target {
+            FocusTarget::Field(field) => self.focused = Some(field),
+            FocusTarget::Monitoring(item) => self.monitoring.focus_item(item),
+        }
+        if let Some(index) = rows.iter().position(|row| match target {
+            FocusTarget::Field(field) => row_field(*row) == Some(field),
+            FocusTarget::Monitoring(item) => matches!(row, Row::Monitoring(i) if *i == item),
+        }) {
+            self.scroll = geometry.rows.reveal(index);
+        }
+    }
+
     pub(super) fn select_section(&mut self, section: Section) {
+        self.section_picker_open = false;
         if self.section != section {
             self.blur();
             self.section = section;
@@ -192,6 +294,7 @@ impl HarnessSettings {
     }
 
     pub(super) fn overview_link(&mut self, link: Link) {
+        self.section_picker_open = false;
         use super::super::harness_workspace_ui::SettingsTarget;
         let target = match link {
             Link::Accounts => Some(SettingsTarget::Accounts(None)),
@@ -324,6 +427,12 @@ impl HarnessSettings {
             }
         }
     }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(super) enum FocusTarget {
+    Field(Field),
+    Monitoring(monitoring::Item),
 }
 
 pub(super) fn link_caption(link: Link, step: Step, language: ui::UiLanguage) -> &'static str {

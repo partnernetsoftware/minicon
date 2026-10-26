@@ -339,6 +339,76 @@ native, real-account and final-artifact obligations remain open.
 The existing development-court Harness selection retains this exact public
 subject and log; YAML/shell syntax is checked locally without dispatching jobs.
 
+#### Persistent section navigation (2026-10-26)
+
+```text
+Outcome: change Harness forms from any scroll position without paging through unrelated controls
+├── [-] Wide section rail and compact picker
+│   invariant: navigation is outside the form scroll; only visible navigation owns hits
+│   evidence: actual wide/narrow public journey, selected form and navigation/body geometry
+│   safe failure: short/narrow hosts use the bounded picker; dismissing cannot click through
+│   dependency: existing panel geometry and typed section actions; non-goal: new windows or application tabs
+└── [-] Keyboard and resize continuity
+    invariant: one input owner; rail/picker/fields/monitoring share visible focus order; committed drafts survive
+    evidence: keyboard selection, hidden-input refusal, resize and exact section return
+    safe failure: Escape dismisses the picker before closing Settings; unavailable targets stay explicit
+    dependency: existing field editor and monitoring navigation; non-goal: implicit save/login/Refresh/Start
+```
+
+At 640 available panel DIP and sufficient height, show four persistent section
+buttons in a 176-DIP rail. Other layouts show a persistent section picker above
+the form. Its four options overlay the form only while open, and cannot own
+hidden hits. Choosing an option uses the same section/deep-link action as before.
+Body rows no longer repeat section links; their index/order is independent of
+wide/narrow mode. Tab/Shift+Tab traverse visible navigation then editable fields
+and monitoring controls. Arrow keys and Enter operate the compact picker;
+Escape dismisses it and preserves drafts. Opening it relinquishes text/IME/key
+copy ownership. Pointer dismissal consumes its press without triggering a form
+control underneath. Resizing changes navigation presentation, not the selected
+section or committed editor buffers.
+
+```mermaid
+flowchart LR
+    G[Same panel geometry for paint / input / observations] --> M{Available width and height}
+    M --> R[Persistent rail]
+    M --> P[Compact picker]
+    R & P --> S[Existing typed section action]
+    S --> F[One selected scrolling form]
+    K[Visible focus target order] --> R & P & F
+    P --> D[Dismiss and consume; no hidden form action]
+    RESIZE[Resize] --> G
+    RESIZE -. retain section / draft buffers .-> F
+```
+
+Hot files: product panel geometry, Harness overview/painter/input/snapshot,
+monitoring focus seam and the existing public/native fixture navigation.
+No shared platform, provider or release authority changes. Full multiline
+explanation reflow and native/language/real-account qualification remain selected.
+
+Windows development evidence:
+`browser_windows::host_harness_persistent_navigation_keeps_picker_input_and_drafts_local`
+uses one fresh no-activate GUI with isolated configuration. It switches from
+the wide rail to the compact selector, keeps four-option Tab traversal inside
+the menu, refuses IME text to the hidden model field, selects Monitoring by
+Down/Enter, dismisses with Escape while retaining Settings, and reopens by
+keyboard. Clicking over the pager while the menu is open dismisses without
+scrolling. Resizing an open menu back to the rail preserves the selected
+section and committed model draft; listener, authorization and key creation
+remain inactive. Wide rail and compact menu PNGs were visually reviewed.
+This adds one control subject (39 -> 40), rather than a new suite.
+
+`target-six/v0.2.23-provider/section-navigation-controls/receipt.json` records
+two real production faults rejected by that original public assertion: Escape
+leaves the menu open, and pointer dismissal falls through to the pager.
+Both faults were restored byte-for-byte and the public journey passed again.
+The subsequent selector disclosure marker is presentation-only; final affected
+subjects and smoke are recorded separately in `final-receipt.json` in that
+directory. This is local synthetic development evidence; native physical input,
+other OS/ISA/language/scale qualification and real account flows remain open.
+The existing native fixture uses published navigation rectangles; its safety
+guards, deadlines and cleanup are unchanged. The development workflow retains
+the exact public subject for its next deliberate integration checkpoint.
+
 ```text
 Settings                                       [Open Harness] [Close]
 Console | Web | Harness
