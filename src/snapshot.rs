@@ -370,14 +370,16 @@ impl ConApp {
                                 ),
                             ]);
                             let web = layout.web_settings(scale, self.settings_proxy_list_start);
-                            let routes = if self.settings_section != ui::SettingsSection::Console {
-                                web.routes
-                            } else {
-                                [
+                            let routes = match self.settings_section {
+                                ui::SettingsSection::Web => web.routes,
+                                ui::SettingsSection::Harness => {
+                                    layout.harness_settings(scale, 0, 0).routes
+                                }
+                                ui::SettingsSection::Console => [
                                     layout.settings_route(ui::SettingsSection::Console, scale),
                                     layout.settings_route(ui::SettingsSection::Web, scale),
                                     layout.settings_route(ui::SettingsSection::Harness, scale),
-                                ]
+                                ],
                             };
                             let rows = web.visible_rows.min(
                                 self.config

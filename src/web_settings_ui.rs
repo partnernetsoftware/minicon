@@ -177,10 +177,10 @@ impl ConApp {
             let scale = metrics.scale_factor.max(1.0);
             let layout = self.layout(metrics.physical_width, metrics.physical_height, scale);
             let web = layout.web_settings(scale, self.settings_proxy_list_start);
-            let routes = if self.settings_section != ui::SettingsSection::Console {
-                web.routes
-            } else {
-                layout.settings_panel(scale).routes
+            let routes = match self.settings_section {
+                ui::SettingsSection::Console => layout.settings_panel(scale).routes,
+                ui::SettingsSection::Web => web.routes,
+                ui::SettingsSection::Harness => layout.harness_settings(scale, 0, 0).routes,
             };
             let x = (position.x * scale).max(0.0) as u32;
             let y = (position.y * scale).max(0.0) as u32;

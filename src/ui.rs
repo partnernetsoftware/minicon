@@ -1510,6 +1510,7 @@ pub struct WebSettingsLayout {
 pub struct HarnessSettingsLayout {
     pub panel: Rect,
     pub routes: [Rect; 3],
+    pub close: Rect,
     pub rows: MenuLayout,
     pub previous: Rect,
     pub next: Rect,
@@ -1585,8 +1586,27 @@ pub enum SettingsHit {
 
 impl Layout {
     pub fn harness_settings(self, scale: f64, count: usize, start: usize) -> HarnessSettingsLayout {
-        let panel = self.web_settings(scale, 0).panel;
+        let panel = Rect {
+            x: 0,
+            y: self.tree_header_height,
+            width: dip(760.0, scale).min(self.status.x.saturating_add(self.status.width)),
+            height: self.status.y.saturating_sub(self.tree_header_height),
+        };
         let pad = dip(12.0, scale);
+        let close_width = dip(72.0, scale).min(panel.width / 4);
+        let close = Rect {
+            x: panel.x + panel.width.saturating_sub(pad + close_width),
+            y: panel.y + dip(8.0, scale),
+            width: close_width,
+            height: dip(28.0, scale).min(panel.height.saturating_sub(dip(8.0, scale))),
+        };
+        let routes = self.settings_routes(
+            Rect {
+                width: panel.width.saturating_sub(close_width + pad),
+                ..panel
+            },
+            scale,
+        );
         let top = panel.y.saturating_add(dip(48.0, scale));
         let footer_y = panel
             .y
@@ -1618,7 +1638,8 @@ impl Layout {
         };
         HarnessSettingsLayout {
             panel,
-            routes: self.settings_routes(panel, scale),
+            routes,
+            close,
             rows,
             previous,
             next: Rect {
@@ -3099,6 +3120,33 @@ mod tests {
             0,
             "an empty list cannot scroll"
         );
+    }
+
+    #[test]
+    fn harness_panel_and_close_remain_bounded_and_do_not_share_route_hits() {
+        for scale in [1.0, 1.25, 2.0] {
+            for width in [300, 420, 640, 1000] {
+                let layout = Layout::new(dip(f64::from(width), scale), dip(360.0, scale), scale);
+                let form = layout.harness_settings(scale, 100, 0);
+                assert_eq!(form.panel.width, dip(f64::from(width.min(760)), scale));
+                for control in form
+                    .routes
+                    .into_iter()
+                    .chain([form.close, form.previous, form.next])
+                {
+                    assert!(control.width > 0 && control.height > 0);
+                    assert!(control.x >= form.panel.x && control.y >= form.panel.y);
+                    assert!(control.x + control.width <= form.panel.x + form.panel.width);
+                    assert!(control.y + control.height <= form.panel.y + form.panel.height);
+                }
+                for route in form.routes {
+                    assert!(
+                        route.x + route.width <= form.close.x,
+                        "one header press cannot both change route and close the form"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

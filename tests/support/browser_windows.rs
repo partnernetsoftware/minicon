@@ -2126,6 +2126,119 @@ fn host_harness_dashboard_reuses_account_state_and_targets_named_client() {
 }
 
 #[test]
+fn host_harness_responsive_panel_close_preserves_drafts_and_running_service() {
+    fn settle(host: &BrowserGui, wide: bool) -> Value {
+        let deadline = Instant::now() + Duration::from_secs(8);
+        loop {
+            let snapshot = host.cli(&["ui-snapshot"]);
+            let g = &snapshot["geometry"];
+            let scale = g["scale_permille"].as_u64().unwrap() as f64 / 1000.0;
+            let width = g["frame"]["width"].as_u64().unwrap();
+            let panel = &g["harness_settings"]["panel"];
+            let expected = ((760.0 * scale).round() as u64).min(width);
+            let logical = width as f64 / scale;
+            if panel["width"].as_u64() == Some(expected)
+                && ((wide && logical >= 800.0) || (!wide && logical <= 500.0))
+            {
+                return snapshot;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "Harness width failed to settle: {snapshot}"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+    fn service_responds(port: u16) {
+        use std::io::{Read, Write};
+        let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        write!(stream, "GET /v1/models HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer synthetic-responsive-key\r\nConnection: close\r\n\r\n").unwrap();
+        let mut reply = String::new();
+        stream.read_to_string(&mut reply).unwrap();
+        assert!(
+            reply.starts_with("HTTP/1.1 200"),
+            "closing Settings interrupted the local service: {reply}"
+        );
+    }
+    let reservation = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = reservation.local_addr().unwrap().port();
+    let root = minicon_binary()
+        .parent()
+        .unwrap()
+        .join("browser-court")
+        .join(unique_suffix())
+        .join("config");
+    harness_synthetic_profile(
+        &root,
+        port,
+        "synthetic-responsive-key",
+        "synthetic-unused-responsive-token",
+    );
+    drop(reservation);
+    let mut host = BrowserGui::spawn_with_config(true, None, None, Some(root));
+    let before = open_harness(&host);
+    host.cli(&["resize-window", "--width", "1000", "--height", "700"]);
+    let wide = settle(&host, true);
+    let g = &wide["geometry"];
+    let close = &g["harness_settings"]["close"];
+    for route in [
+        "settings_console_route",
+        "settings_web_route",
+        "settings_harness_route",
+    ] {
+        assert!(
+            g[route]["x"].as_u64().unwrap() + g[route]["width"].as_u64().unwrap()
+                <= close["x"].as_u64().unwrap()
+        );
+    }
+    click_harness(&host, "model_input", 0);
+    host.cli(&["send-ui-keys", "Ctrl+a"]);
+    host.cli(&["send-ui-ime", "commit", "responsive-model-draft"]);
+    click_harness(&host, "port", 0);
+    let draft_port = if port == 34567 { "34568" } else { "34567" };
+    host.cli(&["send-ui-keys", "Ctrl+a"]);
+    host.cli(&["send-ui-ime", "commit", draft_port]);
+    click_harness(&host, "listener_actions", 0);
+    wait_harness(&host, |s| s["listener"] == "listening");
+    let open = host.cli(&["ui-snapshot"]);
+    let shot = host
+        .gui
+        .screenshot
+        .with_file_name("responsive-wide.png")
+        .to_string_lossy()
+        .into_owned();
+    host.cli(&["screenshot-pane", "--output", &shot]);
+    host.click_rect(
+        &open["geometry"]["harness_settings"]["close"],
+        "Harness Close",
+        &open["geometry"],
+    );
+    assert_eq!(host.cli(&["ui-snapshot"])["settings_open"], false);
+    service_responds(port);
+    let reopened = open_harness(&host);
+    assert_eq!(reopened["port_editor"]["text"], draft_port);
+    assert_eq!(reopened["model_editor"]["text"], "responsive-model-draft");
+    assert_eq!(reopened["selected_account"], before["selected_account"]);
+    assert_eq!(reopened["model"], before["model"]);
+    host.cli(&["resize-window", "--width", "420", "--height", "300"]);
+    let narrow = settle(&host, false);
+    host.click_rect(
+        &narrow["geometry"]["harness_settings"]["close"],
+        "Harness Close narrow",
+        &narrow["geometry"],
+    );
+    assert_eq!(host.cli(&["ui-snapshot"])["settings_open"], false);
+    service_responds(port);
+    open_harness(&host);
+    click_harness(&host, "listener_actions", 1);
+    wait_harness(&host, |s| s["listener"] == "stopped");
+    host.close_and_wait();
+}
+
+#[test]
 fn host_harness_routes_preserve_independent_drafts_and_scroll_readable_controls() {
     let mut host = BrowserGui::spawn(true, None, None);
     host.cli(&["send-ui-keys", "Ctrl+Shift+I"]);

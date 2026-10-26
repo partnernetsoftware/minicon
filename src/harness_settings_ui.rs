@@ -1726,6 +1726,7 @@ impl ConApp {
                 rect.width.saturating_sub((16.0 * scale) as u32),
             );
         };
+        button(surface, geometry.close, tr("Close", "关闭", "關閉"), false);
         let account_details = settings.account_details(self.ui_language);
         for (index, &row) in rows
             .iter()
@@ -1814,9 +1815,13 @@ impl ConApp {
                 }
                 Row::Listener => {
                     label = format!(
-                        "Listener: {:?}{}",
-                        settings.view.listener,
-                        if settings.view.busy { " / working" } else { "" }
+                        "{}{}",
+                        settings.overview_label(2, self.ui_language),
+                        settings
+                            .view
+                            .actual_port
+                            .filter(|_| settings.view.listener == ListenerState::Listening)
+                            .map_or_else(String::new, |port| format!(" / 127.0.0.1:{port}"))
                     )
                 }
                 Row::Port => {
@@ -1834,9 +1839,11 @@ impl ConApp {
                         surface,
                         cell(1, 2),
                         if settings.port_editable() {
-                            "Save port"
+                            tr("Save port", "保存端口", "儲存連接埠")
+                        } else if settings.port.text != settings.view.port.to_string() {
+                            tr("Draft not active", "草稿尚未生效", "草稿尚未生效")
                         } else {
-                            "Port locked"
+                            tr("Port locked", "端口已锁定", "連接埠已鎖定")
                         },
                         false,
                     );
@@ -2810,6 +2817,7 @@ impl ConApp {
         // Whitelist observations: no credentials, labels, device URL/code or recipe key.
         json::object(vec![
             ("panel", rect(geometry.panel)),
+            ("close", rect(geometry.close)),
             ("next_step", settings.orientation_step().id().into()),
             ("section", settings.section.id().into()),
             ("configured_clients", settings.configured_client_count().into()),
@@ -3441,7 +3449,11 @@ impl ConApp {
             } => {
                 let x = (position.x * scale).max(0.0) as u32;
                 let y = (position.y * scale).max(0.0) as u32;
-                if geometry.previous.contains(x, y) {
+                if geometry.close.contains(x, y) {
+                    settings.blur();
+                    let _ = window.set_pointer_capture(false);
+                    self.settings_open = false;
+                } else if geometry.previous.contains(x, y) {
                     settings.blur();
                     settings.scroll = settings
                         .scroll

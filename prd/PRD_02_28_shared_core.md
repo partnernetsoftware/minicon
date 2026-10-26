@@ -232,6 +232,10 @@ Settings orientation and form selection stay product-private in `harness_setting
 it consumes the existing typed View, form identity, row geometry and field-focus
 route, with no shared OS/ISA API. Behavior and scoped Windows evidence belong
 to [the experience owner](PRD_02_31_01_01_harness_experience.md#focused-form-sections-2026-10-26).
+Its responsive panel/header rectangles remain in the product's existing
+`ui.rs`, consumed by Harness paint/input and the shared settings-route
+dispatcher/snapshot. [Panel scope and evidence](PRD_02_31_01_01_harness_experience.md#responsive-panel-and-close-control-2026-10-26)
+add no native window or platform geometry API.
 The binary-private `harness_account_ui.rs` projects account state and cached
 readings for actual Settings/Monitoring and Dashboard consumers. It moved from
 the Settings child module when the Dashboard joined; it reuses the report's

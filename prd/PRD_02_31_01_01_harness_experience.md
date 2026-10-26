@@ -272,6 +272,73 @@ and single stacked form. If the panel fills a short/narrow host, retain explicit
 Back/Close and scrollable content; avoid horizontally clipped fixed-height rows.
 These are proposed layout targets requiring actual native evidence.
 
+#### Responsive panel and close control (2026-10-26)
+
+```text
+Outcome: read the Harness form at an appropriate width and leave it without losing work
+├── [-] Window-bounded panel up to 760 DIP
+│   invariant: draw, input hit targets and published rectangles share one layout
+│   evidence: actual wide/narrow GUI dimensions, body input and route return
+│   safe failure: clamp to available host area; retain readable rows and paid-action fit guard
+│   dependency: existing Layout and fixed-row editor; non-goal: completing the section rail in this slice
+└── [-] Persistent Close action
+    invariant: closing the form preserves drafts and applied listener/account state
+    evidence: explicit close/reopen with edited model/port and no runtime start/login
+    safe failure: release the local pointer/edit owner; keep the existing underlying-view return contract
+    dependency: same panel header geometry; non-goal: Stop, sign-out or cancel authorization
+```
+
+The panel stays below the existing host toolbar and expands to the available
+window width up to760 DIP. Its header has the same Console/Web/Harness routes
+and an explicit localized Close action, including short windows. Reserve its
+space before computing route rectangles so small hosts cannot assign one hit
+to both Close and a route. Paint, route dispatch and public observations consume
+those rectangles. Existing row height, editor focus, scroll and paid-verification
+caption fit checks stay authoritative. The proposed section rail and complete
+multiline explanation layout remain selected follow-up work.
+When a port draft is retained across explicit Start, the service line names the
+actual bound address and the locked draft is labeled not active. A remembered
+input value must not masquerade as the currently listening port.
+
+```mermaid
+flowchart LR
+    W[Actual host size and scale] --> G[Harness panel/header/body geometry]
+    G --> P[Paint]
+    G --> H[Pointer hit and input anchor]
+    G --> O[Public snapshot]
+    H --> C[Explicit Close]
+    C --> B[Blur/release local input; retain draft and runtime state]
+    B --> R[Existing underlying workspace return]
+```
+
+Hot files: product `ui.rs`, Harness painter/input/snapshot and the existing
+shared settings-route dispatcher/observation. No platform mechanism changes.
+
+Windows development evidence:
+`harness_panel_and_close_remain_bounded_and_do_not_share_route_hits` checks
+window bounds and header-hit separation at300/420/640/1000 DIP and1/1.25/2
+geometry scales. This is pure layout evidence, not native scale qualification.
+`browser_windows::host_harness_responsive_panel_close_preserves_drafts_and_running_service`
+uses a fresh synthetic account and local key with a no-activate GUI. It observes
+the actual wide panel and narrow host, edits model/port drafts, explicitly
+starts the loopback listener, then closes/reopens Settings. Authenticated
+`GET /v1/models` succeeds while the form is closed, and explicit Stop/owned host
+cleanup finish the journey. No upstream inference/metadata read is requested.
+Its wide PNG was visually reviewed. The first local HTTP assertion used an
+invalid Host and received the existing403 refusal; the corrected exact loopback
+Host is used for the pass without changing origin validation.
+
+`target-six/v0.2.23-provider/responsive-panel-controls/receipt.json` records
+the two new subjects (binary 874 -> 875; control 38 -> 39), actual production
+faults returning to 480-DIP width and making Close a no-op, both rejected by
+original assertions, exact restoration, and 1 geometry /29 form /10 public
+Harness passes with zero ignored. Final fmt/strict Clippy and the three-case
+smoke are recorded in `responsive-panel-controls/final-receipt.json` under the
+same local evidence root. Complete section navigation/reflow and original
+native, real-account and final-artifact obligations remain open.
+The existing development-court Harness selection retains this exact public
+subject and log; YAML/shell syntax is checked locally without dispatching jobs.
+
 ```text
 Settings                                       [Open Harness] [Close]
 Console | Web | Harness
