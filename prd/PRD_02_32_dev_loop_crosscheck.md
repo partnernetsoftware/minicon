@@ -1331,3 +1331,25 @@ still fails the job. This distinguishes an allocated-desktop limitation from
 an unsupported ARM/OS-version inference without changing product input or
 terminating pre-existing system processes. Normal dispatch retains its two-cell
 matrix and original court semantics.
+
+The actual contrast [run40248947384](https://github.com/partnernetsoftware/minicon/actions/runs/40248947384)
+at `23aeb7b4ea607de19bd1c3412710bfd8291eb2b9` is terminal FAIL. The same x64
+image (`4ac6a86943502053e27a7ffd2e37adebbed9d3a1b8f0ec334e3f50ff343beb0a`)
+passes the complete Default-desktop court. On the allocated desktop the original
+native page readiness predicate times out before any input row completes.
+The retained owned-window PNG shows Browser unavailable, not a loaded page.
+Both original outcomes and receipt hashes are retained; all desktop, controller,
+GUI, clipboard and language restoration checks pass. Artifacts:
+`target-six/v0.2.23-provider/desktop-contrast-ci-23aeb7b/`.
+This does not reach an x64 allocated-desktop composition comparison and therefore
+does not isolate the ARM64 IME cause. Allocated desktops have not established a
+complete native court. Do not infer unsupported product input or fix an OS
+service from this result; retain its setup failure and original acceptance.
+
+Next select the explicit contrast-only `allocated_first=true` order on a fresh
+x64 VM to distinguish allocation before any Default-desktop browser launch from
+the preceding order. Record execution order, both original exit/status/receipt
+hashes and all cleanup against one measured image; no input predicate changes,
+service intervention or pre-existing-process termination. Reject that option
+unless `desktop_contrast=true`. This tests order sensitivity; even a passing
+x64 comparison cannot replace ARM64's original native composition requirement.

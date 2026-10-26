@@ -80,6 +80,9 @@ enum Row {
     AppliedAccount(usize),
     AppliedModel(usize),
     Allocation(u8),
+    AllocationModel(u8),
+    AllocationAvailability(u8),
+    AllocationEvidence(u8),
     AllocationActions,
     AllocationAccount,
     AllocationAccountChoice(usize),
@@ -555,7 +558,14 @@ impl HarnessSettings {
                     Row::AppliedModel(index),
                 ]);
             }
-            rows.extend(form.allocations.keys().copied().map(Row::Allocation));
+            for &slot in form.allocations.keys() {
+                rows.extend([
+                    Row::Allocation(slot),
+                    Row::AllocationModel(slot),
+                    Row::AllocationAvailability(slot),
+                    Row::AllocationEvidence(slot),
+                ]);
+            }
             rows.push(Row::AllocationActions);
             if let Some(slot) = form.selected_slot {
                 if self.forms.selected.as_deref() != Some("default") {
@@ -1495,6 +1505,11 @@ fn row_id(row: Row) -> String {
         Row::AppliedAccount(index) => return format!("connection_applied_{index}_account"),
         Row::AppliedModel(index) => return format!("connection_applied_{index}_model"),
         Row::Allocation(slot) => return format!("connection_allocation_{slot}"),
+        Row::AllocationModel(slot) => return format!("connection_allocation_model_{slot}"),
+        Row::AllocationAvailability(slot) => {
+            return format!("connection_allocation_availability_{slot}");
+        }
+        Row::AllocationEvidence(slot) => return format!("connection_allocation_evidence_{slot}"),
         Row::AllocationActions => "connection_allocation_actions",
         Row::AllocationAccount => "connection_allocation_account",
         Row::AllocationAccountChoice(index) => return format!("connection_account_{index}"),
@@ -2162,7 +2177,10 @@ impl ConApp {
                         };
                     }
                 }
-                Row::Allocation(slot) => {
+                Row::Allocation(slot)
+                | Row::AllocationModel(slot)
+                | Row::AllocationAvailability(slot)
+                | Row::AllocationEvidence(slot) => {
                     if let Some(form) = settings.forms.current()
                         && let Some(allocation) = form.allocations.get(&slot)
                     {
@@ -2172,19 +2190,21 @@ impl ConApp {
                                 && old.account == allocation.account
                                 && old.model == allocation.model.text
                         });
-                        let state = form
+                        let (availability, evidence) = form
                             .view
                             .allocations
                             .iter()
                             .find(|entry| same_input && entry.slot == slot)
                             .map_or_else(
                                 || {
-                                    if allocation.account.is_none() {
-                                        tr("Choose an account", "请选择账号", "請選擇帳號")
-                                    } else {
-                                        tr("Choose a model", "请选择模型", "請選擇模型")
-                                    }
-                                    .into()
+                                    (
+                                        if allocation.account.is_none() {
+                                            tr("Choose an account", "请选择账号", "請選擇帳號")
+                                        } else {
+                                            tr("Choose a model", "请选择模型", "請選擇模型")
+                                        },
+                                        tr("Not verified", "尚未验证", "尚未驗證"),
+                                    )
                                 },
                                 |entry| {
                                     use provider_runtime::{
@@ -2227,18 +2247,32 @@ impl ConApp {
                                             "驗證已過期",
                                         ),
                                     };
-                                    format!("{availability} / {evidence}")
+                                    (availability, evidence)
                                 },
                             );
-                        button(
-                            surface,
-                            rect,
-                            &format!(
-                                "{} / {} / {}",
-                                allocation.alias.text, allocation.model.text, state
+                        match row {
+                            Row::Allocation(_) => button(
+                                surface,
+                                rect,
+                                &format!(
+                                    "{} {}: {}",
+                                    tr("Model entry", "模型条目", "模型項目"),
+                                    u16::from(slot) + 1,
+                                    allocation.alias.text,
+                                ),
+                                form.selected_slot == Some(slot),
                             ),
-                            form.selected_slot == Some(slot),
-                        );
+                            Row::AllocationModel(_) => {
+                                label = format!(
+                                    "{}: {}",
+                                    tr("Model", "模型", "模型"),
+                                    allocation.model.text,
+                                );
+                            }
+                            Row::AllocationAvailability(_) => label = availability.into(),
+                            Row::AllocationEvidence(_) => label = evidence.into(),
+                            _ => unreachable!(),
+                        }
                     }
                 }
                 Row::AllocationActions => {

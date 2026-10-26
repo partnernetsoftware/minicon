@@ -75,6 +75,11 @@ the checklist here decides whether implementation is ready to start.
 | Packaging estimate | Compare optional companion and any proposed default-binary integration against the delivery owner's actual size/startup/resource budgets; measure rather than infer cost from crate size |
 | Integration ownership | Identify native versus CU versus host-UI hot files, the release integrator and exact qualification scope; use the existing PRD 28 reuse map |
 
+CU0 also records the CU3 model-route dependency without blocking local CU1:
+use PRD 38's modality/disclosure contract to identify the provider adapter and
+model capability evidence needed later. Do not put image forwarding into the
+observation preview merely because the current Harness has working accounts.
+
 CU0 closes only when those outputs are recorded with the owning contracts and
 named evidence. The presence of this checklist is not a completed inventory.
 For CU1, prefer one complete qualified Windows or macOS native journey over
@@ -88,6 +93,22 @@ candidate moves. Do not attach a partially implemented action or empty GUI tab
 to the observation preview to preserve a version number. Local CU observation
 and action can proceed while cluster planning continues independently; only
 CU4 consumes the cross-machine gates.
+
+### Release review and scope reduction
+
+At each candidate review, retain the complete journey and reduce breadth first:
+one named native target, one selected window and one observation before more
+adapters, action kinds or presentation surfaces. CU1 may be a separately
+qualified optional companion asset from the same source revision; terminal
+users must not need to install or start it. The delivery owner selects and
+qualifies that asset explicitly rather than treating it as covered by the
+terminal executable's receipt.
+
+CU2 action families are selected independently from actual native evidence.
+Start with a semantic invoke or text operation if qualified; a capture pass
+does not unlock pointer/key/scroll. CU3 selection additionally resolves the
+actual model route and the PRD 38 modality/disclosure acceptance journey.
+None of these reviews changes the current release's selected requirements.
 
 ## Preparation and integration
 

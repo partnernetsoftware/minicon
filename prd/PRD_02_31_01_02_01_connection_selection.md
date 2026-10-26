@@ -808,3 +808,31 @@ long combined alias/model/status text; this is not full arbitrary-label or
 narrow-layout qualification. Local images and receipts:
 `target-six/v0.2.23-provider/native-controls-ci-9881b24/`. This is English at
 the observed1000-permille viewport, not other-language/scale or final bytes.
+
+The selected Harness development suites also pass on all six targets in
+[run40247808246](https://github.com/partnernetsoftware/minicon/actions/runs/40247808246)
+at exact `9881b24bc5f9e1348dce758816f9b6fdb4050ca6`. Independent receipt and
+native-context integrity verification is `PASS` in
+`target-six/v0.2.23-provider/dev-9881b24-all-cells/verification-index.json`;
+[the lifecycle owner](PRD_02_28_01_browser_context_lifecycle.md#six-platform-replay-and-helper-archive-closure)
+owns the native-context and Linux helper details. This does not close physical
+input, real multi-account, arbitrary-label readability or final-artifact gates.
+
+The next presentation correction separates each draft entry's selection button,
+model identity, account availability and verification evidence into independent
+paginated rows. Preserve the existing selection row/action identity. Long aliases
+or model names must not push the account-recovery or verification state off the
+end of a concatenated caption. Use the existing model/alias editors for selected
+values; this change adds no account selection, paid probe or Apply side effect.
+The UI row/pager geometry and existing field/action journeys must replay.
+
+The integrated split passes format, strict all-target Clippy, all 26 existing
+Settings subjects, 18 alignment subjects and four actual public Harness
+route/draft/save-recovery/redaction journeys. Source inventories are identical
+before/after each command; raw log hashes and actual counts are retained in
+`target-six/v0.2.23-provider/settings-entry-rows-gates/receipt.json`.
+An initial filter against the wrong integration-test binary executed zero
+subjects and is explicitly rejected as evidence; the four public executions
+come from `minicon_control`. Native pixels for the new rows and matching-source
+cross-platform feedback remain open. Long user-supplied identifiers still use
+the existing bounded single-line presentation and selected field editors.

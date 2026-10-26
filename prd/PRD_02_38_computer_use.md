@@ -94,6 +94,41 @@ what was omitted, and where the private artifacts live. A browser window may
 be observed as an application window; DOM/CDP/browser-flow automation is a
 separate capability decision. Capture permission does not promise input support.
 
+### Preview scope and model compatibility
+
+The first product slice supports inspecting a development application: choose
+its window, read a known control and image, resize it, and inspect the changed
+state. It must also work through an external caller without a MiniCon model
+account. CU1 does not require a task runner or a visual dashboard to be useful.
+
+| Increment | Required product experience | Deferred from this increment |
+| --- | --- | --- |
+| CU1 observation preview | Capability discovery, explicit unambiguous selection, one bounded observation, coverage/freshness explanation, private artifact consumption and disposal | Native actions, model-driven operation, continuous capture, remote desktop |
+| CU2 single operation | One supported action with target validation, observable readback and an honest uncertain result when acknowledgement is insufficient | Autonomous task completion, recording/replay and unattended retries |
+| CU3 Harness experience | A selected tool route, compatible model input, visible target/step/budget, controlled disclosure and Stop | New model loop, dynamic orchestration or dependence on a future engine |
+
+Model connectivity and computer-use compatibility are separate capabilities.
+A ready account or a successful OpenAI/Anthropic request does not establish
+image input or reliable tool calling for its selected upstream model. Before
+CU3 discloses an observation, the integration must check the actual route's
+supported input modalities, payload limits and tool-result representation.
+Image forwarding requires an explicitly supported image path through the
+provider adapter; never infer it from an endpoint or protocol name.
+
+An accessibility-text-only route may be offered when deliberately selected
+and labeled with its coverage limits. It must not silently replace a requested
+visual task or claim to inspect controls absent from that tree. If the selected
+task requires images and its model route cannot consume them, report an
+incompatible route with a model-selection recovery path. Keep private local
+inspection available. A supplied image or tree remains untrusted task data;
+it cannot change the selected target, action budget or disclosure scope.
+
+CU-04 must include a compatible image/tool-result round trip where supported,
+an explicitly selected text-only journey and an incompatible-route refusal
+before disclosure. Provider-specific evidence stays with the provider owner;
+CU-04 owns the end-to-end integration. No current DeepSeek or OpenCode account
+is labeled vision-capable by this design.
+
 The first useful outcome is **inspect this window**, even without a model or
 provider account. A user chooses a currently available application/window,
 sees capture/accessibility support and any required OS permission, then asks

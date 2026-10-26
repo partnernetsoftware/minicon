@@ -1132,3 +1132,23 @@ verification of those missing bytes is **BLOCKED**. The workflow now explicitly
 retains `helper-release-controls.json` and `helper-release-*.log`; the next
 matching-source native replay must close that archive gap. The native runtime
 proof above remains valid for its named source and scope.
+
+### Six-platform replay and helper archive closure
+
+[Run40247808246](https://github.com/partnernetsoftware/minicon/actions/runs/40247808246)
+at `9881b24bc5f9e1348dce758816f9b6fdb4050ca6` completes successfully on all
+six native development targets. Independent archive verification checks each
+initial/negative/negative/restored receipt, declared artifact hash and length,
+eight positive predicates, both exact intended negative failures, restored
+source and unchanged canonical default bytes. Each rebuilt feature-test image
+is bound separately to its build/source receipt; byte equality between test
+rebuilds is not inferred on Windows or macOS.
+
+Both Linux archives now contain the seven helper subjects and all five actual
+guard-removal failures, their exact assertions and restored passing logs.
+Their declared hashes match the archived bytes. This closes the missing-helper-
+archive obligation above. Audit:
+`target-six/v0.2.23-provider/dev-9881b24-all-cells/verification-index.json`
+(`PASS`, six verified cells). Unix descendant-absence observation remains
+limited as described above. This is selected development evidence, not actual
+provider authorization, physical input, full-workspace or signed/public bytes.

@@ -13,6 +13,11 @@ on:
         type: boolean
         required: false
         default: false
+      allocated_first:
+        description: "Contrast only: run allocated desktop before Default on the fresh VM"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -61,9 +66,11 @@ jobs:
           PYTHONDONTWRITEBYTECODE: '1'
           PYTHONUTF8: '1'
           DESKTOP_CONTRAST: ${{ inputs.desktop_contrast }}
+          ALLOCATED_FIRST: ${{ inputs.allocated_first }}
         run: |
           $ErrorActionPreference = 'Stop'
           if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw 'Disposable hosted court required' }
+          if ($env:ALLOCATED_FIRST -eq 'true' -and $env:DESKTOP_CONTRAST -ne 'true') { throw 'allocated_first requires desktop_contrast' }
           $output = Join-Path $env:RUNNER_TEMP 'minicon-native-controls'
           if (Test-Path -LiteralPath $output) { throw 'Court output must be fresh' }
           New-Item -ItemType Directory -Path $output | Out-Null
@@ -89,14 +96,19 @@ jobs:
               $PSNativeCommandUseErrorActionPreference = $false
               if ($env:CELL -ne 'win-x86_64') { throw 'Desktop contrast requires the x64 court' }
               $imageHash = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
-              python -B -X utf8 scripts/native-controls/run.py --binary $binary --output (Join-Path $output 'controls-default') --source-sha $source
-              $defaultExit = $LASTEXITCODE
-              if ((Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $imageHash) { throw 'Contrast image changed after default arm' }
-              python -B -X utf8 scripts/native-controls/desktop.py --binary $binary --output (Join-Path $output 'controls-allocated') --source-sha $source --desktop-receipt (Join-Path $output 'desktop.json')
-              $allocatedExit = $LASTEXITCODE
-              if ((Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $imageHash) { throw 'Contrast image changed after allocated arm' }
+              $order = $(if ($env:ALLOCATED_FIRST -eq 'true') { @('allocated', 'default') } else { @('default', 'allocated') })
+              $exitCodes = @{}
+              foreach ($arm in $order) {
+                if ($arm -eq 'default') {
+                  python -B -X utf8 scripts/native-controls/run.py --binary $binary --output (Join-Path $output 'controls-default') --source-sha $source
+                } else {
+                  python -B -X utf8 scripts/native-controls/desktop.py --binary $binary --output (Join-Path $output 'controls-allocated') --source-sha $source --desktop-receipt (Join-Path $output 'desktop.json')
+                }
+                $exitCodes[$arm] = $LASTEXITCODE
+                if ((Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $imageHash) { throw "Contrast image changed after $arm arm" }
+              }
               $arms = @(
-                foreach ($arm in @('default', 'allocated')) {
+                foreach ($arm in $order) {
                   $armPath = Join-Path $output "controls-$arm/receipt.json"
                   $armReceipt = Get-Content -Raw -LiteralPath $armPath | ConvertFrom-Json
                   if ($armReceipt.source_sha -cne $source -or $armReceipt.binary_sha256 -cne $imageHash) { throw 'Contrast arm identity mismatch' }
@@ -105,7 +117,7 @@ jobs:
                     status = $armReceipt.status
                     phase = $armReceipt.phase
                     reason = $armReceipt.reason
-                    process_exit = $(if ($arm -eq 'default') { $defaultExit } else { $allocatedExit })
+                    process_exit = $exitCodes[$arm]
                     receipt_sha256 = (Get-FileHash -LiteralPath $armPath -Algorithm SHA256).Hash.ToLowerInvariant()
                   }
                 }
@@ -116,9 +128,10 @@ jobs:
                 binary_sha256 = $imageHash
                 status = 'OBSERVED'
                 native_input_qualified = $false
+                execution_order = $order
                 arms = $arms
               } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $output 'desktop-contrast.json') -Encoding utf8
-              $courtExit = $(if ($defaultExit -eq 0 -and $allocatedExit -eq 0) { 0 } else { 1 })
+              $courtExit = $(if ($exitCodes['default'] -eq 0 -and $exitCodes['allocated'] -eq 0) { 0 } else { 1 })
             } elseif ($env:CELL -eq 'win-aarch64') {
               python -B -X utf8 scripts/native-controls/desktop.py --binary $binary --output (Join-Path $output 'controls') --source-sha $source --desktop-receipt (Join-Path $output 'desktop.json')
               $courtExit = $LASTEXITCODE
