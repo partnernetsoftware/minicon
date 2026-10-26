@@ -1,13 +1,14 @@
 # v0.2.24 — tab-tree interactions and clipboard status
 
-Status: `[-]` active 0.2.24 delivery after public
-[0.2.23](../prd/archive/v0.2.23-release-history.md). The owner's current
-goal authorizes development and public release of 0.2.24. The two versions'
-source and artifact evidence remain separate.
+Status: `[v]` public 0.2.24 release, with named evidence in its
+[release history](../../prd/archive/v0.2.24-release-history.md). This archived
+plan records the shipped cut and its still-open acceptance. Public
+[0.2.23](../../prd/archive/v0.2.23-release-history.md) has separate source and
+artifact evidence.
 
-Behavior: [tab-tree interaction owner](../prd/PRD_02_25_03_tab_tree_interactions.md).
-Existing hierarchy/naming/focus: [PRD 25](../prd/PRD_02_25_con_workspace.md).
-Reuse: [PRD 28](../prd/PRD_02_28_shared_core.md). Observation: PRD 26.
+Behavior: [tab-tree interaction owner](../../prd/PRD_02_25_03_tab_tree_interactions.md).
+Existing hierarchy/naming/focus: [PRD 25](../../prd/PRD_02_25_con_workspace.md).
+Reuse: [PRD 28](../../prd/PRD_02_28_shared_core.md). Observation: PRD 26.
 Other subsequent-version Harness/cluster work keeps its own staged scope;
 it is not automatically promised as complete in this tree-interaction release.
 
@@ -17,7 +18,7 @@ The release outcome is predictable everyday interaction: editing a tab name
 works, branches can be arranged without losing live sessions, and clipboard
 status tells the user what kind of content is present. Harness remains the
 core product direction, with its next task-operation design progressing behind
-the existing [workspace plan](plan-harness-workspace.md).
+the existing [workspace plan](../plan-harness-workspace.md).
 
 | Priority | Delivery | Acceptance owner / completion condition |
 | --- | --- | --- |
@@ -30,10 +31,10 @@ the existing [workspace plan](plan-harness-workspace.md).
 | Later | CU implementation, cross-machine execution and dynamic llm-gate | Existing CU/cluster/engine owners; not required to ship this version |
 
 0.2.23 is public. The owner has accepted
-the [experimental-release amendment](../prd/PRD_02_31_01_provider_gateway.md#0223-experimental-release-amendment-2026-10-26).
+the [experimental-release amendment](../../prd/PRD_02_31_01_provider_gateway.md#0223-experimental-release-amendment-2026-10-26).
 Real-account and continuous-client acceptance carries forward without a passed
 claim. Signing, Defender and exact-source/no-rebuild release requirements still
-apply. [Dynamic logic](../prd/PRD_02_31_01_04_dynamic_logic.md) owns the future
+apply. [Dynamic logic](../../prd/PRD_02_31_01_04_dynamic_logic.md) owns the future
 host/module split, separate logic releases, compatibility and rollback; 0.2.24
 starts design/readiness work without promising an immature engine integration.
 
@@ -69,11 +70,11 @@ Outcome: improve daily workspace interaction and clipboard awareness
 ├── [-] C1 — clipboard type alongside labeled size
 │   invariant/evidence/safe failure/dependency/non-goal: PRD 25, Clipboard status type and size
 │   sequence: bounded format summary, generation-safe status, localized native/pixel acceptance
-└── [_] Q — integrate and release exact 0.2.24 source
+└── [v] Q — integrate and release exact 0.2.24 source
     invariant: two versions' product/artifact/native receipts never substitute for each other
-    evidence: TT-07, required product gates, exact six-cell/sign/scan/Promotion/public checks
-    safe failure: hold publication on missing selected evidence
-    dependency: R1/T1/T2/C1 and 0.2.23 release join; non-goal: claiming future cluster or H2 delivery
+    evidence: public release history names exact source, six-cell, signing, Candidate, Defender and Promotion receipts
+    safe failure: an absent release-chain gate prevents Promotion; broader TT/CB acceptance retains open owner IDs
+    dependency: shipped R1/T1/T2/C1 core and 0.2.23 release join; non-goal: closing TT-07, cluster or H2 delivery
 ```
 
 ## Memory palace
@@ -112,7 +113,7 @@ flowchart LR
    Upsert owner status/evidence before archiving this plan.
 
 The owner's 2026-10-26 clipboard request adds C1 to this next version.
-[PRD25](../prd/PRD_02_25_con_workspace.md#clipboard-status-type-and-size-planned-0224)
+[PRD25](../../prd/PRD_02_25_con_workspace.md#clipboard-status-type-and-size-shipped-core-in-0224)
 owns behavior and CB-TYPE-01..03. Its status/clipboard files can proceed after
 their own contract review; they do not need the tree drag implementation.
 
@@ -138,9 +139,10 @@ product-code changes and the version bump follow the completed 0.2.23 Promotion.
   observer and localized status layout are integrated. A Windows x86_64
   narrow/normal pixel-surface test passed and cursor-overlay guard removal
   failed as expected. An opt-in native text/PNG/empty-restoration court is
-  wired to the disposable hosted six-cell workflow; runtime receipts remain
-  pending. Public GUI pixels and the selected OS/ISA matrix remain open under
-  PRD 25 CB-TYPE-01..03.
+  wired to the disposable hosted six-cell workflow; the exact-source native
+  court passed all six OS/ISA cells in the [release history](../../prd/archive/v0.2.24-release-history.md).
+  Public GUI screenshots and native IME/status
+  co-layout remain open under PRD 25 CB-TYPE-01..03.
 - T1/T2 development checkpoint: Windows x86_64 Workspace branch matrix (17
   tests) and the public GUI drag/cancel/refusal journey passed. Removing the
   parent update and the release-only commit each produced their expected RED
@@ -160,6 +162,7 @@ product-code changes and the version bump follow the completed 0.2.23 Promotion.
   duplicate tests only after review; do not add source-string assertions as proof.
 - Run cross-platform integration at the completed feature join and required
   exact-source gates at the release boundary, not once per small UI edit.
-- A missing selected acceptance case stays open. Do not silently exchange drag,
-  account validation or native input for an easier fixture. Any scope deferral
-  needs an explicit owner decision before freezing release source.
+- The owner authorized this named public release and dynamic PRD/plan
+  adjustment. Native pointer/IME/scroll/capture and public clipboard-pixel
+  acceptance remain open under their owning PRDs; the shipped core and exact
+  release receipts do not substitute for those wider cases.

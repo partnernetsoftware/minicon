@@ -100,11 +100,13 @@ flowchart LR
     CT --> CS["Planned status: type plus labeled size; unknown stays unknown"]
 ```
 
-## Clipboard status type and size (planned 0.2.24)
+## Clipboard status type and size (shipped core in 0.2.24)
 
 Owner request, 2026-10-26: the existing clipboard status readout should show
-whether content is text or an image alongside its size. Status is `[-]`;
-sequencing belongs to [the next-version plan](../plan/plan-v0.2.24.md).
+whether content is text or an image alongside its size. The core readout
+shipped in public 0.2.24; status remains `[-]` for the scoped acceptance below.
+Sequence and release evidence are in the [archived version plan](../plan/archive/plan-v0.2.24.md)
+and [release history](archive/v0.2.24-release-history.md).
 
 Windows x86_64 development evidence: the selected `clipboard_status::tests`
 suite passed five synthetic tests under `scripts/build.sh test-suite --bin
@@ -117,16 +119,12 @@ bar; forcing the cursor to paint over the narrow clipboard readout made the
 original assertion fail, then the restored guard passed. The status
 now observes native type names plus bounded text off the GUI thread, invalidates
 late results after a newer generation, renders an unknown image size honestly,
-and gives a narrow window one non-overlapping readout. An opt-in native court
-is now wired to the disposable six-cell development workflow. It refuses a
-nonempty original clipboard before mutation, then checks text/PNG observations
-and exact empty restoration; its first macOS ARM64 run reached restoration but
-the default 500 ms cold AppKit clear timed out. A 1500 ms rerun passed on
-macOS ARM64 but timed out on hosted Intel macOS. The isolated court now requests
-a separate finite 5 s native clear bound; its Intel rerun and exact-source
-runtime results remain open. Public
-GUI pixels and other OS/ISA cells remain open;
-this is a development checkpoint, not CB-TYPE-01..03 completion.
+and gives a narrow window one non-overlapping readout. The final source's
+opt-in native court passed text/PNG/empty-restoration on all six hosted OS/ISA
+cells; [release history](archive/v0.2.24-release-history.md) owns the exact run
+and the retained cold-AppKit timeout failures. Public GUI screenshots of every
+status variant and native IME/status co-layout remain open. The published core
+is not a claim of full CB-TYPE-01..03 completion.
 
 - Outcome/invariant: at a glance distinguish Text, Image, Text + image,
   Empty and Other/Unknown from the same observed clipboard generation. Busy,

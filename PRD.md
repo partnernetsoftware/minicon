@@ -83,7 +83,7 @@ MiniCon — one-file local terminal
 └── Current delivery
     ├── [v] public v0.2.22 → prd/archive/v0.2.22-release-history.md
     ├── [v] public v0.2.23 → prd/archive/v0.2.23-release-history.md
-    ├── [-] v0.2.24 tree interactions and clipboard status → plan/plan-v0.2.24.md
+    ├── [v] public v0.2.24 tree interactions and clipboard status → prd/archive/v0.2.24-release-history.md
     ├── current independent tracks → plan/plan-v0.2.x-product-roadmap.md
     └── historical outcomes and receipts → prd/archive/README.md
 ```
@@ -106,7 +106,7 @@ flowchart LR
     WEB --> UX["browser workspace UX<br/>owner acceptance gate / PRD 25"]
     WWEB["Native browser adapters and per-OS qualification"] --> UX
     CTRL["PRD 25.02: browser control consistency"] --> UX
-    TREE["PRD 25.03: next-version tree drag / rename pointer ownership"] --> MC
+    TREE["PRD 25.03: shipped tree drag / rename core; open native acceptance"] --> MC
     SNAP["PRD 25.04: macOS Command + arrows / owned-screen halves"] --> MC
     HX["PRD 31.01.01: account -> verified model -> local tool"] --> GW["PRD 31.01: local model API / manual account pool"]
     GW --> AUTH{Verified inference authorization?}
@@ -203,11 +203,13 @@ flowchart LR
   owns the design and [its plan](plan/plan-harness-workspace.md) owns sequencing.
   Settings forms, the provider pool and monitoring retain their existing owners;
   Console/Web maintenance and qualification continue.
-- [-] **v0.2.24: tab-tree drag, reliable inline rename and clipboard type.**
-  The owner retains this as the current selected release scope.
-  [PRD 25.03](prd/PRD_02_25_03_tab_tree_interactions.md) owns the reproduced
-  inside-click failure and proposed subtree/gesture contract;
-  [the plan](plan/plan-v0.2.24.md) sequences rename repair before drag integration.
+- [v] **Public v0.2.24: tab-tree drag, reliable inline rename and clipboard type.**
+  [Release history](prd/archive/v0.2.24-release-history.md) owns the exact
+  source, signed Candidate, Defender and public Promotion evidence.
+  [PRD 25.03](prd/PRD_02_25_03_tab_tree_interactions.md) retains native
+  pointer/IME/scroll/capture acceptance, while [PRD 25](prd/PRD_02_25_con_workspace.md)
+  retains public clipboard-pixel and IME/status co-layout acceptance. Shipped
+  core behavior does not close those wider cases.
 - [v] **Public v0.2.22: terminal-to-browser preview and proxy preferences.**
   [Release history](prd/archive/v0.2.22-release-history.md) owns final source,
   signed/Candidate/Defender/public qualification, retained failures and scope.
@@ -264,7 +266,7 @@ flowchart LR
   owns identity/pairing, cross-node observation, deliberate task handoff and
   later model/capacity coordination. [Its plan](plan/plan-cluster-horizon.md)
   makes the concrete node/observation design the next planning milestone;
-  current 0.2.23 does not claim or silently require cluster implementation.
+  public 0.2.24 does not claim or silently require cluster implementation.
   The [Harness dashboard](prd/PRD_02_36_harness_workspace.md) is its future
   operating surface; unsupported remote actions remain unavailable.
 

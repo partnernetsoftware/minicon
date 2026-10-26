@@ -21,12 +21,12 @@ Outcome: improve daily use without losing open product obligations
 ├── [_] Future selected-window computer use → PRD 38 / plan-minicon-cu.md
 │   └── observation, single action, Harness and paired-node gates → owning CU plan
 ├── [v] Public 0.2.22 → release history; exact artifact evidence only
-├── [-] 0.2.23 browser controls and first harness connection → current version plan
+├── [v] Public 0.2.23 browser controls and first harness connection → release history
 │   ├── browser control consistency → PRD 25.02
 │   └── Harness settings / manual pool / local model API → PRD 31.01
-├── [_] 0.2.24 tab-tree interactions and clipboard status → next version plan
-│   ├── reported inside-click repair first; atomic subtree move and native gestures → PRD 25.03
-│   └── clipboard type/size → PRD 25; explicit carry decisions and H2/C0 design sequencing → version plan
+├── [v] Public 0.2.24 tab-tree interactions and clipboard status → release history
+│   ├── shipped inline edit and atomic subtree move; open native gesture scope → PRD 25.03
+│   └── shipped clipboard type/size core; open public-pixel and IME scope → PRD 25
 ├── [-] Modern-agent / Windows provider / terminal-library qualification → PRD 24.01/34/35
 ├── [-] Test inventory, selection, composition and measured feedback → PRD 33
 ├── [-] RSS, artifact size and exact-source delivery costs → PRD 27
@@ -35,7 +35,7 @@ Outcome: improve daily use without losing open product obligations
 
 ```mermaid
 flowchart LR
-    B[Public 0.2.22] --> P[0.2.23 controls and first connection plan]
+    B[Public 0.2.22] --> P[Public 0.2.23 controls and first connection]
     P --> A[PRD 31.01 auth feasibility and manual account binding]
     V[Core Harness workspace / PRD 36] --> P
     A --> V
@@ -49,7 +49,7 @@ flowchart LR
     A --> Q
     F[Future llm-gate / ujs + tinyvm] -. separate scheduling horizon .-> A
     P --> Q[Scoped evidence and separate release decision]
-    P --> NEXT[0.2.24 tree interaction plan]
+    P --> NEXT[Public 0.2.24 tree interactions and clipboard status]
     NEXT --> TREE[PRD 25.03 rename repair / atomic drag]
     TREE --> Q
     T[Modern-agent and provider tracks] --> Q
@@ -58,16 +58,17 @@ flowchart LR
     I[Deferred installation] -. separate coordinated planning .-> B
 ```
 
-Next work is sequenced in [0.2.23](plan-v0.2.23.md), not inferred from an old
+Public 0.2.23 and 0.2.24 outcomes are recorded in their
+[release histories](../prd/archive/README.md), not inferred from an old
 version number. Predictable editing/menu/focus behavior is owned in
 [PRD 25.02](../prd/PRD_02_25_02_browser_controls.md); the first shared inference
 path, auth feasibility, manual pool and later selection seam are owned in
 [PRD 31.01](../prd/PRD_02_31_01_provider_gateway.md). First connection does not
 implement the later dynamic scheduler.
-The newly selected [0.2.24 plan](plan-v0.2.24.md) owns the next tab-tree drag
-and inline-editing delivery, with behavior/evidence in
-[PRD 25.03](../prd/PRD_02_25_03_tab_tree_interactions.md). Current delivery
-remains 0.2.23; 0.2.24 keeps its planned scope. Qualification is source-specific.
+The [archived 0.2.24 plan](archive/plan-v0.2.24.md) records the shipped
+tab-tree and clipboard sequence, with remaining acceptance in
+[PRD 25.03](../prd/PRD_02_25_03_tab_tree_interactions.md) and
+[PRD 25](../prd/PRD_02_25_con_workspace.md). Qualification is source-specific.
 The owner's 2026-10-25 direction makes the
 [visual Harness workspace](../prd/PRD_02_36_harness_workspace.md) a continuing
 core product track; [its plan](plan-harness-workspace.md) stages the robot

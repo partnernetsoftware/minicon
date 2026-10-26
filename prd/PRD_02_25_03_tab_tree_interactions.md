@@ -1,9 +1,10 @@
 # Tab-tree drag and inline editing
 
 Parent: [workspace and input](PRD_02_25_con_workspace.md). Sequence:
-[0.2.24 plan](../plan/plan-v0.2.24.md). Status: `[-]` active for 0.2.24
-after public 0.2.23. Windows host-injected rename click and drag development
-checkpoints are implemented; native IME/selection and full drag acceptance remain open.
+[archived 0.2.24 plan](../plan/archive/plan-v0.2.24.md). Status: `[-]` after
+[public 0.2.24](archive/v0.2.24-release-history.md). Windows host-injected
+rename click and drag journeys, atomic topology checks and exact-source release
+qualification passed; native IME/selection and full drag acceptance remain open.
 
 This module owns pointer interactions for moving tabs and editing their names.
 The parent retains tab identity, naming precedence, hierarchy/lifecycle rules

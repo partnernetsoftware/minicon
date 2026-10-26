@@ -1649,7 +1649,7 @@ file below is on the routine v0.2.x path -- that's noted per row.
 | --- | --- |
 | `.github/workflows/dev-loop-crosscheck.yml` | the routine credential-free dev loop: real build + `cargo test` on hosted six-cell runners, for a session (e.g. a Linux cloud agent) that cannot compile locally at all; its opt-in native clipboard court runs only on disposable hosted desktops and requires an initially empty clipboard |
 | `scripts/ci-build.sh` / `scripts/ci-test.sh` | thin `gh workflow run` wrappers over `dev-loop-crosscheck.yml` (build-only vs. build+test) |
-| `.github/workflows/release-smoke-test.yml` | post-publish black-box check against a published Release's *actual* downloaded assets (not a rebuild), one job per OS on its own native runner |
+| `.github/workflows/release-smoke-test.yml` | post-publish black-box check against a published Release's *actual* downloaded assets (not a rebuild), one job per OS on its own native runner; the Linux dependency step uses the main Ubuntu archive with bounded APT retries and a 15-minute job limit after the 0.2.24 Azure-mirror download exceeded its earlier 8-minute limit |
 | `.github/workflows/six-grid-runtime.yml` | executes a `six-grid-cloud-build.yml` GHCR body on six native runners -- the runtime counterpart to that cloud build |
 | `.github/workflows/local-artifact-probe.yml` | **experiment (0.1.23)** -- measures CI-only test-artifact round-trip cost; not on the routine path |
 | `.github/workflows/ci-minicon.yml.disabled` | **parked** -- ported from agenterm, disabled by its `.disabled` extension, needs an explicit rename to ever run |

@@ -20,6 +20,9 @@ explicit disposition and current capability-owner pointers.
 
 Entries:
 
+- [v0.2.24 release history](v0.2.24-release-history.md) — inline rename,
+  tab-tree drag, clipboard type, exact public artifacts and retained native
+  interaction acceptance.
 - [v0.2.23 release history](v0.2.23-release-history.md) — browser controls,
   experimental Harness connection, exact public artifacts and retained
   real-account acceptance.
@@ -75,7 +78,7 @@ File index (updated 2026-10-27). Individual histories own the facts:
 - [v0.2.8](v0.2.8-release-history.md) · [v0.2.9](v0.2.9-release-history.md) · [v0.2.10](v0.2.10-release-history.md) · [v0.2.11](v0.2.11-release-history.md)
 - [v0.2.12](v0.2.12-release-history.md) · [v0.2.13](v0.2.13-release-history.md) · [v0.2.14](v0.2.14-release-history.md) · [v0.2.15](v0.2.15-release-history.md)
 - [v0.2.18](v0.2.18-release-history.md) · [v0.2.19](v0.2.19-release-history.md) · [v0.2.20](v0.2.20-release-history.md) · [v0.2.21](v0.2.21-release-history.md)
-- [v0.2.22](v0.2.22-release-history.md)
+- [v0.2.22](v0.2.22-release-history.md) · [v0.2.23](v0.2.23-release-history.md) · [v0.2.24](v0.2.24-release-history.md)
 
 Also preserved: `v0.1.7-mac-handoff.md` and
 `azure-work-tenant-signing-enroll.md`. No release ledger exists for v0.1.8,
