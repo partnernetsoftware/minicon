@@ -1282,7 +1282,9 @@ impl ConApp {
                     .checked_sub(self.tree_scroll_offset)
                     .filter(|&visible| visible <= capacity)
                     .map(|visible| {
-                        header_height.saturating_add(row_height.saturating_mul(visible as u32))
+                        header_height
+                            .saturating_add(row_height.saturating_mul(visible as u32))
+                            .min(layout.sidebar.height.saturating_sub(3))
                     })
             };
             if let Some(source_index) = nodes.iter().position(|node| node.id == drag.source) {
@@ -1291,7 +1293,11 @@ impl ConApp {
                     .iter()
                     .take_while(|&&depth| depth > source_depth)
                     .count();
-                if let Some(y) = row_y(source_index) {
+                if source_index
+                    .checked_sub(self.tree_scroll_offset)
+                    .is_some_and(|visible| visible < capacity)
+                    && let Some(y) = row_y(source_index)
+                {
                     surface.fill_rect(0, y, 4, row_height, muted.to_xrgb());
                     let ghost = format!("{branch_len} tabs");
                     paint_host_ui_text(
