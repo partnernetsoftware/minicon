@@ -223,6 +223,12 @@ Opening either view does not start the model API or run a task.
 Complete real multi-account and external-client acceptance is still pending;
 see the [experimental scope](prd/PRD_02_31_01_provider_gateway.md#0223-experimental-release-amendment-2026-10-26).
 
+In 0.2.24, click inside a tab's inline rename field to place the caret without
+closing the editor. Drag a tab row to reorder or reparent its branch; release
+to apply, or press Escape to cancel. The status bar labels clipboard content
+as text, image, mixed, empty or other when native formats are available, and
+shows a character count for readable text.
+
 ---
 
 MIT OR Apache-2.0. MiniCon™ is a trademark of PartnerNet Software.
