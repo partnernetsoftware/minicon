@@ -135,7 +135,9 @@ product-code changes and the version bump follow the completed 0.2.23 Promotion.
   passed five tests; removing image classification and the stale-generation
   guard each produced the expected failure, then the restored guards passed.
   The bounded platform
-  observer and localized status layout are integrated. Public GUI pixels,
+  observer and localized status layout are integrated. A Windows x86_64
+  narrow/normal pixel-surface test passed and cursor-overlay guard removal
+  failed as expected. Public GUI pixels,
   native format mutation/restore courts and the selected OS/ISA matrix remain
   open under PRD 25 CB-TYPE-01..03.
 - T1/T2 development checkpoint: Windows x86_64 Workspace branch matrix (17

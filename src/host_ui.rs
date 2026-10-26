@@ -1509,6 +1509,49 @@ mod tests {
     use super::*;
 
     #[test]
+    fn clipboard_status_pixels_keep_type_readable_without_cursor_overlap() {
+        let theme = theme::Theme::for_choice(theme::ThemeChoice::default());
+        let compact = crate::clipboard_status::readout(
+            crate::clipboard_status::ClipboardSummary {
+                kind: crate::clipboard_status::ClipboardKind::TextAndImage,
+                length: crate::clipboard_status::ClipboardLength::Chars(12),
+            },
+            false,
+            true,
+        )
+        .expect("mixed clipboard status");
+        let paint = |width: u32, cursor, label: Option<&str>| {
+            let height = 320;
+            let mut pixels = vec![0; (width * height) as usize];
+            paint_status_bar(
+                &mut Surface::new(&mut pixels, width, height),
+                ui::Layout::new(width, height, 1.0),
+                theme,
+                "",
+                label,
+                cursor,
+                13,
+                1.0,
+            );
+            pixels
+        };
+        let narrow_with_cursor = paint(430, Some((1, 2)), Some(&compact));
+        let narrow_without_cursor = paint(430, None, Some(&compact));
+        assert!(
+            narrow_with_cursor == narrow_without_cursor,
+            "narrow bar painted cursor over clipboard type/size"
+        );
+        assert!(
+            narrow_with_cursor != paint(430, Some((1, 2)), None),
+            "narrow bar omitted the clipboard type/size"
+        );
+        assert!(
+            paint(800, Some((1, 2)), Some(&compact)) != paint(800, None, Some(&compact)),
+            "normal bar should retain the cursor readout beside clipboard status"
+        );
+    }
+
+    #[test]
     fn disabled_browser_navigation_is_visibly_distinct_in_every_theme() {
         for choice in theme::ThemeChoice::ALL {
             let theme = theme::Theme::for_choice(choice);

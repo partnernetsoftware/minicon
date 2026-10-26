@@ -111,7 +111,10 @@ suite passed five synthetic tests under `scripts/build.sh test-suite --bin
 minicon clipboard_status::tests`; removing image classification made the mixed
 case fail as Text rather than Text + image, and removing the generation guard
 let an old image result replace a newer checking state; both guards were
-restored and passed. The status
+restored and passed. A Windows x86_64 pixel-surface test rendered compact mixed
+type/size in a narrow status bar and both clipboard/cursor readouts in a normal
+bar; forcing the cursor to paint over the narrow clipboard readout made the
+original assertion fail, then the restored guard passed. The status
 now observes native type names plus bounded text off the GUI thread, invalidates
 late results after a newer generation, renders an unknown image size honestly,
 and gives a narrow window one non-overlapping readout. Native clipboard
