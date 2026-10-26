@@ -137,6 +137,7 @@ impl HarnessSettings {
             account.provider,
             account.id
         )];
+        labels.push(pool::activity_label(&self.view, &account.id, language));
         labels.push(format!(
             "{}: {}",
             tr(
@@ -156,9 +157,9 @@ impl HarnessSettings {
         labels.push(format!(
             "{}: {}",
             tr(
-                "Active requests across the service (account count unavailable)",
-                "全服务活动请求（暂无账号级计数）",
-                "全服務活動請求（暫無帳號級計數）"
+                "Active model requests across the service",
+                "全服务活动模型请求",
+                "全服務活動模型請求"
             ),
             self.view.usage.active_requests
         ));

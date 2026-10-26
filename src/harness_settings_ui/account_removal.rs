@@ -125,6 +125,11 @@ impl HarnessSettings {
             tr("Active requests using this account will be cancelled. Its client allocations will need repair.", "使用此账号的进行中请求将被取消，相关客户端分配需要修复。", "使用此帳號的進行中請求將被取消，相關用戶端分配需要修復。").into(),
             tr("Local credentials will be removed. Remote sign-out is reported separately and may be unavailable.", "本地凭据将被移除。远端注销会单独报告，且可能不可用。", "本機憑據將被移除。遠端登出會單獨回報，且可能無法使用。").into(),
         ];
+        labels.push(pool::activity_label(
+            &self.view,
+            &review.account.id,
+            language,
+        ));
         labels.extend(
             review
                 .clients

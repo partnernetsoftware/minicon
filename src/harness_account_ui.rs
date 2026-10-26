@@ -89,6 +89,33 @@ pub(super) fn affected_clients(view: &View, account: &str) -> usize {
         .count()
 }
 
+pub(super) fn active_operations(view: &View, account: &str) -> Option<usize> {
+    if view.load_state != provider_runtime::LoadState::Loaded
+        || !view.accounts.iter().any(|a| a.id == account)
+    {
+        return None;
+    }
+    view.account_operations
+        .as_ref()
+        .map(|counts| counts.get(account).copied().unwrap_or(0))
+}
+
+pub(super) fn activity_label(view: &View, account: &str, language: ui::UiLanguage) -> String {
+    let tr = |en, zh, tw| crate::harness_workspace_ui::text(language, en, zh, tw);
+    format!(
+        "{}: {}",
+        tr(
+            "Active inference/catalogue operations (sampled)",
+            "活动推理/目录操作（采样）",
+            "活動推理/目錄操作（取樣）"
+        ),
+        active_operations(view, account).map_or_else(
+            || tr("Unavailable", "暂不可用", "暫時無法取得").into(),
+            |count| count.to_string()
+        )
+    )
+}
+
 pub(super) fn configured_client_count(view: &View) -> usize {
     view.connection_profiles
         .iter()
@@ -178,6 +205,7 @@ pub(super) fn details(view: &View, account: &AccountSummary, l: ui::UiLanguage) 
         ),
         affected_clients(view, &account.id)
     ));
+    rows.push(activity_label(view, &account.id, l));
     let Some(m) = measurement(view, account) else {
         rows.push(
             tr(
@@ -316,6 +344,29 @@ pub(super) fn resource_preview(view: &View, account: &AccountSummary, l: ui::UiL
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn account_activity_keeps_unknown_idle_and_other_account_work_distinct() {
+        let mut view = View {
+            accounts: ["a", "b"]
+                .map(|id| AccountSummary {
+                    id: id.into(),
+                    provider: Provider::DeepSeek,
+                    label: id.into(),
+                    state: provider_accounts::AccountState::CredentialStored,
+                })
+                .to_vec(),
+            account_operations: Some([("a".into(), 2)].into_iter().collect()),
+            ..Default::default()
+        };
+        assert_eq!(active_operations(&view, "a"), None);
+        view.load_state = provider_runtime::LoadState::Loaded;
+        assert_eq!(active_operations(&view, "a"), Some(2));
+        assert_eq!(active_operations(&view, "b"), Some(0));
+        assert_eq!(active_operations(&view, "removed"), None);
+        view.account_operations = None;
+        assert_eq!(active_operations(&view, "b"), None);
+        assert!(activity_label(&view, "b", ui::UiLanguage::English).ends_with("Unavailable"));
+    }
     fn observation(account: &str, provider: Provider) -> monitor::AccountMonitorView {
         monitor::AccountMonitorView {
             account: account.into(),

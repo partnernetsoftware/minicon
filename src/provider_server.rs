@@ -576,6 +576,19 @@ pub struct Gateway {
 }
 
 impl Gateway {
+    /// Sample admitted operation lifetimes without waiting for admission/storage.
+    /// Cancellation handles may outlive a request; only held leases count.
+    pub(crate) fn account_operations(&self) -> Option<std::collections::BTreeMap<String, usize>> {
+        let state = self.state.try_lock().ok()?;
+        Some(
+            state
+                .leases
+                .iter()
+                .map(|(id, count)| (id.clone(), *count))
+                .collect(),
+        )
+    }
+
     pub(crate) fn install_usage(&self, root: PathBuf) {
         let _ = self.usage.get_or_init(|| usage::UsageHistory::open(root));
     }
@@ -2482,11 +2495,20 @@ mod tests {
         });
         let (peer, _, body) = controlled_peer_request(&upstream);
         assert_eq!(body["max_tokens"], 8);
+        assert_eq!(
+            fixture
+                .gateway
+                .account_operations()
+                .unwrap()
+                .get(&fixture.account),
+            Some(&1)
+        );
         fixture.gateway.begin_stop();
         assert!(matches!(
             worker.join().unwrap(),
             Err(ServerError::Cancelled)
         ));
+        assert!(fixture.gateway.account_operations().unwrap().is_empty());
         drop(peer);
         let summary = um_await_summary(&fixture.gateway, 1);
         assert_eq!(summary.windows[2].probe.cancelled, 1);
@@ -4424,6 +4446,13 @@ mod tests {
     #[test]
     fn account_lease_is_bounded_and_revoke_cancels_registered_io() {
         let fixture = Fixture::new();
+        let held = fixture.gateway.state.lock().unwrap();
+        assert!(
+            fixture.gateway.account_operations().is_none(),
+            "busy sampling must be unknown and nonblocking"
+        );
+        drop(held);
+        assert!(fixture.gateway.account_operations().unwrap().is_empty());
         let (binding, _, _) = fixture
             .gateway
             .sticky(&head("synthetic-local"), None)
@@ -4456,8 +4485,29 @@ mod tests {
         fixture.gateway.set_key(None).unwrap();
         assert!(one.is_cancelled());
         assert!(two.is_cancelled());
+        assert_eq!(
+            fixture
+                .gateway
+                .account_operations()
+                .unwrap()
+                .get(&fixture.account),
+            Some(&2),
+            "cancellation is not completion"
+        );
         drop(first);
+        assert_eq!(
+            fixture
+                .gateway
+                .account_operations()
+                .unwrap()
+                .get(&fixture.account),
+            Some(&1)
+        );
         drop(second);
+        assert!(
+            fixture.gateway.account_operations().unwrap().is_empty(),
+            "surviving cancellation handles cannot keep completed operations active"
+        );
         assert!(matches!(
             BorrowedLease::acquire(
                 &fixture.gateway,

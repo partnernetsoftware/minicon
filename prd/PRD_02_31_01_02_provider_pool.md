@@ -74,6 +74,74 @@ flowchart LR
     X[Disable account / revoke profile / cancel] --> K[Scoped admission stop and bounded cleanup]
 ```
 
+## Sampled account activity (2026-10-26)
+
+```text
+Outcome: review live account work before reconnecting or removing it
+└── [v] Sample existing admitted account-operation lifetimes (Windows x64 development evidence below)
+    invariant: counts come from held account leases, never retained receipts or live cancellation handles
+    evidence: concurrent account leases, cancellation before release, release with surviving cancel handles, unavailable snapshot, and public idle projection
+    safe failure: unavailable sampling is unknown, not zero; observing never waits for a busy gateway lock or starts work
+    dependency: Gateway admission/Drop, Runtime view publication, existing account presentation
+    non-goal: billing totals, queued/rejected work, browser login, external processes or changing admission limits
+```
+
+```mermaid
+flowchart LR
+    A[Admit account operation] --> L[Held account lease]
+    L --> S[Nonblocking bounded sample by account]
+    L --> D[Drop releases count]
+    C[Cancel requested] --> L
+    S --> V[Runtime published view]
+    V --> UI[Account detail / actions / removal review]
+    B[Busy or unavailable lock] --> U[Unknown sample]
+    U --> V
+```
+
+Label the count **Active inference/catalogue operations (sampled)** for the
+selected account: the existing lease
+covers model inference, explicit verification and catalogue reads. It is not
+the service-wide model-request accounting count and excludes balance monitoring, browser login,
+rejected/queued work and external activity. Cancellation does not imply completion;
+the count remains until the admitted operation releases its lease. A zero is
+valid only after a successful sample for a loaded, present account. Sampling
+must not read credentials, acquire a blocking gateway lock or initiate network
+activity. Product consumers share one projection and expose only opaque account
+IDs plus counts/null in public observations. Runtime polling is the freshness
+boundary; a displayed value is not an atomic promise about a later action.
+Hot files: gateway observation, Runtime View publication and binary-private
+account/menu/removal presentation. Shared platform APIs remain unchanged.
+
+Development evidence:
+`account_activity_keeps_unknown_idle_and_other_account_work_distinct` proves
+loaded/present/unknown/zero and account separation in the shared projection.
+`account_activity_runtime_publishes_held_catalogue_work_and_release_without_refresh`
+drives the actual Runtime actor and bounded loopback catalogue HTTP peer,
+observes one held operation for the selected account, no work for the other,
+then automatic release publication without another refresh command. These add
+two binary subjects (878 -> 880).
+
+The existing `account_lease_is_bounded_and_revoke_cancels_registered_io` now
+checks nonblocking unknown under a held lock, cancellation before release and
+release while cancellation handles survive. The existing actual HTTP
+`um_actual_stop_cancels_admitted_probe_without_replay_or_synthetic_final_usage`
+also observes one held probe and zero after its worker returns. The public
+menu/removal journey checks all three synthetic idle-account samples through
+the product CLI, and the English menu screenshot was visually inspected.
+
+Receipts: `target-six/v0.2.23-provider/account-activity/`. Inflating held counts
+fails the lease and Runtime count assertions; inventing nonzero idle counts
+fails the projection and public observation assertions. Exact source bytes are
+restored before the passing four-component / one-public / three-smoke run,
+fmt and strict all-target Clippy. The failing Runtime fault's later bounded
+peer-wait timeout is retained in its log; the preceding wrong-count assertion,
+not that cleanup timeout, is its RED witness. This is synthetic Windows x64
+development evidence, not real-provider measurement, all-platform execution
+or final release qualification.
+The final inference/catalogue wording is rechecked by the same public journey
+and inspected screenshot; `caption-verification.json` and
+`caption-public-green.log` retain that caption-only follow-up.
+
 ## Reference scenario and product vocabulary
 
 The owner has two DeepSeek accounts and one OpenCode Go account. One DeepSeek

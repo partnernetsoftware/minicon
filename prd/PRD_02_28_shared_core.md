@@ -254,8 +254,13 @@ read-only labels and their width-aware continuation projection, using the host's
 existing font measurement. Paint, paging, hit testing and focus reveal consume
 the expanded product row list; no shared layout API or provider policy changes.
 Behavior and scoped evidence belong to [explanation reflow](PRD_02_31_01_01_harness_experience.md#read-only-explanation-reflow-2026-10-26).
-The binary-private `harness_account_ui.rs` projects account state and cached
-readings for actual Settings/Monitoring and Dashboard consumers. It moved from
+The binary-private `harness_account_ui.rs` projects account state, cached
+readings and the gateway's nonblocking sampled account-operation counts for
+Settings/Monitoring and Dashboard consumers.
+The latter stays product-private through Gateway -> Runtime View -> account
+presentation; its scope and evidence belong to
+[sampled account activity](PRD_02_31_01_02_provider_pool.md#sampled-account-activity-2026-10-26).
+It moved from
 the Settings child module when the Dashboard joined; it reuses the report's
 existing UTC timestamp and monitoring state labels, with no shared OS/ISA API.
 Settings presentation belongs to [the pool experience](PRD_02_31_01_01_harness_experience.md#cached-pool-status-and-account-readings-2026-10-26);

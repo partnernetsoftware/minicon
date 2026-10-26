@@ -2763,6 +2763,7 @@ impl ConApp {
                         .map(|account| {
                             json::object(vec![
                                 ("id", account.id.as_str().into()),
+                                ("active_operations", pool::active_operations(&settings.view, &account.id).map_or(json::JsonValue::Null, Into::into)),
                                 (
                                     "provider",
                                     match account.provider {

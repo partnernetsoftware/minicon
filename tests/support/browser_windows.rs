@@ -2016,6 +2016,14 @@ fn host_harness_account_removal_reviews_cancel_and_exact_confirmation() {
     click_harness(&host, "account_2", 1);
     let menu = harness_snapshot(&host);
     assert_eq!(menu["account_menu"], "cccccccccccccccccccccccccccccccc");
+    assert!(
+        menu["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|a| a["active_operations"] == 0),
+        "loaded idle accounts need actual zero samples, not unknown or a missing projection"
+    );
     assert_eq!(menu["account_removal"]["state"], "closed");
     assert_eq!(menu["accounts"], before["accounts"]);
     assert_eq!(menu["login_active"], false);

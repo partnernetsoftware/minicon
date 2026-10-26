@@ -613,9 +613,9 @@ flowchart LR
 Use an inline menu with full-width actions in the same readable pager. Default
 focus is Close; Tab traverses only the open menu, and Escape closes it. Account
 switches, section changes and settings close discard the menu. Show affected
-applied client names privately. The available active-request count is explicitly
-service-wide; account-specific live counts are unavailable and must not be
-inferred from completed usage records. Public observations expose the opaque
+applied client names privately. Show the selected account's
+[sampled activity](PRD_02_31_01_02_provider_pool.md#sampled-account-activity-2026-10-26)
+and keep service-wide model requests separately labeled. Public observations expose the opaque
 menu account, not private labels or networks. The account list's Actions button
 replaces its direct removal-review button; removal still needs its own explicit
 review. Remove duplicate rare-action buttons from the normal detail form.
@@ -641,10 +641,12 @@ bytes were restored. Final evidence in
 passing 2 component / 1 public menu-removal / 1 navigation / 3 daily smoke
 subjects, plus fmt and strict all-target Clippy. The English menu screenshot
 was visually inspected. This establishes Windows x64 synthetic interaction;
-native platform/scale/language coverage, per-account live activity observation,
+native platform/scale/language coverage, then-unavailable per-account live activity observation,
 real-provider reconnect and the full experience acceptance remain open.
 The subsequent three-target native join and its actual named executions are
 owned by [PRD32](PRD_02_32_dev_loop_crosscheck.md#account-actions-native-integration-2026-10-26).
+The later account-activity projection has its own
+[semantics and evidence](PRD_02_31_01_02_provider_pool.md#sampled-account-activity-2026-10-26).
 
 ### Account removal review (2026-10-26)
 

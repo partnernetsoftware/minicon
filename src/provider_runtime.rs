@@ -152,6 +152,7 @@ pub struct View {
     pub actual_port: Option<u16>,
     pub accounts: Vec<AccountSummary>,
     pub account_preferences: Vec<(String, AccountPreferences)>,
+    pub account_operations: Option<std::collections::BTreeMap<String, usize>>,
     pub account_save_receipts: Vec<AccountSaveReceipt>,
     pub selected_account: Option<String>,
     pub model: String,
@@ -186,6 +187,7 @@ impl Default for View {
             actual_port: None,
             accounts: Vec::new(),
             account_preferences: Vec::new(),
+            account_operations: None,
             account_save_receipts: Vec::new(),
             selected_account: None,
             model: String::new(),
@@ -1296,6 +1298,7 @@ impl Owner {
             }
         }
         self.view.accounts = accounts;
+        self.view.account_operations = self.gateway.account_operations();
         self.observe_connection_accounts(true);
         self.view.account_preferences = preferences;
         self.view.load_state = LoadState::Loaded;
@@ -2232,6 +2235,7 @@ fn run_loaded_owner(
         if let Some(summary) = owner.gateway.usage_summary() {
             owner.view.usage = summary;
         }
+        owner.view.account_operations = owner.gateway.account_operations();
         while let Some(event) = login.poll() {
             let effect = owner.login_event(event);
             publish(&pending, &notify, owner.view.clone(), effect);
@@ -6194,6 +6198,81 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn account_activity_runtime_publishes_held_catalogue_work_and_release_without_refresh() {
+        let (_root, owner, accounts) = catalogue_owner();
+        let (ready, entered) = mpsc::channel();
+        let (release, wait) = mpsc::channel();
+        let peer = CataloguePeer::new(move |index, head| {
+            if index == 0 {
+                ready.send(()).unwrap();
+                wait.recv_timeout(Duration::from_secs(8)).unwrap();
+            }
+            catalogue_reply(index, head)
+        });
+        owner.gateway.fixture_catalogue_upstream(peer.url());
+        let (commands, incoming) = mpsc::sync_channel(16);
+        let pending = Arc::new(Mutex::new(Pending::default()));
+        let exit = Arc::new(AtomicBool::new(false));
+        let stop_requested = Arc::new(AtomicU64::new(0));
+        let (outgoing, stopping, stop) = (pending.clone(), exit.clone(), stop_requested.clone());
+        let worker = std::thread::spawn(move || {
+            run_loaded_owner(
+                owner,
+                LoginMetadata {
+                    version: "synthetic-activity".into(),
+                    locale: "en".into(),
+                    timezone_offset_seconds: 0,
+                },
+                Arc::new(|| {}),
+                outgoing,
+                stopping,
+                stop,
+                incoming,
+            );
+        });
+        let mut runtime = Runtime {
+            commands,
+            connection_inflight: Default::default(),
+            last_connection_request: 0,
+            pending,
+            view: View::default(),
+            exit,
+            stop_requested,
+            worker: Some(worker),
+        };
+        until(&mut runtime, |v| v.account_operations.is_some());
+        assert!(
+            runtime
+                .view()
+                .account_operations
+                .as_ref()
+                .unwrap()
+                .is_empty()
+        );
+        runtime
+            .act(Action::RefreshAccountModels(accounts[0].clone()))
+            .unwrap();
+        entered.recv_timeout(Duration::from_secs(5)).unwrap();
+        until(&mut runtime, |v| {
+            v.account_operations
+                .as_ref()
+                .is_some_and(|counts| counts.contains_key(&accounts[0]))
+        });
+        let counts = runtime.view().account_operations.as_ref().unwrap();
+        assert_eq!(counts.get(&accounts[0]), Some(&1));
+        assert!(!counts.contains_key(&accounts[1]));
+        release.send(()).unwrap();
+        until(&mut runtime, |v| {
+            !v.busy
+                && v.account_operations
+                    .as_ref()
+                    .is_some_and(|counts| counts.is_empty())
+        });
+        assert_eq!(runtime.view().listener, ListenerState::Stopped);
+        assert!(!runtime.view().login_active);
+    }
+
     fn catalogue_owner() -> (Root, Owner, [String; 2]) {
         use crate::provider_auth::{TokenGrant, TokenLifecycle};
         use crate::provider_server::{ClientAllocation, ClientProfile, WireProtocol};
