@@ -339,6 +339,62 @@ native, real-account and final-artifact obligations remain open.
 The existing development-court Harness selection retains this exact public
 subject and log; YAML/shell syntax is checked locally without dispatching jobs.
 
+#### Read-only explanation reflow (2026-10-26)
+
+```text
+Outcome: read the complete explanation before operating a narrow Harness form
+└── [-] Width-aware read-only text rows
+    invariant: one localized text owner; paint, paging, focus reveal and hits share the expanded row list
+    evidence: complete bounded line coverage, public narrow/wide paging and unchanged editor/action state
+    safe failure: unavailable glyph width remains explicit; continuation rows never dispatch actions
+    dependency: existing font measurement and panel geometry; non-goal: changing editor or paid-action fit rules
+```
+
+```mermaid
+flowchart LR
+    T[Owned localized explanation] --> W[Actual font and available text width]
+    W --> L[Expanded read-only line rows]
+    L --> P[Paint and paging]
+    L --> H[Hit and focus reveal]
+    L --> O[Whitelisted line geometry; no private text]
+    H -. continuation is inert .-> A[Existing explicit actions only]
+```
+
+Hot files are the product-private Harness text projection, row list and existing
+paint/input/snapshot consumers. Reuse font measurement and the fixed row pager;
+do not introduce a shared platform API or alter provider authority. Interactive
+monitoring controls and mixed action rows retain their existing fit contracts.
+
+Windows development subjects:
+`explanation_lines_preserve_unicode_and_fit_the_actual_font_width` checks
+English, simplified/traditional Chinese, mixed combining/emoji text, long URLs,
+spaces and explicit line breaks against actual host-font measurement at three
+widths. `browser_windows::host_harness_explanations_reflow_through_the_same_pager_and_inert_hits`
+starts at the first page of the same Accounts form in 300-DIP and wide hosts,
+collects every declared explanation line through the public pager, rejects
+horizontal clipping, and clicks a continuation without starting an action or
+changing applied state. Wide layout needs fewer lines. A model editor remains
+visible and accepts further committed text after shrinking the window.
+These add one binary subject (875 -> 876) and one control subject (40 -> 41).
+Line observations contain source IDs, line numbers/counts and fit verdicts;
+they never copy the private label, account/network text, code or credential.
+
+The narrow Accounts PNG was visually reviewed. Provider sign-in buttons now
+lead with the provider identity in short localized captions, so both columns
+remain distinguishable instead of showing the same clipped "Continue with".
+The initial public test incorrectly required wrapping in a wide form, then
+compared different pager starting positions; those fixture assumptions were
+corrected without weakening line completeness or inert-hit assertions.
+
+`target-six/v0.2.23-provider/explanation-reflow-controls/receipt.json` records
+two real faults rejected by the original subjects: replacing non-ASCII scalars
+with question marks, and suppressing continuation expansion for usable widths.
+Source bytes were restored exactly. Final restored execution and selected
+checks are recorded by `final-receipt.json` in that directory. This is synthetic
+Windows development evidence; other native OS/ISA, physical input, real
+providers and signed-artifact qualification remain selected. The existing
+development workflow retains the exact public subject for integration.
+
 #### Persistent section navigation (2026-10-26)
 
 ```text

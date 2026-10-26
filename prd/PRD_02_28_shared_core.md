@@ -240,6 +240,11 @@ Persistent section navigation uses those same product rectangles, typed
 section actions and existing editor/monitoring focus owners; the public and
 native fixtures consume published navigation targets. Its behavior and evidence
 belong to [persistent navigation](PRD_02_31_01_01_harness_experience.md#persistent-section-navigation-2026-10-26).
+The binary-private `harness_settings_ui/text.rs` owns the existing Settings
+read-only labels and their width-aware continuation projection, using the host's
+existing font measurement. Paint, paging, hit testing and focus reveal consume
+the expanded product row list; no shared layout API or provider policy changes.
+Behavior and scoped evidence belong to [explanation reflow](PRD_02_31_01_01_harness_experience.md#read-only-explanation-reflow-2026-10-26).
 The binary-private `harness_account_ui.rs` projects account state and cached
 readings for actual Settings/Monitoring and Dashboard consumers. It moved from
 the Settings child module when the Dashboard joined; it reuses the report's

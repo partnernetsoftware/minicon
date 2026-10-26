@@ -2152,6 +2152,117 @@ fn host_harness_dashboard_reuses_account_state_and_targets_named_client() {
 }
 
 #[test]
+fn host_harness_explanations_reflow_through_the_same_pager_and_inert_hits() {
+    fn scan(host: &BrowserGui, require_wrapped: bool) -> usize {
+        use std::collections::{BTreeMap, BTreeSet};
+        for _ in 0..60 {
+            let snapshot = host.cli(&["ui-snapshot"]);
+            let h = &snapshot["geometry"]["harness_settings"];
+            if h["scroll"] == 0 {
+                break;
+            }
+            host.click_rect(&h["previous"], "Harness Previous", &snapshot["geometry"]);
+        }
+        assert_eq!(harness_snapshot(host)["scroll"], 0);
+        let mut coverage: BTreeMap<String, (usize, BTreeSet<usize>)> = BTreeMap::new();
+        let mut hit_continuation = false;
+        for _ in 0..60 {
+            let snapshot = host.cli(&["ui-snapshot"]);
+            let h = &snapshot["geometry"]["harness_settings"];
+            for row in h["rows"].as_array().unwrap() {
+                let text = &row["text_line"];
+                if text.is_null() {
+                    continue;
+                }
+                assert_eq!(text["fits"], true, "clipped explanation: {row}");
+                let source = text["source"].as_str().unwrap().to_owned();
+                let count = text["line_count"].as_u64().unwrap() as usize;
+                let (expected, seen) = coverage.entry(source).or_insert((count, BTreeSet::new()));
+                assert_eq!(*expected, count);
+                seen.insert(text["line"].as_u64().unwrap() as usize);
+                if text["line"].as_u64().unwrap() > 0 && !hit_continuation {
+                    let before = harness_snapshot(host);
+                    host.click_rect(
+                        &row["rect"],
+                        "read-only continuation",
+                        &snapshot["geometry"],
+                    );
+                    let after = harness_snapshot(host);
+                    for field in [
+                        "section",
+                        "scroll",
+                        "listener",
+                        "login_active",
+                        "local_key_exists",
+                        "model",
+                        "port",
+                    ] {
+                        assert_eq!(
+                            after[field], before[field],
+                            "text dispatched action: {field}"
+                        );
+                    }
+                    hit_continuation = true;
+                }
+            }
+            host.click_rect(&h["next"], "Harness Next", &snapshot["geometry"]);
+            if harness_snapshot(host)["scroll"] == h["scroll"] {
+                break;
+            }
+        }
+        let mut total = 0;
+        for (source, (count, seen)) in &coverage {
+            assert_eq!(
+                *seen,
+                (0..*count).collect(),
+                "missing explanation lines: {source}"
+            );
+            total += count;
+        }
+        assert!(
+            !require_wrapped || hit_continuation,
+            "narrow form must expose actual wrapped lines"
+        );
+        total
+    }
+    let mut host = BrowserGui::spawn(true, None, None);
+    open_harness(&host);
+    host.cli(&["resize-window", "--width", "300", "--height", "380"]);
+    click_harness(&host, "overview_accounts", 0);
+    let narrow_lines = scan(&host, true);
+    let shot = host
+        .gui
+        .screenshot
+        .with_file_name("explanations-narrow.png");
+    host.cli(&["screenshot-pane", "--output", &shot.to_string_lossy()]);
+    host.cli(&["resize-window", "--width", "1000", "--height", "700"]);
+    click_harness(&host, "overview_accounts", 0);
+    let wide_lines = scan(&host, false);
+    assert!(
+        narrow_lines > wide_lines,
+        "reflow must follow the actual available width: narrow {narrow_lines}, wide {wide_lines}"
+    );
+    click_harness(&host, "model_input", 0);
+    host.cli(&["send-ui-ime", "commit", "reflow-draft-中"]);
+    host.cli(&["resize-window", "--width", "300", "--height", "380"]);
+    host.cli(&["send-ui-ime", "commit", "-retained"]);
+    assert_eq!(
+        harness_snapshot(&host)["model_editor"]["text"],
+        "reflow-draft-中-retained"
+    );
+    let snapshot = host.cli(&["ui-snapshot"]);
+    assert!(
+        snapshot["geometry"]["harness_settings"]["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["id"] == "model_input"),
+        "focused editor must remain visible after reflow"
+    );
+    host.close_and_wait();
+}
+
+#[test]
 fn host_harness_persistent_navigation_keeps_picker_input_and_drafts_local() {
     fn resized(host: &BrowserGui, width: &str, mode: &str) -> Value {
         host.cli(&["resize-window", "--width", width, "--height", "700"]);

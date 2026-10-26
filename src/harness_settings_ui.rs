@@ -5,6 +5,7 @@ mod monitoring;
 mod overview;
 use crate::harness_account_ui as pool;
 mod profile_keys;
+mod text;
 use connection_forms::{ConnectionForms, FormFocus, ProfileField};
 use minicon_core::field_editor::{self, Command, Intent, Limits};
 use profile_keys::{KeyUi, RecipeKind};
@@ -39,6 +40,7 @@ enum Field {
 
 #[derive(Clone, Copy)]
 enum Row {
+    TextContinuation { source: usize, line: usize },
     Overview(u8),
     OverviewLink(overview::Link),
     Local,
@@ -257,6 +259,7 @@ pub(super) struct HarnessSettings {
     monitoring: monitoring::MonitoringUi,
     section: overview::Section,
     section_picker_open: bool,
+    text_presentation: Option<text::Presentation>,
     open_usage: bool,
     pending_workspace_target: Option<super::harness_workspace_ui::SettingsTarget>,
     profile_navigation: Option<usize>,
@@ -490,6 +493,7 @@ impl HarnessSettings {
             monitoring: Default::default(),
             section: Default::default(),
             section_picker_open: false,
+            text_presentation: None,
             open_usage: false,
             pending_workspace_target: None,
             profile_navigation: None,
@@ -527,6 +531,14 @@ impl HarnessSettings {
         }
     }
     fn rows(&self) -> Vec<Row> {
+        let rows = self.base_rows();
+        match self.text_presentation {
+            Some(presentation) => text::expand(self, &rows, presentation),
+            None => rows,
+        }
+    }
+
+    fn base_rows(&self) -> Vec<Row> {
         let mut rows = vec![
             Row::Overview(0),
             Row::OverviewLink(overview::Link::Next),
@@ -1563,6 +1575,7 @@ fn row_columns(row: Row) -> usize {
 
 fn row_id(row: Row) -> String {
     match row {
+        Row::TextContinuation { source, line } => return format!("text_{source}_{line}"),
         Row::Overview(index) => return format!("overview_{index}"),
         Row::OverviewLink(link) => {
             return format!(
@@ -1756,22 +1769,27 @@ impl ConApp {
                 settings.focused == Some(Field::SectionSelector) || settings.section_picker_open,
             );
         }
-        let account_details = settings.account_details(self.ui_language);
+        let base_rows = settings.base_rows();
+        let text_width = geometry
+            .rows
+            .rect
+            .width
+            .saturating_sub((8.0 * scale) as u32);
         for (index, &row) in rows
             .iter()
             .enumerate()
             .skip(geometry.rows.start)
             .take(geometry.rows.visible_rows)
         {
+            let (row, text_line) = match row {
+                Row::TextContinuation { source, line } => (base_rows[source], line),
+                row => (row, 0),
+            };
             let rect = geometry.cell(index, 0, 1, scale);
             let cell = |column, count| geometry.cell(index, column, count, scale);
             let mut label = String::new();
             let mut heading = false;
             match row {
-                Row::Overview(index) => {
-                    label = settings.overview_label(index, self.ui_language);
-                    heading = index == 0;
-                }
                 Row::OverviewLink(link) => button(
                     surface,
                     rect,
@@ -1808,14 +1826,7 @@ impl ConApp {
                         );
                     }
                 }
-                Row::Local => {
-                    label = "Local API".to_owned();
-                    heading = true;
-                }
-                Row::Accounts => {
-                    label = "Provider accounts".to_owned();
-                    heading = true;
-                }
+
                 Row::Model => {
                     label = tr(
                         "Connection drafts / applied connection unchanged",
@@ -1833,26 +1844,7 @@ impl ConApp {
                     }
                     heading = true;
                 }
-                Row::Connect => {
-                    label = tr(
-                        "Connect the selected applied profile",
-                        "连接所选已应用连接",
-                        "連接所選已套用連線",
-                    )
-                    .to_owned();
-                    heading = true;
-                }
-                Row::Listener => {
-                    label = format!(
-                        "{}{}",
-                        settings.overview_label(2, self.ui_language),
-                        settings
-                            .view
-                            .actual_port
-                            .filter(|_| settings.view.listener == ListenerState::Listening)
-                            .map_or_else(String::new, |port| format!(" / 127.0.0.1:{port}"))
-                    )
-                }
+
                 Row::Port => {
                     host_ui::paint_single_line_host_editor(
                         surface,
@@ -1890,13 +1882,13 @@ impl ConApp {
                     button(
                         surface,
                         cell(0, 2),
-                        "Continue with DeepSeek",
+                        tr("DeepSeek login", "DeepSeek 登录", "DeepSeek 登入"),
                         settings.connection_draft.provider == Provider::DeepSeek,
                     );
                     button(
                         surface,
                         cell(1, 2),
-                        "Continue with OpenCode",
+                        tr("OpenCode login", "OpenCode 登录", "OpenCode 登入"),
                         settings.connection_draft.provider == Provider::OpenCode,
                     );
                 }
@@ -1904,23 +1896,17 @@ impl ConApp {
                     button(
                         surface,
                         cell(0, 2),
-                        "Cancel login",
+                        tr("Cancel sign-in", "取消登录", "取消登入"),
                         settings.view.login_active,
                     );
-                    button(surface, cell(1, 2), "Refresh accounts", false);
+                    button(
+                        surface,
+                        cell(1, 2),
+                        tr("Refresh", "刷新账号", "更新帳號"),
+                        false,
+                    );
                 }
-                Row::Challenge => {
-                    // The code exists only in this transient interactive layer.
-                    if let Some(challenge) = &settings.challenge {
-                        label = format!(
-                            "Device code ({}s): {}",
-                            challenge.remaining_seconds,
-                            challenge.user_code.expose()
-                        );
-                    } else if settings.challenge_expired {
-                        label = "Device code expired. Start login again.".to_owned();
-                    }
-                }
+
                 Row::ChallengeActions => {
                     if settings.challenge_expired {
                         button(surface, cell(0, 2), "Code expired", false);
@@ -1944,26 +1930,14 @@ impl ConApp {
                     );
                     button(surface, cell(1, 2), "Remove account", false);
                 }
-                Row::AccountStatus(index) => {
-                    let account = &settings.view.accounts[index];
-                    label = format!(
-                        "{:?}: {}",
-                        account.provider,
-                        pool::state(&settings.view, account).caption(self.ui_language)
-                    );
-                }
-                Row::AccountDetail(index) => {
-                    label = account_details.get(index).cloned().unwrap_or_default()
-                }
+
                 Row::AccountMonitoring => button(
                     surface,
                     rect,
                     tr("Balances and monitoring", "余额与监测", "餘額與監測"),
                     false,
                 ),
-                Row::AccountFieldCaption(field) => {
-                    label = account_field_caption(field, self.ui_language).into()
-                }
+
                 Row::AccountInput(field) | Row::ConnectInput(field) => {
                     let name = if matches!(
                         field,
@@ -2022,22 +1996,7 @@ impl ConApp {
                         false,
                     );
                 }
-                Row::AccountNetworkHint => {
-                    label = tr(
-                        "Empty proxy means Direct.",
-                        "代理留空表示直连。",
-                        "代理留空表示直連。",
-                    )
-                    .into();
-                }
-                Row::ConnectNetworkSeparation | Row::AccountNetworkSeparation => {
-                    label = tr(
-                        "Login and service networks are independent.",
-                        "登录与服务网络独立设置。",
-                        "登入與服務網路獨立設定。",
-                    )
-                    .into();
-                }
+
                 Row::AccountReconnect => {
                     button(surface, cell(0, 1), "Reconnect this account", false);
                 }
@@ -2049,64 +2008,7 @@ impl ConApp {
                         false,
                     );
                 }
-                Row::CatalogueStatus => {
-                    let catalogue = settings
-                        .view
-                        .catalogues
-                        .iter()
-                        .find(|entry| Some(&entry.account) == settings.account_focus.as_ref());
-                    label = catalogue.map_or_else(
-                        || "Catalogue: Not loaded".into(),
-                        |entry| {
-                            format!(
-                                "Catalogue: {:?} · {} models · read only{}",
-                                entry.status,
-                                entry.models.len(),
-                                if entry.error.is_some() {
-                                    " · refresh failed"
-                                } else {
-                                    ""
-                                }
-                            )
-                        },
-                    );
-                }
-                Row::CatalogueModel(index) => {
-                    if let Some(model) = settings
-                        .view
-                        .catalogues
-                        .iter()
-                        .find(|entry| Some(&entry.account) == settings.account_focus.as_ref())
-                        .and_then(|entry| entry.models.get(index))
-                    {
-                        label = format!("{} · {:?} · read only", model.id, model.protocol);
-                    }
-                }
-                Row::AccountReconnectHint => {
-                    label = tr(
-                        "Reconnect uses saved login settings.",
-                        "重新连接使用已保存的登录设置。",
-                        "重新連線使用已儲存的登入設定。",
-                    )
-                    .into();
-                }
-                Row::AccountReconnectVerification => {
-                    label = tr(
-                        "Verify this account's models again afterwards.",
-                        "重新连接后需再次验证此账号的模型。",
-                        "重新連線後需再次驗證此帳號的模型。",
-                    )
-                    .into();
-                }
-                Row::ConnectNetworkHint => {
-                    label = tr(
-                        "Choose both networks before Continue.",
-                        "继续前请设置两种网络。",
-                        "繼續前請設定兩種網路。",
-                    )
-                    .into();
-                }
-                Row::NoAccounts => label = "No account. Add a provider to continue.".to_owned(),
+
                 Row::Profile(index) => {
                     let profile = &settings.view.connection_profiles[index];
                     let local = settings.forms.forms.get(&profile.id);
@@ -2154,104 +2056,7 @@ impl ConApp {
                     },
                     false,
                 ),
-                Row::ProfileState => {
-                    label = settings.forms.current().map_or_else(
-                        || {
-                            match settings.view.load_state {
-                                provider_runtime::LoadState::Loading => {
-                                    tr("Loading connections...", "正在加载连接…", "正在載入連線…")
-                                }
-                                provider_runtime::LoadState::Loaded => tr(
-                                    "Select or create a connection.",
-                                    "请选择或新建连接。",
-                                    "請選擇或建立連線。",
-                                ),
-                                provider_runtime::LoadState::Unavailable(_) => tr(
-                                    "Connections unavailable; check saved settings.",
-                                    "连接不可用，请检查保存的设置。",
-                                    "連線不可用，請檢查儲存的設定。",
-                                ),
-                            }
-                            .into()
-                        },
-                        |form| {
-                            if form.waiting() {
-                                return tr(
-                                    "Saving connection changes...",
-                                    "正在保存连接更改…",
-                                    "正在儲存連線變更…",
-                                )
-                                .into();
-                            }
-                            if let Some(error) = &form.local_error {
-                                return error.clone();
-                            }
-                            if form.unsent() {
-                                return tr(
-                                    "Changes not saved; retry saving.",
-                                    "更改尚未保存，请重试保存。",
-                                    "變更尚未儲存，請重試儲存。",
-                                )
-                                .into();
-                            }
-                            if let Some(error) = form.view.error {
-                                use crate::provider_selection::ConnectionInputError as E;
-                                return match error {
-                                    E::InvalidLabel => tr(
-                                        "Enter a valid connection name.",
-                                        "请输入有效的连接名称。",
-                                        "請輸入有效的連線名稱。",
-                                    ),
-                                    E::InvalidAlias => tr(
-                                        "Use a valid public model alias.",
-                                        "请输入有效的公开模型别名。",
-                                        "請輸入有效的公開模型別名。",
-                                    ),
-                                    E::DuplicateAlias => tr(
-                                        "Use a different alias for each model.",
-                                        "每个模型需使用不同的别名。",
-                                        "每個模型需使用不同的別名。",
-                                    ),
-                                    E::InvalidDefaultAlias => tr(
-                                        "Choose a default alias from this connection.",
-                                        "请从此连接中选择默认模型别名。",
-                                        "請從此連線中選擇預設模型別名。",
-                                    ),
-                                    E::IncompleteAllocation => tr(
-                                        "Choose an account and model.",
-                                        "请选择账号和模型。",
-                                        "請選擇帳號和模型。",
-                                    ),
-                                    E::UnselectedModel => tr(
-                                        "Choose a model from this account's catalogue.",
-                                        "请从此账号的目录中选择模型。",
-                                        "請從此帳號的目錄中選擇模型。",
-                                    ),
-                                    E::DefaultCompatibility => tr(
-                                        "Use a new connection for custom settings.",
-                                        "自定义设置请使用新建连接。",
-                                        "自訂設定請使用新建連線。",
-                                    ),
-                                }
-                                .into();
-                            }
-                            if form.view.dirty {
-                                tr(
-                                    "Saved draft; verify before applying.",
-                                    "草稿已保存，请先验证再应用。",
-                                    "草稿已儲存，請先驗證再套用。",
-                                )
-                            } else {
-                                tr(
-                                    "Applied connection; no pending edits.",
-                                    "连接已应用，没有待处理的更改。",
-                                    "連線已套用，沒有待處理的變更。",
-                                )
-                            }
-                            .into()
-                        },
-                    );
-                }
+
                 Row::ProfileInput(field) => {
                     let name = match field {
                         ProfileField::Label => tr("Connection label", "连接名称", "連線名稱"),
@@ -2300,90 +2105,7 @@ impl ConApp {
                     },
                     false,
                 ),
-                Row::ProfileApplied => {
-                    label = settings.forms.current().map_or_else(String::new, |form| {
-                        form.view.applied.as_ref().map_or_else(
-                            || {
-                                tr(
-                                    "Applied: none; save and verify this draft.",
-                                    "尚未应用，请保存并验证此草稿。",
-                                    "尚未套用，請儲存並驗證此草稿。",
-                                )
-                                .into()
-                            },
-                            |applied| {
-                                format!(
-                                    "{}: {} / {} {}",
-                                    tr("Applied", "已应用", "已套用"),
-                                    applied.label,
-                                    applied.allocations.len(),
-                                    tr("models", "个模型", "個模型"),
-                                )
-                            },
-                        )
-                    });
-                }
-                Row::ProfileDraftHint => {
-                    label = tr(
-                        "Draft edits do not change the applied connection.",
-                        "编辑草稿不会改变已应用的连接。",
-                        "編輯草稿不會改變已套用的連線。",
-                    )
-                    .into()
-                }
-                Row::AppliedAlias(index)
-                | Row::AppliedAccount(index)
-                | Row::AppliedModel(index) => {
-                    if let Some(allocation) = settings.applied_allocations().get(index) {
-                        let account = allocation.account.as_deref().map_or_else(
-                            || tr("No account", "未选择账号", "未選擇帳號").into(),
-                            |id| {
-                                settings
-                                    .view
-                                    .accounts
-                                    .iter()
-                                    .find(|account| account.id == id)
-                                    .map_or_else(
-                                        || {
-                                            format!(
-                                                "{} [{}]",
-                                                tr(
-                                                    "Unavailable account",
-                                                    "账号不可用",
-                                                    "帳號不可用"
-                                                ),
-                                                id.get(..8).unwrap_or(id)
-                                            )
-                                        },
-                                        |account| {
-                                            format!(
-                                                "{} [{}]",
-                                                account.label,
-                                                id.get(..8).unwrap_or(id)
-                                            )
-                                        },
-                                    )
-                            },
-                        );
-                        label = match row {
-                            Row::AppliedAlias(_) => format!(
-                                "{}: {}",
-                                tr("Applied alias", "生效别名", "生效別名"),
-                                allocation.alias
-                            ),
-                            Row::AppliedAccount(_) => format!(
-                                "{}: {}",
-                                tr("Applied account", "生效账号", "生效帳號"),
-                                account
-                            ),
-                            _ => format!(
-                                "{}: {}",
-                                tr("Applied model", "生效模型", "生效模型"),
-                                allocation.model
-                            ),
-                        };
-                    }
-                }
+
                 Row::Allocation(slot)
                 | Row::AllocationModel(slot)
                 | Row::AllocationAvailability(slot)
@@ -2656,28 +2378,7 @@ impl ConApp {
                             );
                     }
                 }
-                Row::ProbeNotice => {
-                    label = settings
-                        .forms
-                        .current()
-                        .and_then(|form| form.local_error.clone())
-                        .unwrap_or_else(|| {
-                            tr(
-                                "Output ≤8 tokens; input may also be billed.",
-                                "输出≤8 tokens，输入也可能收费。",
-                                "輸出≤8 tokens，輸入也可能收費。",
-                            )
-                            .into()
-                        })
-                }
-                Row::ProbeBehavior => {
-                    label = tr(
-                        "No automatic retry or Apply.",
-                        "不会自动重试或应用。",
-                        "不會自動重試或套用。",
-                    )
-                    .into()
-                }
+
                 Row::ModelChoice(index) => {
                     if let Some(model) = settings
                         .current_catalogue()
@@ -2732,25 +2433,7 @@ impl ConApp {
                             && !settings.view.login_active,
                     );
                 }
-                Row::KeyState => label = settings.key_state_label(),
-                Row::KeyDurability => {
-                    label = if settings.selected_key_durability_unconfirmed() {
-                        "Crash durability: unconfirmed"
-                    } else {
-                        "No outstanding key durability warning"
-                    }
-                    .into()
-                }
-                Row::KeyFeedback => label = settings.key_feedback_label(),
-                Row::KeyApplied => label = settings.key_applied_label(),
-                Row::KeyShell => {
-                    label = if cfg!(windows) {
-                        "PowerShell: private prompt in setup"
-                    } else {
-                        "bash: private prompt in setup"
-                    }
-                    .into()
-                }
+
                 Row::KeyActions => {
                     for column in 0..3 {
                         let caption = key_button_caption(self.ui_language, column);
@@ -2766,8 +2449,7 @@ impl ConApp {
                         );
                     }
                 }
-                Row::OpenAi => label = settings.endpoint_label(true),
-                Row::Anthropic => label = settings.endpoint_label(false),
+
                 Row::Recipe => button(
                     surface,
                     rect,
@@ -2780,10 +2462,15 @@ impl ConApp {
                     tr("Copy Pi 1.4 setup", "复制 Pi 1.4 设置", "複製 Pi 1.4 設定"),
                     false,
                 ),
-                Row::Status => {
-                    label = settings
-                        .status()
-                        .unwrap_or_else(|| "Start and model tests are explicit actions.".to_owned())
+
+                _ => {
+                    if let Some((full, is_heading)) = text::label(settings, row, self.ui_language) {
+                        heading = is_heading;
+                        label = text::lines(&full, text_width, size)
+                            .get(text_line)
+                            .cloned()
+                            .unwrap_or_default();
+                    }
                 }
             }
             if !label.is_empty() {
@@ -3088,6 +2775,7 @@ impl ConApp {
                         .map(|index| {
                             json::object(vec![
                                 ("id", row_id(rows[index]).into()),
+                                ("text_line", text::observation(settings, rows[index])),
                                 ("rect", rect(geometry.rows.row(index))),
                                 (
                                     "cells",
@@ -3203,9 +2891,25 @@ impl ConApp {
             self.harness_settings = Some(HarnessSettings::new(window, self.ui_language));
             self.mark_host_ui_full_and_repaint(window);
         }
+        let presentation = window.metrics().ok().map(|metrics| {
+            let scale = metrics.scale_factor.max(1.0);
+            let layout = self.layout(metrics.physical_width, metrics.physical_height, scale);
+            let geometry = layout.harness_settings(scale, usize::MAX, 0);
+            text::Presentation {
+                width: geometry
+                    .rows
+                    .rect
+                    .width
+                    .saturating_sub((8.0 * scale) as u32),
+                size: scaled_host_ui_font(HOST_UI_STATUS_SIZE_PX, self.host_font_logical(), scale),
+                language: self.ui_language,
+                visible_rows: geometry.rows.visible_rows,
+            }
+        });
         let Some(settings) = &mut self.harness_settings else {
             return;
         };
+        let presentation_changed = settings.configure_text(presentation);
         if !self.settings_open || self.settings_section != ui::SettingsSection::Harness {
             settings.section_picker_open = false;
             settings.keys.invalidate_copy();
@@ -3234,7 +2938,7 @@ impl ConApp {
             .runtime
             .as_mut()
             .map_or_else(Vec::new, |runtime| runtime.poll());
-        let mut changed = false;
+        let mut changed = presentation_changed;
         if let Some(challenge) = &mut settings.challenge {
             let now = Instant::now();
             if now >= challenge.deadline {
