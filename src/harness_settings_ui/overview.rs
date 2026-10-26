@@ -133,6 +133,7 @@ impl Step {
 
 impl HarnessSettings {
     pub(super) fn toggle_section_picker(&mut self) {
+        self.cancel_removal();
         let open = !self.section_picker_open;
         self.blur();
         self.section_picker_open = open;
@@ -157,6 +158,13 @@ impl HarnessSettings {
     }
 
     pub(super) fn focus_targets(&self, rows: &[Row], rail: bool) -> Vec<FocusTarget> {
+        if !matches!(self.removal, Removal::Closed) {
+            let mut targets = vec![FocusTarget::Field(Field::AccountRemoval(false))];
+            if self.removal_action().is_some() {
+                targets.push(FocusTarget::Field(Field::AccountRemoval(true)));
+            }
+            return targets;
+        }
         let mut targets = Vec::new();
         if !rail && !self.section_picker_open {
             targets.push(FocusTarget::Field(Field::SectionSelector));
@@ -222,6 +230,7 @@ impl HarnessSettings {
     pub(super) fn select_section(&mut self, section: Section) {
         self.section_picker_open = false;
         if self.section != section {
+            self.cancel_removal();
             self.blur();
             self.section = section;
             self.scroll = 0;

@@ -1,5 +1,7 @@
 //! Harness settings presentation. Runtime authority stays with provider_runtime.
 use super::*;
+mod account_removal;
+use account_removal::Removal;
 mod connection_forms;
 mod monitoring;
 mod overview;
@@ -24,6 +26,7 @@ const MODEL_LIMITS: Limits = Limits {
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum Field {
+    AccountRemoval(bool),
     SectionSelector,
     Overview(overview::Link),
     Port,
@@ -40,6 +43,8 @@ enum Field {
 
 #[derive(Clone, Copy)]
 enum Row {
+    AccountRemovalInfo(usize),
+    AccountRemoval(bool),
     TextContinuation { source: usize, line: usize },
     Overview(u8),
     OverviewLink(overview::Link),
@@ -210,6 +215,7 @@ impl AccountDraft {
 fn row_field(row: Row) -> Option<Field> {
     match row {
         Row::OverviewLink(link) => Some(Field::Overview(link)),
+        Row::AccountRemoval(confirm) => Some(Field::AccountRemoval(confirm)),
         Row::Port => Some(Field::Port),
         Row::ModelInput => Some(Field::Model),
         Row::Model => Some(Field::ProfileChooser),
@@ -222,7 +228,10 @@ fn field_limits(field: Field) -> Limits {
     match field {
         Field::Port => PORT_LIMITS,
         Field::Model => MODEL_LIMITS,
-        Field::ProfileChooser | Field::Overview(_) | Field::SectionSelector => Limits {
+        Field::AccountRemoval(_)
+        | Field::ProfileChooser
+        | Field::Overview(_)
+        | Field::SectionSelector => Limits {
             max_bytes: 0,
             preedit_chars: 0,
         },
@@ -260,6 +269,7 @@ pub(super) struct HarnessSettings {
     section: overview::Section,
     section_picker_open: bool,
     text_presentation: Option<text::Presentation>,
+    removal: Removal,
     open_usage: bool,
     pending_workspace_target: Option<super::harness_workspace_ui::SettingsTarget>,
     profile_navigation: Option<usize>,
@@ -494,6 +504,7 @@ impl HarnessSettings {
             section: Default::default(),
             section_picker_open: false,
             text_presentation: None,
+            removal: Removal::default(),
             open_usage: false,
             pending_workspace_target: None,
             profile_navigation: None,
@@ -569,6 +580,16 @@ impl HarnessSettings {
         }
         for index in 0..self.view.accounts.len() {
             rows.extend([Row::Account(index), Row::AccountStatus(index)]);
+        }
+        if !matches!(self.removal, Removal::Closed) {
+            rows.extend(
+                (0..self.removal_labels(ui::UiLanguage::English).len())
+                    .map(Row::AccountRemovalInfo),
+            );
+            rows.push(Row::AccountRemoval(false));
+            if matches!(self.removal, Removal::Review(_)) {
+                rows.push(Row::AccountRemoval(true));
+            }
         }
         if self.account_focus.is_some() {
             rows.extend(
@@ -739,7 +760,10 @@ impl HarnessSettings {
                 .forms
                 .current()
                 .map_or(&self.model, |form| form.model()),
-            Field::ProfileChooser | Field::Overview(_) | Field::SectionSelector => {
+            Field::AccountRemoval(_)
+            | Field::ProfileChooser
+            | Field::Overview(_)
+            | Field::SectionSelector => {
                 unreachable!("navigation is not a text editor")
             }
             Field::Profile(field) => self
@@ -763,7 +787,10 @@ impl HarnessSettings {
                 .forms
                 .current_mut()
                 .map_or(&mut self.model, |form| form.model_mut()),
-            Field::ProfileChooser | Field::Overview(_) | Field::SectionSelector => {
+            Field::AccountRemoval(_)
+            | Field::ProfileChooser
+            | Field::Overview(_)
+            | Field::SectionSelector => {
                 unreachable!("navigation is not a text editor")
             }
             Field::Profile(field) => self
@@ -1025,6 +1052,7 @@ impl HarnessSettings {
             return;
         };
         if self.account_focus.as_deref() != Some(id) {
+            self.cancel_removal();
             if self.section == overview::Section::Accounts {
                 self.blur();
             }
@@ -1068,6 +1096,7 @@ impl HarnessSettings {
     }
 
     fn sync_account_drafts(&mut self) {
+        self.reconcile_removal();
         for account in &self.view.accounts {
             if let Some((_, preferences)) = self
                 .view
@@ -1214,6 +1243,8 @@ impl HarnessSettings {
     }
     fn submit(&mut self, field: Field) {
         match field {
+            Field::AccountRemoval(false) => self.cancel_removal(),
+            Field::AccountRemoval(true) => self.confirm_removal(),
             Field::SectionSelector => self.toggle_section_picker(),
             Field::Overview(link) => self.overview_link(link),
             Field::Port if self.port_editable() => {
@@ -1242,6 +1273,12 @@ impl HarnessSettings {
     }
 
     fn activate(&mut self, row: Row, column: usize) -> Option<String> {
+        if !matches!(
+            row,
+            Row::AccountRemoval(_) | Row::AccountRemovalInfo(_) | Row::TextContinuation { .. }
+        ) {
+            self.cancel_removal();
+        }
         if self.forms.current().is_some_and(|form| form.discarding())
             && matches!(
                 row,
@@ -1259,6 +1296,7 @@ impl HarnessSettings {
             return None;
         }
         match row {
+            Row::AccountRemoval(confirm) => self.submit(Field::AccountRemoval(confirm)),
             Row::OverviewLink(link) => self.overview_link(link),
             Row::Monitoring(monitoring::Item::Threshold(i)) if column == 1 => {
                 self.monitoring_action(monitoring::Item::RemoveThreshold(i))
@@ -1300,7 +1338,7 @@ impl HarnessSettings {
                 if column == 0 {
                     self.focus_account(&id);
                 } else {
-                    self.act(Action::RemoveAccount(id));
+                    self.begin_removal(&id);
                 }
             }
             Row::AccountMonitoring => {
@@ -1507,6 +1545,7 @@ impl HarnessSettings {
 fn invalidate_key_for_settings_route(settings: Option<&mut HarnessSettings>, visible: bool) {
     if !visible && let Some(settings) = settings {
         settings.keys.invalidate_copy();
+        settings.cancel_removal();
     }
 }
 
@@ -1606,6 +1645,9 @@ fn row_id(row: Row) -> String {
         Row::Listener => "listener",
         Row::Port => "port",
         Row::ListenerActions => "listener_actions",
+        Row::AccountRemovalInfo(index) => return format!("account_removal_info_{index}"),
+        Row::AccountRemoval(false) => "account_removal_cancel",
+        Row::AccountRemoval(true) => "account_removal_confirm",
         Row::Accounts => "accounts",
         Row::ConnectInput(Field::ConnectLabel) => "connect_label",
         Row::ConnectInput(Field::ConnectLoginProxy) => "connect_login_proxy",
@@ -1928,9 +1970,24 @@ impl ConApp {
                         ),
                         settings.account_focus.as_ref() == Some(&account.id),
                     );
-                    button(surface, cell(1, 2), "Remove account", false);
+                    button(
+                        surface,
+                        cell(1, 2),
+                        tr("Review removal", "复核移除", "覆核移除"),
+                        false,
+                    );
                 }
 
+                Row::AccountRemoval(confirm) => button(
+                    surface,
+                    rect,
+                    if confirm {
+                        tr("Sign out and remove", "注销并移除", "登出並移除")
+                    } else {
+                        tr("Cancel", "取消", "取消")
+                    },
+                    settings.focused == Some(Field::AccountRemoval(confirm)),
+                ),
                 Row::AccountMonitoring => button(
                     surface,
                     rect,
@@ -2565,6 +2622,7 @@ impl ConApp {
             ])).collect())),
             ("next_step", settings.orientation_step().id().into()),
             ("section", settings.section.id().into()),
+            ("account_removal", settings.removal_observation()),
             ("configured_clients", settings.configured_client_count().into()),
             ("pool", pool::summary(&settings.view).map_or(json::JsonValue::Null, |s| json::object(vec![
                 ("stored", s.stored.into()), ("previously_tested", s.tested.into()),
@@ -2872,6 +2930,7 @@ impl ConApp {
             Some(Field::Profile(_)) => "harness_connection",
             Some(Field::ProfileChooser) => "harness_connection_picker",
             Some(Field::Overview(_)) => "harness_overview",
+            Some(Field::AccountRemoval(_)) => "harness_account_removal",
             Some(Field::SectionSelector) => "harness_section_selector",
             Some(Field::AccountLabel) => "harness_account_label",
             Some(Field::LoginProxy) => "harness_login_proxy",
@@ -2911,6 +2970,7 @@ impl ConApp {
         };
         let presentation_changed = settings.configure_text(presentation);
         if !self.settings_open || self.settings_section != ui::SettingsSection::Harness {
+            settings.cancel_removal();
             settings.section_picker_open = false;
             settings.keys.invalidate_copy();
             settings.monitoring.blur();
@@ -3078,6 +3138,33 @@ impl ConApp {
         let mut open_url = None;
         let mut consumed = true;
         match event {
+            PixelWindowEvent::Keyboard(key)
+                if !matches!(settings.removal, Removal::Closed)
+                    && key.logical == LogicalKey::Named(NamedKey::Escape) =>
+            {
+                if key.state == KeyPressState::Pressed {
+                    settings.cancel_removal();
+                }
+            }
+            PixelWindowEvent::Keyboard(key)
+                if matches!(settings.focused, Some(Field::AccountRemoval(_)))
+                    && key.logical != LogicalKey::Named(NamedKey::Tab) =>
+            {
+                if key.state == KeyPressState::Pressed
+                    && !key.modifiers.control
+                    && !key.modifiers.alt
+                    && !key.modifiers.meta
+                    && (matches!(
+                        key.logical,
+                        LogicalKey::Named(NamedKey::Enter | NamedKey::Space)
+                    ) || matches!(&key.logical, LogicalKey::Character(value) if value == " "))
+                    && let Some(field) = settings.focused
+                {
+                    settings.submit(field);
+                }
+            }
+            PixelWindowEvent::Ime(_)
+                if matches!(settings.focused, Some(Field::AccountRemoval(_))) => {}
             PixelWindowEvent::Keyboard(key)
                 if key.logical == LogicalKey::Named(NamedKey::Tab)
                     && !key.modifiers.control
@@ -3257,6 +3344,7 @@ impl ConApp {
                 let x = (position.x * scale).max(0.0) as u32;
                 let y = (position.y * scale).max(0.0) as u32;
                 if geometry.close.contains(x, y) {
+                    settings.cancel_removal();
                     settings.section_picker_open = false;
                     settings.blur();
                     let _ = window.set_pointer_capture(false);
@@ -3321,10 +3409,12 @@ impl ConApp {
                                 _ => None,
                             };
                             if field == Some(Field::ProfileChooser) {
+                                settings.cancel_removal();
                                 settings.blur();
                                 settings.focused = Some(Field::ProfileChooser);
                                 settings.navigate_connection_profiles(0);
                             } else if let Some(field) = field {
+                                settings.cancel_removal();
                                 let rect = geometry.cell(index, 0, columns, scale);
                                 let offset = super::browser_ui::host_field_offset(
                                     settings.editor(field),
@@ -3540,7 +3630,10 @@ impl ConApp {
         if let Some(field) = settings.focused.filter(|field| {
             !matches!(
                 field,
-                Field::ProfileChooser | Field::Overview(_) | Field::SectionSelector
+                Field::AccountRemoval(_)
+                    | Field::ProfileChooser
+                    | Field::Overview(_)
+                    | Field::SectionSelector
             )
         }) {
             let index = rows
@@ -4315,6 +4408,66 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn account_removal_requires_current_applied_bindings_and_defaults_to_cancel() {
+        let mut settings = HarnessSettings::default();
+        settings.view.load_state = provider_runtime::LoadState::Loaded;
+        settings.view.busy = false;
+        settings.view.accounts.push(AccountSummary {
+            id: "account-a".into(),
+            provider: Provider::OpenCode,
+            label: "Private label".into(),
+            state: provider_accounts::AccountState::CredentialStored,
+        });
+        settings
+            .view
+            .account_preferences
+            .push(("account-a".into(), AccountPreferences::legacy("account-a")));
+        let mut profile = connection_profile("client-a", "account-a");
+        profile.applied = Some(profile.input.clone());
+        settings.view.connection_profiles.push(profile);
+        settings.activate(Row::Account(0), 1);
+        assert!(
+            settings.error.is_none(),
+            "opening review must not enqueue logout"
+        );
+        assert!(settings.focused == Some(Field::AccountRemoval(false)));
+        assert!(
+            matches!(settings.removal_action(), Some(Action::RemoveAccount(id)) if id == "account-a")
+        );
+        settings.submit(settings.focused.unwrap());
+        assert!(matches!(settings.removal, Removal::Closed));
+        settings.begin_removal("account-a");
+        settings.view.status = Some("Unrelated usage refresh".into());
+        settings.view.connection_profiles[0].input.label = "Unapplied draft".into();
+        settings.reconcile_removal();
+        assert!(settings.removal_action().is_some());
+        settings.view.busy = true;
+        assert!(settings.removal_action().is_none());
+        settings.view.busy = false;
+        settings.account_draft.submitted = Some(1);
+        assert!(settings.removal_action().is_none());
+        settings.account_draft.submitted = None;
+        settings.view.connection_profiles[0]
+            .applied
+            .as_mut()
+            .unwrap()
+            .allocations[0]
+            .model = "changed-model".into();
+        assert!(
+            settings.removal_action().is_none(),
+            "confirmation must independently revalidate applied bindings"
+        );
+        settings.reconcile_removal();
+        assert!(matches!(settings.removal, Removal::Changed));
+        settings.begin_removal("account-a");
+        settings.view.accounts[0].label = "Changed identity".into();
+        assert!(settings.removal_action().is_none());
+        settings.begin_removal("account-a");
+        settings.select_section(overview::Section::Clients);
+        assert!(matches!(settings.removal, Removal::Closed));
+    }
 
     fn connection_profile(id: &str, account: &str) -> provider_runtime::ConnectionProfileView {
         provider_runtime::ConnectionProfileView {

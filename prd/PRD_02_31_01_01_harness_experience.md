@@ -585,6 +585,63 @@ reconnecting. Saving a changed policy does not reroute active work or silently
 start a new authorization attempt. Link failed login/network state directly to
 the relevant setting; do not ask the user to diagnose a generic busy status.
 
+### Account removal review (2026-10-26)
+
+```text
+Outcome: deliberately remove the intended account after reviewing connection effects
+└── [v] Account-scoped review before existing sign-out/remove action (Windows x64 development evidence below)
+    invariant: first click never removes; confirmation belongs to the exact displayed account and affected applied profiles
+    evidence: public cancel/close/section return and exact-account removal; component stale-review refusal
+    safe failure: changed account/allocation requires a new review; busy/save-in-flight cannot confirm; Cancel is the default keyboard action
+    dependency: existing RemoveAccount, account summaries/preferences and applied-profile projection
+    non-goal: new remote logout API, paid verification, automatic reassignment or claiming remote revocation from local deletion
+```
+
+```mermaid
+flowchart LR
+    A[Account review action] --> R[Saved identity / affected applied profiles / cancellation effects]
+    R --> C{Explicit confirm; identity and applied bindings unchanged?}
+    C -->|yes| E[Existing bounded sign-out and removal]
+    C -->|no or busy| K[Keep account; review again or wait]
+    X[Cancel / Close / leave form] --> K
+    V[Account / applied profile publication] --> C
+    E --> O[Existing separate local / remote outcome]
+```
+
+Use readable inert explanation rows and separate full-width Cancel/Sign out and
+remove actions. Retain applied profile names in the private rendered review;
+public observations expose only opaque identity, counts and state. Revalidate
+the account summary, saved preferences and affected applied allocation contents
+at confirmation; unrelated usage updates do not invalidate it. Close/section
+changes discard review intent and preserve ordinary drafts. Existing removal
+and cancellation semantics stay with the pool/gateway owners. The broader
+account-specific rare-action menu remains selected; this delivery leaf first
+eliminates one-click destruction. Hot files are Harness presentation/input,
+the shared account projection consumer and its existing public fixtures.
+
+Development evidence (2026-10-26):
+`harness_settings_ui::tests::account_removal_requires_current_applied_bindings_and_defaults_to_cancel`
+rejects changed applied bindings/identity and pending operations/saves while
+allowing unrelated status and unapplied draft changes. The public no-activate
+`host_harness_account_removal_reviews_cancel_and_exact_confirmation` observes
+three synthetic accounts, default Enter cancellation, Escape, section return,
+Close/reopen, the exact affected-client count and explicit removal of only the
+OpenCode fixture. OpenCode local removal uses no remote logout endpoint.
+The rendered English review was inspected: wrapped account/effect explanations,
+named affected client, distinct full-width actions and highlighted Cancel.
+
+Both subjects passed after two production fault controls: removing the current
+applied-binding comparison fails its assertion; dispatching removal on the first
+click fails the public unchanged-account assertion. An earlier direct-replacement
+fault failed compilation (`dead_code`) and is retained as invalid fault evidence.
+Exact source bytes were restored before the successful final run. Logs and
+receipts: `target-six/v0.2.23-provider/account-removal-review/`.
+The affected persistent-navigation journey, three-case daily smoke, formatting
+and strict all-target Clippy also passed. This is Windows x64 synthetic
+development evidence; other native targets, real-account logout and signed
+release qualification are not established by these checks. The full product
+experience and rare-action menu remain open.
+
 ### Client allocation form
 
 The left list is client profiles, not provider accounts. New profile asks for a

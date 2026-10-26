@@ -1976,20 +1976,7 @@ fn harness_synthetic_profile(root: &std::path::Path, port: u16, key: &str, token
     harness_private_file(&harness.join("client-key"), key.as_bytes());
 }
 
-#[test]
-fn host_harness_pool_states_and_exact_account_monitoring_preserve_bindings() {
-    let root = minicon_binary()
-        .parent()
-        .unwrap()
-        .join("browser-court")
-        .join(unique_suffix())
-        .join("config");
-    harness_synthetic_profile(
-        &root,
-        28789,
-        "synthetic-pool-local-key",
-        "synthetic-pool-token",
-    );
+fn harness_synthetic_pool(root: &std::path::Path) {
     let base = root.join("harness/accounts");
     let ids = [
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -2012,6 +1999,106 @@ fn host_harness_pool_states_and_exact_account_monitoring_preserve_bindings() {
             "refresh_token":null,"expires_unix_ms":null,"organization":null
         })).unwrap());
     }
+}
+
+#[test]
+fn host_harness_account_removal_reviews_cancel_and_exact_confirmation() {
+    let root = minicon_binary()
+        .parent()
+        .unwrap()
+        .join("browser-court")
+        .join(unique_suffix())
+        .join("config");
+    harness_synthetic_profile(&root, 28789, "removal-local-key", "removal-unused-token");
+    harness_synthetic_pool(&root);
+    let mut host = BrowserGui::spawn_with_config(true, None, None, Some(root));
+    let before = open_harness(&host);
+    click_harness(&host, "account_2", 1);
+    let review = harness_snapshot(&host);
+    assert_eq!(
+        review["accounts"], before["accounts"],
+        "first click must never remove"
+    );
+    assert_eq!(review["account_removal"]["state"], "review");
+    assert_eq!(review["account_removal"]["affected_clients"], 0);
+    assert_eq!(review["login_active"], false);
+    assert_eq!(review["listener"], "stopped");
+    assert!(!review.to_string().contains("Synthetic account"));
+    host.cli(&["send-ui-keys", "Enter"]);
+    assert_eq!(
+        harness_snapshot(&host)["account_removal"]["state"],
+        "closed"
+    );
+    click_harness(&host, "account_0", 1);
+    assert_eq!(
+        harness_snapshot(&host)["account_removal"]["affected_clients"],
+        1
+    );
+    let shot = host
+        .gui
+        .screenshot
+        .with_file_name("account-removal-review.png");
+    host.cli(&["screenshot-pane", "--output", &shot.to_string_lossy()]);
+    host.cli(&["send-ui-keys", "Escape"]);
+    assert_eq!(
+        harness_snapshot(&host)["account_removal"]["state"],
+        "closed"
+    );
+    assert_eq!(host.cli(&["ui-snapshot"])["settings_open"], true);
+    click_harness(&host, "account_2", 1);
+    click_harness(&host, "overview_service", 0);
+    click_harness(&host, "overview_accounts", 0);
+    assert_eq!(
+        harness_snapshot(&host)["account_removal"]["state"],
+        "closed"
+    );
+    click_harness(&host, "account_2", 1);
+    let snapshot = host.cli(&["ui-snapshot"]);
+    host.click_rect(
+        &snapshot["geometry"]["harness_settings"]["close"],
+        "close review",
+        &snapshot["geometry"],
+    );
+    assert_eq!(open_harness(&host)["account_removal"]["state"], "closed");
+    click_harness(&host, "account_2", 1);
+    assert_eq!(
+        harness_snapshot(&host)["account_removal"]["affected_clients"],
+        0
+    );
+    // OpenCode has no remote logout endpoint: this synthetic removal is local.
+    click_harness(&host, "account_removal_confirm", 0);
+    let after = wait_harness(&host, |h| {
+        h["accounts"].as_array().is_some_and(|a| a.len() == 2) && h["login_active"] == false
+    });
+    assert_eq!(
+        after["accounts"],
+        Value::Array(before["accounts"].as_array().unwrap()[..2].to_vec())
+    );
+    assert_eq!(after["selected_account"], before["selected_account"]);
+    assert_eq!(after["listener"], "stopped");
+    host.close_and_wait();
+}
+
+#[test]
+fn host_harness_pool_states_and_exact_account_monitoring_preserve_bindings() {
+    let root = minicon_binary()
+        .parent()
+        .unwrap()
+        .join("browser-court")
+        .join(unique_suffix())
+        .join("config");
+    harness_synthetic_profile(
+        &root,
+        28789,
+        "synthetic-pool-local-key",
+        "synthetic-pool-token",
+    );
+    harness_synthetic_pool(&root);
+    let ids = [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "cccccccccccccccccccccccccccccccc",
+    ];
     let mut host = BrowserGui::spawn_with_config(true, None, None, Some(root));
     let before = open_harness(&host);
     assert_eq!(

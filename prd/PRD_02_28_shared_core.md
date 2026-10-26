@@ -240,6 +240,11 @@ Persistent section navigation uses those same product rectangles, typed
 section actions and existing editor/monitoring focus owners; the public and
 native fixtures consume published navigation targets. Its behavior and evidence
 belong to [persistent navigation](PRD_02_31_01_01_harness_experience.md#persistent-section-navigation-2026-10-26).
+The binary-private `harness_settings_ui/account_removal.rs` owns transient
+account-removal review and applied-client identity binding. It adds no shared
+platform API or native adapter; runtime logout/storage authority is unchanged.
+Behavior and scoped evidence belong to [account removal review](PRD_02_31_01_01_harness_experience.md#account-removal-review-2026-10-26).
+
 The binary-private `harness_settings_ui/text.rs` owns the existing Settings
 read-only labels and their width-aware continuation projection, using the host's
 existing font measurement. Paint, paging, hit testing and focus reveal consume
