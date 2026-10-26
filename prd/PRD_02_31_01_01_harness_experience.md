@@ -794,6 +794,59 @@ only for its real dependency and show why. Group errors with the relevant field
 and keep unrelated Stop/Back/Cancel controls usable. Account balance reads and
 model verification must not share an unlabeled spinner.
 
+### Account save feedback (2026-10-26)
+
+```text
+Outcome: repair an account save in the form where it was requested
+└── [-] Inline account-owned save result beside Save/Revert
+    invariant: only the matching account/request receipt acknowledges a save; later drafts and unrelated errors survive
+    evidence: invalid proxy/no submission, account switching, failed/stale/matching receipts and actual public retry/save
+    safe failure: explain failed or unconfirmed save without claiming rollback; keep draft and usable Revert/Back
+    dependency: existing AccountDraft/AccountSaveReceipt and read-only text reflow
+    non-goal: redesign all error channels, auto-save, reconnect, new login or inference
+```
+
+```mermaid
+flowchart LR
+    E[Edit account draft] --> S[Explicit Save]
+    S --> V{Valid login/service proxy?}
+    V -->|no| F[Inline field-specific recovery]
+    V -->|yes| P[Pending exact account/request]
+    P --> R{Matching receipt?}
+    R -->|success| A[Saved submitted values / retain later edits]
+    R -->|failure| F
+    R -->|other request| P
+    X[Other account or operation] -. cannot clear .-> F
+```
+
+Show a readable inert result row next to the account's Save/Revert actions in
+Accounts, without stealing input focus. Local validation names the invalid
+login or service proxy and never echoes its contents. Enqueue failure and
+asynchronous save failure belong to that account's draft. A successful receipt
+reports whether newer edits remain unapplied. Navigation preserves the result;
+another operation's success cannot clear it. Explicit retry replaces the
+previous save result, and Revert discards the local form/result. Public metadata
+publishes a bounded status code, not labels or proxy values. The existing global
+status remains a separate compatibility channel; this leaf does not complete
+all HU-09 feedback requirements. Hot files are account draft/acknowledgement,
+save dispatch, text projection and their public fixture.
+
+Implemented local Windows x64 evidence (2026-10-26):
+`account_save_feedback_follows_validation_navigation_and_matching_receipts`
+and the existing
+`save_acknowledgement_rebases_only_its_form_and_keeps_later_draft_and_caret`
+pass through `scripts/build.sh test-suite` (2 selected; 881 binary subjects).
+The public `host_harness_account_save_feedback_stays_with_its_draft` journey
+passes with isolated synthetic accounts and `--no-activate`: invalid proxy,
+account switch/return, correction, actual runtime save receipt, later unsaved
+edit and Revert. Its screenshot shows the wrapped recovery text beside Save.
+Removing the production request-identity guard makes the focused test fail
+with `saved` instead of `saving`; restoring the exact source returns green.
+Local receipts: `target-six/v0.2.23-provider/account-save-feedback/`
+(`stale-receipt-red.log`, `fault-control.json`, `restored-green.log`,
+`public-green.log`). This proves this form's local behavior, not real provider
+authorization, other native platforms or completion of HU-09/HU-10.
+
 ## Visible state and primary action
 
 Do not compress the following into one green `ready` badge. User labels are

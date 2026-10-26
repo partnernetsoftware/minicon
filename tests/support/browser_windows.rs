@@ -1944,6 +1944,78 @@ pub(super) fn harness_sections_preserve_drafts_and_hide_unselected_controls() {
     host.close_and_wait();
 }
 
+#[test]
+fn host_harness_account_save_feedback_stays_with_its_draft() {
+    let root = minicon_binary()
+        .parent()
+        .unwrap()
+        .join("browser-court")
+        .join(unique_suffix())
+        .join("config");
+    harness_synthetic_profile(
+        &root,
+        28789,
+        "synthetic-feedback-key",
+        "synthetic-feedback-token",
+    );
+    harness_synthetic_pool(&root);
+    let mut host = BrowserGui::spawn_with_config(true, None, None, Some(root));
+    open_harness(&host);
+    click_harness(&host, "account_0", 0);
+    click_harness(&host, "account_login_proxy", 0);
+    host.cli(&["send-ui-keys", "Ctrl+a"]);
+    host.cli(&["send-ui-ime", "commit", "invalid-private-proxy"]);
+    click_harness(&host, "account_edit_actions", 0);
+    assert_eq!(
+        harness_snapshot(&host)["account_save_state"],
+        "invalid_login_proxy"
+    );
+    click_harness(&host, "account_save_feedback", 0);
+    let shot = host
+        .gui
+        .screenshot
+        .with_file_name("account-save-feedback.png")
+        .to_string_lossy()
+        .into_owned();
+    host.cli(&["screenshot-pane", "--output", &shot]);
+    click_harness(&host, "account_1", 0);
+    assert_eq!(harness_snapshot(&host)["account_save_state"], "idle");
+    click_harness(&host, "account_0", 0);
+    assert_eq!(
+        harness_snapshot(&host)["account_save_state"],
+        "invalid_login_proxy"
+    );
+    click_harness(&host, "account_login_proxy", 0);
+    host.cli(&["send-ui-keys", "Ctrl+a"]);
+    host.cli(&["send-ui-keys", "Backspace"]);
+    click_harness(&host, "account_label", 0);
+    host.cli(&["send-ui-keys", "Ctrl+a"]);
+    host.cli(&["send-ui-ime", "commit", "Saved feedback account"]);
+    click_harness(&host, "account_edit_actions", 0);
+    let saved = wait_harness(&host, |value| value["account_save_state"] == "saved");
+    assert_eq!(saved["account_draft_dirty"], false);
+    click_harness(&host, "account_label", 0);
+    host.cli(&["send-ui-ime", "commit", " later"]);
+    assert_eq!(
+        harness_snapshot(&host)["account_save_state"],
+        "saved_with_draft"
+    );
+    click_harness(&host, "account_edit_actions", 1);
+    let reverted = harness_snapshot(&host);
+    assert_eq!(reverted["account_save_state"], "idle");
+    assert_eq!(reverted["listener"], "stopped");
+    assert_eq!(reverted["login_active"], false);
+    let public = serde_json::to_string(&reverted).unwrap();
+    for private in [
+        "invalid-private-proxy",
+        "Saved feedback account",
+        "synthetic-feedback-token",
+    ] {
+        assert!(!public.contains(private));
+    }
+    host.close_and_wait();
+}
+
 fn harness_private_file(path: &std::path::Path, bytes: &[u8]) {
     let parent = path.parent().unwrap();
     fs::create_dir_all(parent).unwrap();

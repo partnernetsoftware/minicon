@@ -18,6 +18,7 @@ pub(super) fn label(
     let mut label = String::new();
     let mut heading = false;
     match row {
+        Row::AccountSaveFeedback => label = settings.account_save_label(language).into(),
         Row::AccountMenuInfo(index) => {
             label = settings
                 .account_menu_labels(language)

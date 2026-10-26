@@ -1,5 +1,6 @@
 //! Harness settings presentation. Runtime authority stays with provider_runtime.
 use super::*;
+mod account_feedback;
 mod account_menu;
 mod account_removal;
 use account_removal::Removal;
@@ -71,6 +72,7 @@ enum Row {
     AccountMonitoring,
     AccountInput(Field),
     AccountActions,
+    AccountSaveFeedback,
     AccountConnection,
     AccountReconnect,
     AccountReconnectHint,
@@ -160,6 +162,8 @@ struct AccountDraft {
     applied: Option<AccountPreferences>,
     submitted: Option<u64>,
     save_error: Option<provider_runtime::RuntimeError>,
+    validation: Option<account_feedback::Validation>,
+    saved_request: Option<u64>,
 }
 impl AccountDraft {
     fn from_account(account: &AccountSummary, preferences: &AccountPreferences) -> Self {
@@ -178,6 +182,8 @@ impl AccountDraft {
             applied: Some(preferences.clone()),
             submitted: None,
             save_error: None,
+            validation: None,
+            saved_request: None,
         }
     }
     fn matches(&self, account: &AccountSummary, preferences: &AccountPreferences) -> bool {
@@ -210,6 +216,7 @@ impl AccountDraft {
             // selection, preedit or caret with the older submitted contents.
             self.applied_label.clone_from(&account.label);
             self.applied = Some(preferences.clone());
+            self.saved_request = Some(receipt.request);
         }
         self.save_error = receipt.result.err();
         self.submitted = None;
@@ -626,6 +633,7 @@ impl HarnessSettings {
                 Row::AccountNetworkHint,
                 Row::AccountNetworkSeparation,
                 Row::AccountActions,
+                Row::AccountSaveFeedback,
                 Row::AccountConnection,
                 Row::AccountReconnectHint,
                 Row::AccountReconnectVerification,
@@ -879,6 +887,10 @@ impl HarnessSettings {
         if let Err(error) = result {
             self.forms.send_failed(&action, error);
             self.monitoring.send_failed(&action, error);
+            if matches!(&action, Action::SaveAccount { edit, .. } if self.account_focus.as_deref() == Some(&edit.account))
+            {
+                self.account_draft.save_error = Some(error);
+            }
         }
         self.error = result.err().map(|error| error.to_string());
     }
@@ -1093,8 +1105,10 @@ impl HarnessSettings {
             && (!self.account_draft.dirty() || self.account_draft.matches(&account, &preferences))
         {
             let save_error = self.account_draft.save_error;
+            let validation = self.account_draft.validation;
             self.account_draft = AccountDraft::from_account(&account, &preferences);
             self.account_draft.save_error = save_error;
+            self.account_draft.validation = validation;
         }
     }
 
@@ -1183,14 +1197,26 @@ impl HarnessSettings {
         ) else {
             return;
         };
+        self.account_draft.validation = None;
+        self.account_draft.save_error = None;
+        self.account_draft.saved_request = None;
         let login = NetworkPolicy::from_input(&self.account_draft.login.text);
         let service = NetworkPolicy::from_input(&self.account_draft.service.text);
+        let issue = if login.is_err() {
+            Some(account_feedback::Validation::LoginProxy)
+        } else if service.is_err() {
+            Some(account_feedback::Validation::ServiceProxy)
+        } else {
+            None
+        };
         let (Ok(login), Ok(service)) = (login, service) else {
+            self.account_draft.validation = issue;
             self.error =
                 Some("Use a plain HTTP proxy URL, or leave the field empty for Direct.".into());
             return;
         };
         let Some(request) = self.account_save_sequence.checked_add(1) else {
+            self.account_draft.validation = Some(account_feedback::Validation::Sequence);
             self.error = Some("Account save sequence exhausted. Reopen MiniCon.".into());
             return;
         };
@@ -1704,6 +1730,7 @@ fn row_id(row: Row) -> String {
         Row::AccountInput(Field::ServiceProxy) => "account_service_proxy",
         Row::AccountInput(_) => "account_input",
         Row::AccountActions => "account_edit_actions",
+        Row::AccountSaveFeedback => "account_save_feedback",
         Row::AccountConnection => "account_connection",
         Row::AccountReconnect => "account_reconnect",
         Row::AccountReconnectHint => "account_reconnect_hint",
@@ -2862,6 +2889,7 @@ impl ConApp {
                     .map_or(json::JsonValue::Null, Into::into),
             ),
             ("account_draft_dirty", settings.account_draft.dirty().into()),
+            ("account_save_state", settings.account_save_state().into()),
             ("scroll", geometry.rows.start.into()),
             ("row_count", rows.len().into()),
             ("visible_rows", geometry.rows.visible_rows.into()),
@@ -5281,6 +5309,75 @@ mod tests {
         settings.error = None;
         settings.view.config_durability_unconfirmed = false;
         assert_eq!(settings.status().as_deref(), Some("Accounts refreshed."));
+    }
+
+    #[test]
+    fn account_save_feedback_follows_validation_navigation_and_matching_receipts() {
+        let mut settings = HarnessSettings::default();
+        let original = AccountSummary {
+            id: "a".repeat(32),
+            provider: Provider::DeepSeek,
+            label: "Original".into(),
+            state: provider_accounts::AccountState::CredentialStored,
+        };
+        let other = AccountSummary {
+            id: "b".repeat(32),
+            ..original.clone()
+        };
+        let preferences = AccountPreferences::legacy(&original.id);
+        settings.view.accounts = vec![original.clone(), other.clone()];
+        settings.view.account_preferences = vec![
+            (original.id.clone(), preferences.clone()),
+            (other.id.clone(), AccountPreferences::legacy(&other.id)),
+        ];
+        settings.focus_account(&original.id);
+        assert_eq!(settings.account_save_state(), "idle");
+        settings.account_draft.login.text = "invalid-private-proxy".into();
+        settings.save_account();
+        assert_eq!(settings.account_save_state(), "invalid_login_proxy");
+        assert_eq!(settings.account_draft.submitted, None);
+        settings.focus_account(&other.id);
+        assert_eq!(settings.account_save_state(), "idle");
+        settings.focus_account(&original.id);
+        assert_eq!(settings.account_save_state(), "invalid_login_proxy");
+        settings.account_draft.login.text.clear();
+        settings.account_draft.service.text = "invalid-private-proxy".into();
+        settings.save_account();
+        assert_eq!(settings.account_save_state(), "invalid_service_proxy");
+        settings.account_draft.service.text.clear();
+        settings.account_draft.validation = None;
+        settings.account_draft.submitted = Some(2);
+        assert_eq!(settings.account_save_state(), "saving");
+        let mut receipt = provider_runtime::AccountSaveReceipt {
+            account: other.id,
+            request: 2,
+            result: Ok(()),
+        };
+        settings
+            .account_draft
+            .acknowledge(&original, &preferences, Some(&receipt));
+        assert_eq!(settings.account_save_state(), "saving");
+        receipt.account = original.id.clone();
+        receipt.request = 1;
+        settings
+            .account_draft
+            .acknowledge(&original, &preferences, Some(&receipt));
+        assert_eq!(settings.account_save_state(), "saving");
+        receipt.request = 2;
+        settings
+            .account_draft
+            .acknowledge(&original, &preferences, Some(&receipt));
+        assert_eq!(settings.account_save_state(), "saved");
+        settings.account_draft.label.text = "Later edit".into();
+        assert_eq!(settings.account_save_state(), "saved_with_draft");
+        settings.account_draft.submitted = Some(3);
+        receipt.request = 3;
+        receipt.result = Err(provider_runtime::RuntimeError::AccountChanged);
+        settings
+            .account_draft
+            .acknowledge(&original, &preferences, Some(&receipt));
+        assert_eq!(settings.account_save_state(), "failed");
+        assert_eq!(settings.account_draft.label.text, "Later edit");
     }
 
     #[test]
