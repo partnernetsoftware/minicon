@@ -847,6 +847,10 @@ Local receipts: `target-six/v0.2.23-provider/account-save-feedback/`
 `public-green.log`). This proves this form's local behavior, not real provider
 authorization, other native platforms or completion of HU-09/HU-10.
 
+The subsequent [three-platform integration](PRD_02_32_dev_loop_crosscheck.md#account-feedback-and-activity-integration-2026-10-26)
+passes this component and actual public journey on Linux x64, Windows ARM64
+and macOS ARM64 at `a4f2e53`; its exact-source logs and scope are owned by PRD32.
+
 ## Visible state and primary action
 
 Do not compress the following into one green `ready` badge. User labels are

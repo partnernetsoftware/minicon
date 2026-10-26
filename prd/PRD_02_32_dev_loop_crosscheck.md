@@ -2024,8 +2024,10 @@ menu/removal/navigation/reflow/panel regressions. Source identities and receipt
 hashes are checked independently of the job summary. Some subjects run in two
 selected suites; execution instances are not distinct-test counts.
 
-macOS ARM64 remains in progress at this checkpoint. The partial audit qualifies
-only the two explicitly listed completed cells. Local Windows x64 runtime
+macOS ARM64 and the overall run are now terminal success. The completed audit
+also verifies27 selected suites,68 Settings cases (zero failed/ignored), all ten
+named subjects and23 canonical browser host checks on macOS. Its owned-window
+placement/mapping/public-host receipt reports PASS. Local Windows x64 runtime
 held-lease tests and production fault controls remain with the product owners;
 the `harness` filter does not select every runtime/provider test.
 

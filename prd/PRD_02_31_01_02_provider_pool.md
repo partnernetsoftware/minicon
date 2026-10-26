@@ -649,3 +649,15 @@ measured hash, not file time. Its prepared review copy and build receipt live
 under `target-six/v0.2.23-provider/owner-review-f60e216/`. No authorization,
 inference or metadata-refresh action was requested; only aggregate public
 state is retained. The missing real-account journeys remain open.
+
+After the `a4f2e53` account-feedback integration, the same bounded observer
+checks the canonical `target/debug/minicon.exe` used by the local public tests.
+Its measured binary hash is retained in
+`target-six/v0.2.23-provider/real-account-readiness-a4f2e53/receipt.json`.
+It still observes one Ready DeepSeek and zero OpenCode accounts, no active
+login and a stopped listener. Nine public commands complete; the owned GUI
+exits normally with code0, the Job closes and real-use roots are retained.
+No authorization, inference, metadata refresh, activation or physical input is
+requested. This is a current readiness inventory, not fresh provider validation.
+The missing second DeepSeek/OpenCode grants and permission for small real-task
+validation have been requested from the owner; no answer is assumed.
