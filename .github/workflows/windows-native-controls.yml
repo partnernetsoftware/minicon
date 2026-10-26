@@ -18,6 +18,11 @@ on:
         type: boolean
         required: false
         default: false
+      prepare_arm_default:
+        description: "Hosted ARM64 only: one verified onboarding close, then original court on Default"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -67,10 +72,12 @@ jobs:
           PYTHONUTF8: '1'
           DESKTOP_CONTRAST: ${{ inputs.desktop_contrast }}
           ALLOCATED_FIRST: ${{ inputs.allocated_first }}
+          PREPARE_ARM_DEFAULT: ${{ inputs.prepare_arm_default }}
         run: |
           $ErrorActionPreference = 'Stop'
           if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw 'Disposable hosted court required' }
           if ($env:ALLOCATED_FIRST -eq 'true' -and $env:DESKTOP_CONTRAST -ne 'true') { throw 'allocated_first requires desktop_contrast' }
+          if ($env:PREPARE_ARM_DEFAULT -eq 'true' -and $env:DESKTOP_CONTRAST -eq 'true') { throw 'Default preparation cannot be combined with desktop contrast' }
           $output = Join-Path $env:RUNNER_TEMP 'minicon-native-controls'
           if (Test-Path -LiteralPath $output) { throw 'Court output must be fresh' }
           New-Item -ItemType Directory -Path $output | Out-Null
@@ -92,6 +99,10 @@ jobs:
             $registered = $true
             $source = (git rev-parse HEAD).Trim()
             $binary = Join-Path $PWD "target/$env:TRIPLE/debug/minicon.exe"
+            if ($env:PREPARE_ARM_DEFAULT -eq 'true' -and $env:CELL -eq 'win-aarch64') {
+              python -B -X utf8 scripts/native-controls/prepare_default.py --receipt (Join-Path $output 'default-preparation.json') --source-sha $source --close-known-onboarding
+              if ($LASTEXITCODE -ne 0) { throw 'Default desktop preparation refused; inspect its retained receipt' }
+            }
             if ($env:DESKTOP_CONTRAST -eq 'true') {
               $PSNativeCommandUseErrorActionPreference = $false
               if ($env:CELL -ne 'win-x86_64') { throw 'Desktop contrast requires the x64 court' }
@@ -132,7 +143,7 @@ jobs:
                 arms = $arms
               } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $output 'desktop-contrast.json') -Encoding utf8
               $courtExit = $(if ($exitCodes['default'] -eq 0 -and $exitCodes['allocated'] -eq 0) { 0 } else { 1 })
-            } elseif ($env:CELL -eq 'win-aarch64') {
+            } elseif ($env:CELL -eq 'win-aarch64' -and $env:PREPARE_ARM_DEFAULT -ne 'true') {
               python -B -X utf8 scripts/native-controls/desktop.py --binary $binary --output (Join-Path $output 'controls') --source-sha $source --desktop-receipt (Join-Path $output 'desktop.json')
               $courtExit = $LASTEXITCODE
             } else {
@@ -154,6 +165,7 @@ jobs:
                 pinyin_profile_registered = $registered
                 language_pack_installed = $false
                 original_language_profiles_restored = $restored
+                explicit_arm_default_preparation = $env:PREPARE_ARM_DEFAULT -eq 'true' -and $env:CELL -eq 'win-aarch64'
                 native_court_exit = $courtExit
               }
               $report | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'setup.json') -Encoding utf8
@@ -169,6 +181,7 @@ jobs:
           path: |
             ${{ runner.temp }}/minicon-native-controls/setup.json
             ${{ runner.temp }}/minicon-native-controls/desktop.json
+            ${{ runner.temp }}/minicon-native-controls/default-preparation.json
             ${{ runner.temp }}/minicon-native-controls/desktop-contrast.json
             ${{ runner.temp }}/minicon-native-controls/controls/*.json
             ${{ runner.temp }}/minicon-native-controls/controls/*.png

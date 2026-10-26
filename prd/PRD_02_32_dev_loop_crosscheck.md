@@ -51,6 +51,11 @@ dev-loop-crosscheck — agent cross-arch dev/test loop
 │   │       safe failure: refuse unavailable desktop/permission; no input to onboarding; restoration failure cannot pass
 │   │       dependency: Windows desktop APIs and the existing contained launch/controls; non-goal: secure-desktop bypass, onboarding changes or local execution
 │   │       └── [-] same-image x64 desktop contrast: preserve both original outcomes and all cleanup; no diagnostic pass substitutes for qualification
+│   │   └── [-] explicit hosted ARM64 Default-desktop preparation
+│   │       invariant: exact known onboarding identity plus one graceful close before the original court
+│   │       evidence: local pre-DLL refusal controls and actual hosted setup/input receipts
+│   │       safe failure: no close on mismatch; refused/ignored close remains BLOCKED
+│   │       dependency: disposable host and verified Default desktop/session; non-goal: owner desktop, force kill, permission bypass or input predicate changes
 │   ├── [-] explicit Windows fixture ACL comparison → PRD 28.01
 │   │   invariant: diagnostic entry requires exactly win-x86_64 and native_auth_context=false
 │   │   evidence: real workflow-plan consumer and separate diagnostic aggregate
@@ -1167,7 +1172,7 @@ For initial activation only, if ordinary NOACTIVATE presentation remains
 obscured, the disposable court may present its exact owned window as topmost
 once, re-resolve the actual hit and send the one click only if ownership is
 proved. Record this presentation condition and restore its window level during
-cleanup. Do not terminate or interact with the obscuring process. Subsequent
+cleanup. In this activation path, do not terminate or interact with the obscuring process. Subsequent
 foreground/point competition still stops input; there is no repeated raising
 or activation loop. This is fixture setup, not a claim of ordinary desktop
 z-order or another process's behavior.
@@ -1369,3 +1374,47 @@ The next native court prerequisite is a usable ordinary ARM64 desktop with the
 original target/focus/clipboard/input criteria intact. Any new hosted-only
 setup intervention needs its explicit bounded contract here before execution;
 the owner desktop remains outside physical court operation.
+
+### Explicit hosted ARM64 Default-desktop preparation
+
+The failed alternate-desktop paths above motivate a separately selected fixture
+setup option, `prepare_arm_default`. This is an exception only for pre-court
+setup on a disposable GitHub-hosted ARM64 VM. The ordinary activation and
+in-court focus/point checks above retain their refusal behavior.
+
+Before any GUI launch, clipboard access or input, a separate preparation script
+requires the hosted guard, ARM64 and an explicit close option, then verifies
+WinSta0/Default for calling and input desktops. It may request one graceful
+[WM_CLOSE](https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-close)
+only when the actual foreground root has the previously observed
+Windows.UI.Core.CoreWindow class, a live same-session system WWAHost image and
+the exact CloudExperienceHost package family queried from that process handle.
+Hold the handle and recheck window/PID/foreground before posting. No titles,
+command lines, foreign screenshots or full paths enter its bounded receipt.
+
+An unrecognized foreground is observed without intervention; the original
+court subsequently decides whether its own GUI can actually receive input.
+A matched window must become hidden or disappear within five seconds; an
+ignored/denied request fails setup with no second close, force kill, escalation,
+service change, registry change or onboarding-button input. A posted message
+alone is not successful closure. Handles must close successfully.
+
+The option is incompatible with desktop contrast. For its ARM64 cell, success
+runs the unchanged five-row court on Default rather than allocating a desktop;
+the x64 cell retains its ordinary path. Preserve the explicit setup condition
+and language/clipboard/owned-process cleanup receipts. Closing onboarding is
+not reversed; the host is disposable, and no restoration claim is made for that
+application. Setup success does not qualify input: actual complete Pinyin
+preedit/Space commit and all original page/Harness predicates remain mandatory.
+Local host/option/architecture refusals must precede every native DLL call, with
+guard-removal controls intercepted by a sentinel rather than real desktop APIs.
+
+Local pre-DLL qualification passes all three actual entry subjects (self-hosted
+environment, absent explicit option and wrong architecture). Removing each
+production guard reaches the same original no-native-access assertion and fails
+against an intercepted DLL call; byte-exact restoration passes each subject
+again. No actual native DLL is called, even by those controls. Receipt/logs:
+`target-six/v0.2.23-provider/default-preparation-refusal-controls/receipt.json`.
+Workflow PowerShell and Python parsing, format, strict all-target Clippy and all
+18 alignment subjects also pass. Actual hosted closure and ARM64 composition
+remain unqualified until the selected replay observes their original outcomes.
