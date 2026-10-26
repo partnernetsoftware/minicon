@@ -1545,3 +1545,27 @@ flowchart LR
     HIT -->|mismatch or failure| REFUSE
     LIVE -->|changed| REFUSE
 ```
+
+The visible-root [run40252299733](https://github.com/partnernetsoftware/minicon/actions/runs/40252299733)
+at `527fb5b66829f636f9d8696e869220d1fbed06e6` passes x64. ARM64 now
+verifies the exact system image/session, visible root hit and live process,
+posts one WM_CLOSE and observes the onboarding window no longer visible. Thread
+DPI and both handles restore/close. The original input court then refuses its
+initial activation point: actual foreground is SearchHost / Client.CBS and the
+hit root is StartMenuExperienceHost with its exact package family. No input is
+sent, the clipboard is unchanged and GUI exit0/owned cleanup/language restoration
+pass. Artifacts: `target-six/v0.2.23-provider/native-controls-ci-527fb5b/`.
+Successful onboarding closure has not established a usable input court.
+
+For the same explicitly selected disposable ARM64 setup, after its verified
+Default-desktop receipt and before GUI launch, request the documented
+[Shell.MinimizeAll](https://learn.microsoft.com/en-us/windows/win32/shell/shell-minimizeall)
+once to present the desktop. This preparation intentionally affects the
+disposable VM's pre-existing window presentation; it sends no keys/clicks,
+kills no process and changes no service/registry/permission. Bind its receipt
+to the exact source and successful Default check, release the created Shell COM
+reference and fail on setup errors. Never run it locally or during the input
+journey. Receipt status OBSERVED acknowledges the method call, not desktop
+readiness or input qualification. No original-window-placement restoration is
+claimed for this disposable host. Original owned foreground/point checks and
+complete Pinyin/page/Harness assertions continue deciding actual acceptance.

@@ -102,6 +102,35 @@ jobs:
             if ($env:PREPARE_ARM_DEFAULT -eq 'true' -and $env:CELL -eq 'win-aarch64') {
               python -B -X utf8 scripts/native-controls/prepare_default.py --receipt (Join-Path $output 'default-preparation.json') --source-sha $source --close-known-onboarding
               if ($LASTEXITCODE -ne 0) { throw 'Default desktop preparation refused; inspect its retained receipt' }
+              $preparation = Get-Content -Raw -LiteralPath (Join-Path $output 'default-preparation.json') | ConvertFrom-Json
+              if ($preparation.source_sha -cne $source -or $preparation.status -cne 'OBSERVED' -or $preparation.default_desktop_verified -ne $true) { throw 'Default preparation identity mismatch' }
+              if ($env:RUNNER_ARCH -cne 'ARM64') { throw 'Shell preparation requires the hosted ARM64 cell' }
+              $shell = $null
+              $shellReport = [ordered]@{
+                kind = 'hosted-default-show-desktop'
+                source_sha = $source
+                status = 'BLOCKED'
+                minimize_requests = 0
+                com_reference_released = $false
+                native_input_qualified = $false
+                window_placement_restoration_claimed = $false
+                scope = 'One Shell.MinimizeAll before owned GUI launch on this disposable VM only'
+              }
+              try {
+                $shell = New-Object -ComObject Shell.Application
+                $shell.MinimizeAll()
+                $shellReport.minimize_requests = 1
+                $shellReport.status = 'OBSERVED'
+              } finally {
+                try {
+                  if ($null -ne $shell) {
+                    [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shell)
+                    $shellReport.com_reference_released = $true
+                  }
+                } finally {
+                  $shellReport | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'shell-preparation.json') -Encoding utf8
+                }
+              }
             }
             if ($env:DESKTOP_CONTRAST -eq 'true') {
               $PSNativeCommandUseErrorActionPreference = $false
@@ -182,6 +211,7 @@ jobs:
             ${{ runner.temp }}/minicon-native-controls/setup.json
             ${{ runner.temp }}/minicon-native-controls/desktop.json
             ${{ runner.temp }}/minicon-native-controls/default-preparation.json
+            ${{ runner.temp }}/minicon-native-controls/shell-preparation.json
             ${{ runner.temp }}/minicon-native-controls/desktop-contrast.json
             ${{ runner.temp }}/minicon-native-controls/controls/*.json
             ${{ runner.temp }}/minicon-native-controls/controls/*.png
