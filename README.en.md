@@ -216,6 +216,10 @@ The 0.2.23 development build adds **Settings → Harness** for optional provider
 accounts and an explicitly started local model API. Its connection steps and
 current qualification limits are owned by the
 [Harness requirements](prd/PRD_02_31_01_provider_gateway.md).
+Use the robot button to the left of **Settings** to view the
+[Harness dashboard](prd/PRD_02_36_harness_workspace.md). Configure accounts,
+client allocations, usage monitoring and the local API in **Settings → Harness**.
+Opening either view does not start the model API or run a task.
 
 ---
 
