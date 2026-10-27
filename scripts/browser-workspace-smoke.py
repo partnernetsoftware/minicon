@@ -433,7 +433,7 @@ print(String(decoding: raw, as: UTF8.self))
                                if row["kind"] == "terminal")
         keys("Ctrl+Shift+I")
         cli("send-ui-ime", "commit", "owned Mac composer draft")
-        open_browser_from_menu()
+        open_browser_directly()
         with h0_lock:
             h0_live.update(report=None, reports=0)
         navigate(origin + h0_path)
@@ -509,17 +509,14 @@ print(String(decoding: raw, as: UTF8.self))
         cli("send-ui-ime", "commit", draft)
         assert cli("ui-snapshot")["composer_text"] == draft
         assert cli("ui-snapshot")["geometry"]["harness_settings"] is None, "Harness runtime was not lazy"
-        browser_id = open_browser_from_menu()["id"]
+        browser_id = open_browser_directly()["id"]
 
         keys("Ctrl+l", "Shift+Tab", "Enter")
         geometry = cli("ui-snapshot")["geometry"]
-        assert geometry["new_tab_menu_open"] and geometry["new_menu_highlight"] == 0
-        assert len(cli("list-tabs")["tabs"]) == 2, "opening New activated its default terminal action"
-        keys("Down")
-        assert cli("ui-snapshot")["geometry"]["new_menu_highlight"] == 1
-        keys("Enter")
-        assert browser()["id"] == browser_id and len(cli("list-tabs")["tabs"]) == 2, "Browser menu activation did not reuse its root exactly once"
-        assert not cli("ui-snapshot")["geometry"]["new_tab_menu_open"]
+        assert not geometry["new_tab_menu_open"]
+        assert len(cli("list-tabs")["tabs"]) == 3, "focused New Terminal must create exactly one tab"
+        cli("select-tab", "--target", browser_id)
+        assert browser()["id"] == browser_id and len(cli("list-tabs")["tabs"]) == 3
         keys("Ctrl+l", "Tab")
         assert editor("browser_proxy_editor")["focused"]
         keys("Tab", "Space")
@@ -534,11 +531,11 @@ print(String(decoding: raw, as: UTF8.self))
         assert editor("browser_proxy_editor")["focused"], "menu dismissal did not restore its traversal owner"
         keys("Shift+Tab")
         assert editor("browser_address_editor")["focused"]
-        checks["menu_keyboard"] = {"status": "passed", "new_open_without_activation": True,
-                                   "browser_single_activation": True, "proxy_clamp": True,
+        checks["menu_keyboard"] = {"status": "passed", "terminal_single_activation": True,
+                                   "browser_return_preserved": True, "proxy_clamp": True,
                                    "tab_and_shift_tab_ownership": True}
 
-        for trigger in ("browser_proxy_dropdown", "new_root"):
+        for trigger in ("browser_proxy_dropdown",):
             keys("Ctrl+l")
             cli("send-ui-ime", "commit", "a中z")
             keys("Home", "Right", "Shift+Right")
@@ -861,7 +858,7 @@ print(String(decoding: raw, as: UTF8.self))
             "metadata": "not_loaded", "selected_robot_returns": True, "composer_draft_and_focus_restored": True,
             "no_runtime_created": True, "input_path": "public CLI injection"}
 
-        browser_id = open_browser_from_menu()["id"]
+        browser_id = open_browser_directly()["id"]
         navigate(origin + h0_path)
         loaded(h0_path, "Harness live fixture")
 
@@ -1025,16 +1022,13 @@ print(String(decoding: raw, as: UTF8.self))
             "scale_permille": geometry["host_scale_permille"], "sections": visited,
             "settings_and_back_reachable": True, "zero_tabs_preserved": True}
 
-    def open_browser_from_menu():
-        click_geometry("new_root")
-        wait(lambda: cli("ui-snapshot")["geometry"]["new_tab_menu_open"], "New menu opens")
-        click_geometry("new_browser_action")
+    def open_browser_directly():
+        click_geometry("new_web")
         def observed():
             rows = [row for row in cli("list-tabs")["tabs"] if row["kind"] == "browser"]
-            assert len(rows) <= 1, "New Browser created more than one root"
-            return rows[0] if len(rows) == 1 and rows[0]["active"] else None
-        row = wait(observed, "visible New Browser action focuses its single root")
-        assert not cli("ui-snapshot")["geometry"]["new_tab_menu_open"], "New menu stayed open after selection"
+            return next((row for row in rows if row["active"]), None)
+        row = wait(observed, "direct New Web action focuses its new root")
+        assert not cli("ui-snapshot")["geometry"]["new_tab_menu_open"]
         return row
 
     def open_web_settings():
@@ -1149,8 +1143,8 @@ if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopEl
             cli("send-ui-keys", "Ctrl+Shift+I")
             cli("send-ui-ime", "commit", terminal_draft)
             assert cli("ui-snapshot")["composer_text"] == terminal_draft
-            first_id = open_browser_from_menu()["id"]
-            assert open_browser_from_menu()["id"] == first_id
+            first_id = open_browser_directly()["id"]
+            assert open_browser_directly()["id"] == first_id, "one browser page host must reuse its root"
             navigate(origin + "/first")
             loaded("/first", "First page")
             if args.physical:
@@ -1289,7 +1283,8 @@ if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopEl
             capture("proxy-cleared")
             cli("select-tab", "--target", str(terminal_id))
             assert cli("ui-snapshot")["composer_text"] == terminal_draft, "failure/recovery lost the terminal draft"
-            assert open_browser_from_menu()["id"] == first_id
+            cli("select-tab", "--target", str(first_id))
+            assert browser()["id"] == first_id
             cli("close-tab", "--target", str(first_id))
             cli("send-ui-keys", "Ctrl+Shift+O")
             assert browser()["id"] != first_id
@@ -1312,9 +1307,12 @@ if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopEl
             launch(trace)
             assert open_web_settings()["web_proxy_options_count"] == 1, "candidate was not persisted across restart"
             cli("send-ui-keys", "Escape")
-            open_browser_from_menu()
+            open_browser_directly()
+            navigate(origin + "/first")
+            loaded("/first", "First page")
             click_geometry("browser_proxy_dropdown")
-            geometry = cli("ui-snapshot")["geometry"]
+            geometry = wait(lambda: state if (state := cli("ui-snapshot")["geometry"])["browser_proxy_menu_open"] else None,
+                            "saved proxy menu opens after browser return")
             assert geometry["browser_proxy_menu_open"]
             assert len(geometry["browser_proxy_option_rows"]) == 2
             proxy_count = len(proxy_requests)
@@ -1331,7 +1329,9 @@ if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopEl
             launch(trace)
             assert open_web_settings()["web_proxy_options_count"] == 0, "deleted candidate returned after restart"
             cli("send-ui-keys", "Escape")
-            open_browser_from_menu()
+            open_browser_directly()
+            navigate(origin + "/first")
+            loaded("/first", "First page")
             click_geometry("browser_proxy_dropdown")
             assert len(cli("ui-snapshot")["geometry"]["browser_proxy_option_rows"]) == 1, "deleted candidate remains selectable"
             cli("send-ui-keys", "Escape")

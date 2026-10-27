@@ -419,6 +419,24 @@ packages and avoids forwarding a duplicate to the separately owned fork, which
 already selects its library. The complete standard product gate remains the
 final development obligation; a filtered/failed wrapper call is not a full pass.
 
+### 0.2.25 direct-entry smoke alignment
+
+The first exact-source Windows x64 development run
+[40467193836](https://github.com/partnernetsoftware/minicon/actions/runs/40467193836)
+passed its full standard workspace/owned-fork step and its selected native
+browser unit, then failed `scripts/browser-workspace-smoke.py` because that
+driver still waited for the removed New dropdown after clicking New Terminal.
+The run remains FAIL; its later independent native authorization step did not
+execute. The 0.2.25 driver now clicks the direct New Web target, checks the
+single browser root is reused, checks keyboard New Terminal creates exactly
+one terminal, and retains the existing proxy menu, Web/Harness draft and @0
+journeys. After process restart it waits for a loaded local fixture page before
+opening the proxy menu, so the menu is tested on an observed ready page.
+The repaired script passed one complete local Windows WebView2 replay against
+`target/debug/minicon.exe` with its `browser-workspace-025-replay5/receipt.json`
+under ignored `target/debug/`. This is a development replay; the corrected
+driver still needs an exact-source hosted run and final release artifact court.
+
 ### Windows SDK fixture build prerequisite
 
 The Windows main-unit suite includes the existing synchronized native SDK
