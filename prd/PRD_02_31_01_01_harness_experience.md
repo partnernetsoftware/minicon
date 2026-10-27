@@ -2,7 +2,7 @@
 
 Parent: [provider gateway](PRD_02_31_01_provider_gateway.md). Sequence:
 [0.2.23 plan](../plan/plan-v0.2.23.md#harness-product-redesign-before-publication)
-and the selected [0.2.25 experience slice](../plan/plan-v0.2.25.md).
+and the archived [0.2.25 experience slice](../plan/archive/plan-v0.2.25.md).
 Status: `[-]` product redesign specified after owner feedback, 2026-10-25;
 presentation has scoped native development checkpoints below; full implementation
 and acceptance remain open. Existing gateway receipts do not
@@ -91,7 +91,7 @@ flowchart TD
 
 ### Selected 0.2.25 experience contract
 
-`[-]` The [0.2.25 plan](../plan/plan-v0.2.25.md) selects one coherent
+`[-]` The archived [0.2.25 plan](../plan/archive/plan-v0.2.25.md) selected one coherent
 first-use path for product review and delivery. A new user sees provider,
 local account name and the effective **Login network** before Continue. The
 ordinary Web-tab proxy is not this account setting; an empty Login proxy is
@@ -130,6 +130,9 @@ The local Windows native @0 and direct-creation journeys at `abb4fc3` pass;
 the first-use Harness orientation capture was inspected. Real OpenCode/Google
 and DeepSeek grants, account-scoped native proxy traces, client request and
 cross-platform visual/physical acceptance remain separately selected.
+The exact 0.2.25 public chain is recorded in its
+[release history](archive/v0.2.25-release-history.md); publication does not
+upgrade these still-open journeys into real-provider evidence.
 
 The 0.2.25 Settings route now states the effective **next sign-in** Login and
 Service routes immediately before the provider actions. Invalid policy names

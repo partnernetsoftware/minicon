@@ -89,7 +89,8 @@ MiniCon — one-file local terminal
     ├── [v] public v0.2.22 → prd/archive/v0.2.22-release-history.md
     ├── [v] public v0.2.23 → prd/archive/v0.2.23-release-history.md
     ├── [v] public v0.2.24 tree interactions and clipboard status → prd/archive/v0.2.24-release-history.md
-    ├── [-] selected v0.2.25 connection experience and honest operation view → plan/plan-v0.2.25.md
+    ├── [v] public v0.2.25 fixed @0 / direct creation / scrollbars / route clarity → prd/archive/v0.2.25-release-history.md
+    ├── [_] 0.2.26 @0 visual canvas → plan/plan-v0.2.26.md
     ├── current independent tracks → plan/plan-v0.2.x-product-roadmap.md
     └── historical outcomes and receipts → prd/archive/README.md
 ```
@@ -126,8 +127,8 @@ flowchart LR
     APPS["PRD 40: optional local Plugins and Apps / separate minicon-harness"] --> MC
     APPS -. typed run events .-> ROB
     APPS -->|model-only client| GW
-    NEXT25["0.2.25 selected: route clarity / first connection / truthful operation"] --> HX
-    NEXT25 --> ROB
+    REL25["Public 0.2.25: @0 shell / direct actions / route clarity"] --> HX & ROB
+    NEXT26["0.2.26 selected: scene-first @0 visual canvas"] --> HOME
     POOL & MON --> ROB
     BV["PRD 31.01.02.01.01: quoted profile checks / explicit commit cutoff"] --> POOL
     ROB -. later explicit task operation .-> HC
@@ -208,17 +209,21 @@ flowchart LR
 
 ## Current frontier
 
-- [-] **v0.2.25 is the active development line.**
-  [The selected plan](plan/plan-v0.2.25.md) sequences product review, explicit
-  account login/service network identity, the first account-to-client path,
-  truthful Harness operation views and native Web/auth restoration. Behavior
+- [v] **Public v0.2.25: fixed @0 Home, direct creation, scrollbars and account
+  route clarity.** [Release history](prd/archive/v0.2.25-release-history.md)
+  owns the exact source, signed Candidate, Defender, Promotion and downloaded
+  asset evidence. The [archived plan](plan/archive/plan-v0.2.25.md) retains the
+  release cut and open real-provider, client and native acceptance. Behavior
   stays with [experience](prd/PRD_02_31_01_01_harness_experience.md),
   [pool](prd/PRD_02_31_01_02_provider_pool.md),
-  [dashboard](prd/PRD_02_36_harness_workspace.md) and
-  [Web preferences](prd/PRD_02_25_01_browser_preferences.md); the plan is not
-  a release receipt. The new [@0 Home](prd/PRD_02_39_home_dashboard.md) is a
-  separate window destination; its first static shell and later event-backed
-  office retain their own acceptance.
+  [dashboard](prd/PRD_02_36_harness_workspace.md),
+  [Home](prd/PRD_02_39_home_dashboard.md) and
+  [Web preferences](prd/PRD_02_25_01_browser_preferences.md).
+- [_] **v0.2.26 is the selected design frontier.**
+  [The plan](plan/plan-v0.2.26.md) and
+  [@0 visual canvas owner](prd/PRD_02_39_01_home_canvas.md) prioritize a
+  scene-first daily Home with truthful status and one clear next action.
+  Observed task characters wait for the typed app-run event seam.
 
 - [_] **Computer use is a future product track.** [PRD 38](prd/PRD_02_38_computer_use.md)
   owns target-bound observation/action and the same-repo crate decision;

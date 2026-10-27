@@ -448,6 +448,13 @@ Each original failing subject passed locally after the correction. The selected
 batch and final exact-source gate need a new hosted run; previous success in
 independent steps does not change the failed run's result.
 
+The final exact-source [Windows run 40471351586](https://github.com/partnernetsoftware/minicon/actions/runs/40471351586)
+passed the standard gate, native browser/auth courts and every selected suite;
+both corrected subjects executed and passed in the standard and selected
+batches. The [six-cell pack 40471327052](https://github.com/partnernetsoftware/minicon/actions/runs/40471327052)
+passed all native cells. Published-byte smoke scope and release receipts are
+owned by [v0.2.25 release history](archive/v0.2.25-release-history.md).
+
 ### Windows SDK fixture build prerequisite
 
 The Windows main-unit suite includes the existing synchronized native SDK

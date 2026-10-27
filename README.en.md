@@ -36,6 +36,14 @@ burst of output tangle together. MiniCon gives input a line of its own.
 
 `Enter` makes a new line; `Shift+Enter` or `Ctrl+O` sends the draft.
 
+## Finding your way.
+
+The tab tree has a fixed **@0 Home** above your terminal and Web tabs. It is a
+quiet starting screen; it does not create a tab or start an agent. The two New
+buttons open a terminal or the Web page directly. The robot button opens the
+Harness overview, while Settings holds account and connection changes.
+Terminal output and the input area each have their own visible scrollbar.
+
 ## Your scripts can see into it.
 
 Sending a keystroke is easy — but blind. The control command reads back what the

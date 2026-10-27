@@ -3,7 +3,7 @@
 Parent: [MiniCon product index](../PRD.md). Window and tab interaction:
 [workspace](PRD_02_25_con_workspace.md). Harness operation and monitoring:
 [PRD 36](PRD_02_36_harness_workspace.md). Selected sequence:
-[0.2.25 plan](../plan/plan-v0.2.25.md). The next visual canvas is owned by
+[archived 0.2.25 plan](../plan/archive/plan-v0.2.25.md). The next visual canvas is owned by
 [PRD 39.01](PRD_02_39_01_home_canvas.md) and sequenced by the
 [0.2.26 design plan](../plan/plan-v0.2.26.md).
 
@@ -94,8 +94,10 @@ characters require the later explicit node identity and authority in PRD 37.
 Development evidence for HOME: the public native GUI journey
 `native_home_is_a_fixed_destination_and_restores_real_tabs` passed on Windows
 after both terminal and Web selection. `@0` remained outside `list-tabs`, and
-selecting the prior real ID restored its surface. This is development evidence,
-not a release-artifact claim. BRAND, ROUTES and OFFICE retain their statuses
+selecting the prior real ID restored its surface. The exact public 0.2.25
+artifact chain and downloaded-asset scope are recorded in the
+[release history](archive/v0.2.25-release-history.md). The shipped HOME shell
+does not close the larger BRAND, ROUTES or OFFICE visual/interaction acceptance
 above.
 
 0.2.25 selects the @0 navigation and honest static shell after the current

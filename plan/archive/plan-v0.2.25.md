@@ -1,14 +1,15 @@
 # v0.2.25 — make the local Harness connection understandable and usable
 
-Status: `[-]` selected next development version after the [public 0.2.24
-release](../prd/archive/v0.2.24-release-history.md). This is a delivery plan,
-not a claim that the journeys below already pass. The product behavior belongs
-to [Harness connection experience](../prd/PRD_02_31_01_01_harness_experience.md),
-[provider pool](../prd/PRD_02_31_01_02_provider_pool.md),
-[dashboard](../prd/PRD_02_36_harness_workspace.md), and
-[Web preferences](../prd/PRD_02_25_01_browser_preferences.md). The newly
-selected [Plugins and Apps boundary](../prd/PRD_02_40_plugins_apps.md) places
-the worker extraction in a separately gated track.
+Status: `[v]` public release cut completed; exact receipts and retained
+failures are in [v0.2.25 release history](../../prd/archive/v0.2.25-release-history.md).
+The tree below preserves the original delivery scope and each leaf's state at
+the release cut. Open real-provider, physical-input and visual acceptance stays
+with [Harness connection experience](../../prd/PRD_02_31_01_01_harness_experience.md),
+[provider pool](../../prd/PRD_02_31_01_02_provider_pool.md),
+[dashboard](../../prd/PRD_02_36_harness_workspace.md), and
+[Web preferences](../../prd/PRD_02_25_01_browser_preferences.md). The
+[Plugins and Apps boundary](../../prd/PRD_02_40_plugins_apps.md) places worker
+extraction in a separately gated track.
 
 ## Product decision
 
@@ -77,7 +78,7 @@ Outcome: make the first local Harness connection legible from setup to observed 
 │   evidence: PRD 40 old/new parity matrix and named two-repository SHAs
 │   safe failure: incomplete app remains BLOCKED for migration; no quiet loss of the released CLI
 │   dependency: parallel minicon-harness repo and PRD 40; non-goal: making app management a 0.2.25 P0 gate
-└── [_] Q — qualify one exact source and decide publication
+└── [v] Q — qualify one exact source and decide publication
     invariant: only matching source, native artifacts and actual observations support a claim
     evidence: targeted smoke, fmt/clippy, build.sh test, six-cell or hosted equivalent, selected native courts and release receipts
     safe failure: unavailable real account or native court is BLOCKED for that claim; failed release gates stop Promotion
@@ -156,7 +157,7 @@ flowchart LR
 8. **Extraction inventory (X0).** Record the released worker's behavior and
    the parallel app's exact current capabilities. Freeze the host/app seam with
    its owner before changing the MiniCon command or robot task controls. The
-   separate [extraction plan](plan-minicon-harness-extraction.md) owns
+   separate [extraction plan](../plan-minicon-harness-extraction.md) owns
    implementation and cutover after the app is ready.
 
 ## Release cut and explicit deferrals
@@ -179,5 +180,6 @@ Console/Web fixes with clear user impact may enter the cut after their owner
 acceptance and exact-source gates, without reopening the Harness boundary.
 
 Public Promotion still requires the owner's explicit version/publish authority
-and the [release chain](../prd/PRD_02_27_con_delivery.md). This plan alone is
-not that authority.
+and the [release chain](../../prd/PRD_02_27_con_delivery.md). The owner
+subsequently authorized publication of the named version; the exact decision
+and result are in the release history above.

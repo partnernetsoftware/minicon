@@ -4,9 +4,9 @@ Status: `[-]` H0/H1 development integration after owner direction, 2026-10-25.
 Behavior: [PRD 36](../prd/PRD_02_36_harness_workspace.md). Settings:
 [PRD 31.01.01](../prd/PRD_02_31_01_01_harness_experience.md). The
 [Plugins and Apps extraction plan](plan-minicon-harness-extraction.md) owns
-the separately delivered worker and its exact host/app cutover. The current
-[0.2.25 plan](plan-v0.2.25.md) selects truthful H1 operation and configuration
-handoff after public 0.2.24; the earlier [0.2.23 plan](plan-v0.2.23.md)
+the separately delivered worker and its exact host/app cutover. The archived
+[0.2.25 plan](archive/plan-v0.2.25.md) selected truthful H1 operation and
+configuration handoff after public 0.2.24; the earlier [0.2.23 plan](plan-v0.2.23.md)
 selected H0 and available H1 projections. The full visual
 operation/monitoring workspace is a continuing core product track.
 

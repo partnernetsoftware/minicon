@@ -86,7 +86,9 @@ passed on Windows in expanded and collapsed sidebars. With the Web hit route
 temporarily removed, the same public test failed at the Browser count, then
 passed after restoring the route. `host_browser_menus_keyboard_entry_traversal_and_single_activation`
 passed with direct Terminal Enter activation and unchanged proxy-menu focus
-behavior. Narrow/Retina presentation and final release bytes remain open.
+behavior. The exact public 0.2.25 artifact chain is in the
+[release history](archive/v0.2.25-release-history.md); narrower/Retina physical
+presentation retains its separately named acceptance.
 
 ## Editing and focus acceptance
 

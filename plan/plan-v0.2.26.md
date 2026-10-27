@@ -1,9 +1,8 @@
 # v0.2.26 design target — make @0 a useful visual home
 
-Status: `[_]` planned design sequence, requested while 0.2.25 is still the
-active development/release goal. This file selects a product direction for
-the next version; it is neither a 0.2.25 scope change nor a claim that 0.2.26
-source, native evidence or publication exists. The owning behavior is in
+Status: `[_]` selected next design sequence after public 0.2.25. This file
+selects a product direction for the next version; it does not claim that
+0.2.26 source, native evidence or publication exists. The owning behavior is in
 [PRD 39.01](../prd/PRD_02_39_01_home_canvas.md), with @0 identity in
 [PRD 39](../prd/PRD_02_39_home_dashboard.md) and operation facts in
 [PRD 36](../prd/PRD_02_36_harness_workspace.md).
