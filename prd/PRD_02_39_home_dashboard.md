@@ -3,7 +3,9 @@
 Parent: [MiniCon product index](../PRD.md). Window and tab interaction:
 [workspace](PRD_02_25_con_workspace.md). Harness operation and monitoring:
 [PRD 36](PRD_02_36_harness_workspace.md). Selected sequence:
-[0.2.25 plan](../plan/plan-v0.2.25.md).
+[0.2.25 plan](../plan/plan-v0.2.25.md). The next visual canvas is owned by
+[PRD 39.01](PRD_02_39_01_home_canvas.md) and sequenced by the
+[0.2.26 design plan](../plan/plan-v0.2.26.md).
 
 Status: `[-]` owner-selected 2026-10-27 direction. The @0 shell is the next
 visible slice; agent-office behavior depends on real task lifecycle evidence.
@@ -27,6 +29,11 @@ Outcome: return to a welcoming, truthful MiniCon home without losing work
 │   evidence: public pointer/keyboard navigation, unchanged session IDs/drafts and no-activate traces
 │   safe failure: unavailable destination says why and keeps @0 usable
 │   dependency: existing tab creation and PRD 36 route; non-goal: duplicating Settings/Harness controls
+├── [_] CANVAS — 0.2.26 visual overview and truthful scene → PRD_02_39_01_home_canvas.md
+│   invariant: @0 gives orientation, next action and source-labelled local state without acquiring owner authority
+│   evidence: public navigation/state journeys and native wide/narrow/short captures
+│   safe failure: useful static scene when task events or service data are unavailable
+│   dependency: fixed @0 shell and PRD 36 read-only projection; non-goal: fake agent operation
 └── [_] OFFICE — later animated agent workplace
     invariant: each character/action maps to an observed owned task/event and its source/freshness
     evidence: real run start/tool/wait/stop/final traces and idle/stale/error presentations
@@ -50,6 +57,9 @@ flowchart LR
     O & I --> H
     A[Settings / account / service authority] -. no side effect on entering Home .-> H
     X[Close Home?] --> K[Return to Home or real tab; @0 cannot be closed as a tab]
+    H --> C[PRD 39.01 / 0.2.26 visual canvas]
+    C -->|read-only projection| S
+    C -. no task event .-> I
 ```
 
 ## Product structure
@@ -93,3 +103,12 @@ connection slice's shared host prerequisites are stable. Native pointer,
 keyboard/focus, narrow/large layout, page parking and public snapshot tests
 must agree; a painted-only mock is not acceptance. The animated office and
 new task authority remain `[_]` until PRD 36 H2's real lifecycle seam passes.
+
+## Next visual slice
+
+The 0.2.26 design request places particular weight on the @0 screen's visual
+hierarchy and daily-use experience. [PRD 39.01](PRD_02_39_01_home_canvas.md)
+owns its canvas, states, interaction and evidence. This module continues to own
+the fixed @0 identity, tab boundary and navigation invariants above. The
+separate [plan](../plan/plan-v0.2.26.md) sequences the next version without
+turning an unobserved worker into a displayed agent.
