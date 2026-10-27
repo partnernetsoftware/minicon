@@ -1507,39 +1507,37 @@ fn host_browser_proxy_menu_counts_keep_readable_rows_and_reveal_the_last_choice(
 fn host_browser_menu_dismiss_restores_the_original_editor_selection() {
     let mut host = BrowserGui::spawn(true, None, None);
     host.open_browser_directly();
-    for trigger in ["browser_proxy_dropdown", "new_root"] {
-        host.cli(&["send-ui-keys", "Ctrl+l"]);
-        host.cli(&["send-ui-ime", "commit", "a中z"]);
-        host.cli(&["send-ui-keys", "Home"]);
-        host.cli(&["send-ui-keys", "Right"]);
-        host.cli(&["send-ui-keys", "Shift+Right"]);
-        let original = host_editor_state(&host, "browser_address_editor");
-        assert_eq!(original["selection"], serde_json::json!([1, 4]));
-        host.cli(&["send-ui-ime", "preedit", "ni"]);
-        host.click_geometry(trigger);
-        let menu = host.cli(&["ui-snapshot"]);
-        assert_eq!(menu["geometry"]["menu_return_focus"], "address");
+    host.cli(&["send-ui-keys", "Ctrl+l"]);
+    host.cli(&["send-ui-ime", "commit", "a中z"]);
+    host.cli(&["send-ui-keys", "Home"]);
+    host.cli(&["send-ui-keys", "Right"]);
+    host.cli(&["send-ui-keys", "Shift+Right"]);
+    let original = host_editor_state(&host, "browser_address_editor");
+    assert_eq!(original["selection"], serde_json::json!([1, 4]));
+    host.cli(&["send-ui-ime", "preedit", "ni"]);
+    host.click_geometry("browser_proxy_dropdown");
+    let menu = host.cli(&["ui-snapshot"]);
+    assert_eq!(menu["geometry"]["menu_return_focus"], "address");
+    assert_eq!(
+        host_editor_state(&host, "browser_address_editor")["focused"],
+        false
+    );
+    host.cli(&["send-ui-keys", "Escape"]);
+    let restored = host_editor_state(&host, "browser_address_editor");
+    for key in ["text", "caret", "selection"] {
         assert_eq!(
-            host_editor_state(&host, "browser_address_editor")["focused"],
-            false
-        );
-        host.cli(&["send-ui-keys", "Escape"]);
-        let restored = host_editor_state(&host, "browser_address_editor");
-        for key in ["text", "caret", "selection"] {
-            assert_eq!(
-                restored[key], original[key],
-                "{trigger} lost the previous field {key}"
-            );
-        }
-        assert_eq!(restored["focused"], true);
-        assert_eq!(restored["preedit"], "");
-        host.cli(&["send-ui-ime", "commit", "Q"]);
-        assert_eq!(
-            host_editor_state(&host, "browser_address_editor")["text"],
-            "aQz",
-            "after dismissal the next edit must replace the original selected UTF-8 range"
+            restored[key], original[key],
+            "proxy menu lost the previous field {key}"
         );
     }
+    assert_eq!(restored["focused"], true);
+    assert_eq!(restored["preedit"], "");
+    host.cli(&["send-ui-ime", "commit", "Q"]);
+    assert_eq!(
+        host_editor_state(&host, "browser_address_editor")["text"],
+        "aQz",
+        "after dismissal the next edit must replace the original selected UTF-8 range"
+    );
     host.close_and_wait();
 }
 

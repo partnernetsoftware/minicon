@@ -437,6 +437,17 @@ The repaired script passed one complete local Windows WebView2 replay against
 under ignored `target/debug/`. This is a development replay; the corrected
 driver still needs an exact-source hosted run and final release artifact court.
 
+The follow-up exact-source Windows x64 run
+[40469284083](https://github.com/partnernetsoftware/minicon/actions/runs/40469284083)
+passed the full standard gate, native browser smoke and isolated authorization
+context court. Its later selected-suite batch remained FAIL: one public menu
+test still clicked New Terminal while asserting proxy-menu dismissal, and one
+unit expected the retired 12-pixel terminal scrollbar track. The test owners
+now exercise proxy-menu dismissal only and assert the accepted 18-pixel track.
+Each original failing subject passed locally after the correction. The selected
+batch and final exact-source gate need a new hosted run; previous success in
+independent steps does not change the failed run's result.
+
 ### Windows SDK fixture build prerequisite
 
 The Windows main-unit suite includes the existing synchronized native SDK

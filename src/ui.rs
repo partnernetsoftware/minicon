@@ -3965,7 +3965,7 @@ mod tests {
         );
         assert_eq!(
             (g.track.left, g.track.right, g.track.bottom),
-            (1188, 1200, 704)
+            (1182, 1200, 704)
         );
     }
 
