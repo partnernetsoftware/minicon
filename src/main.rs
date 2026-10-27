@@ -1001,6 +1001,7 @@ struct ConApp {
     /// feedback. `None` when the pointer is elsewhere.
     hovered_header: Option<HeaderIcon>,
     settings_open: bool,
+    home_active: bool,
     settings_section: ui::SettingsSection,
     harness_settings: Option<harness_settings_ui::HarnessSettings>,
     harness_workspace: harness_workspace_ui::HarnessWorkspace,
@@ -1507,6 +1508,7 @@ impl ConApp {
             tree_drag: None,
             hovered_header: None,
             settings_open: false,
+            home_active: false,
             settings_section: ui::SettingsSection::default(),
             harness_settings: None,
             harness_workspace: harness_workspace_ui::HarnessWorkspace::default(),
@@ -1717,12 +1719,13 @@ impl ConApp {
     /// the windowed caller from cancelling pointer gestures the user is still
     /// performing.
     fn select_tab(&mut self, id: workspace::TabId) -> bool {
-        if self.workspace.active() == Some(id) {
+        if self.workspace.active() == Some(id) && !self.home_active {
             return false;
         }
         if !self.workspace.set_active(id) {
             return false;
         }
+        self.home_active = false;
         self.blur_browser_composition();
         self.browser_address_focused = false;
         self.browser_proxy_focused = false;
@@ -1734,12 +1737,30 @@ impl ConApp {
     }
 
     fn activate_session(&mut self, window: &PixelWindow, id: workspace::TabId) {
-        if self.workspace.active() == Some(id) {
+        if self.workspace.active() == Some(id) && !self.home_active {
             return;
         }
         self.cancel_pointer_gestures_for_activation(window);
         self.select_tab(id);
         self.sync_embedded_page(window);
+    }
+
+    fn show_home(&mut self, window: &PixelWindow) {
+        if self.browser_auth.is_some() || self.home_active {
+            return;
+        }
+        self.cancel_pointer_gestures_for_activation(window);
+        self.close_browser_menu(window, false, false);
+        self.blur_browser_composition();
+        self.composer.focused = false;
+        self.notes_focused = false;
+        self.browser_address_focused = false;
+        self.browser_proxy_focused = false;
+        self.settings_open = false;
+        self.home_active = true;
+        self.sync_embedded_page(window);
+        let _ = self.refresh_title(window);
+        self.mark_host_ui_full_and_repaint(window);
     }
 
     /// The page host is a child of this window. Show it only while the
@@ -1774,6 +1795,7 @@ impl ConApp {
 
     fn browser_page_visible(&self) -> bool {
         self.active_is_browser()
+            && !self.home_active
             && !self.harness_workspace.active()
             && !self.settings_open
             && !self.browser_proxy_menu_open
@@ -1884,6 +1906,13 @@ impl ConApp {
     }
 
     fn refresh_title(&mut self, window: &PixelWindow) -> Result<(), PixelWindowError> {
+        if self.home_active {
+            let title = "MiniCon — Home".to_owned();
+            window.set_title(&title);
+            self.current_window_title = title;
+            self.mark_a11y_dirty();
+            return Ok(());
+        }
         if self.active_is_browser() {
             let page_title = self
                 .workspace
@@ -2402,6 +2431,7 @@ impl ConApp {
             ));
         }
         self.session_seed = seed;
+        self.home_active = false;
         self.mark_host_ui_full();
         self.reveal_active_tree_row(window)?;
         self.refresh_title(window)
@@ -2411,6 +2441,7 @@ impl ConApp {
     /// single page host and leave the new tab's page unmapped.
     fn open_browser_tab(&mut self, window: &PixelWindow) -> Result<(), PixelWindowError> {
         self.cancel_pointer_gestures_for_activation(window);
+        self.home_active = false;
         if let Some(id) = self.workspace.browser_tab() {
             if self.workspace.active() != Some(id) {
                 self.select_tab(id);
@@ -4437,7 +4468,10 @@ impl PixelWindowApplication for ConApp {
                     ui::SettingsHit::Outside => {
                         // A header click still works (toggle settings, new tab);
                         // anything else outside the panel closes it.
-                        if layout.new_root.contains(x, y) || layout.settings.contains(x, y) {
+                        if layout.new_root.contains(x, y)
+                            || layout.new_web.contains(x, y)
+                            || layout.settings.contains(x, y)
+                        {
                             let _ = self.handle_tree_pointer(window, position)?;
                         } else {
                             self.settings_open = false;
@@ -4448,6 +4482,9 @@ impl PixelWindowApplication for ConApp {
                 return Ok(PixelWindowDirective::Continue);
             }
             if self.handle_tree_pointer(window, position)? {
+                return Ok(PixelWindowDirective::Continue);
+            }
+            if self.home_active {
                 return Ok(PixelWindowDirective::Continue);
             }
             if self.active_is_browser() {
@@ -4669,6 +4706,7 @@ impl PixelWindowApplication for ConApp {
         self.poll_harness_settings(window);
         let paint_harness =
             self.harness_workspace.active() && !self.pending_control.has_pending_pane_screenshot();
+        let paint_home = self.home_active && !self.pending_control.has_pending_pane_screenshot();
         if let Some(target) = self
             .pending_control
             .prepare_screenshot(self.workspace.active())
@@ -4688,11 +4726,17 @@ impl PixelWindowApplication for ConApp {
             frame_info.retention,
             PixelBackingRetention::RetainedAcrossFrames
         );
-        if paint_harness || self.workspace.active().is_none() || self.active_is_browser() {
+        if paint_harness
+            || paint_home
+            || self.workspace.active().is_none()
+            || self.active_is_browser()
+        {
             let scale = window.metrics()?.scale_factor.max(1.0);
             self.note_frame_dimensions(width, height, scale);
             if paint_harness {
                 self.paint_harness_workspace(frame.pixels_mut(), width, height, scale);
+            } else if paint_home {
+                self.paint_home_workspace(frame.pixels_mut(), width, height, scale);
             } else if self.active_is_browser() {
                 self.paint_browser_shell(frame.pixels_mut(), width, height, scale);
             } else {
@@ -4934,7 +4978,7 @@ impl PixelWindowApplication for ConApp {
             .into_iter()
             .chain(self.harness_auth_release_deadline())
             .min();
-        if self.workspace.active().is_none() || self.active_is_browser() {
+        if self.home_active || self.workspace.active().is_none() || self.active_is_browser() {
             return Ok(control_deadline
                 .map_or(PixelWindowDirective::Wait, PixelWindowDirective::WaitUntil));
         }

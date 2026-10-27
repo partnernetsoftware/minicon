@@ -60,6 +60,16 @@ Outcome: make the first local Harness connection legible from setup to observed 
 │   evidence: Web-to-auth-to-Web native journey, narrow layout and selected TT/CB/IME regressions
 │   safe failure: canceled/expired authorization leaves the previous tab and account usable
 │   dependency: PRD 25/25.02/25.03 and auth view lifetime; non-goal: redesigning terminal input or tab topology
+├── [-] H0 — add the fixed @0 home shell
+│   invariant: @0 is a separate window destination; real tab IDs and Harness/Settings authority stay intact
+│   evidence: public @0/open/return/real-tab journey, native page parking and localized narrow captures
+│   safe failure: empty or unavailable services leave a useful static Home, never fictional agents
+│   dependency: PRD 39 and shared host navigation; non-goal: animated agents before typed task events
+├── [-] C2 — replace the New dropdown with direct creation buttons
+│   invariant: New Terminal, New Web and the robot Harness entry are distinct one-click actions
+│   evidence: public pointer/keyboard journeys in expanded, compact and collapsed headers
+│   safe failure: narrow layout keeps full hit targets and never fires both creation actions
+│   dependency: PRD 25.02 header geometry and existing creation paths; non-goal: a Harness tab
 └── [_] Q — qualify one exact source and decide publication
     invariant: only matching source, native artifacts and actual observations support a claim
     evidence: targeted smoke, fmt/clippy, build.sh test, six-cell or hosted equivalent, selected native courts and release receipts
@@ -85,6 +95,8 @@ flowchart LR
     R --> H[Robot workspace: status, freshness, exact Settings link]
     S[Settings: sole configuration owner] --> U
     H --> S
+    ZERO[Fixed @0 Home / PRD 39] -->|explicit route| S & H
+    ZERO -. future observed task events .-> OFFICE[Agent office when H2 exists]
     C[Console/Web drafts and live page] --> PARK[Park during auth; restore on exit]
     A --> PARK
     D[Shared design/state review] --> N & H
@@ -127,11 +139,18 @@ flowchart LR
    exclusive edit ownership before independent work; integrate shared files
    and run final gates serially. Use focused red/green behavior tests, then the
    documented smoke and exact-source delivery courts.
+7. **Fixed Home (H0) and direct creation (C2).** Reserve @0 outside the real tab model, show a localized
+   provisional brand line and direct navigation. Keep an honest idle office
+   canvas until the separate H2 event source exists. Qualify navigation,
+   pointer/focus, narrow layout and browser-page parking before release. Replace
+   the visible New dropdown with separate Terminal/Web actions, retaining the
+   robot as the Harness action. Requalify header focus and hit targets.
 
 ## Release cut and explicit deferrals
 
 P0 for a 0.2.25 Candidate: N1 route clarity and no-fallback behavior, C1's
-first-use states, and F1's auth/Web restoration. O1 may ship as a truthful
+first-use states, F1's auth/Web restoration, H0's usable @0 shell and C2's direct
+creation actions. O1 may ship as a truthful
 read-only workspace with exact links; its unimplemented observations must say
 unknown/unavailable. A real Google/OpenCode grant through the selected login
 proxy is required before claiming that user journey works. If access or a

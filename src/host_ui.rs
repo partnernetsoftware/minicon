@@ -51,12 +51,12 @@ pub(crate) fn paint_button_label(
     paint_host_ui_text(surface, x, y, label, color, font_size_px, button.width);
 }
 
-/// A compact, labelled creation entry; the rail keeps the geometric plus.
+/// A compact direct creation action. The short label stays distinct on a rail.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn paint_new_tab_button(
     surface: &mut Surface<'_>,
     button: ui::Rect,
-    language: ui::UiLanguage,
+    web: bool,
     selected: bool,
     theme: theme::Theme,
     font_size: u16,
@@ -65,9 +65,7 @@ pub(crate) fn paint_new_tab_button(
     if button.width == 0 || button.height == 0 {
         return;
     }
-    let scale = scale.max(1.0);
-    let unit = scale.round().max(1.0) as u32;
-    let pad = (6.0 * scale) as u32;
+    let unit = scale.max(1.0).round() as u32;
     surface.fill_rect(
         button.x,
         button.y,
@@ -80,60 +78,13 @@ pub(crate) fn paint_new_tab_button(
         }
         .to_xrgb(),
     );
-    let label = match language {
-        ui::UiLanguage::English => "New",
-        ui::UiLanguage::ChineseSimplified => "新建",
-        ui::UiLanguage::ChineseTraditional => "新增",
-    };
-    let label_width = host_ui_text_width(label, font_size);
-    let has_label = button.width >= label_width.saturating_add((34.0 * scale) as u32);
-    let plus_x = if has_label {
-        button
-            .x
-            .saturating_add(pad)
-            .saturating_add((6.0 * scale) as u32)
-    } else {
-        button.x.saturating_add(button.width / 2)
-    };
-    let plus_y = button.y.saturating_add(button.height / 2);
-    let radius = ((5.0 * scale) as u32)
-        .min(button.width.saturating_sub(unit) / 2)
-        .min(button.height.saturating_sub(unit) / 2);
-    surface.fill_rect(
-        plus_x.saturating_sub(radius),
-        plus_y,
-        radius.saturating_mul(2).saturating_add(unit),
-        unit,
-        theme.accent.to_xrgb(),
+    paint_button_label(
+        surface,
+        button,
+        if web { "+W" } else { "+T" },
+        theme.text,
+        font_size,
     );
-    surface.fill_rect(
-        plus_x,
-        plus_y.saturating_sub(radius),
-        unit,
-        radius.saturating_mul(2).saturating_add(unit),
-        theme.accent.to_xrgb(),
-    );
-    if has_label {
-        let x = button.x.saturating_add((28.0 * scale) as u32);
-        let y = button.y.saturating_add(
-            button
-                .height
-                .saturating_sub(font::cell_metrics(font_size).height)
-                / 2,
-        );
-        paint_host_ui_text(
-            surface,
-            x,
-            y,
-            label,
-            theme.text,
-            font_size,
-            button
-                .width
-                .saturating_sub(x.saturating_sub(button.x))
-                .saturating_sub(pad),
-        );
-    }
     if selected {
         surface.fill_rect(
             button.x,
@@ -781,6 +732,7 @@ pub(crate) fn paint_settings_panel(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum HeaderIcon {
     NewRoot,
+    NewWeb,
     Harness,
     Settings,
     /// Collapses the sidebar to a rail, or expands it again. Drawn as a panel
@@ -919,7 +871,7 @@ pub(crate) fn paint_header_icon_button(
     }
 
     match icon {
-        HeaderIcon::NewRoot => {
+        HeaderIcon::NewRoot | HeaderIcon::NewWeb => {
             let window = ui::Rect {
                 x: button.x.saturating_add(inset),
                 y: button.y.saturating_add(inset),

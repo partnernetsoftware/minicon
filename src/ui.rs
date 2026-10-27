@@ -138,6 +138,8 @@ impl MenuLayout {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Layout {
     pub sidebar: Rect,
+    /// Fixed @0 home destination; real tab rows start below it.
+    pub home: Rect,
     pub tree_header_height: u32,
     pub tree_row_height: u32,
     pub composer: Rect,
@@ -159,8 +161,10 @@ pub struct Layout {
     /// Informational bar along the bottom of the terminal side. Carved from
     /// the terminal height, it never overlaps the sidebar or composer.
     pub status: Rect,
-    /// Opens the Terminal / Browser creation menu; primary header action.
+    /// Directly opens a new Terminal tab.
     pub new_root: Rect,
+    /// Directly opens a new Browser tab.
+    pub new_web: Rect,
     /// Opens the settings panel. Help, language, font size and theme all live
     /// inside that panel.
     pub settings: Rect,
@@ -601,9 +605,9 @@ impl Layout {
                 }
             }
         };
-        let (new_root, harness, settings, sidebar_toggle, panel_toggle) = if wrapped_tools {
+        let (new_area, mut harness, mut settings, sidebar_toggle, panel_toggle) = if wrapped_tools {
             let new_width = if collapsed {
-                secondary_size
+                dip(32.0, scale)
             } else {
                 label_width
             };
@@ -688,11 +692,59 @@ impl Layout {
                 button(panel_x, tool_y, secondary_size, secondary_size),
             )
         };
-        let header_bottom = [new_root, harness, settings, sidebar_toggle, panel_toggle]
-            .into_iter()
-            .map(|rect| rect.y.saturating_add(rect.height))
-            .max()
-            .unwrap_or(0);
+        let (new_root, new_web) = if collapsed {
+            let gap = dip(2.0, scale);
+            let web = button(
+                new_area.x,
+                new_area
+                    .y
+                    .saturating_add(new_area.height)
+                    .saturating_add(gap),
+                new_area.width,
+                new_area.height,
+            );
+            let shift = new_area.height.saturating_add(gap);
+            harness.y = harness.y.saturating_add(shift);
+            settings.y = settings.y.saturating_add(shift);
+            (new_area, web)
+        } else {
+            let gap = dip(4.0, scale);
+            let first = new_area.width.saturating_sub(gap) / 2;
+            (
+                Rect {
+                    width: first,
+                    ..new_area
+                },
+                Rect {
+                    x: new_area.x.saturating_add(first).saturating_add(gap),
+                    width: new_area.width.saturating_sub(first.saturating_add(gap)),
+                    ..new_area
+                },
+            )
+        };
+        let header_bottom = [
+            new_root,
+            new_web,
+            harness,
+            settings,
+            sidebar_toggle,
+            panel_toggle,
+        ]
+        .into_iter()
+        .map(|rect| rect.y.saturating_add(rect.height))
+        .max()
+        .unwrap_or(0);
+        let home_top = if wrapped_tools {
+            header_bottom.saturating_add(pad).min(height)
+        } else {
+            dip(TREE_HEADER_HEIGHT_DIP, scale).min(height)
+        };
+        let home = Rect {
+            x: 0,
+            y: home_top,
+            width: sidebar_width,
+            height: dip(TREE_ROW_HEIGHT_DIP, scale).min(height.saturating_sub(home_top)),
+        };
         Self {
             sidebar: Rect {
                 x: 0,
@@ -702,11 +754,8 @@ impl Layout {
             },
             // Compact controls occupy two full rows, leaving short Settings
             // pages room for complete proxy options and their pagination.
-            tree_header_height: if wrapped_tools {
-                header_bottom.saturating_add(pad).min(height)
-            } else {
-                dip(TREE_HEADER_HEIGHT_DIP, scale).min(height)
-            },
+            home,
+            tree_header_height: home.y.saturating_add(home.height),
             tree_row_height: dip(TREE_ROW_HEIGHT_DIP, scale).max(1),
             composer,
             status,
@@ -717,6 +766,7 @@ impl Layout {
             composer_paste: paste,
             composer_cut: cut,
             new_root,
+            new_web,
             settings,
             harness,
             sidebar_toggle,
@@ -881,7 +931,9 @@ pub struct TreeRenameGeometry {
 pub enum TreeHit {
     Outside,
     Background,
+    Home,
     NewRoot,
+    NewWeb,
     Harness,
     Settings,
     SidebarToggle,
@@ -1380,6 +1432,9 @@ pub fn tree_hit(
     if layout.new_root.contains(x, y) {
         return TreeHit::NewRoot;
     }
+    if layout.new_web.contains(x, y) {
+        return TreeHit::NewWeb;
+    }
     if layout.harness.contains(x, y) {
         return TreeHit::Harness;
     }
@@ -1391,6 +1446,9 @@ pub fn tree_hit(
     }
     if layout.panel_toggle.contains(x, y) {
         return TreeHit::PanelToggle;
+    }
+    if layout.home.contains(x, y) {
+        return TreeHit::Home;
     }
     if y < layout.tree_header_height {
         return TreeHit::Background;
@@ -1754,9 +1812,9 @@ impl Layout {
         let bottom = self.status.y;
         let panel = Rect {
             x: 0,
-            y: self.tree_header_height,
+            y: self.home.y,
             width: dip(480.0, scale).min(total_width),
-            height: bottom.saturating_sub(self.tree_header_height),
+            height: bottom.saturating_sub(self.home.y),
         };
         let pad = dip(12.0, scale).min(panel.width / 4);
         let inner = panel.width.saturating_sub(pad * 2);
@@ -1887,7 +1945,8 @@ impl Layout {
         let inner_x = self.sidebar.x.saturating_add(pad);
         let inner_w = panel_width.saturating_sub(pad.saturating_mul(2));
         let top = self
-            .tree_header_height
+            .home
+            .y
             .saturating_add(pad)
             .saturating_add(dip(40.0, scale));
 
@@ -1964,9 +2023,9 @@ impl Layout {
             .min(self.composer.y);
         let panel = Rect {
             x: self.sidebar.x,
-            y: self.tree_header_height,
+            y: self.home.y,
             width: panel_width,
-            height: panel_bottom.saturating_sub(self.tree_header_height),
+            height: panel_bottom.saturating_sub(self.home.y),
         };
         SettingsLayout {
             panel,
@@ -2517,11 +2576,13 @@ mod tests {
     }
 
     #[test]
-    fn expanded_creation_entry_reserves_space_for_its_visible_label() {
+    fn expanded_creation_entries_keep_distinct_hit_targets() {
         for &(width, height, scale) in LAYOUT_SWEEP {
             let layout = Layout::new(width, height, scale);
-            assert!(layout.new_root.width >= dip(80.0, scale));
-            assert!(layout.new_root.x + layout.new_root.width <= layout.settings.x);
+            assert!(layout.new_root.width >= dip(32.0, scale));
+            assert!(layout.new_web.width >= dip(32.0, scale));
+            assert!(layout.new_root.x + layout.new_root.width <= layout.new_web.x);
+            assert!(layout.new_web.x + layout.new_web.width <= layout.settings.x);
         }
     }
 
@@ -3382,7 +3443,14 @@ mod tests {
             ),
             TreeHit::Settings
         );
-        assert_eq!(tree_hit(layout, 20, 40, 1, 4, 1.0), TreeHit::Select(1));
+        assert_eq!(
+            tree_hit(layout, 20, layout.home.y, 1, 4, 1.0),
+            TreeHit::Home
+        );
+        assert_eq!(
+            tree_hit(layout, 20, layout.tree_header_height, 1, 4, 1.0),
+            TreeHit::Select(1)
+        );
         let close = layout.tree_close_rect(0, 1.0);
         assert_eq!(
             tree_hit(layout, close.x + 1, close.y + 1, 1, 4, 1.0),
@@ -3468,11 +3536,8 @@ mod tests {
         let layout = Layout::new(1000, 500, 1.0);
         let header = layout.tree_header_height;
         let row_h = layout.tree_row_height;
-        // One pixel above the first row is still background.
-        assert_eq!(
-            tree_hit(layout, 20, header - 1, 0, 8, 1.0),
-            TreeHit::Background
-        );
+        // The fixed Home row occupies the space immediately above real tabs.
+        assert_eq!(tree_hit(layout, 20, header - 1, 0, 8, 1.0), TreeHit::Home);
         // The boundary pixel is the first row.
         assert_eq!(tree_hit(layout, 20, header, 0, 8, 1.0), TreeHit::Select(0));
         // The last pixel of row 0 is still row 0; the next pixel is row 1.

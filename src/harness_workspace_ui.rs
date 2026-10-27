@@ -434,6 +434,7 @@ fn cards(view: Option<&View>, section: Section, language: ui::UiLanguage) -> Vec
 
 struct ReturnContext {
     tab: Option<workspace::TabId>,
+    home: bool,
     focus: browser_menu::MenuFocus,
     surface: InputSurface,
     tree_scroll: usize,
@@ -613,6 +614,7 @@ impl ConApp {
             self.notes_scroll = saved.notes_scroll;
             self.history_panel_scroll = saved.history_scroll;
             self.input_surface = saved.surface;
+            self.home_active = saved.home;
             self.composer.focused = same && saved.focus == browser_menu::MenuFocus::Composer;
             self.notes_focused = same && saved.focus == browser_menu::MenuFocus::Notes;
             self.browser_address_focused =
@@ -667,6 +669,7 @@ impl ConApp {
             };
             self.harness_workspace.previous = Some(ReturnContext {
                 tab: self.workspace.active(),
+                home: self.home_active,
                 focus,
                 surface: self.input_surface,
                 tree_scroll: self.tree_scroll_offset,
@@ -681,6 +684,7 @@ impl ConApp {
             self.browser_proxy_focused = false;
             self.settings_proxy_focused = false;
             self.settings_open = false;
+            self.home_active = false;
             self.harness_workspace.entry_error = false;
             self.harness_workspace.focus = 0;
             self.cancel_pointer_gestures_for_activation(window);
@@ -1767,6 +1771,7 @@ mod tests {
         let mut state = HarnessWorkspace {
             previous: Some(ReturnContext {
                 tab: None,
+                home: false,
                 focus: browser_menu::MenuFocus::Terminal,
                 surface: InputSurface::Terminal,
                 tree_scroll: 7,

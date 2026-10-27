@@ -879,10 +879,17 @@ impl ConApp {
         host_ui::paint_new_tab_button(
             surface,
             layout.new_root,
-            self.ui_language,
-            self.new_tab_menu_open
-                || self.browser_chrome_trigger == Some(super::browser_menu::ChromeTrigger::New)
-                || self.hovered_header == Some(HeaderIcon::NewRoot),
+            false,
+            self.hovered_header == Some(HeaderIcon::NewRoot),
+            t,
+            header_icon_size,
+            scale,
+        );
+        host_ui::paint_new_tab_button(
+            surface,
+            layout.new_web,
+            true,
+            self.hovered_header == Some(HeaderIcon::NewWeb),
             t,
             header_icon_size,
             scale,
@@ -923,6 +930,45 @@ impl ConApp {
             header_icon_size,
             scale,
         );
+        let home = layout.home;
+        if home.height > 0 {
+            surface.fill_rect(
+                home.x,
+                home.y,
+                home.width,
+                home.height,
+                if self.home_active {
+                    t.surface
+                } else {
+                    t.sidebar_bg
+                }
+                .to_xrgb(),
+            );
+            if self.home_active {
+                surface.fill_rect(home.x, home.y, 3, home.height, t.accent.to_xrgb());
+            }
+            let label = if layout.sidebar_collapsed {
+                "@0"
+            } else {
+                match self.ui_language {
+                    ui::UiLanguage::English => "@0  Home",
+                    ui::UiLanguage::ChineseSimplified => "@0  首页",
+                    ui::UiLanguage::ChineseTraditional => "@0  首頁",
+                }
+            };
+            paint_host_ui_text(
+                surface,
+                home.x + (12.0 * scale) as u32,
+                home.y
+                    + (home.height.saturating_sub(
+                        font::cell_metrics(host_ui_size(HOST_UI_TAB_SIZE_PX)).height,
+                    )) / 2,
+                label,
+                t.text,
+                host_ui_size(HOST_UI_TAB_SIZE_PX),
+                home.width.saturating_sub((18.0 * scale) as u32),
+            );
+        }
         if layout.panel_open {
             self.paint_history_panel(
                 surface,
@@ -1716,6 +1762,121 @@ impl ConApp {
         );
     }
 
+    pub(crate) fn paint_home_workspace(
+        &self,
+        pixels: &mut [u32],
+        width: u32,
+        height: u32,
+        scale: f64,
+    ) {
+        let mut surface = Surface::with_clip(
+            pixels,
+            width,
+            height,
+            PixelRect::from_xywh(0, 0, width, height),
+        );
+        let layout = self.layout(width, height, scale);
+        let t = theme::Theme::for_choice(self.ui_theme);
+        surface.fill_rect(0, 0, width, height, t.canvas_bg.to_xrgb());
+        surface.fill_rect(0, 0, layout.sidebar.width, height, t.sidebar_bg.to_xrgb());
+        self.paint_workspace_chrome(
+            &mut surface,
+            layout,
+            width,
+            height,
+            scale,
+            self.session_seed.font_size_logical(),
+        );
+        let left = layout.sidebar.width;
+        let content_width = width.saturating_sub(left);
+        surface.fill_rect(left, 0, content_width, height, t.canvas_bg.to_xrgb());
+        let pad = (28.0 * scale).max(12.0) as u32;
+        let text_x = left.saturating_add(pad);
+        let text_width = content_width.saturating_sub(pad.saturating_mul(2));
+        let title_size = scaled_host_ui_font(28, self.session_seed.font_size_logical(), scale);
+        let body_size = scaled_host_ui_font(15, self.session_seed.font_size_logical(), scale);
+        let top = (height / 7).max((24.0 * scale) as u32);
+        paint_host_ui_text(
+            &mut surface,
+            text_x,
+            top,
+            "MiniCon",
+            t.accent,
+            title_size,
+            text_width,
+        );
+        let (slogan, intro, office, routes) = match self.ui_language {
+            ui::UiLanguage::English => (
+                "Stable. Fast. Local.",
+                "A calm place for your terminals and agents.",
+                "Agent office — awaiting real task activity",
+                "Choose a tab, use +T or +W, or open Harness with the robot button.",
+            ),
+            ui::UiLanguage::ChineseSimplified => (
+                "稳定 · 高速 · 本地",
+                "让终端与智能体在同一个可靠空间工作。",
+                "Agent 办公室 · 等待真实任务",
+                "选择标签页、点击 +T／+W，或用机器人按钮进入 Harness。",
+            ),
+            ui::UiLanguage::ChineseTraditional => (
+                "穩定 · 高速 · 本地",
+                "讓終端與智能體在同一個可靠空間工作。",
+                "Agent 辦公室 · 等待真實任務",
+                "選擇分頁、點擊 +T／+W，或用機器人按鈕進入 Harness。",
+            ),
+        };
+        let line = font::cell_metrics(body_size)
+            .height
+            .saturating_add((10.0 * scale) as u32);
+        paint_host_ui_text(
+            &mut surface,
+            text_x,
+            top.saturating_add(line.saturating_mul(2)),
+            slogan,
+            t.text,
+            body_size,
+            text_width,
+        );
+        paint_host_ui_text(
+            &mut surface,
+            text_x,
+            top.saturating_add(line.saturating_mul(3)),
+            intro,
+            t.muted,
+            body_size,
+            text_width,
+        );
+        let card_y = top.saturating_add(line.saturating_mul(5));
+        let card = ui::Rect {
+            x: text_x,
+            y: card_y,
+            width: text_width,
+            height: height.saturating_sub(card_y.saturating_add(pad.saturating_mul(3))),
+        };
+        if card.width > 0 && card.height > 0 {
+            surface.fill_rect(card.x, card.y, card.width, card.height, t.surface.to_xrgb());
+            stroke_rect(&mut surface, card, scale.max(1.0) as u32, t.border);
+            paint_host_ui_text(
+                &mut surface,
+                card.x.saturating_add(pad),
+                card.y.saturating_add(pad),
+                office,
+                t.text,
+                body_size,
+                card.width.saturating_sub(pad.saturating_mul(2)),
+            );
+        }
+        paint_host_ui_text(
+            &mut surface,
+            text_x,
+            height.saturating_sub(line.saturating_mul(2)),
+            routes,
+            t.muted,
+            body_size,
+            text_width,
+        );
+    }
+
     pub(crate) fn paint_empty_workspace(
         &self,
         pixels: &mut [u32],
@@ -1755,41 +1916,56 @@ impl ConApp {
         };
         let icon_size = host_ui_size(HOST_UI_HEADER_SIZE_PX);
         self.paint_harness_entry(&mut surface, layout, scale, icon_size);
-        for (button, icon, selected) in [
+        for (button, web, selected) in [
             (
                 layout.new_root,
-                HeaderIcon::NewRoot,
+                false,
                 self.hovered_header == Some(HeaderIcon::NewRoot),
             ),
             (
-                layout.settings,
-                HeaderIcon::Settings,
-                self.settings_open || self.hovered_header == Some(HeaderIcon::Settings),
+                layout.new_web,
+                true,
+                self.hovered_header == Some(HeaderIcon::NewWeb),
             ),
         ] {
-            if icon == HeaderIcon::NewRoot {
-                host_ui::paint_new_tab_button(
-                    &mut surface,
-                    button,
-                    self.ui_language,
-                    self.new_tab_menu_open || selected,
-                    t,
-                    icon_size,
-                    scale,
-                );
-                continue;
-            }
-            paint_header_icon_button(
-                &mut surface,
-                button,
-                icon,
-                text,
-                selected,
-                t.surface,
-                icon_size,
-                scale,
-            );
+            host_ui::paint_new_tab_button(&mut surface, button, web, selected, t, icon_size, scale);
         }
+        paint_header_icon_button(
+            &mut surface,
+            layout.settings,
+            HeaderIcon::Settings,
+            text,
+            self.settings_open || self.hovered_header == Some(HeaderIcon::Settings),
+            t.surface,
+            icon_size,
+            scale,
+        );
+
+        let home = layout.home;
+        surface.fill_rect(
+            home.x,
+            home.y,
+            home.width,
+            home.height,
+            t.sidebar_bg.to_xrgb(),
+        );
+        paint_host_ui_text(
+            &mut surface,
+            home.x.saturating_add((12.0 * scale) as u32),
+            home.y.saturating_add((8.0 * scale) as u32),
+            if layout.sidebar_collapsed {
+                "@0"
+            } else {
+                match self.ui_language {
+                    ui::UiLanguage::English => "@0  Home",
+                    ui::UiLanguage::ChineseSimplified => "@0  首页",
+                    ui::UiLanguage::ChineseTraditional => "@0  首頁",
+                }
+            },
+            t.text,
+            host_ui_size(HOST_UI_TAB_SIZE_PX),
+            home.width.saturating_sub((18.0 * scale) as u32),
+        );
 
         let strings = self.ui_language.strings();
         let button = layout.empty_new_terminal(width, height, scale);

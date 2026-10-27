@@ -198,6 +198,11 @@ impl ConApp {
                             let new_choices =
                                 layout.new_tab_choices(metrics.scale_factor, self.new_menu_scroll);
                             fields.extend([
+                                ("home", rect_obj(layout.home)),
+                                ("home_active", self.home_active.into()),
+                                ("new_root", rect_obj(layout.new_root)),
+                                ("new_web", rect_obj(layout.new_web)),
+                                ("sidebar_toggle", rect_obj(layout.sidebar_toggle)),
                                 ("harness_entry", rect_obj(layout.harness)),
                                 (
                                     "host_scale_permille",
@@ -309,7 +314,6 @@ impl ConApp {
                                     }
                                     .into(),
                                 ),
-                                ("new_root", rect_obj(layout.new_root)),
                                 ("new_tab_menu_open", self.new_tab_menu_open.into()),
                                 ("new_tab_menu", rect_obj(new_choices.rect)),
                                 ("new_terminal_action", rect_obj(new_choices.row(0))),

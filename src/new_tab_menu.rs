@@ -2,33 +2,6 @@
 use super::*;
 
 impl ConApp {
-    pub(super) fn toggle_new_tab_menu(&mut self, window: &PixelWindow) {
-        if self.new_tab_menu_open {
-            self.close_browser_menu(window, true, true);
-            return;
-        }
-        let Ok(metrics) = window.metrics() else {
-            return;
-        };
-        let scale = metrics.scale_factor.max(1.0);
-        let choices = self
-            .layout(metrics.physical_width, metrics.physical_height, scale)
-            .new_tab_choices(scale, 0);
-        if choices.visible_rows == 0 || choices.rect.width < (96.0 * scale) as u32 {
-            self.menu_resize_notice(window);
-            return;
-        }
-        self.begin_browser_menu(window, super::browser_menu::ChromeTrigger::New);
-        self.new_tab_menu_open = true;
-        self.browser_proxy_menu_open = false;
-        self.new_menu_highlight = 0;
-        self.new_menu_scroll = 0;
-        self.settings_open = false;
-        self.commit_rename(window);
-        self.sync_embedded_page(window);
-        self.mark_host_ui_full_and_repaint(window);
-    }
-
     pub(super) fn handle_new_tab_menu(
         &mut self,
         window: &PixelWindow,
@@ -40,25 +13,6 @@ impl ConApp {
                 event,
                 super::browser_menu::ChromeTrigger::New,
             );
-        }
-        if let PixelWindowEvent::PointerButton {
-            button: PointerButton::Left,
-            state: PointerButtonState::Pressed,
-            position: Some(position),
-            ..
-        } = event
-        {
-            let metrics = window.metrics()?;
-            let scale = metrics.scale_factor.max(1.0);
-            let layout = self.layout(metrics.physical_width, metrics.physical_height, scale);
-            if layout.new_root.contains(
-                (position.x * scale).max(0.0) as u32,
-                (position.y * scale).max(0.0) as u32,
-            ) {
-                self.menu_pointer_latch = Some(PointerButton::Left);
-                self.toggle_new_tab_menu(window);
-                return Ok(true);
-            }
         }
         Ok(false)
     }

@@ -123,7 +123,9 @@ impl BrowserGui {
     }
 
     fn click_rect(&self, rect: &Value, name: &str, geometry: &Value) {
-        let width = rect["width"].as_u64().expect("published hit-target width");
+        let width = rect["width"]
+            .as_u64()
+            .unwrap_or_else(|| panic!("missing published hit-target width: {name}: {geometry}"));
         let height = rect["height"]
             .as_u64()
             .expect("published hit-target height");
@@ -151,14 +153,8 @@ impl BrowserGui {
         ]);
     }
 
-    fn open_browser_from_menu(&self) -> Value {
-        self.click_geometry("new_root");
-        assert_eq!(
-            self.cli(&["ui-snapshot"])["geometry"]["new_tab_menu_open"],
-            true,
-            "the visible New entry must open its menu"
-        );
-        self.click_geometry("new_browser_action");
+    fn open_browser_directly(&self) -> Value {
+        self.click_geometry("new_web");
         let browser = self.browser();
         assert_eq!(
             browser["active"], true,
@@ -172,7 +168,7 @@ impl BrowserGui {
                 .filter(|tab| tab["kind"] == "browser")
                 .count(),
             1,
-            "the visible action must reuse one Browser root"
+            "the visible Web action must reuse one Browser root"
         );
         assert_eq!(
             self.cli(&["ui-snapshot"])["geometry"]["new_tab_menu_open"],
@@ -361,8 +357,8 @@ fn native_browser_visible_entry_retry_and_terminal_draft() {
     host.cli(&["send-ui-keys", "Ctrl+Shift+I"]);
     host.cli(&["send-ui-ime", "commit", draft]);
     assert_eq!(host.cli(&["ui-snapshot"])["composer_text"], draft);
-    let browser_id = host.open_browser_from_menu()["id"].clone();
-    assert_eq!(host.open_browser_from_menu()["id"], browser_id);
+    let browser_id = host.open_browser_directly()["id"].clone();
+    assert_eq!(host.open_browser_directly()["id"], browser_id);
 
     let refused = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let address = refused.local_addr().unwrap();
@@ -414,7 +410,7 @@ fn native_browser_visible_entry_retry_and_terminal_draft() {
         terminal["composer_text"], draft,
         "preview and recovery must preserve the terminal draft"
     );
-    assert_eq!(host.open_browser_from_menu()["id"], browser_id);
+    assert_eq!(host.open_browser_directly()["id"], browser_id);
     assert_eq!(host.browser()["browser"]["url"], next_url);
 }
 
@@ -422,7 +418,7 @@ fn native_browser_visible_entry_retry_and_terminal_draft() {
 #[ignore = "requires a native desktop/WebView runtime; run the explicit visible proxy court"]
 fn native_browser_proxy_menu_outside_click_dismisses_without_navigation() {
     let mut host = BrowserGui::spawn(false, None, None);
-    host.open_browser_from_menu();
+    host.open_browser_directly();
     let origin = LocalPreviewServer::start("127.0.0.1:0".parse().unwrap());
     let first = format!("http://{}/first", origin.address);
     let second = format!("http://{}/second", origin.address);
@@ -462,7 +458,7 @@ fn native_browser_proxy_menu_outside_click_dismisses_without_navigation() {
 #[ignore = "requires a native desktop/WebView runtime; run the explicit visible proxy court"]
 fn native_browser_visible_proxy_apply_clear_and_invalid_block() {
     let host = BrowserGui::spawn(false, None, None);
-    let browser_id = host.open_browser_from_menu()["id"].clone();
+    let browser_id = host.open_browser_directly()["id"].clone();
     let origin = LocalPreviewServer::start("127.0.0.1:0".parse().unwrap());
     let direct_url = format!("http://{}/direct", origin.address);
     host.cli(&["send-ui-keys", "Ctrl+l"]);
@@ -527,6 +523,87 @@ fn native_browser_visible_proxy_apply_clear_and_invalid_block() {
 }
 
 #[test]
+#[ignore = "requires a native desktop; run the explicit @0 home court"]
+fn native_home_is_a_fixed_destination_and_restores_real_tabs() {
+    let mut host = BrowserGui::spawn(false, None, None);
+    let before = host.cli(&["list-tabs"]);
+    let terminal_id = before["tabs"][0]["id"].as_str().unwrap().to_owned();
+    host.click_geometry("home");
+    assert_eq!(host.cli(&["ui-snapshot"])["geometry"]["home_active"], true);
+    assert_eq!(
+        host.cli(&["list-tabs"])["tabs"].as_array().unwrap().len(),
+        1
+    );
+    assert_eq!(host.cli(&["list-tabs"])["tabs"][0]["id"], terminal_id);
+    host.cli(&["select-tab", "--target", &terminal_id]);
+    assert_eq!(host.cli(&["ui-snapshot"])["geometry"]["home_active"], false);
+
+    host.open_browser_directly();
+    let browser = host.browser();
+    let browser_id = browser["id"].as_str().unwrap().to_owned();
+    host.click_geometry("home");
+    assert_eq!(host.cli(&["ui-snapshot"])["geometry"]["home_active"], true);
+    assert_eq!(host.browser()["id"], browser_id);
+    host.cli(&["select-tab", "--target", &browser_id]);
+    assert_eq!(host.cli(&["ui-snapshot"])["geometry"]["home_active"], false);
+    assert_eq!(host.browser()["id"], browser_id);
+    host.close_and_wait();
+}
+
+#[test]
+#[ignore = "requires a native desktop; run the explicit direct creation court"]
+fn native_header_buttons_create_terminal_web_and_open_harness_directly() {
+    let mut host = BrowserGui::spawn(false, None, None);
+    let original = host.cli(&["list-tabs"])["tabs"].as_array().unwrap().len();
+    host.click_geometry("new_root");
+    let tabs = host.cli(&["list-tabs"]);
+    assert_eq!(tabs["tabs"].as_array().unwrap().len(), original + 1);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["new_tab_menu_open"],
+        false
+    );
+
+    host.click_geometry("new_web");
+    let tabs = host.cli(&["list-tabs"]);
+    assert_eq!(tabs["tabs"].as_array().unwrap().len(), original + 2);
+    assert_eq!(tabs["tabs"][original + 1]["kind"], "browser");
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["new_tab_menu_open"],
+        false
+    );
+
+    host.click_geometry("sidebar_toggle");
+    let collapsed = host.cli(&["ui-snapshot"]);
+    assert!(collapsed["geometry"]["new_root"]["width"].as_u64().unwrap() > 0);
+    assert!(collapsed["geometry"]["new_web"]["width"].as_u64().unwrap() > 0);
+    host.click_geometry("new_root");
+    assert_eq!(
+        host.cli(&["list-tabs"])["tabs"].as_array().unwrap().len(),
+        original + 3
+    );
+    host.click_geometry("new_web");
+    assert_eq!(
+        host.cli(&["list-tabs"])["tabs"].as_array().unwrap().len(),
+        original + 3
+    );
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["new_tab_menu_open"],
+        false
+    );
+
+    host.click_geometry("harness_entry");
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["harness_workspace"]["active"],
+        true
+    );
+    assert_eq!(
+        host.cli(&["list-tabs"])["tabs"].as_array().unwrap().len(),
+        original + 3
+    );
+    host.close_and_wait();
+}
+
+#[test]
 #[ignore = "requires a native desktop/WebView runtime; run the explicit settings proxy court"]
 fn native_browser_settings_proxy_candidates_persist_select_and_delete() {
     let proxy = LocalPreviewServer::start_proxy();
@@ -557,7 +634,7 @@ fn native_browser_settings_proxy_candidates_persist_select_and_delete() {
     );
     host.cli(&["send-ui-keys", "Escape"]);
     assert_eq!(host.cli(&["ui-snapshot"])["settings_open"], false);
-    host.open_browser_from_menu();
+    host.open_browser_directly();
     host.click_geometry("browser_proxy_dropdown");
     host.click_geometry_row("browser_proxy_option_rows", 1);
     let url = "http://preview.minicon.invalid/page";
@@ -581,7 +658,7 @@ fn native_browser_settings_proxy_candidates_persist_select_and_delete() {
         "saved candidates must survive a new process using the same config"
     );
     host.cli(&["send-ui-keys", "Escape"]);
-    host.open_browser_from_menu();
+    host.open_browser_directly();
     host.click_geometry("browser_proxy_dropdown");
     let geometry = host.cli(&["ui-snapshot"])["geometry"].clone();
     assert_eq!(geometry["browser_proxy_menu_open"], true);
@@ -621,7 +698,7 @@ fn native_browser_settings_proxy_candidates_persist_select_and_delete() {
         "deleting a candidate must persist across restart"
     );
     host.cli(&["send-ui-keys", "Escape"]);
-    host.open_browser_from_menu();
+    host.open_browser_directly();
     host.click_geometry("browser_proxy_dropdown");
     assert_eq!(
         host.cli(&["ui-snapshot"])["geometry"]["browser_proxy_option_rows"]
@@ -922,7 +999,7 @@ fn click_editor_end(host: &BrowserGui, target: &str) {
 fn host_browser_editors_replace_selected_text_with_bounded_atomic_edits() {
     // No network or usable browser engine is needed to exercise host editors.
     let mut host = BrowserGui::spawn(true, None, None);
-    host.open_browser_from_menu();
+    host.open_browser_directly();
     for (name, target, limit) in [
         ("browser_address_editor", "browser_address", 8192),
         ("browser_proxy_editor", "browser_proxy", 2048),
@@ -1054,7 +1131,7 @@ fn host_browser_editors_replace_selected_text_with_bounded_atomic_edits() {
 #[ignore = "requires a native desktop/WebView runtime; run the explicit editor composition court"]
 fn native_browser_editor_composition_requires_a_separate_submit() {
     let mut host = BrowserGui::spawn(false, None, None);
-    host.open_browser_from_menu();
+    host.open_browser_directly();
     let origin = LocalPreviewServer::start("127.0.0.1:0".parse().unwrap());
     let first = format!("http://{}/first", origin.address);
     let second = format!("http://{}/second", origin.address);
@@ -1125,35 +1202,29 @@ fn native_browser_editor_composition_requires_a_separate_submit() {
 #[test]
 fn host_browser_menus_keyboard_entry_traversal_and_single_activation() {
     let mut host = BrowserGui::spawn(true, None, None);
-    let browser_id = host.open_browser_from_menu()["id"].clone();
+    let browser_id = host.open_browser_directly()["id"].clone();
     host.cli(&["send-ui-keys", "Ctrl+l"]);
     host.cli(&["send-ui-keys", "Shift+Tab"]);
     host.cli(&["send-ui-keys", "Enter"]);
     let opened = host.cli(&["ui-snapshot"]);
     assert_eq!(
-        opened["geometry"]["new_tab_menu_open"], true,
-        "keyboard traversal from address must reach and open New without activating its default action"
+        opened["geometry"]["new_tab_menu_open"], false,
+        "keyboard activation of Terminal must not open a menu"
     );
     assert_eq!(
         host.cli(&["list-tabs"])["tabs"].as_array().unwrap().len(),
-        2,
-        "the opening Enter must not create a terminal"
+        3,
+        "the focused Terminal button must create exactly one tab"
     );
-    assert_eq!(opened["geometry"]["new_menu_highlight"], 0);
-    host.cli(&["send-ui-keys", "Down"]);
-    assert_eq!(
-        host.cli(&["ui-snapshot"])["geometry"]["new_menu_highlight"],
-        1
-    );
-    host.cli(&["send-ui-keys", "Enter"]);
+    host.cli(&["select-tab", "--target", browser_id.as_str().unwrap()]);
     assert_eq!(
         host.browser()["id"],
         browser_id,
-        "choosing Browser must reuse its root"
+        "selecting Browser must preserve its root"
     );
     assert_eq!(
         host.cli(&["list-tabs"])["tabs"].as_array().unwrap().len(),
-        2
+        3
     );
     host.cli(&["send-ui-keys", "Ctrl+l"]);
     host.cli(&["send-ui-keys", "Tab"]);
@@ -1248,7 +1319,7 @@ fn host_browser_menus_keyboard_entry_traversal_and_single_activation() {
     assert!(cycled["geometry"]["harness_workspace"]["header_focus"].is_null());
     assert_eq!(
         host.cli(&["list-tabs"])["tabs"].as_array().unwrap().len(),
-        2,
+        3,
         "traversal must not activate a header or menu action"
     );
     host.close_and_wait();
@@ -1257,7 +1328,7 @@ fn host_browser_menus_keyboard_entry_traversal_and_single_activation() {
 #[test]
 fn host_browser_proxy_menu_counts_keep_readable_rows_and_reveal_the_last_choice() {
     let mut host = BrowserGui::spawn(true, None, None);
-    host.open_browser_from_menu();
+    host.open_browser_directly();
     let mut saved = 0;
     for desired in [0usize, 1, 8] {
         if saved < desired {
@@ -1356,7 +1427,7 @@ fn host_browser_proxy_menu_counts_keep_readable_rows_and_reveal_the_last_choice(
 #[test]
 fn host_browser_menu_dismiss_restores_the_original_editor_selection() {
     let mut host = BrowserGui::spawn(true, None, None);
-    host.open_browser_from_menu();
+    host.open_browser_directly();
     for trigger in ["browser_proxy_dropdown", "new_root"] {
         host.cli(&["send-ui-keys", "Ctrl+l"]);
         host.cli(&["send-ui-ime", "commit", "a中z"]);
@@ -1541,7 +1612,7 @@ fn native_browser_menu_reactivation_restores_the_page_focus_without_background_a
         &|| unsafe { GetForegroundWindow() == first },
         "activate browser court GUI",
     );
-    host.open_browser_from_menu();
+    host.open_browser_directly();
     let origin = LocalPreviewServer::start("127.0.0.1:0".parse().unwrap());
     let url = format!("http://{}/focus", origin.address);
     host.cli(&["send-ui-keys", "Ctrl+l"]);
@@ -2716,7 +2787,7 @@ fn host_harness_routes_preserve_independent_drafts_and_scroll_readable_controls(
         harness_snapshot(&host).is_null(),
         "runtime must remain lazy before the first Harness entry"
     );
-    let browser = host.open_browser_from_menu();
+    let browser = host.open_browser_directly();
     assert_eq!(host.cli(&["ui-snapshot"])["active"], browser["id"]);
     host.open_web_settings();
     host.click_geometry("web_proxy_input");
@@ -2927,7 +2998,7 @@ fn host_harness_public_observations_redact_local_and_upstream_credentials() {
 #[test]
 fn host_browser_authorization_queries_are_private_in_public_observations() {
     let mut host = BrowserGui::spawn(true, None, None);
-    host.open_browser_from_menu();
+    host.open_browser_directly();
     for base in [
         "https://platform.deepseek.com/dsh/authorize",
         "https://platform.deepseek.com/oauth/authorize",
@@ -3219,7 +3290,7 @@ pub(super) fn h0_harness_destination_preserves_console_and_web_drafts_and_observ
         true,
         "keyboard entry/back restores the composer owner"
     );
-    host.open_browser_from_menu();
+    host.open_browser_directly();
     host.cli(&["send-ui-keys", "Ctrl+l"]);
     host.cli(&["send-ui-keys", "Ctrl+a"]);
     host.cli(&[

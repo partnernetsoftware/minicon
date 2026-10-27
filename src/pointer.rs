@@ -85,8 +85,16 @@ impl ConApp {
         ) {
             ui::TreeHit::Outside => return Ok(false),
             ui::TreeHit::Background => return Ok(true),
+            ui::TreeHit::Home => {
+                self.show_home(window);
+                return Ok(true);
+            }
             ui::TreeHit::NewRoot => {
-                self.toggle_new_tab_menu(window);
+                self.open_session_contained(window, false);
+                return Ok(true);
+            }
+            ui::TreeHit::NewWeb => {
+                self.open_browser_tab_contained(window);
                 return Ok(true);
             }
             ui::TreeHit::SidebarToggle => {
@@ -490,6 +498,7 @@ impl ConApp {
                 };
                 let hovered_header = match hit {
                     ui::TreeHit::NewRoot => Some(HeaderIcon::NewRoot),
+                    ui::TreeHit::NewWeb => Some(HeaderIcon::NewWeb),
                     ui::TreeHit::Harness => Some(HeaderIcon::Harness),
                     ui::TreeHit::Settings => Some(HeaderIcon::Settings),
                     ui::TreeHit::SidebarToggle => Some(HeaderIcon::SidebarToggle {

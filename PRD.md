@@ -48,6 +48,7 @@ MiniCon — one-file local terminal
 │   ├── local CLI, waits, structured snapshots and screenshots
 │   │   └── prd/PRD_02_26_con_control_cli.md
 │   ├── [-] Robot entry / visual Harness operation and monitoring → prd/PRD_02_36_harness_workspace.md
+│   ├── [-] Fixed @0 home / future observed agent office → prd/PRD_02_39_home_dashboard.md
 │   ├── [_] Future cluster / cross-machine coordination → prd/PRD_02_37_cluster_horizon.md
 │   ├── [_] Future selected-window computer use → prd/PRD_02_38_computer_use.md
 │   └── bounded mux/harness composition → prd/PRD_02_31_v0_2_horizon.md
@@ -116,6 +117,8 @@ flowchart LR
     GW --> MON["PRD 31.01.03: attributed usage / provider balances and quota"]
     ACCT["PRD 31.01.03.01: once-only terminal / exact source usage / bounded history"] --> MON
     ROB["PRD 36: robot beside Settings / visual Harness workspace"] --> HX
+    HOME["PRD 39: @0 window home / brand / future observed office"] --> MC
+    HOME --> ROB
     NEXT25["0.2.25 selected: route clarity / first connection / truthful operation"] --> HX
     NEXT25 --> ROB
     POOL & MON --> ROB
@@ -176,6 +179,7 @@ flowchart LR
 | Keep modern agent TUIs readable | [TUI compatibility](prd/PRD_02_24_01_tui_compatibility.md) | versioned real agents, bounded source/wire/state/pixel traces and provider-specific claims |
 | Own the Windows console implementation | [Windows backend](prd/PRD_02_34_windows_console_backend.md) | planned API/bootstrap/lifecycle proofs; source research does not certify a replacement |
 | Organize and type without corrupting drafts | [Workspace](prd/PRD_02_25_con_workspace.md) | composer, IME, tabs, content vs chrome panels, notes/settings and input journeys; no stale targeting |
+| Return to @0 without creating a fake tab | [Home](prd/PRD_02_39_home_dashboard.md) | fixed destination, slogan shell, session preservation and future event-backed office |
 | Browser proxy preferences | [Preferences](prd/PRD_02_25_01_browser_preferences.md) | Active override, saved candidates and Console/Web settings routes |
 | Consistent browser controls | [Controls](prd/PRD_02_25_02_browser_controls.md) | Development shared editing, keyboard menus, compact geometry and scoped native focus; final qualification open |
 | Built-in browser surface (not tray) | [Workspace](prd/PRD_02_25_con_workspace.md) + [horizon / minicon-web](prd/PRD_02_31_v0_2_horizon.md) | Tab / content panel; open/load via minicon-web; wry isolated; proxy hook; staged OAuth/dashboard/preview/wasm |
@@ -203,7 +207,9 @@ flowchart LR
   [pool](prd/PRD_02_31_01_02_provider_pool.md),
   [dashboard](prd/PRD_02_36_harness_workspace.md) and
   [Web preferences](prd/PRD_02_25_01_browser_preferences.md); the plan is not
-  a release receipt.
+  a release receipt. The new [@0 Home](prd/PRD_02_39_home_dashboard.md) is a
+  separate window destination; its first static shell and later event-backed
+  office retain their own acceptance.
 
 - [_] **Computer use is a future product track.** [PRD 38](prd/PRD_02_38_computer_use.md)
   owns target-bound observation/action and the same-repo crate decision;

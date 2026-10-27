@@ -18,12 +18,18 @@ Outcome: edit browser controls predictably and choose an action using mouse or k
 │   safe failure: invalid input stays editable; no key reaches an unrelated field or PTY
 │   dependency: existing core composer/click rules and workspace focus ownership
 │   non-goal: merging multiline composer/notes semantics or rewriting the terminal renderer
-├── [-] MENU — complete New/proxy menu operation
+├── [-] MENU — complete proxy menu operation; the released New menu is superseded by DIRECT
 │   invariant: keyboard entry, distinct highlight/applied state, single activation, dismissal and focus return follow the menu contract below
 │   evidence: mouse and keyboard choose equivalent actions with zero/one/eight saved proxies at normal/narrow/collapsed/Retina geometry
 │   safe failure: dismissal cannot navigate, apply a proxy or send input behind the overlay
 │   dependency: EDIT event ownership, existing shared Layout and native page visibility
 │   non-goal: a general external menu framework or extra Browser roots
+├── [-] DIRECT — two one-click creation buttons in 0.2.25
+│   invariant: New Terminal creates a terminal, New Web opens/reuses the single Browser root, and robot enters separate Harness
+│   evidence: public pointer/keyboard direct actions in expanded/collapsed/narrow layouts with no menu opening
+│   safe failure: missing room hides neither action behind a zero-width target; creation failure keeps the current surface
+│   dependency: workspace tab limits, current New action routes and PRD 36 robot entry
+│   non-goal: turning Harness into a tab or changing existing shortcuts
 ├── [-] LAYOUT — size menus to their content and available viewport
 │   invariant: preserve the existing responsive toolbar; menu height follows actual option count, rows retain readable targets and overflow uses bounded scrolling
 │   evidence: normal/narrow/collapsed/Retina resize with zero/one/eight candidates, preserved drafts and a correctly aligned native page
@@ -45,7 +51,10 @@ flowchart LR
     W[Workspace focus and page lifetime] --> E[Bounded common field editing]
     P[Preferences validation/application/save] --> A[Field-specific Submit and Cancel]
     E --> A
-    E --> M[New/proxy menu navigation]
+    E --> M[Proxy menu navigation]
+    W --> D[Direct New Terminal / New Web buttons]
+    D --> I
+    ROB[PRD 36 robot destination] -. third direct entry .-> D
     F[Recorded focus owner and consumed input gesture] --> M
     A --> I[Serial host/native integration]
     M --> I
@@ -58,6 +67,26 @@ flowchart LR
     X[Missing court or observed failure] --> B[BLOCKED claim; retain released baseline]
     H[Historical plans/negative controls] -. explain prior decisions .-> I
 ```
+
+### 0.2.25 direct creation entry
+
+The owner replaces the visible `New` dropdown with two independent header
+buttons: **New Terminal** and **New Web**. Each click performs its named action
+once, without opening a menu. A focused Terminal button also opens a terminal
+on Enter/Space. The robot
+remains the third direct entry to the separate Harness destination; it does not
+create a Harness tab. Existing creation shortcuts retain their meanings.
+Compact layouts keep both targets reachable and distinguishable rather than
+folding them back into a dropdown. The old New-menu contract below is retained
+as released 0.2.23 history and is superseded for the current header; the proxy
+choice menu remains active.
+
+Development evidence: `native_header_buttons_create_terminal_web_and_open_harness_directly`
+passed on Windows in expanded and collapsed sidebars. With the Web hit route
+temporarily removed, the same public test failed at the Browser count, then
+passed after restoring the route. `host_browser_menus_keyboard_entry_traversal_and_single_activation`
+passed with direct Terminal Enter activation and unchanged proxy-menu focus
+behavior. Narrow/Retina presentation and final release bytes remain open.
 
 ## Editing and focus acceptance
 

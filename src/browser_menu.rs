@@ -185,6 +185,9 @@ impl ConApp {
         window: &PixelWindow,
         event: &PixelWindowEvent,
     ) -> Result<bool, PixelWindowError> {
+        if self.home_active {
+            return Ok(false);
+        }
         if matches!(event, PixelWindowEvent::FocusChanged(true))
             && !self.new_tab_menu_open
             && !self.browser_proxy_menu_open
@@ -252,7 +255,7 @@ impl ConApp {
         {
             self.menu_key_latch = Some(named);
             match trigger {
-                ChromeTrigger::New => self.toggle_new_tab_menu(window),
+                ChromeTrigger::New => self.open_session_contained(window, false),
                 ChromeTrigger::Proxy => {
                     let metrics = window.metrics()?;
                     self.open_proxy_choices(window, metrics);

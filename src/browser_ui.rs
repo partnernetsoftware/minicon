@@ -283,7 +283,7 @@ impl ConApp {
         window: &PixelWindow,
         event: &PixelWindowEvent,
     ) -> Result<bool, PixelWindowError> {
-        if self.settings_open {
+        if self.settings_open || self.home_active {
             return Ok(false);
         }
         if self.route_browser_proxy_input(window, event)? {
