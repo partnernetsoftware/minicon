@@ -3,7 +3,8 @@
 Parent: [MiniCon product index](../PRD.md). Product boundary:
 [charter](PRD_02_23_minicon.md). Settings:
 [Harness connection experience](PRD_02_31_01_01_harness_experience.md).
-Sequence: [Harness workspace plan](../plan/plan-harness-workspace.md).
+Sequence: [Harness workspace plan](../plan/plan-harness-workspace.md) and
+[selected 0.2.25 slice](../plan/plan-v0.2.25.md).
 Status: `[-]` H0 robot/overview and cached H1 projections in development with a local
 Windows injected-host checkpoint. Native input, live-page, selected artifact
 and remaining operational projection acceptance stay open; task operation is

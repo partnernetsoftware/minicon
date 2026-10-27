@@ -84,6 +84,7 @@ MiniCon — one-file local terminal
     ├── [v] public v0.2.22 → prd/archive/v0.2.22-release-history.md
     ├── [v] public v0.2.23 → prd/archive/v0.2.23-release-history.md
     ├── [v] public v0.2.24 tree interactions and clipboard status → prd/archive/v0.2.24-release-history.md
+    ├── [-] selected v0.2.25 connection experience and honest operation view → plan/plan-v0.2.25.md
     ├── current independent tracks → plan/plan-v0.2.x-product-roadmap.md
     └── historical outcomes and receipts → prd/archive/README.md
 ```
@@ -115,6 +116,8 @@ flowchart LR
     GW --> MON["PRD 31.01.03: attributed usage / provider balances and quota"]
     ACCT["PRD 31.01.03.01: once-only terminal / exact source usage / bounded history"] --> MON
     ROB["PRD 36: robot beside Settings / visual Harness workspace"] --> HX
+    NEXT25["0.2.25 selected: route clarity / first connection / truthful operation"] --> HX
+    NEXT25 --> ROB
     POOL & MON --> ROB
     BV["PRD 31.01.02.01.01: quoted profile checks / explicit commit cutoff"] --> POOL
     ROB -. later explicit task operation .-> HC
@@ -191,6 +194,16 @@ flowchart LR
 | Deferred portable logic / foundry directions | [qjswasm](prd/PRD_02_29_qjswasm_horizon.md), [foundry](prd/PRD_02_30_foundry_horizon.md) | independent complete-product decisions; no current-version implementation claim |
 
 ## Current frontier
+
+- [-] **v0.2.25 is the active development line.**
+  [The selected plan](plan/plan-v0.2.25.md) sequences product review, explicit
+  account login/service network identity, the first account-to-client path,
+  truthful Harness operation views and native Web/auth restoration. Behavior
+  stays with [experience](prd/PRD_02_31_01_01_harness_experience.md),
+  [pool](prd/PRD_02_31_01_02_provider_pool.md),
+  [dashboard](prd/PRD_02_36_harness_workspace.md) and
+  [Web preferences](prd/PRD_02_25_01_browser_preferences.md); the plan is not
+  a release receipt.
 
 - [_] **Computer use is a future product track.** [PRD 38](prd/PRD_02_38_computer_use.md)
   owns target-bound observation/action and the same-repo crate decision;

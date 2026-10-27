@@ -1,7 +1,8 @@
 # Harness connection experience
 
 Parent: [provider gateway](PRD_02_31_01_provider_gateway.md). Sequence:
-[0.2.23 plan](../plan/plan-v0.2.23.md#harness-product-redesign-before-publication).
+[0.2.23 plan](../plan/plan-v0.2.23.md#harness-product-redesign-before-publication)
+and the selected [0.2.25 experience slice](../plan/plan-v0.2.25.md).
 Status: `[-]` product redesign specified after owner feedback, 2026-10-25;
 presentation has scoped native development checkpoints below; full implementation
 and acceptance remain open. Existing gateway receipts do not
@@ -22,8 +23,8 @@ both surfaces use the same account/profile/measurement state.
 ```text
 Outcome: manage an account pool and give each local tool a usable, observable connection
 ├── [-] ORIENT — one visible next action and a persistent current connection
-│   invariant: authorization, model validation, local service and client use are distinct
-│   evidence: HU-01 empty/partial/returning journeys without operator explanations
+│   invariant: authorization, model validation, local service and client use are distinct; the selected login route is visible before Continue
+│   evidence: HU-01 empty/partial/returning journeys and the 0.2.25 proxy/direct first-use review
 │   safe failure: name the incomplete step; preserve the last working connection
 │   dependency: existing Harness route and typed runtime observations
 │   non-goal: another settings window or duplicating the PRD 36 operation view
@@ -58,7 +59,8 @@ Outcome: manage an account pool and give each local tool a usable, observable co
 ```mermaid
 flowchart TD
     H[Harness: pool summary and selected client next action] --> A[Connect account]
-    A --> B[Existing Browser root: provider-controlled authorization]
+    A --> NET[Show account Login route; Web proxy remains separate]
+    NET --> B[Existing Browser root: provider-controlled authorization]
     B --> G{Current grant received and privately saved?}
     G -->|yes| C[Account connected; choose client and model allocation]
     G -->|expired / cancelled / failed| E[Attempt-local recovery; keep existing accounts]
@@ -86,6 +88,33 @@ flowchart TD
 ```
 
 ## Problem and product decisions
+
+### Selected 0.2.25 experience contract
+
+`[-]` The [0.2.25 plan](../plan/plan-v0.2.25.md) selects one coherent
+first-use path for product review and delivery. A new user sees provider,
+local account name and the effective **Login network** before Continue. The
+ordinary Web-tab proxy is not this account setting; an empty Login proxy is
+shown as Direct. A returning user sees saved versus unsaved network policy,
+then an explicit Reconnect using the saved setting. The exact requests and
+no-fallback rule are owned by [the provider pool](PRD_02_31_01_02_provider_pool.md#per-account-network-policy).
+
+The connection path presents distinct states and next actions:
+
+| State | User-facing question and action | Recovery |
+| --- | --- | --- |
+| Before provider authorization | Which account and Login route will open the provider page? Continue only after the route is visible. | Edit Login proxy or choose Direct explicitly; keep the draft. |
+| Authorization pending or ended | Did the current attempt succeed, expire or get canceled? | Retry the named attempt; preserve ordinary Web/terminal drafts. |
+| Credential stored, model not verified | Is this account usable for the selected model? | Choose and test a model; retain existing applied client bindings. |
+| Profile draft versus applied | Which account/model will this client actually use? | Verify and apply atomically; leave prior binding usable on failure. |
+| Local API stopped or running | Is the listener actually available and has this client made a request? | Explicit Start or inspect the step-specific error; never infer external process health. |
+
+The same path must fit a first OpenCode/Google connection using an explicit
+Login proxy, a returning DeepSeek account and an ordinary Web user with a
+separate saved proxy choice. Native authorization/browser-context routing,
+actual account grants and real client use retain independent evidence scopes;
+passing only a settings layout or synthetic provider fixture cannot close the
+journey. Visual operation and freshness belong to [PRD 36](PRD_02_36_harness_workspace.md).
 
 Before the orientation delivery slice, `src/harness_settings_ui.rs` presented listener/port controls before
 accounts, mixed a manually typed model ID with a long catalogue, and separated

@@ -159,7 +159,7 @@ shell：每个 tab 一个进程而不是三个，没有额外的 `conhost.exe`�
 ```
 
 在 macOS 上，规范 dev 构建还会组装未签名的本地测试包装
-`target/debug/MiniCon 0.2.24 Dev.app`；版本跟随 `Cargo.toml`，使用独立的开发 bundle id，避免 UI
+`target/debug/MiniCon 0.2.25 Dev.app`；版本跟随 `Cargo.toml`，使用独立的开发 bundle id，避免 UI
 验收时误选机器上已安装的发行版。实际接受测试的可执行文件仍是
 `target/debug/minicon`。
 
