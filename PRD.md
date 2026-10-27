@@ -51,6 +51,7 @@ MiniCon — one-file local terminal
 │   │   └── prd/PRD_02_26_con_control_cli.md
 │   ├── [-] Robot entry / visual Harness operation and monitoring → prd/PRD_02_36_harness_workspace.md
 │   ├── [-] Fixed @0 home / future observed agent office → prd/PRD_02_39_home_dashboard.md
+│   │   └── [_] 0.2.26 visual home canvas → prd/PRD_02_39_01_home_canvas.md
 │   ├── [-] Optional Plugins and Apps layer / minicon-harness extraction → prd/PRD_02_40_plugins_apps.md
 │   ├── [_] Future cluster / cross-machine coordination → prd/PRD_02_37_cluster_horizon.md
 │   ├── [_] Future selected-window computer use → prd/PRD_02_38_computer_use.md
@@ -186,6 +187,7 @@ flowchart LR
 | Own the Windows console implementation | [Windows backend](prd/PRD_02_34_windows_console_backend.md) | planned API/bootstrap/lifecycle proofs; source research does not certify a replacement |
 | Organize and type without corrupting drafts | [Workspace](prd/PRD_02_25_con_workspace.md) | composer, IME, tabs, content vs chrome panels, notes/settings and input journeys; no stale targeting |
 | Return to @0 without creating a fake tab | [Home](prd/PRD_02_39_home_dashboard.md) | fixed destination, slogan shell, session preservation and future event-backed office |
+| Read the @0 visual scene and its truthful local status | [Home canvas](prd/PRD_02_39_01_home_canvas.md) | 0.2.26 scene hierarchy, source/freshness, reversible actions and responsive evidence |
 | Browser proxy preferences | [Preferences](prd/PRD_02_25_01_browser_preferences.md) | Active override, saved candidates and Console/Web settings routes |
 | Consistent browser controls | [Controls](prd/PRD_02_25_02_browser_controls.md) | Development shared editing, keyboard menus, compact geometry and scoped native focus; final qualification open |
 | Built-in browser surface (not tray) | [Workspace](prd/PRD_02_25_con_workspace.md) + [horizon / minicon-web](prd/PRD_02_31_v0_2_horizon.md) | Tab / content panel; open/load via minicon-web; wry isolated; proxy hook; staged OAuth/dashboard/preview/wasm |
