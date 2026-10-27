@@ -24,6 +24,7 @@ Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
 | 36 | [Harness dashboard](PRD_02_36_harness_workspace.md) | Planned robot entry, visual local operation/monitoring and staged task lifecycle |
 | 37 | [Cluster horizon](PRD_02_37_cluster_horizon.md) | Future paired-node observation and explicit cross-machine coordination |
 | 38 | [Computer use](PRD_02_38_computer_use.md) | Future selected-window observation, explicit actions and staged Harness integration |
+| 40 | [Plugins and Apps](PRD_02_40_plugins_apps.md) | Optional external application boundary and minicon-harness migration |
 
 ## Map
 
@@ -37,6 +38,7 @@ minicon — one-file local terminal (product root)
 │   └── [_] Explicit local model listener exception → PRD_02_31_01_provider_gateway.md
 │       [_] Visual Harness direction → PRD 36; future cluster direction → PRD 37
 │       [_] Future selected-window computer use → PRD 38; no current tool expansion
+│       [-] Optional local Plugins and Apps exception → PRD 40
 ├── Governing invariants
 ├── Observable success evidence
 ├── Safe failure result
@@ -57,11 +59,13 @@ flowchart TB
     ROOT --> S["[28] Shared core and reuse boundary"]
     ROOT --> G["[31.01] Planned local model gateway<br/>no remote tool execution"]
     ROOT --> H["[36] Planned Harness dashboard"]
+    ROOT --> APP["[40] Optional Plugins and Apps / minicon-harness"]
+    APP -. observed task events .-> H
     ROOT -. future explicitly selected desktop capability .-> CU["[38] Computer use"]
     CU -. separate worker-tool decision .-> H
     FUT["[37] Future paired-node coordination"] -. separately staged authority .-> H
     ROOT -. "capability sinks into" .-> MC["MiniCon"]
-    ROOT -. "plugin / app gathers in" .-> AG["agenterm (workbench)"]
+    ROOT -. "wider workbench ecosystem" .-> AG["agenterm (workbench)"]
     MC -. "versioned capability contract" .- AG
 ```
 
@@ -191,7 +195,7 @@ turn a current endpoint into remote execution authority.
   [Harness workspace owner](PRD_02_36_harness_workspace.md) narrows the earlier
   blanket GUI-workbench exclusion for this explicit direction: current entry,
   truthful account/client/usage overview and Settings links, then separately
-  staged local built-in task operation. It grants no Fleet authority, remote
+  staged local task operation through the optional app (PRD 40). It grants no Fleet authority, remote
   execution, MCP/plugin host, background daemon or control over arbitrary
   external harness processes. The historical GUI retraction remains history;
   it does not veto this later direction or silently re-enable its old proposals.
@@ -202,6 +206,15 @@ turn a current endpoint into remote execution authority.
   Current loopback, GUI control and local file/exec authority do not widen merely
   because the future design exists; paired observation and remote task operation
   require their own selected contracts and real two-machine qualification.
+- **Amendment (2026-10-27, owner direction; planned).** Move the file/exec
+  worker to the independent `partnernetsoftware/minicon-harness` repository and
+  add a narrow **Plugins and Apps** extension layer, managed from MiniCon
+  Settings in a later selected version. [PRD 40](PRD_02_40_plugins_apps.md)
+  owns the accepted host/app contract, migration and management behavior.
+  This supersedes the prior AgenTerm-only placement for this named local app;
+  it does not admit a general in-process plugin runtime, market, Fleet or
+  Agent permission policy. The released embedded worker remains historical
+  truth until an exact-pair cutover qualifies.
 
 ### Future computer-use design
 
@@ -327,12 +340,13 @@ not local authorities.
 
 ## Capability and plugin boundary, with agenterm (2026-10-11)
 
-Owner's framing, adopted as the standing rule: **capabilities sink into MiniCon;
-plugins and applications gather in agenterm.** MiniCon owns the *capabilities*
-(the host mechanisms) **and the contract that exposes them**; agenterm owns the
-*plugins, applications, orchestration, identity, permissions, workflow and
-market* built on them. The only seam between the two layers is the **capability
-contract** — names, versions and compatibility rules — not a binary and not a
+Owner's 2026-10-11 framing, narrowed by the 2026-10-27 amendment above:
+**capabilities sink into MiniCon; optional local applications can now attach
+through PRD 40, while AgenTerm retains its wider workbench ecosystem.** MiniCon
+owns the *capabilities* (the host mechanisms) **and the contract that exposes
+them**; agenterm owns the *orchestration, cross-machine identity, permissions,
+workflow and market* built on them. The seam is the **capability contract** —
+names, versions and compatibility rules — not a binary and not a
 source dependency. This is the product-level statement of the mechanism/policy
 split, and the rule every later "where does this live?" question is decided
 against.
@@ -345,7 +359,7 @@ Something is a **capability → MiniCon** when either holds:
   tree, input injection, the clipboard, a permission); or
 - it must keep working with no plugin or application installed.
 
-Something is a **plugin/application → agenterm** when either holds:
+Something is an **application → PRD 40 or AgenTerm** when either holds:
 
 - it is dead code unless someone installs or uses it; or
 - its value is composing other capabilities into a user-visible outcome.
@@ -359,7 +373,8 @@ Applied to the cases that actually come up:
 | AgenTerm computer-use policy, plugins and browser flows | agenterm | composition test; no inherited MiniCon runtime authority |
 | planned MiniCon CU product scope | [PRD 38](PRD_02_38_computer_use.md) | later explicit direction; owns selected-target admission/results, not a general permission engine |
 | a wasm/script **execution kernel** | MiniCon, once the engine is stable | authority test |
-| a **plugin or app written in wasm** | agenterm | dead-code test |
+| the separate `minicon-harness` agent app | [PRD 40](PRD_02_40_plugins_apps.md) | optional local process with explicit host contract and Settings management |
+| a **plugin or app written in wasm** | later owner decision | dead-code test; PRD 40 does not introduce a WASM plugin runtime |
 | the plugin/app **discovery index** | the family's `unisa` release/index repo; agenterm consumes it | an index is not a product |
 | the agent-use **browser** | `minicon-surf`, its own product | it is a base, not a plugin |
 
@@ -378,6 +393,6 @@ Applied to the cases that actually come up:
    ([`plan/archive/plan-hostif-v1.md`](../plan/archive/plan-hostif-v1.md)). Without it the
    boundary collapses back into a version pin.
 
-Non-goal: this principle does not give MiniCon a plugin host, a market,
-orchestration or agent permission policy; those are agenterm's and stay there,
-consistent with "Explicit non-goals" above.
+The narrow PRD 40 app registry and supervision are the only MiniCon extension
+admitted by the newer decision. Market, orchestration and general Agent
+permission policy remain outside this product boundary.

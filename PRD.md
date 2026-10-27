@@ -16,8 +16,10 @@ remains planned; the frontier below distinguishes them.
 Launch one small executable, organize independent local terminals, type through
 a dedicated input area, and automate the visible GUI through a bounded local
 CLI. Failure in one child, tab, parser, callback or request must stay local.
-MiniCon has no AgenTerm workbench server, Fleet, MCP, plugin host or Agent
-permission policy. Its control endpoint belongs to the GUI process lifetime.
+MiniCon has no AgenTerm workbench server, Fleet, MCP, in-process general plugin
+runtime or Agent permission policy. Its control endpoint belongs to the GUI
+process lifetime. The owner-selected optional local Plugins and Apps layer is
+bounded by [PRD 40](prd/PRD_02_40_plugins_apps.md).
 The bounded `mux`/`harness` subcommands have their own scope in PRD 02.31;
 the planned explicit local model listener is owned by PRD 02.31.01.
 Settings and notes persistence belong to the workspace owner.
@@ -49,6 +51,7 @@ MiniCon — one-file local terminal
 │   │   └── prd/PRD_02_26_con_control_cli.md
 │   ├── [-] Robot entry / visual Harness operation and monitoring → prd/PRD_02_36_harness_workspace.md
 │   ├── [-] Fixed @0 home / future observed agent office → prd/PRD_02_39_home_dashboard.md
+│   ├── [-] Optional Plugins and Apps layer / minicon-harness extraction → prd/PRD_02_40_plugins_apps.md
 │   ├── [_] Future cluster / cross-machine coordination → prd/PRD_02_37_cluster_horizon.md
 │   ├── [_] Future selected-window computer use → prd/PRD_02_38_computer_use.md
 │   └── bounded mux/harness composition → prd/PRD_02_31_v0_2_horizon.md
@@ -119,6 +122,9 @@ flowchart LR
     ROB["PRD 36: robot beside Settings / visual Harness workspace"] --> HX
     HOME["PRD 39: @0 window home / brand / future observed office"] --> MC
     HOME --> ROB
+    APPS["PRD 40: optional local Plugins and Apps / separate minicon-harness"] --> MC
+    APPS -. typed run events .-> ROB
+    APPS -->|model-only client| GW
     NEXT25["0.2.25 selected: route clarity / first connection / truthful operation"] --> HX
     NEXT25 --> ROB
     POOL & MON --> ROB
@@ -186,7 +192,8 @@ flowchart LR
 | Automate what the GUI presents | [Control](prd/PRD_02_26_con_control_cli.md) | catalog, wait, snapshot and PNG black boxes; bounded typed errors |
 | Bounded mux/harness subcommands | [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md) | explicit provider/session contracts; no workbench authority inherited |
 | Connect model accounts to local harnesses | [Provider gateway](prd/PRD_02_31_01_provider_gateway.md), [connection experience](prd/PRD_02_31_01_01_harness_experience.md) | Development manual pool and model API; guided experience redesign specified after owner feedback, implementation and final qualification open; gateway cannot execute tools |
-| Operate and monitor local Harness work | [Harness workspace](prd/PRD_02_36_harness_workspace.md) | Development robot entry/cached overview and later bounded built-in task operation; stages and native evidence open |
+| Operate and monitor local Harness work | [Harness workspace](prd/PRD_02_36_harness_workspace.md) | Development robot entry/cached overview and later bounded app-backed task operation; stages and native evidence open |
+| Manage an optional local agent application | [Plugins and Apps](prd/PRD_02_40_plugins_apps.md) | Independent minicon-harness artifact, versioned host/app seam, future Settings management and exact-pair evidence; absent app leaves host usable |
 | Inspect and explicitly operate a selected application in future versions | [Computer use](prd/PRD_02_38_computer_use.md) | Planned same-repo product crate; observation before actions/Harness; native target/effect evidence remains open |
 | Coordinate personal machines in future versions | [Cluster horizon](prd/PRD_02_37_cluster_horizon.md) | Planned explicit pairing/observation, later deliberate task handoff; origin, trust, stale state and two-machine evidence remain open |
 | Embed a reusable terminal library | [Terminal library](prd/PRD_02_35_terminal_library.md) | common state/stream facade; OS/ISA runtime and session composition remain explicit |
@@ -222,6 +229,12 @@ flowchart LR
   owns the design and [its plan](plan/plan-harness-workspace.md) owns sequencing.
   Settings forms, the provider pool and monitoring retain their existing owners;
   Console/Web maintenance and qualification continue.
+- [-] **`minicon-harness` moves to an optional application.** The owner's
+  2026-10-27 direction selects an independent repository and a future
+  **Plugins and Apps** Settings route. [PRD 40](prd/PRD_02_40_plugins_apps.md)
+  owns the host/app boundary and [its plan](plan/plan-minicon-harness-extraction.md)
+  gates migration against released worker behavior. This changes the earlier
+  AgenTerm-only placement rule only for the explicitly bounded MiniCon layer.
 - [v] **Public v0.2.24: tab-tree drag, reliable inline rename and clipboard type.**
   [Release history](prd/archive/v0.2.24-release-history.md) owns the exact
   source, signed Candidate, Defender and public Promotion evidence.

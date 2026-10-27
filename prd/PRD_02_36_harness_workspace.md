@@ -19,8 +19,13 @@ It does not resurrect the historical AgenTerm/Fleet proposals wholesale.
 This module owns the robot entry, full-window Harness presentation, operational
 navigation, task-view UX and data/authority distinctions. Settings forms stay
 with PRD 31.01.01; account allocation with PRD 31.01.02; measurements with
-PRD 31.01.03; the file/exec worker with PRD 31. The host tab/focus mechanisms
+PRD 31.01.03; released worker history with PRD 31 and future app worker with
+PRD 40. The host tab/focus mechanisms
 remain with PRD 25 and public observations with PRD 26.
+The newer [Plugins and Apps owner](PRD_02_40_plugins_apps.md) places future
+file/exec task execution in the independent `minicon-harness` application;
+this workspace observes and controls only app runs that publish the accepted
+typed lifecycle. The released embedded worker remains the historical baseline.
 
 ## Outcome tree DAG
 
@@ -38,12 +43,12 @@ Outcome: use MiniCon as the place to operate and understand local harness work
 │   safe failure: usable empty/recovery state without fictional charts or active clients
 │   dependency: pool/profile identities and measurement projection
 │   non-goal: duplicating the configuration editor or provider billing system
-├── [_] TASKS — future local built-in Harness operation and run detail
-│   invariant: explicit task start reuses worker file/exec policy and process ownership
-│   evidence: HW-04/05 actual streaming/task lifecycle, cancellation and descendant cleanup
-│   safe failure: retain the observed final state; pending cancel is not completed cancellation
-│   dependency: versioned worker event/lifecycle seam and existing limits
-│   non-goal: a new agent loop, automatic teams, remote execution or arbitrary client process control
+├── [_] TASKS — future local minicon-harness app operation and run detail
+│   invariant: explicit task start uses the app's file/exec policy and owned process lifecycle
+│   evidence: HW-04/05 actual app streaming/task lifecycle, cancellation and descendant cleanup
+│   safe failure: offline app is unknown/unavailable; pending cancel is not completed cancellation
+│   dependency: PRD 40 app seam, versioned events and existing limits
+│   non-goal: an embedded second agent loop, automatic teams, remote execution or arbitrary client process control
 └── [-] FOUNDATION — responsive, accessible, bounded host workspace
     invariant: focus, paint, pointer hits and observations describe the same active view
     evidence: HW-06/07 native keyboard/IME/scale and bounded hidden/visible resource behavior
@@ -65,8 +70,8 @@ flowchart LR
     POOL --> GW[Process-lifetime model API]
     GW --> MET[Local usage and provider snapshots / PRD 31.01.03]
     MET --> HOME
-    HOME --> TASK[Later: explicit built-in task launch]
-    TASK --> WORK[Existing worker and owned descendants / PRD 31]
+    HOME --> TASK[Later: explicit app-backed task launch]
+    TASK --> WORK[Independent minicon-harness and owned descendants / PRD 40]
     WORK --> EV[Bounded run events and observed lifecycle]
     EV --> W
     EXT[External harness through its own profile key] --> GW
@@ -238,10 +243,10 @@ view must answer the same operational questions.
 | Reference pattern | Harness dashboard interpretation |
 | --- | --- |
 | Production header and global controls | Explicit local API state, current allocation mode, update/coverage time, Refresh local view, Open settings; later New task only when delivered |
-| Outcome cards | Active model requests, today's request outcomes/tokens, accounts needing attention; later actual built-in task outcomes, kept separate from request counts |
+| Outcome cards | Active model requests, today's request outcomes/tokens, accounts needing attention; later actual app task outcomes, kept separate from request counts |
 | Control-path summary | Selected client alias -> account/model -> network policy, with verified/unknown route state and recovery link |
 | Resource/credit cards | DeepSeek A, DeepSeek B and OpenCode Go account balance/allowance, freshness, proxy status and scoped attention |
-| Active production cards | Observed client requests now; later owned built-in task cards with actual stage/events/elapsed and scoped Stop |
+| Active production cards | Observed client requests now; later owned app task cards with actual stage/events/elapsed and scoped Stop |
 | Pending/results and drilldown | Real drafts/queued states only when implemented, recent terminal outcomes, bounded activity and selected-run/request detail |
 
 Do not port automatic dispatch, repair-priority modes, scheduled publishing,
@@ -326,12 +331,12 @@ Run/Stop controls. Remote operations appear only when their later contract is
 delivered. Current H0/H1 needs stable observation identities and extension space;
 it does not need a fake Nodes page or automatic network discovery.
 
-## Later built-in task operation
+## Later app-backed task operation
 
 This is a separately staged product capability, not part of merely reserving
 the robot button. **New task** chooses a project root, task text, client profile/
 model alias and explicit allowed commands. Show the resolved provider/account,
-existing worker limits and invocation summary before Start. File-root and exec
+app worker limits and invocation summary before Start. File-root and exec
 policy retain their existing meanings; no sandbox or new permission layer is
 implied by this form. Start cannot silently increase the command allowlist.
 
@@ -347,9 +352,9 @@ the root, command list, profile revision, account/model, worker budget and
 selected logic version for that run. The GUI cannot retarget a live run when a
 profile or pool setting changes.
 
-The current `minicon harness --root --task` invocation is a bounded
+The released `minicon harness --root --task` invocation is a bounded
 single-task worker, but it does not yet publish a typed, host-consumable run
-event/lifecycle stream. H2 implementation first needs an owned worker seam:
+event/lifecycle stream. H2 implementation first needs the independent app seam:
 ordered bounded events with `run_id`, monotonically increasing `sequence`,
 `stage`, source time and typed progress/tool/final outcomes; a separate private
 bounded output channel; and one cancel acknowledgement after model/owned child
@@ -367,8 +372,8 @@ and the named missing worker seam, not an executable Start control.
 
 The run view owns: task summary, immutable connection binding, lifecycle,
 bounded text/tool activity, elapsed time, available token/usage and scoped Stop.
-Use the existing worker and an explicit typed event seam; do not build a second
-agent loop. Worker output retained for the interactive task is separately bounded
+Use the independent app worker and an explicit typed event seam; do not build a
+second embedded agent loop. Worker output retained for the interactive task is separately bounded
 and private, not silently copied into the model gateway's metrics/history.
 Durable transcript/search, arbitrary external harness adapters and automatic
 teams require their own later decisions.
@@ -426,7 +431,7 @@ operation as part of 0.2.23's entry reservation.
 | `[-]` HW-01 | Robot left of gear, pointer/key single activation, selected/attention states, compact/zero-tab behavior; no start/login/paid/clipboard side effects |
 | `[-]` HW-02 | Empty/partial/running/failed/unknown scenarios show the actual next action and data coverage using PP/UM identities |
 | `[-]` HW-03 | Settings deep links return to the same account/profile/view/filter; hidden Console/Web drafts, page state and native focus survive |
-| `[_]` HW-04 | Later built-in task launch produces real model/tool/events/final output through the existing worker; unavailable capabilities cannot appear executable |
+| `[_]` HW-04 | Later app task launch produces real model/tool/events/final output through the independent worker; unavailable capabilities cannot appear executable |
 | `[_]` HW-05 | Later Stop/failed-start/resume/exit observe real owned-process cleanup and binding rules; external request controls make no external-process claim |
 | `[-]` HW-06 | Same-frame hit/state/pixel/native keyboard/IME at selected OS/ISA/scales and viewport sizes, with readable translated labels |
 | `[_]` HW-07 | Idle unopened/visible/hidden and active-task resource/retention bounds measured; metrics rendering cannot block terminal input or streaming |
@@ -470,7 +475,7 @@ Broader native WebView DOM/history/focus retention, actual keyboard/IME,
 cross-platform input/scales, resource bounds and exact signed/public artifacts
 remain open. Profile/client/usage/balance/activity data absent from the owning
 runtime stays explicitly unavailable. The injected journey does not certify
-those data sources or the later built-in task-operation stage.
+those data sources or the later app-backed task-operation stage.
 
 The first extended Windows development smoke passed the existing fifteen host
 checks plus seven H0 checks using binary SHA-256

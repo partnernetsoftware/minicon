@@ -1,12 +1,21 @@
 # 0.2.x horizon: mux and harness
 
+**Later owner direction, 2026-10-27:** the file/exec worker is moving to the
+independent `partnernetsoftware/minicon-harness` repository as an optional
+application. [PRD 40](PRD_02_40_plugins_apps.md) owns the new host/app boundary
+and [the extraction plan](../plan/plan-minicon-harness-extraction.md) owns
+cutover gates. The embedded `minicon harness` behavior and evidence below
+describe released sources and the parity baseline; they are not the future
+source owner. `mux` remains MiniCon-owned. A cutover is not accepted merely
+because code appears in the separate repository.
+
 Owner decision, 2026-09-24: `AGENTS.md`'s product-boundary exclusion of "mux"
 and "script runtime, plugin host or Agent permission policy" is narrowed (not
 removed) to admit exactly the two subcommands below. This module is their
 scope statement; dated evidence below records implemented mux/worker scope.
 The owner's 2026-10-25 visual Harness direction is now owned by
 [PRD 36](PRD_02_36_harness_workspace.md). Its robot/overview reservation and
-later built-in task operation are a separately staged extension; the retracted
+later app-backed task operation are a separately staged extension; the retracted
 GUI-workbench material below remains historical and is not its design owner.
 The 2026-10-24 local model-listener amendment is separately owned by
 [PRD 31.01](PRD_02_31_01_provider_gateway.md), including Harness settings,
@@ -22,15 +31,16 @@ qualification; a future PRD or model API key supplies no desktop authority.
 ## Product outcome
 
 A MiniCon user can drive their own already-running tabs the way a `tmux` user
-drives panes, from a script or another program, and can hand a narrowly
-scoped local task — read/write these files, run this command — to a model
-without leaving the terminal or installing a separate agent CLI. Neither
-capability creates a persistent service identity: both still live and die with
-their owning process. The newly planned model API has its own explicit
-process-lifetime listener boundary in PRD 31.01; it cannot execute these tools.
+drives panes, from a script or another program. The released embedded harness
+can hand a narrowly scoped local file/exec task to a model; the next delivery
+of that worker is the separately installed `minicon-harness` application under
+PRD 40. Neither design creates a persistent MiniCon service identity. The
+model API has its own explicit process-lifetime listener boundary in PRD 31.01;
+it cannot execute these tools.
 
 ```text
 0.2.x horizon — mux and harness
+├── [-] Worker extraction / optional app boundary → PRD_02_40_plugins_apps.md
 ├── [_] Robot entry / visual Harness workspace → PRD_02_36_harness_workspace.md
 ├── [_] Local model gateway / Harness settings / manual provider-pool
 │   invariant, evidence, safe failure, dependencies and non-goals: PRD_02_31_01_provider_gateway.md

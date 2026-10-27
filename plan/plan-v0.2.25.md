@@ -6,7 +6,9 @@ not a claim that the journeys below already pass. The product behavior belongs
 to [Harness connection experience](../prd/PRD_02_31_01_01_harness_experience.md),
 [provider pool](../prd/PRD_02_31_01_02_provider_pool.md),
 [dashboard](../prd/PRD_02_36_harness_workspace.md), and
-[Web preferences](../prd/PRD_02_25_01_browser_preferences.md).
+[Web preferences](../prd/PRD_02_25_01_browser_preferences.md). The newly
+selected [Plugins and Apps boundary](../prd/PRD_02_40_plugins_apps.md) places
+the worker extraction in a separately gated track.
 
 ## Product decision
 
@@ -70,6 +72,11 @@ Outcome: make the first local Harness connection legible from setup to observed 
 │   evidence: public pointer/keyboard journeys in expanded, compact and collapsed headers
 │   safe failure: narrow layout keeps full hit targets and never fires both creation actions
 │   dependency: PRD 25.02 header geometry and existing creation paths; non-goal: a Harness tab
+├── [-] X0 — inventory minicon-harness extraction without cutting over this release
+│   invariant: shipped embedded worker behavior stays available until the independent app reaches an accepted exact-pair contract
+│   evidence: PRD 40 old/new parity matrix and named two-repository SHAs
+│   safe failure: incomplete app remains BLOCKED for migration; no quiet loss of the released CLI
+│   dependency: parallel minicon-harness repo and PRD 40; non-goal: making app management a 0.2.25 P0 gate
 └── [_] Q — qualify one exact source and decide publication
     invariant: only matching source, native artifacts and actual observations support a claim
     evidence: targeted smoke, fmt/clippy, build.sh test, six-cell or hosted equivalent, selected native courts and release receipts
@@ -97,6 +104,7 @@ flowchart LR
     H --> S
     ZERO[Fixed @0 Home / PRD 39] -->|explicit route| S & H
     ZERO -. future observed task events .-> OFFICE[Agent office when H2 exists]
+    APP[Separate minicon-harness / PRD 40] -. future typed task events .-> H
     C[Console/Web drafts and live page] --> PARK[Park during auth; restore on exit]
     A --> PARK
     D[Shared design/state review] --> N & H
@@ -145,6 +153,11 @@ flowchart LR
    pointer/focus, narrow layout and browser-page parking before release. Replace
    the visible New dropdown with separate Terminal/Web actions, retaining the
    robot as the Harness action. Requalify header focus and hit targets.
+8. **Extraction inventory (X0).** Record the released worker's behavior and
+   the parallel app's exact current capabilities. Freeze the host/app seam with
+   its owner before changing the MiniCon command or robot task controls. The
+   separate [extraction plan](plan-minicon-harness-extraction.md) owns
+   implementation and cutover after the app is ready.
 
 ## Release cut and explicit deferrals
 
@@ -157,10 +170,11 @@ proxy is required before claiming that user journey works. If access or a
 native court is unavailable, record `BLOCKED` and narrow the release claim;
 do not label a synthetic fixture as a real account pass.
 
-Keep H2 built-in task operation as a design and contract checkpoint. ujs/WASM
+Keep H2 app-backed task operation as a design and contract checkpoint. ujs/WASM
 logic delivery, dynamic llm-gate scheduling, cluster pairing/remote execution,
 computer use, automatic provider rotation, proxy authentication and an
-installer are separate owners and do not become 0.2.25 release dependencies.
+installer and the Plugins and Apps manager are separate owners and do not become
+0.2.25 release dependencies.
 Console/Web fixes with clear user impact may enter the cut after their owner
 acceptance and exact-source gates, without reopening the Harness boundary.
 

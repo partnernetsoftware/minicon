@@ -2,7 +2,9 @@
 
 Status: `[-]` H0/H1 development integration after owner direction, 2026-10-25.
 Behavior: [PRD 36](../prd/PRD_02_36_harness_workspace.md). Settings:
-[PRD 31.01.01](../prd/PRD_02_31_01_01_harness_experience.md). The current
+[PRD 31.01.01](../prd/PRD_02_31_01_01_harness_experience.md). The
+[Plugins and Apps extraction plan](plan-minicon-harness-extraction.md) owns
+the separately delivered worker and its exact host/app cutover. The current
 [0.2.25 plan](plan-v0.2.25.md) selects truthful H1 operation and configuration
 handoff after public 0.2.24; the earlier [0.2.23 plan](plan-v0.2.23.md)
 selected H0 and available H1 projections. The full visual
@@ -24,12 +26,12 @@ Outcome: establish a usable Harness destination and grow it without fictional co
 │   safe failure: stale/unknown with no fake client or task health
 │   dependency: H0 and current pool/monitoring product work
 │   non-goal: invoice administration or controlling external processes
-├── [_] H2 — explicit built-in task operation and scoped lifecycle controls
-│   invariant: reuse worker file/exec/session/cleanup authority
-│   evidence: HW-04/05 real start/tool/stream/final/cancel/resume journeys
+├── [_] H2 — explicit minicon-harness app operation and scoped lifecycle controls
+│   invariant: app retains file/exec/session/cleanup authority; host uses the versioned PRD 40 seam
+│   evidence: HW-04/05 real app start/tool/stream/final/cancel/resume journeys
 │   safe failure: preserve draft/final state; incomplete cleanup remains visible
-│   dependency: bounded typed worker event and owned-run contracts
-│   non-goal: another agent engine or arbitrary third-party process manager
+│   dependency: PRD 40 contract, bounded typed worker event and owned-run contracts
+│   non-goal: an embedded second agent engine or arbitrary third-party process manager
 └── [_] H3 — later dynamic selection and broader operation decisions
     invariant: future engine cannot widen credential/tool authority
     evidence: separately selected scenarios and host validation
@@ -47,7 +49,7 @@ flowchart LR
     C --> H1[H1 live observations / attention / usage]
     H0 --> N[Native header / focus / geometry acceptance]
     H1 --> N
-    W[Existing worker and bounded event/lifecycle seam] --> H2[H2 explicit task operation]
+    W[Independent minicon-harness and bounded app event seam] --> H2[H2 explicit task operation]
     H2 --> T[Real task and owned-process acceptance]
     N --> Q[Selected release qualification]
     T --> L[Later selected operational delivery]

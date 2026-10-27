@@ -13,7 +13,11 @@ Outcome: improve daily use without losing open product obligations
 ├── [_] Core product track: visual Harness operation / monitoring → PRD 36
 │   ├── H0 robot entry + real overview + Settings deep links → 0.2.23 reservation
 │   ├── H1 account/client/request/usage observation → pool and monitoring owners
-│   └── H2 built-in task operation, then H3 future engine decisions → own staged plan
+│   └── H2 optional minicon-harness app operation, then H3 future engine decisions → own staged plan / PRD 40
+├── [-] Plugins and Apps layer / independent minicon-harness → PRD 40 / extraction plan
+│   ├── X0 released-worker parity and exact two-repo source inventory → 0.2.25 preparation
+│   ├── X1 app contract, then X2 future Settings manager and X3 robot event join → later selected version
+│   └── X4 one-implementation cutover only after exact native artifact pair qualifies
 ├── [_] Important future track: cluster / cross-machine coordination → PRD 37
 │   ├── C0 identity, trust and observation contract → next design milestone
 │   ├── C1 explicit pairing and read-only two-node dashboard → subsequent selected version
@@ -42,7 +46,9 @@ flowchart LR
     P --> A[PRD 31.01 auth feasibility and manual account binding]
     V[Core Harness workspace / PRD 36] --> P
     A --> V
-    V --> L[Later bounded built-in task operation]
+    V --> L[Later bounded app-backed task operation]
+    APP[PRD 40 optional minicon-harness app] --> L
+    APP --> SET[Future Settings / Plugins and Apps manager]
     CL[PRD 37 / C0 future cluster design] -. origin-scoped views .-> V
     CL --> CP[Subsequent C1 paired observation]
     CU[PRD38 / CU plan: observation then action] -. explicit later tool selection .-> L
@@ -81,6 +87,11 @@ The owner's 2026-10-25 direction makes the
 core product track; [its plan](plan-harness-workspace.md) stages the robot
 reservation, real monitoring and later task operation. Console/Web improvements,
 input correctness and bug fixes remain maintained foundation work throughout.
+The 2026-10-27 [Plugins and Apps decision](../prd/PRD_02_40_plugins_apps.md)
+moves future file/exec worker delivery into `partnernetsoftware/minicon-harness`.
+[Its extraction plan](plan-minicon-harness-extraction.md) records the parity,
+contract, Settings-management and cutover gates; no implementation or release
+version is inferred from a new-repo source copy.
 Independent tracks retain their existing requirements and gates in
 [TUI compatibility](../prd/PRD_02_24_01_tui_compatibility.md),
 [Windows backend](../prd/PRD_02_34_windows_console_backend.md),

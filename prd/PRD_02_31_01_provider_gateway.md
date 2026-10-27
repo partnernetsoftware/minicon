@@ -14,8 +14,10 @@ inference API, and the selection seam for a future `llm-gate`. Its
 information architecture, visible state, first use and recovery;
 [provider pool](PRD_02_31_01_02_provider_pool.md) owns multiple accounts,
 per-account networks and keyed client allocation; [monitoring](PRD_02_31_01_03_usage_monitoring.md)
-owns local statistics and provider balance/allowance observations. The existing
-worker's file/exec authority remains in the parent module.
+owns local statistics and provider balance/allowance observations. The released
+worker's file/exec authority is recorded in the parent module; its future
+independent app ownership and handoff are in [PRD 40](PRD_02_40_plugins_apps.md).
+This gateway never acquires tool authority.
 
 ## Outcome tree DAG
 
@@ -54,12 +56,12 @@ Outcome: connect a model account once and use it from MiniCon's worker or a comp
 │   safe failure: bounded protocol-shaped error, cancellation and release of the account lease
 │   dependency: POOL, protocol adapters and bounded native HTTP streaming mechanisms
 │   non-goal: file/exec endpoints, remote tasks, LAN access, daemon or protocol-completeness claims
-├── [-] WORKER — reuse the existing file + exec harness through the model API
-│   invariant: local root/command policy and task lifetime stay with the worker
-│   evidence: real model -> tool description -> worker execution -> tool result -> final answer; negative tool courts
-│   safe failure: missing account or API does not start a tool; cancel/limits reap owned descendants
-│   dependency: API and worker budget/output/lifecycle repairs in the parent module
-│   non-goal: a second agent loop or treating exec's cwd as a filesystem sandbox
+├── [-] WORKER CLIENT — connect the optional minicon-harness app through the model API
+│   invariant: local root/command policy and task lifetime stay with the separate worker; gateway returns model results only
+│   evidence: exact host/app pair: real model -> tool description -> app execution -> tool result -> final answer; negative tool courts
+│   safe failure: missing app, account or API cannot start a tool; app owns cancellation and descendant cleanup
+│   dependency: API, PRD 40 app seam and worker migration acceptance
+│   non-goal: a second agent loop in MiniCon or treating exec's cwd as a filesystem sandbox
 └── [-] CLIENT / FUTURE SEAM — one named external client and replaceable selection
     invariant: compatibility names client/version/protocol/model; selection returns a binding, not execution authority
     evidence: one real external tool/SSE/cancel journey and a fake selector substitutable without codec changes
@@ -78,7 +80,7 @@ flowchart LR
     A --> V{Verified inference authorization?}
     V -->|no| B[BLOCKED provider auth claim]
     V -->|yes| P[Manual provider/model/account selector]
-    H[Existing MiniCon file + exec worker] --> G[Loopback inference API]
+    H[Released embedded worker / future separate app] --> G[Loopback inference API]
     E[Named external harness] --> G
     G --> C[Protocol adapters and capability validation]
     C --> P
