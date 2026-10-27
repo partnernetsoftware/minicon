@@ -1399,7 +1399,7 @@ fn paint_web_settings(
     );
     let (notice, placeholder, add, empty, previous, next) = match lang {
         ui::UiLanguage::English => (
-            "Save up to 8 proxy choices. Language, theme and updates are in Console.",
+            "Save choices here; apply beside the Browser address.",
             "http://127.0.0.1:8890",
             "Add",
             "No saved proxies. Add one above.",
@@ -1407,7 +1407,7 @@ fn paint_web_settings(
             "Next",
         ),
         ui::UiLanguage::ChineseSimplified => (
-            "最多保存8个代理。语言、主题和更新在 Console 中设置。",
+            "此处仅保存候选；在网页地址旁选择后生效。",
             "http://127.0.0.1:8890",
             "添加",
             "暂无候选代理，请在上方添加。",
@@ -1415,7 +1415,7 @@ fn paint_web_settings(
             "下一页",
         ),
         ui::UiLanguage::ChineseTraditional => (
-            "最多儲存8個代理。語言、佈景主題和更新在 Console 中設定。",
+            "此處僅儲存候選；在網頁地址旁選擇後生效。",
             "http://127.0.0.1:8890",
             "新增",
             "尚無候選代理，請在上方新增。",

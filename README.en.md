@@ -211,6 +211,8 @@ The editable proxy dropdown beside a Browser address accepts an HTTP proxy
 resetting its session/history; Escape cancels editing. Manage saved choices
 in **Settings → Web**; **Console** keeps the terminal settings. Select
 **Use configured proxy** to clear the override.
+Adding a choice in **Settings → Web** does not activate it for the current page;
+select it beside the Browser address, or enter an endpoint there and press Enter.
 
 The 0.2.23 line adds experimental **Settings → Harness** for optional provider
 accounts and an explicitly started local model API. Its connection steps and
