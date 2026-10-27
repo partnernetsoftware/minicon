@@ -232,6 +232,85 @@ impl BrowserGui {
     }
 }
 
+#[test]
+fn host_composer_scrollbar_pages_and_drags_without_changing_the_draft() {
+    let mut host = BrowserGui::spawn(true, None, None);
+    host.cli(&["send-ui-keys", "Ctrl+Shift+I"]);
+    let draft = (0..24)
+        .map(|line| format!("draft-{line:02}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    host.cli(&["send-ui-ime", "commit", &draft]);
+    let before = host.cli(&["ui-snapshot"]);
+    assert_eq!(before["composer_text"], draft);
+    let first = before["geometry"]["composer_visible_first_line"]
+        .as_u64()
+        .expect("published composer scroll position");
+    assert!(first > 0, "multiline draft must scroll: {before}");
+    let scale = before["geometry"]["scale_permille"].as_u64().unwrap() as f64 / 1000.0;
+    let track = &before["geometry"]["composer_scrollbar"];
+    let x = ((track["x"].as_u64().unwrap() + track["width"].as_u64().unwrap() / 2) as f64 / scale)
+        .round()
+        .to_string();
+    let top = ((track["y"].as_u64().unwrap() + 2) as f64 / scale)
+        .round()
+        .to_string();
+    host.cli(&[
+        "send-ui-mouse",
+        "--action",
+        "click",
+        "--button",
+        "left",
+        "--column",
+        &x,
+        "--row",
+        &top,
+    ]);
+    let paged = host.cli(&["ui-snapshot"]);
+    assert!(
+        paged["geometry"]["composer_visible_first_line"]
+            .as_u64()
+            .unwrap()
+            < first,
+        "track click must page toward the draft head: {paged}"
+    );
+    assert_eq!(paged["composer_text"], draft);
+    let thumb = &paged["geometry"]["composer_scrollbar_thumb"];
+    let thumb_y = ((thumb["y"].as_u64().unwrap() + thumb["height"].as_u64().unwrap() / 2) as f64
+        / scale)
+        .round()
+        .to_string();
+    let bottom = ((track["y"].as_u64().unwrap() + track["height"].as_u64().unwrap() - 2) as f64
+        / scale)
+        .round()
+        .to_string();
+    for (action, button, row) in [
+        ("press", "left", thumb_y.as_str()),
+        ("move", "none", bottom.as_str()),
+        ("release", "left", bottom.as_str()),
+    ] {
+        host.cli(&[
+            "send-ui-mouse",
+            "--action",
+            action,
+            "--button",
+            button,
+            "--column",
+            &x,
+            "--row",
+            row,
+        ]);
+    }
+    let dragged = host.cli(&["ui-snapshot"]);
+    assert_eq!(
+        dragged["geometry"]["composer_visible_first_line"],
+        before["geometry"]["composer_visible_first_line"],
+        "drag to track bottom must restore the draft tail: {dragged}"
+    );
+    assert_eq!(dragged["composer_text"], draft);
+    host.close_and_wait();
+}
+
 struct LocalPreviewServer {
     address: std::net::SocketAddr,
     requests: std::sync::Arc<std::sync::atomic::AtomicUsize>,

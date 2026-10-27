@@ -24,7 +24,8 @@ pub const SIDEBAR_RAIL_WIDTH_DIP: f64 = 80.0;
 pub const TOOLTIP_GAP_DIP: f64 = 6.0;
 pub const TOOLTIP_PADDING_DIP: f64 = 8.0;
 pub const TOOLTIP_HEIGHT_DIP: f64 = 26.0;
-pub const TERMINAL_SCROLLBAR_WIDTH_DIP: f64 = 12.0;
+pub const TERMINAL_SCROLLBAR_WIDTH_DIP: f64 = 18.0;
+pub const COMPOSER_SCROLLBAR_WIDTH_DIP: f64 = 14.0;
 /// Width of the right-side history/notes panel when it is open. Closing it
 /// hands the terminal back the whole column, the way the sidebar rail does.
 pub const HISTORY_PANEL_WIDTH_DIP: f64 = 260.0;
@@ -144,6 +145,7 @@ pub struct Layout {
     pub tree_row_height: u32,
     pub composer: Rect,
     pub composer_input: Rect,
+    pub composer_scrollbar: Rect,
     pub composer_send: Rect,
     /// Directly under [`Self::composer_send`], same column.
     ///
@@ -568,6 +570,16 @@ impl Layout {
             width: input_right.saturating_sub(input_x),
             height: control_height,
         };
+        let scrollbar_width =
+            dip(COMPOSER_SCROLLBAR_WIDTH_DIP, scale).min(input.width.saturating_sub(2));
+        let composer_scrollbar = Rect {
+            x: input
+                .x
+                .saturating_add(input.width.saturating_sub(scrollbar_width + 1)),
+            y: input.y.saturating_add(1),
+            width: scrollbar_width,
+            height: input.height.saturating_sub(2),
+        };
         let pad = dip(4.0, scale);
         let tool_y = pad;
         let tool_size = dip(32.0, scale);
@@ -760,6 +772,7 @@ impl Layout {
             composer,
             status,
             composer_input: input,
+            composer_scrollbar,
             composer_send: send,
             composer_newline: newline,
             composer_copy: copy,
@@ -950,6 +963,7 @@ pub enum TreeHit {
 pub enum ComposerHit {
     Outside,
     Input,
+    Scrollbar,
     Send,
     Newline,
     Copy,
@@ -1535,11 +1549,35 @@ pub fn composer_hit(layout: Layout, x: u32, y: u32) -> ComposerHit {
         ComposerHit::Paste
     } else if layout.composer_cut.contains(x, y) {
         ComposerHit::Cut
+    } else if layout.composer_scrollbar.contains(x, y) {
+        ComposerHit::Scrollbar
     } else if layout.composer.contains(x, y) {
         ComposerHit::Input
     } else {
         ComposerHit::Outside
     }
+}
+
+pub fn composer_scrollbar_geometry(
+    layout: Layout,
+    visible: usize,
+    first_line: usize,
+    total: usize,
+) -> minicon_ui_core::ScrollbarGeometry {
+    let area = layout.composer_scrollbar;
+    let maximum = total.saturating_sub(visible);
+    minicon_ui_core::terminal_scrollbar_geometry(
+        minicon_ui_core::Rect {
+            left: area.x.min(i32::MAX as u32) as i32,
+            top: area.y.min(i32::MAX as u32) as i32,
+            right: area.x.saturating_add(area.width).min(i32::MAX as u32) as i32,
+            bottom: area.y.saturating_add(area.height).min(i32::MAX as u32) as i32,
+        },
+        area.width.min(i32::MAX as u32) as i32,
+        visible,
+        maximum.saturating_sub(first_line.min(maximum)),
+        maximum,
+    )
 }
 
 /// Hit-test the bottom status bar.
@@ -3768,6 +3806,25 @@ mod tests {
             ComposerHit::Newline
         );
         assert_eq!(composer_hit(layout, 500, 100), ComposerHit::Outside);
+    }
+
+    #[test]
+    fn composer_scrollbar_has_its_own_hit_area_and_tracks_draft_lines() {
+        let layout = Layout::new(1000, 500, 1.0);
+        let area = layout.composer_scrollbar;
+        assert_eq!(area.width, COMPOSER_SCROLLBAR_WIDTH_DIP as u32);
+        assert_eq!(
+            composer_hit(layout, area.x + 2, area.y + 2),
+            ComposerHit::Scrollbar
+        );
+        let bottom = composer_scrollbar_geometry(layout, 4, 16, 20);
+        let top = composer_scrollbar_geometry(layout, 4, 0, 20);
+        assert_eq!(bottom.thumb.bottom, bottom.track.bottom);
+        assert_eq!(top.thumb.top, top.track.top);
+        assert!(bottom.thumb.height() < bottom.track.height());
+        let short = composer_scrollbar_geometry(layout, 4, 0, 2);
+        assert_eq!(short.thumb.top, short.track.top);
+        assert_eq!(short.thumb.bottom, short.track.bottom);
     }
 
     #[test]

@@ -37,6 +37,12 @@ minicon workspace and input
 │   └── composer + status bar
 ├── External composer input (exactly one focus owner)
 ├── Scrollbar and divider
+│   └── [v] terminal history + composer draft scrollbars
+│       invariant: visible host-owned tracks have separate scroll positions and pointer gestures
+│       evidence: terminal history regression; UI geometry test; Windows native pointer court
+│       failure: capture loss ends drag; short draft remains readable
+│       dependency: VT history offset and composer logical-line viewport
+│       non-goal: changing application mouse reporting or alternate-screen wheel
 ├── Selection and clipboard
 │   └── [-] Clipboard status type and size (0.2.24) → section below
 ├── Configuration (minicon.json; themes; language; font size)
@@ -87,6 +93,10 @@ flowchart LR
     Validate --> BrCP
     Validate -->|invalid| Recovery
     TermCP -->|"local URL"| BrCP
+    VTHistory["VT history offset"] --> TermScroll["18-DIP terminal track"]
+    DraftLines["composer logical lines"] --> DraftScroll["14-DIP input track"]
+    TermScroll -->|"pointer owned by host"| TermCP
+    DraftScroll -->|"pointer and wheel owned by composer"| DraftLines
     BrCP -->|"switch back; preserve draft"| TermCP
     TermTab -.->|"future 1:N"| Multi["split content panels"]
     Chrome["chrome panels"] --> Hist["sent-history panel"]
@@ -1175,11 +1185,27 @@ Concretely:
   phantom rows. Track clicks
   move one visible page, thumb drags retain their grab offset, and capture loss
   cancels the drag without emitting terminal mouse input. Structured snapshots
-  expose both current and maximum scrollback.
+  expose both current and maximum scrollback. New output retains the viewed
+  history position while the user is scrolled up; an explicit terminal input
+  action may return to the live bottom. The regression
+  `terminal::tests::new_output_keeps_the_user_scrolled_up_in_history` failed
+  with the old forced snap and passed after mirroring the VT-owned offset.
 - [v] the tab's own scroll affordances are the host's, never the inner
   program's: the scrollbar and the `Shift+PageUp`/`Shift+PageDown` paging keys
   act on MiniCon's viewport regardless of what the tab runs, and an application
   that grabs the mouse does not take the scrollbar from them.
+- [v] terminal scrollbar width is 18 DIP for an easier pointer target. The
+  composer input always paints a separate 14-DIP scrollbar, including a full
+  thumb when its draft fits. Its track pages the draft, its thumb drags through
+  logical lines, and the wheel over the input scrolls that draft without
+  reaching the PTY. Typing returns the input view to caret-follow mode. The
+  two scrollbars own separate buffers and pointer gestures; capture loss ends
+  a drag. Public `ui-snapshot.geometry` exposes the composer track, thumb and
+  first visible line. Evidence: `ui::tests::composer_scrollbar_has_its_own_hit_area_and_tracks_draft_lines`,
+  `browser_windows::host_composer_scrollbar_pages_and_drags_without_changing_the_draft`
+  (including a deliberate broken-track red run), and the terminal history
+  regression above. Safe failure: a short draft stays fully visible;
+  non-goal: changing alternate-screen wheel or application mouse reporting.
 - [v] the tab-tree divider exposes a horizontal-resize cursor on hover and a
   bounded capture-safe drag that retains the terminal's minimum usable width.
 - [v] divider drag stays visually responsive without synchronously resizing the

@@ -947,6 +947,9 @@ struct ConApp {
     /// the greeting page is a lifecycle boundary rather than a settings reset.
     session_seed: SessionSeed,
     composer: composer::ComposerState,
+    /// Manual first visible draft line; editing resumes caret-follow scrolling.
+    composer_first_line: Option<usize>,
+    composer_scroll_drag: Option<ScrollbarThumbDrag>,
     /// The notes scratchpad buffer (right panel, Global-only, PTY-isolated).
     /// Session state: editing never reaches the PTY; persistence rides the
     /// config file on blur and on committing gestures.
@@ -1495,6 +1498,8 @@ impl ConApp {
             notes_blur_pending_save: false,
             notes_scroll: 0,
             composer: composer::ComposerState::default(),
+            composer_first_line: None,
+            composer_scroll_drag: None,
             input_surface: InputSurface::default(),
             composer_selecting: false,
             rename_selecting: false,
@@ -3122,6 +3127,104 @@ impl ConApp {
         ))
     }
 
+    fn composer_rows(&self, layout: ui::Layout, scale: f64) -> usize {
+        let size = scaled_host_ui_font(COMPOSER_TEXT_SIZE_PX, self.host_font_logical(), scale);
+        let line_height = font::cell_metrics(size).height.max(1);
+        (layout.composer_input.height.saturating_sub(8) / line_height).max(1) as usize
+    }
+
+    fn composer_visible_lines(&self, rows: usize) -> composer::VisibleLineWindow {
+        let mut lines =
+            composer::visible_line_window(&self.composer.text, self.composer.caret, rows);
+        if let Some(first) = self.composer_first_line {
+            let total = composer::line_count(&self.composer.text);
+            lines.first_line = first.min(total.saturating_sub(rows));
+            lines.line_count = rows.min(total.saturating_sub(lines.first_line));
+            lines.caret_row = composer::line_index_at(&self.composer.text, self.composer.caret)
+                .saturating_sub(lines.first_line);
+        }
+        lines
+    }
+
+    fn scroll_composer_to(&mut self, first: usize, rows: usize) {
+        let maximum = composer::line_count(&self.composer.text).saturating_sub(rows);
+        self.composer_first_line = Some(first.min(maximum));
+        self.mark_composer_dirty();
+    }
+
+    fn route_composer_scrollbar(
+        &mut self,
+        window: &PixelWindow,
+        event: &PixelWindowEvent,
+    ) -> Result<bool, PixelWindowError> {
+        if self.settings_open || self.home_active || self.active_is_browser() {
+            return Ok(false);
+        }
+        let metrics = window.metrics()?;
+        let scale = metrics.scale_factor.max(1.0);
+        let layout = self.layout(metrics.physical_width, metrics.physical_height, scale);
+        let rows = self.composer_rows(layout, scale);
+        let total = composer::line_count(&self.composer.text);
+        let maximum = total.saturating_sub(rows);
+        let first = self.composer_visible_lines(rows).first_line.min(maximum);
+        let geometry = ui::composer_scrollbar_geometry(layout, rows, first, total);
+        let physical = |position: &LogicalPoint| {
+            (
+                minicon_core::numeric::round_f64(position.x * scale) as i32,
+                minicon_core::numeric::round_f64(position.y * scale) as i32,
+            )
+        };
+        match event {
+            PixelWindowEvent::PointerButton {
+                button: PointerButton::Left,
+                state: PointerButtonState::Pressed,
+                position: Some(position),
+                ..
+            } => {
+                let (x, y) = physical(position);
+                let Some(hit) = scrollbar_hit_test(&geometry, x, y) else {
+                    return Ok(false);
+                };
+                match hit {
+                    ScrollbarHit::Thumb => {
+                        self.composer_scroll_drag =
+                            Some(ScrollbarThumbDrag::begin(y, geometry.thumb.top));
+                        let _ = window.set_pointer_capture(true);
+                    }
+                    ScrollbarHit::TrackAbove => {
+                        self.scroll_composer_to(first.saturating_sub(rows), rows)
+                    }
+                    ScrollbarHit::TrackBelow => {
+                        self.scroll_composer_to(first.saturating_add(rows), rows)
+                    }
+                }
+                self.request_dirty_redraw(window);
+                Ok(true)
+            }
+            PixelWindowEvent::PointerMoved { position, .. } => {
+                let Some(drag) = self.composer_scroll_drag else {
+                    return Ok(false);
+                };
+                let (_, y) = physical(position);
+                let from_bottom = scrollback_for_thumb_top(geometry, drag.thumb_top(y), maximum);
+                self.scroll_composer_to(maximum.saturating_sub(from_bottom), rows);
+                self.request_dirty_redraw(window);
+                Ok(true)
+            }
+            PixelWindowEvent::PointerButton {
+                button: PointerButton::Left,
+                state: PointerButtonState::Released,
+                ..
+            } if self.composer_scroll_drag.take().is_some() => {
+                let _ = window.set_pointer_capture(false);
+                self.mark_composer_dirty();
+                self.request_dirty_redraw(window);
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+
     fn update_composer_ime_anchor(&self, window: &PixelWindow) -> Result<(), PixelWindowError> {
         let metrics = window.metrics()?;
         let scale = metrics.scale_factor.max(1.0);
@@ -3139,12 +3242,16 @@ impl ConApp {
             scaled_host_ui_font(COMPOSER_TEXT_SIZE_PX, self.host_font_logical(), scale);
         let cell_width = font::cell_metrics(composer_font_size).width.max(1);
         let text_width = layout
-            .composer_input
-            .width
+            .composer_scrollbar
+            .x
+            .saturating_sub(layout.composer_input.x)
             .saturating_sub(COMPOSER_TEXT_INSET.saturating_mul(2));
         let line_height = font::cell_metrics(composer_font_size).height.max(1);
         let rows = (layout.composer_input.height.saturating_sub(8) / line_height).max(1) as usize;
-        let lines = composer::visible_line_window(&self.composer.text, self.composer.caret, rows);
+        let lines = self.composer_visible_lines(rows);
+        if lines.caret_row >= lines.line_count {
+            return Ok(());
+        }
         let caret_line = lines.first_line + lines.caret_row;
         let range = composer::line_range(&self.composer.text, caret_line);
         let local_caret = self
@@ -3213,12 +3320,13 @@ impl ConApp {
             scaled_host_ui_font(COMPOSER_TEXT_SIZE_PX, self.host_font_logical(), scale);
         let cell_width = font::cell_metrics(composer_font_size).width.max(1);
         let text_width = layout
-            .composer_input
-            .width
+            .composer_scrollbar
+            .x
+            .saturating_sub(layout.composer_input.x)
             .saturating_sub(COMPOSER_TEXT_INSET.saturating_mul(2));
         let line_height = font::cell_metrics(composer_font_size).height.max(1);
         let rows = (layout.composer_input.height.saturating_sub(8) / line_height).max(1) as usize;
-        let lines = composer::visible_line_window(&self.composer.text, self.composer.caret, rows);
+        let lines = self.composer_visible_lines(rows);
         let physical_x = minicon_core::numeric::round_f64(position.x * scale) as u32;
         let physical_y = minicon_core::numeric::round_f64(position.y * scale) as u32;
         let clicked_row = physical_y
@@ -3288,6 +3396,7 @@ impl ConApp {
     /// the composer's Paste button so non-keyboard users can paste too.
     fn paste_clipboard_into_composer(&mut self, window: &PixelWindow) {
         if let Some(text) = composer_paste_text_or_image_path() {
+            self.composer_first_line = None;
             composer::paste(&mut self.composer, &text);
             let _ = self.update_composer_ime_anchor(window);
             self.mark_composer_dirty();
@@ -3410,6 +3519,7 @@ impl ConApp {
             // focus states instead of being swallowed while typing.
             return false;
         }
+        self.composer_first_line = None;
         self.composer.submit_error = None;
         match action {
             keymap::Action::Decline => unreachable!("returned above"),
@@ -3482,6 +3592,7 @@ impl ConApp {
         let Some(input) = self.composer.take_submission() else {
             return;
         };
+        self.composer_first_line = None;
         // Remembered before delivery is attempted: a line that failed to send
         // is exactly the one worth recalling. The destination travels with it
         // so the history panel can label the row even after the tab is gone.
@@ -3524,6 +3635,7 @@ impl ConApp {
         window: &PixelWindow,
         event: minicon_platform::ime::ImeEvent,
     ) {
+        self.composer_first_line = None;
         use minicon_platform::ime::{ImeAction, classify_event};
         match classify_event(event, true) {
             ImeAction::UpdatePreedit { text, .. } => self.composer.preedit = text,
@@ -4113,6 +4225,8 @@ impl PixelWindowApplication for ConApp {
         }
         if matches!(event, PixelWindowEvent::PointerCaptureLost) {
             self.rename_selecting = false;
+            self.composer_scroll_drag = None;
+            self.composer_selecting = false;
             self.cancel_harness_pointer();
             self.cancel_pointer_gestures_for_activation(window);
             return Ok(PixelWindowDirective::Continue);
@@ -4203,6 +4317,9 @@ impl PixelWindowApplication for ConApp {
             self.mark_host_ui_full_and_repaint(window);
             return Ok(PixelWindowDirective::Continue);
         }
+        if self.route_composer_scrollbar(window, &event)? {
+            return Ok(PixelWindowDirective::Continue);
+        }
         if let PixelWindowEvent::MouseWheel {
             delta,
             position: Some(position),
@@ -4270,6 +4387,28 @@ impl PixelWindowApplication for ConApp {
                     self.scroll_history_panel(rows, panel.row_capacity);
                 }
                 self.mark_host_ui_full_and_repaint(window);
+                return Ok(PixelWindowDirective::Continue);
+            }
+            if !self.active_is_browser()
+                && !self.settings_open
+                && !self.home_active
+                && layout.composer_input.contains(
+                    (position.x * scale).max(0.0) as u32,
+                    (position.y * scale).max(0.0) as u32,
+                )
+            {
+                let rows = self.composer_rows(layout, scale);
+                let first = self.composer_visible_lines(rows).first_line;
+                let movement = match delta {
+                    WheelDelta::Lines { y, .. } => minicon_core::numeric::round_f32(*y) as isize,
+                    WheelDelta::LogicalPixels { y, .. } => {
+                        let line_height = layout.composer_input.height.max(1) as f64 / rows as f64;
+                        minicon_core::numeric::round_f64(*y / line_height) as isize
+                    }
+                    _ => 0,
+                };
+                self.scroll_composer_to(first.saturating_add_signed(-movement), rows);
+                self.request_dirty_redraw(window);
                 return Ok(PixelWindowDirective::Continue);
             }
         }
@@ -4533,6 +4672,7 @@ impl PixelWindowApplication for ConApp {
                 }
             }
             match self.composer_hit(window, position)? {
+                ui::ComposerHit::Scrollbar => return Ok(PixelWindowDirective::Continue),
                 ui::ComposerHit::Input => {
                     self.composer.focused = true;
                     self.composer.select_all = false;
@@ -4580,6 +4720,7 @@ impl PixelWindowApplication for ConApp {
                     // A break in the text, not a submission: the line goes on
                     // being edited. Sending here would make the two buttons the
                     // same button with different labels.
+                    self.composer_first_line = None;
                     composer::insert(&mut self.composer, "\n");
                     self.composer.focused = true;
                     self.update_composer_ime_anchor(window)?;
@@ -4606,6 +4747,7 @@ impl PixelWindowApplication for ConApp {
                     return Ok(PixelWindowDirective::Continue);
                 }
                 ui::ComposerHit::Cut => {
+                    self.composer_first_line = None;
                     if let Some(text) = composer::cut(&mut self.composer) {
                         let _ = clipboard_status::set_text(&text);
                     }

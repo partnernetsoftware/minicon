@@ -404,13 +404,36 @@ impl ConApp {
         let composer_cell_width = composer_metrics.width.max(1);
         let composer_line_height = composer_metrics.height.max(1);
         let composer_text_width = layout
-            .composer_input
-            .width
+            .composer_scrollbar
+            .x
+            .saturating_sub(layout.composer_input.x)
             .saturating_sub(COMPOSER_TEXT_INSET.saturating_mul(2));
         let composer_cells = (composer_text_width / composer_cell_width) as usize;
         let rows =
             (layout.composer_input.height.saturating_sub(8) / composer_line_height).max(1) as usize;
-        let lines = composer::visible_line_window(&self.composer.text, self.composer.caret, rows);
+        let lines = self.composer_visible_lines(rows);
+        let scrollbar = ui::composer_scrollbar_geometry(
+            layout,
+            rows,
+            lines.first_line,
+            composer::line_count(&self.composer.text),
+        );
+        let track = scrollbar.track;
+        let thumb = scrollbar.thumb;
+        surface.fill_rect(
+            track.left.max(0) as u32,
+            track.top.max(0) as u32,
+            track.width().max(0) as u32,
+            track.height().max(0) as u32,
+            muted.to_xrgb(),
+        );
+        surface.fill_rect(
+            thumb.left.max(0) as u32,
+            thumb.top.max(0) as u32,
+            thumb.width().max(0) as u32,
+            thumb.height().max(0) as u32,
+            accent.to_xrgb(),
+        );
         let caret_line = composer::line_index_at(&self.composer.text, self.composer.caret);
         for row in 0..lines.line_count {
             let line_index = lines.first_line + row;

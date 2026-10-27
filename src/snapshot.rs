@@ -85,6 +85,32 @@ impl ConApp {
                             ),
                             ("terminal_viewport", rect_obj(viewport)),
                             ("composer_band", rect_obj(layout.composer)),
+                            ("composer_scrollbar", rect_obj(layout.composer_scrollbar)),
+                            ("composer_scrollbar_thumb", {
+                                let rows = self.composer_rows(layout, metrics.scale_factor);
+                                let lines = self.composer_visible_lines(rows);
+                                let thumb = ui::composer_scrollbar_geometry(
+                                    layout,
+                                    rows,
+                                    lines.first_line,
+                                    composer::line_count(&self.composer.text),
+                                )
+                                .thumb;
+                                json::object(vec![
+                                    ("x", (thumb.left.max(0) as u32).into()),
+                                    ("y", (thumb.top.max(0) as u32).into()),
+                                    ("width", (thumb.width().max(0) as u32).into()),
+                                    ("height", (thumb.height().max(0) as u32).into()),
+                                ])
+                            }),
+                            (
+                                "composer_visible_first_line",
+                                self.composer_visible_lines(
+                                    self.composer_rows(layout, metrics.scale_factor),
+                                )
+                                .first_line
+                                .into(),
+                            ),
                             ("status_band", rect_obj(layout.status)),
                             ("history_panel_band", rect_obj(layout.panel)),
                             // Where the notes scratchpad sits inside the

@@ -857,13 +857,13 @@ impl ConTerminal {
     }
 
     fn consume_presentation_damage(&mut self) -> bool {
-        // New output snaps scrollback to bottom.
+        // VT owns the scrollback viewport. When the user is reading history,
+        // newly appended lines advance its offset to keep the same rows in
+        // view. Mirror that offset instead of snapping the host scrollbar to
+        // the live bottom on every output chunk.
         if self.presentation_output_pending && !self.parser.is_holding() {
             self.presentation_output_pending = false;
-            if self.scroll_offset > 0 {
-                self.scroll_offset = 0;
-                self.parser.screen_mut().set_scrollback(0);
-            }
+            self.scroll_offset = self.parser.screen().scrollback();
             // Keep copy/selection consistent with held cells until publication.
             if !self.selecting {
                 self.mark_selection(self.selection);
@@ -2178,6 +2178,10 @@ impl ConTerminal {
 
     pub(super) fn cancel_pointer_gesture(&mut self, window: &PixelWindow) {
         let _ = window.set_pointer_capture(false);
+        if self.scrollbar_drag.take().is_some() {
+            self.mark_scrollbar_bounds();
+            self.request_dirty_redraw(window);
+        }
         if let Some((button, point)) = self.take_cancelled_pointer_release() {
             let modifiers = minicon_platform::input::ModifierState {
                 control: false,
@@ -3859,6 +3863,24 @@ pub(crate) mod tests {
             .unwrap_err();
 
         assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+    }
+    #[test]
+    fn new_output_keeps_the_user_scrolled_up_in_history() {
+        let mut app = ConTerminal::new(None, None);
+        for index in 0..40 {
+            app.parser
+                .process(format!("history-{index}\r\n").as_bytes());
+        }
+        app.set_scrollback(5);
+        assert!(app.scroll_offset > 0);
+        let before = app.scroll_offset;
+
+        app.parser.process(b"new-output\r\n");
+        app.presentation_output_pending = true;
+        app.consume_presentation_damage();
+
+        assert!(app.scroll_offset >= before);
+        assert_eq!(app.scroll_offset, app.parser.screen().scrollback());
     }
     #[test]
     fn injected_terminal_key_propagates_closed_pty() {
