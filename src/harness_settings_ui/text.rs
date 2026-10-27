@@ -97,9 +97,9 @@ pub(super) fn label(
         Row::AccountFieldCaption(field) => label = account_field_caption(field, language).into(),
         Row::AccountNetworkHint => {
             label = tr(
-                "Empty proxy means Direct.",
-                "代理留空表示直连。",
-                "代理留空表示直連。",
+                "Login proxy controls sign-in pages; empty means Direct.",
+                "登录代理控制授权网页；留空即直连。",
+                "登入代理控制授權網頁；留空即直連。",
             )
             .into();
         }
@@ -162,9 +162,9 @@ pub(super) fn label(
         }
         Row::ConnectNetworkHint => {
             label = tr(
-                "Choose both networks before Continue.",
-                "继续前请设置两种网络。",
-                "繼續前請設定兩種網路。",
+                "Set Login proxy before Continue for Google sign-in; Web proxy is separate.",
+                "Google 登录需在继续前设置登录代理；Web 代理独立。",
+                "Google 登入需在繼續前設定登入代理；Web 代理獨立。",
             )
             .into();
         }

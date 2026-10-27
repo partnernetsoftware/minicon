@@ -194,6 +194,9 @@ Enter 应用并重新加载（重置页面会话和历史），Escape 取消编�
 
 0.2.23 增加实验性的 **设置 → Harness**，可按需连接模型服务账号，并手动启动本地模型 API。
 连接步骤与当前验证范围见 [Harness 需求](prd/PRD_02_31_01_provider_gateway.md)。
+Harness 授权页使用账号的**登录代理**，不会沿用普通 Web 标签的代理。连接账号时先在
+**设置 → Harness → 账号池**填写登录代理，再继续 OpenCode / Google 登录；
+留空表示直连。**服务代理**单独控制后续模型请求。
 点击 **设置** 左侧的机器人按钮，查看 [Harness 大屏](prd/PRD_02_36_harness_workspace.md)；
 账号、客户端分配、用量监控和本地 API 在 **设置 → Harness** 中配置。
 打开这两个入口不会启动模型 API 或执行任务。

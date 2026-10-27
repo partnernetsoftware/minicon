@@ -218,6 +218,10 @@ The 0.2.23 line adds experimental **Settings → Harness** for optional provider
 accounts and an explicitly started local model API. Its connection steps and
 current qualification limits are owned by the
 [Harness requirements](prd/PRD_02_31_01_provider_gateway.md).
+Authorization pages use the account's **Login proxy**, independently of the
+ordinary Browser proxy. Set it in **Settings → Harness → Account pool** before
+continuing OpenCode / Google sign-in; an empty field means Direct. The separate
+**Service proxy** controls later model requests.
 Use the robot button to the left of **Settings** to view the
 [Harness dashboard](prd/PRD_02_36_harness_workspace.md). Configure accounts,
 client allocations, usage monitoring and the local API in **Settings → Harness**.
