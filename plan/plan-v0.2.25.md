@@ -37,7 +37,7 @@ Outcome: make the first local Harness connection legible from setup to observed 
 │   evidence: cargo metadata/check and version/policy consistency check
 │   safe failure: a mismatch blocks build or release selection
 │   dependency: public 0.2.24 source boundary; non-goal: publishing 0.2.25 by changing a number
-├── [_] D1 — inspect and simplify the product journey
+├── [-] D1 — inspect and simplify the product journey
 │   invariant: one visible next action per state; configuration and operation have separate owners
 │   evidence: four current-GUI walkthroughs, reviewed state/action map and narrow/wide mock or capture
 │   safe failure: unsupported states say unavailable with a recovery link, not an enabled dead action

@@ -116,6 +116,21 @@ actual account grants and real client use retain independent evidence scopes;
 passing only a settings layout or synthetic provider fixture cannot close the
 journey. Visual operation and freshness belong to [PRD 36](PRD_02_36_harness_workspace.md).
 
+#### Four-journey state and action review (0.2.25)
+
+| Journey and first confusing state | User question and primary action | Visible source and safe recovery | Owner |
+| --- | --- | --- | --- |
+| New OpenCode/Google account: the provider page opens after a Web tab used a proxy | Which route will this login use? Show the effective account **Login** route before Continue; use Continue once the route is valid. | The unsaved account draft supplies the next attempt's route, while the Web override remains separate. A rejected proxy leaves the account draft and an account-scoped retry; it must not fall back to Direct. | This experience presents the action; PP-02/03 own account context and transport. |
+| Returning DeepSeek account: a previous grant expired while a Login edit is unsaved | Which saved route will Reconnect use? Show the saved route and warn about the unsaved edit; Save or Revert, then explicitly Reconnect. | The persisted account policy supplies the reconnect route. Expiry does not erase the account, previous applied clients or ordinary page; a new attempt uses the newly saved policy only after explicit restart. | This experience and authorization presentation; provider pool owns policy persistence. |
+| Local client: a profile draft differs from the applied allocation or the listener stopped | What will my client actually use? Verify the intended model, apply the profile, explicitly start the API, then make a key-backed client request. | Applied profile, listener state and attributed request observation are separate runtime sources. Failed verify/save/start preserves the old applied binding and gives a step-specific retry; absence of a request stays unknown, never “client healthy”. | Profile, key and gateway owners; PRD 36 owns the read-only operational projection. |
+| Ordinary Web user: a saved proxy candidate is selected while Harness Settings or authorization opens | Will this page keep its own connection? Apply the candidate to the ordinary page, then return to that page after the other view closes. | Web preference and page adapter supply the Web route. A failed/invalid candidate blocks that page with Edit proxy; Harness account Login and Service routes do not inherit it, and the parked page keeps its URL/proxy/draft on return. | [Web preferences](PRD_02_25_01_browser_preferences.md) and native auth/page lifetime. |
+
+This is the reviewed behavior map, not four completed real-provider walkthroughs.
+The local Windows native @0 and direct-creation journeys at `abb4fc3` pass;
+the first-use Harness orientation capture was inspected. Real OpenCode/Google
+and DeepSeek grants, account-scoped native proxy traces, client request and
+cross-platform visual/physical acceptance remain separately selected.
+
 The 0.2.25 Settings route now states the effective **next sign-in** Login and
 Service routes immediately before the provider actions. Invalid policy names
 the blocked field and retains the draft. Reconnect states the **saved** Login
