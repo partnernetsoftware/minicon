@@ -116,6 +116,17 @@ actual account grants and real client use retain independent evidence scopes;
 passing only a settings layout or synthetic provider fixture cannot close the
 journey. Visual operation and freshness belong to [PRD 36](PRD_02_36_harness_workspace.md).
 
+The 0.2.25 Settings route now states the effective **next sign-in** Login and
+Service routes immediately before the provider actions. Invalid policy names
+the blocked field and retains the draft. Reconnect states the **saved** Login
+route and warns when unsaved account edits require Save or Revert first. These
+labels say Direct or Proxy without copying proxy endpoints into read-only
+explanation rows. The focused
+`harness_settings_ui::tests::sign_in_route_copy_names_effective_network_without_leaking_proxy_address`
+failed against the former static hint, then passed with the route projection.
+This is a UI clarity checkpoint; native route traces and real grants remain
+separate N1/C1 evidence.
+
 Before the orientation delivery slice, `src/harness_settings_ui.rs` presented listener/port controls before
 accounts, mixed a manually typed model ID with a long catalogue, and separated
 the key from a command template that alone cannot connect a client. A shared

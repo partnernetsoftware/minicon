@@ -42,7 +42,7 @@ Outcome: make the first local Harness connection legible from setup to observed 
 │   evidence: four current-GUI walkthroughs, reviewed state/action map and narrow/wide mock or capture
 │   safe failure: unsupported states say unavailable with a recovery link, not an enabled dead action
 │   dependency: PRD 31.01.01/36 runtime states; non-goal: a second dashboard form editor
-├── [_] N1 — make account network identity explicit before authorization
+├── [-] N1 — make account network identity explicit before authorization
 │   invariant: Web override, account Login proxy and Service proxy are distinguishable; Direct is explicit
 │   evidence: public GUI route-choice/reconnect journeys plus native proxy/direct request traces
 │   safe failure: invalid or failed proxy blocks that account request without direct fallback

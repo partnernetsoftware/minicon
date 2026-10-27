@@ -5229,6 +5229,48 @@ mod tests {
     }
 
     #[test]
+    fn sign_in_route_copy_names_effective_network_without_leaking_proxy_address() {
+        let mut settings = HarnessSettings::default();
+        let label = |settings: &HarnessSettings, row| {
+            text::label(settings, row, ui::UiLanguage::English)
+                .expect("network explanation row")
+                .0
+        };
+        assert_eq!(
+            label(&settings, Row::ConnectNetworkHint),
+            "Next sign-in: Login Direct; Service Direct. Web proxy is separate."
+        );
+        settings.connection_draft.login.text = "http://127.0.0.1:8888".into();
+        assert_eq!(
+            label(&settings, Row::ConnectNetworkHint),
+            "Next sign-in: Login Proxy; Service Direct. Web proxy is separate."
+        );
+        settings.connection_draft.service.text = "not-a-proxy".into();
+        assert_eq!(
+            label(&settings, Row::ConnectNetworkHint),
+            "Next sign-in blocked: invalid Service proxy. Draft retained."
+        );
+        let mut saved = AccountPreferences::legacy(&"a".repeat(32));
+        saved.login = NetworkPolicy::Proxy("http://127.0.0.1:9999".into());
+        let account = AccountSummary {
+            id: "a".repeat(32),
+            provider: Provider::DeepSeek,
+            label: "Returning".into(),
+            state: provider_accounts::AccountState::CredentialStored,
+        };
+        settings.account_draft = AccountDraft::from_account(&account, &saved);
+        settings.account_draft.login.text = "http://127.0.0.1:7777".into();
+        assert_eq!(
+            label(&settings, Row::AccountReconnectHint),
+            "Reconnect uses saved Login Proxy. Save or revert draft changes first."
+        );
+        for row in [Row::ConnectNetworkHint, Row::AccountReconnectHint] {
+            let copy = label(&settings, row);
+            assert!(!copy.contains("127.0.0.1"), "route copy leaked an address");
+        }
+    }
+
+    #[test]
     fn queued_device_challenge_cannot_return_after_cancel_or_replace_another_attempt() {
         let attempt = provider_runtime::AttemptId(42);
         let deadline = Instant::now() + Duration::from_secs(20);

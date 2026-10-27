@@ -9,6 +9,17 @@ pub(super) struct Presentation {
     pub visible_rows: usize,
 }
 
+fn network_route_name(policy: &NetworkPolicy, language: ui::UiLanguage) -> &'static str {
+    match policy {
+        NetworkPolicy::Direct => {
+            super::super::harness_workspace_ui::text(language, "Direct", "直连", "直連")
+        }
+        NetworkPolicy::Proxy(_) => {
+            super::super::harness_workspace_ui::text(language, "Proxy", "代理", "代理")
+        }
+    }
+}
+
 pub(super) fn label(
     settings: &HarnessSettings,
     row: Row,
@@ -145,12 +156,39 @@ pub(super) fn label(
             }
         }
         Row::AccountReconnectHint => {
-            label = tr(
-                "Reconnect uses saved login settings.",
-                "重新连接使用已保存的登录设置。",
-                "重新連線使用已儲存的登入設定。",
-            )
-            .into();
+            label = settings.account_draft.applied.as_ref().map_or_else(
+                || {
+                    tr(
+                        "Saved Login route unavailable; reconnect blocked.",
+                        "已保存的登录路线不可用；无法重新连接。",
+                        "已儲存的登入路線無法使用；無法重新連線。",
+                    )
+                    .to_owned()
+                },
+                |saved| {
+                    let route = network_route_name(&saved.login, language);
+                    let draft = if settings.account_draft.dirty() {
+                        tr(
+                            " Save or revert draft changes first.",
+                            " 请先保存或撤销草稿修改。",
+                            " 請先儲存或還原草稿變更。",
+                        )
+                    } else {
+                        ""
+                    };
+                    match language {
+                        ui::UiLanguage::English => {
+                            format!("Reconnect uses saved Login {route}.{draft}")
+                        }
+                        ui::UiLanguage::ChineseSimplified => {
+                            format!("重新连接使用已保存的登录路线：{route}。{draft}")
+                        }
+                        ui::UiLanguage::ChineseTraditional => {
+                            format!("重新連線使用已儲存的登入路線：{route}。{draft}")
+                        }
+                    }
+                },
+            );
         }
         Row::AccountReconnectVerification => {
             label = tr(
@@ -161,12 +199,37 @@ pub(super) fn label(
             .into();
         }
         Row::ConnectNetworkHint => {
-            label = tr(
-                "Set Login proxy before Continue for Google sign-in; Web proxy is separate.",
-                "Google 登录需在继续前设置登录代理；Web 代理独立。",
-                "Google 登入需在繼續前設定登入代理；Web 代理獨立。",
-            )
-            .into();
+            let login = NetworkPolicy::from_input(&settings.connection_draft.login.text);
+            let service = NetworkPolicy::from_input(&settings.connection_draft.service.text);
+            label = match (login, service) {
+                (Err(_), _) => tr(
+                    "Next sign-in blocked: invalid Login proxy. Draft retained.",
+                    "下次登录已阻止：登录代理无效，草稿已保留。",
+                    "下次登入已阻止：登入代理無效，草稿已保留。",
+                )
+                .to_owned(),
+                (_, Err(_)) => tr(
+                    "Next sign-in blocked: invalid Service proxy. Draft retained.",
+                    "下次登录已阻止：服务代理无效，草稿已保留。",
+                    "下次登入已阻止：服務代理無效，草稿已保留。",
+                )
+                .to_owned(),
+                (Ok(login), Ok(service)) => {
+                    let login = network_route_name(&login, language);
+                    let service = network_route_name(&service, language);
+                    match language {
+                        ui::UiLanguage::English => format!(
+                            "Next sign-in: Login {login}; Service {service}. Web proxy is separate."
+                        ),
+                        ui::UiLanguage::ChineseSimplified => format!(
+                            "下次登录：登录路线{login}；服务路线{service}。普通 Web 代理独立。"
+                        ),
+                        ui::UiLanguage::ChineseTraditional => format!(
+                            "下次登入：登入路線{login}；服務路線{service}。一般 Web 代理獨立。"
+                        ),
+                    }
+                }
+            };
         }
         Row::NoAccounts => label = "No account. Add a provider to continue.".to_owned(),
         Row::ProfileState => {
