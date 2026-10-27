@@ -3439,10 +3439,21 @@ impl ConApp {
         }
         if command == update::Command::Check {
             self.update.phase = update::Phase::Checking;
+        } else if let update::Phase::Available { remote } = self.update.phase {
+            self.update.phase = update::Phase::Installing { remote };
         }
         self.mark_host_ui_full_and_repaint(window);
-        if let Some(commands) = &self.update_commands {
-            let _ = commands.send(command);
+        if let Some(commands) = &self.update_commands
+            && commands.send(command).is_err()
+        {
+            self.update
+                .apply(update::Event::Failed(update::Failure::new(
+                    update::FailureKind::Transport,
+                    "the update worker is unavailable",
+                )));
+            self.update_commands = None;
+            self.update_events = None;
+            self.mark_host_ui_full_and_repaint(window);
         }
     }
 

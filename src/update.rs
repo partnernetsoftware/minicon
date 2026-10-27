@@ -342,6 +342,8 @@ pub enum Phase {
     Idle,
     /// A check is in flight.
     Checking,
+    /// The selected release is being downloaded or handed to the browser.
+    Installing { remote: Version },
     /// The running build is the latest release.
     UpToDate,
     /// A newer release exists.
@@ -434,6 +436,8 @@ pub enum Progress {
     Verifying,
     Staging,
     Opening,
+    /// The final event is queued; wake the GUI to consume it.
+    Settled,
 }
 
 /// The update state as `ui-snapshot` publishes it.
@@ -467,6 +471,10 @@ pub fn snapshot(state: &State) -> Snapshot {
     match &state.phase {
         Phase::Idle => {}
         Phase::Checking => published.phase = "checking",
+        Phase::Installing { remote } => {
+            published.phase = "installing";
+            published.remote = Some(remote.to_string());
+        }
         Phase::UpToDate => published.phase = "up-to-date",
         Phase::Available { remote } => {
             published.phase = "available";
@@ -698,6 +706,7 @@ pub fn worker(
                 FailureKind::Platform,
                 "no release archive is published for this platform",
             )));
+            progress(Progress::Settled);
         }
         return;
     };
@@ -709,6 +718,7 @@ pub fn worker(
         if let Err(failure) = outcome {
             let _ = events.send(Event::Failed(failure));
         }
+        progress(Progress::Settled);
     }
 }
 
@@ -884,7 +894,16 @@ pub fn drain(
                 changed = true;
             }
             Err(TryRecvError::Empty) => break,
-            Err(TryRecvError::Disconnected) => break,
+            Err(TryRecvError::Disconnected) => {
+                if matches!(state.phase, Phase::Checking | Phase::Installing { .. }) {
+                    state.apply(Event::Failed(Failure::new(
+                        FailureKind::Transport,
+                        "the update worker stopped before reporting a result",
+                    )));
+                    changed = true;
+                }
+                break;
+            }
         }
     }
     if changed {
@@ -1036,6 +1055,52 @@ mod tests {
         let (events, _received) = std::sync::mpsc::channel();
         let error = check(&events, &format!("{base}/releases/latest")).unwrap_err();
         assert!(!error.cause.is_empty());
+    }
+
+    #[test]
+    fn a_completed_check_wakes_the_panel_without_an_unrelated_event() {
+        let (listener, base) = loopback();
+        serve(
+            listener,
+            vec![("latest", Served::ok(latest_for(&base, "v9.9.9")))],
+        );
+        let (commands, worker_commands) = std::sync::mpsc::channel();
+        let (worker_events, events) = std::sync::mpsc::channel();
+        let (wakes, woke) = std::sync::mpsc::channel();
+        let endpoint = format!("{base}/releases/latest");
+        let worker = std::thread::spawn(move || {
+            worker(
+                worker_commands,
+                worker_events,
+                PathBuf::new(),
+                endpoint,
+                move |progress| {
+                    if progress == Progress::Settled {
+                        let _ = wakes.send(());
+                    }
+                },
+            );
+        });
+        commands.send(Command::Check).unwrap();
+        woke.recv_timeout(Duration::from_secs(5))
+            .expect("a completed check must wake the event loop");
+        let mut state = State::new(Version::parse("0.2.24").unwrap());
+        state.phase = Phase::Checking;
+        assert!(drain(&mut state, &events, |_| {}));
+        assert!(matches!(state.phase, Phase::Available { .. }));
+        drop(commands);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn a_lost_worker_releases_the_checking_state_for_retry() {
+        let (sender, events) = std::sync::mpsc::channel();
+        drop(sender);
+        let mut state = State::new(Version::parse("0.2.24").unwrap());
+        state.phase = Phase::Checking;
+        assert!(drain(&mut state, &events, |_| {}));
+        assert!(matches!(state.phase, Phase::Failed(_)));
+        assert!(state.can_check());
     }
 
     #[test]

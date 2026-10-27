@@ -44,6 +44,21 @@ Outcome: 0.2.26 @0 is a polished, trustworthy daily entry point
 │   evidence: public GUI pointer/keyboard journey, native captures and no-side-effect traces
 │   safe failure: empty office retains a working primary route and explanation
 │   dependency: PRD 39 @0 host navigation; non-goal: another tab kind or Settings form on Home
+├── [_] Z26 — converge zero-tab workspace on @0
+│   invariant: closing the last real tab opens the same @0 Home, with New Terminal/New Web routes
+│   evidence: native last-tab close, Home actions and window-close journey; no duplicate greeting
+│   safe failure: an unavailable route leaves Home and explicit recovery visible
+│   dependency: PRD 39 Home identity and C26 routes; non-goal: treating @0 as a closable tab
+├── [_] W26 — make +W a real New Web action
+│   invariant: +W, Home New Web and shortcut create distinct Web tab IDs and independent page state
+│   evidence: two-Web-tab navigation, switching, closing and public snapshots
+│   safe failure: allocation failure preserves existing pages and shows a notice
+│   dependency: PRD 25 per-tab browser host ownership; non-goal: split-screen browsing
+├── [v] F26 — make manual update feedback settle
+│   invariant: each worker outcome wakes the host and install has its own visible phase
+│   evidence: loopback check wake and scoped install success/failure journeys (24 passed)
+│   safe failure: worker loss becomes retryable failure with the running binary untouched
+│   dependency: PRD 25 update worker; non-goal: automatic update or silent restart
 ├── [_] S26 — join only truthful local status
 │   invariant: cards/signals name owner, freshness, unit and exact inspect destination
 │   evidence: empty/ready/request/partial/stale/offline public scenarios and data-source assertions
@@ -73,6 +88,9 @@ flowchart LR
     P25["Public 0.2.25 exact boundary"] --> V26["0.2.26 source opened"]
     V26 --> UX["U26: scene/copy/native review"]
     UX --> HOME["C26: @0 composition and safe routes"]
+    HOME --> Z26["Zero real tabs use @0"]
+    WEB["PRD 25 per-tab Web host"] --> W26["+W / Home / shortcut create Web tab"]
+    V26 --> F26["Update worker wakes on every outcome"]
     WORK["Real @1+ workspace state"] --> HOME
     VIEW["PRD 36 read-only account/client/request view"] --> S26["S26: labelled status"]
     S26 --> HOME
@@ -81,7 +99,7 @@ flowchart LR
     H2 -->|yes| ACTOR["One observed run: one character"]
     H2 -->|no| STILL["Truthful still office"]
     ACTOR & STILL --> HOME
-    HOME & R26 --> Q26{Exact-source release gates}
+    HOME & R26 & Z26 & W26 & F26 --> Q26{Exact-source release gates}
     Q26 -->|pass + authority| PUB["Public 0.2.26"]
     Q26 -->|missing native/real proof| BLOCK["BLOCKED claim; no invented evidence"]
 ```

@@ -331,6 +331,16 @@ names above.
   alongside `a_browser_tab_is_a_root_peer_of_a_terminal_tab`. A real Windows
   per-monitor DPI transition remains outside this qualification; resize
   evidence does not certify that transition.
+- [_] **New Web creates a real new Web tab.** The +W button, Home New Web
+  action and keyboard route must share one creation command; each successful
+  press creates a distinct @1+ Web tab with its own URL, history, proxy/page
+  lifecycle and stable ID. A failed host allocation leaves existing Web tabs
+  intact and shows a recoverable notice. This replaces the 0.2.21 singleton
+  browser root and requires per-tab native page ownership before the button
+  can truthfully promise a new tab. Evidence: create two Web tabs, navigate
+  them independently, switch/close either, then verify the survivor's state
+  through public GUI and control snapshots. Non-goal: split-screen pages or
+  sharing one mutable page host between tab IDs.
 - [v] **`minicon-web` module (adopted 2026-10-23).** Browser content-panel
   API. Product face remains **Tab / content panel** (now 1:1, future 1:N);
   **no tray**. Chrome panels stay chrome. Path: `crates/minicon-web/` (lib +
@@ -619,6 +629,15 @@ section means a **chrome panel** unless it says content/workspace panel.
   `ui-snapshot` publishes `update` — a stable phase tag, the two versions, the
   failure text and whether macOS handed off. The check is manual and per-press
   and never runs on its own: `prd/PRD_02_23_minicon.md`, "Explicit non-goals".
+- [v] **Update commands settle visibly (post-0.2.25 source).** A completed check or install, and
+  every worker failure, wakes the GUI after the final event is queued. During
+  install the status names download/verification instead of retaining
+  Available or Checking; a disconnected worker becomes a retryable failure.
+  Evidence: `a_completed_check_wakes_the_panel_without_an_unrelated_event`,
+  `a_lost_worker_releases_the_checking_state_for_retry`, and the scoped
+  `update::tests::` gate (24 passed, 1 live-network test intentionally ignored).
+  Safe failure: the running binary stays untouched and Check can be retried.
+  Dependency: the existing bounded network worker; non-goal: background update.
 - [v] the update download is verified before anything is staged. The archive is
   checked against its published SHA-256 sidecar, and the executable is pulled
   out by name with a small in-product reader for the two shapes the release

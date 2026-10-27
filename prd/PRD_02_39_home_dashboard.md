@@ -71,6 +71,11 @@ terminal input. Existing `@1+` handles and their hierarchy remain stable.
 Selecting @0 parks the visible browser child and input focus without changing
 its URL, history, proxy or a terminal's process. Choosing a real tab restores
 the existing session. Opening/closing Settings preserves @0 as the destination.
+When the final real tab closes, the same @0 Home becomes active automatically.
+The old zero-tab greeting with its separate New Terminal and Quit buttons is
+retired; Home owns the empty-workspace explanation and New Terminal/New Web
+routes. Quit remains available through the window close action. This avoids
+two different start screens for the same zero-tab workspace state.
 The robot still leads to the separate Harness operation view; the three
 settings routes remain Console/Web/Harness configuration.
 
