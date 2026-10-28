@@ -105,6 +105,9 @@ tab was refused without changing the workspace. An exact middle `@ID` search
 returned one row; clicking it selected that ID, and closing it left a stale
 inspector rather than retargeting another row. Replacing End's destination
 with the first row made this 256-tab court fail; restoring it passed again.
+The same court also exercises +W and Home New Web at capacity, then Home New
+Web after releasing one slot; [PRD 25](PRD_02_25_con_workspace.md) owns that
+creation and notice result.
 This qualifies Windows keyboard/search overflow for that tab-kind and child
 state mix. Sorting, grouping, 256-tab wheel/scrollbar drag, live-child mix and
 other-platform qualification remain open.

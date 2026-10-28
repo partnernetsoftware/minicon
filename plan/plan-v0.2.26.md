@@ -260,9 +260,12 @@ passed separate page navigation/title/history, second-Web invalid-proxy
 refusal, first-Web direct network request, switch/close/reopen. Reinstating
 singleton reuse made the new court fail at the second Web creation. Windows native
 local-preview/retry, Home and header-entry courts also passed after this
-change. Live authorization detour/return, allocation failure and macOS/Linux
+change. Live authorization detour/return, other host allocation failures and macOS/Linux
 two-page visibility remain open; W26 is partial and
 release qualification cannot infer those results from Windows navigation.
+The Windows 256-tab Home court now covers the capacity-specific allocation
+failure and recovery through +W and Home New Web; the exact receipt and
+remaining allocation scope are in [PRD 25](../prd/PRD_02_25_con_workspace.md).
 Public `list-tabs` now uses each Web @ID's loaded/parked navigation flags and
 redacts only the auth-owning @ID or a recognized auth URL. The focused
 `list_tabs_keeps_parked_web_flags_and_other_web_public_during_auth` test

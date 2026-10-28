@@ -384,8 +384,16 @@ names above.
   `native_home_is_a_fixed_destination_and_restores_real_tabs` and
   `native_header_buttons_create_terminal_web_and_open_harness_directly`
   courts passed after the behavior change. Native authorization return and
-  macOS/Linux two-page courts remain open; W26 stays
-  partial until those journeys and failure recovery are qualified.
+  macOS/Linux two-page courts remain open. The Windows native
+  `native_home_256_mixed_tabs_keep_exact_overflow_targets` court now proves
+  the 256-tab capacity refusal through both +W and Home New Web: the current
+  Web @ID and count remain unchanged, and a public host notice names the
+  limit. After closing another tab, Home New Web creates @257 without losing
+  the earlier Web and clears the stale refusal notice. Removing the failure
+  notice made this court fail; the recovery assertion first exposed the
+  uncleared notice and passed after `open_browser_tab_contained` cleared it
+  on success. Other host allocation failures and live authorization return
+  remain open, so W26 stays partial.
   Public `list-tabs` now takes `can_back`/`can_forward` from each Web @ID's
   loaded or parked runtime, and its authorization mask applies only to the
   recorded auth @ID or a recognized authorization URL. The focused

@@ -3110,6 +3110,8 @@ impl ConApp {
     fn open_browser_tab_contained(&mut self, window: &PixelWindow) {
         if let Err(error) = self.open_browser_tab(window) {
             self.note_host_notice(format!("could not open a browser tab: {error}"), window);
+        } else if self.host_notice.take().is_some() {
+            self.mark_host_ui_full_and_repaint(window);
         }
     }
 

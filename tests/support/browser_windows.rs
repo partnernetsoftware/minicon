@@ -1035,8 +1035,31 @@ fn native_home_256_mixed_tabs_keep_exact_overflow_targets() {
         host.cli(&["list-tabs"])["tabs"].as_array().unwrap().len(),
         256
     );
+    host.click_geometry("new_web");
+    let refused_web = host.cli(&["ui-snapshot"]);
+    assert_eq!(refused_web["active"], web);
+    assert!(
+        refused_web["host_notice"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("browser tab limit reached")
+    );
+    assert_eq!(
+        host.cli(&["list-tabs"])["tabs"].as_array().unwrap().len(),
+        256
+    );
 
     host.click_geometry("home");
+    host.click_geometry("home_new_web");
+    let refused_home_web = host.cli(&["ui-snapshot"]);
+    assert_eq!(refused_home_web["geometry"]["home_active"], true);
+    assert_eq!(refused_home_web["active"], web);
+    assert!(
+        refused_home_web["host_notice"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("browser tab limit reached")
+    );
     host.click_geometry("home_search");
     assert_eq!(
         host.cli(&["send-ui-ime", "commit", &middle])["route"],
@@ -1057,6 +1080,19 @@ fn native_home_256_mixed_tabs_keep_exact_overflow_targets() {
     assert_eq!(stale["geometry"]["home_tab_count"], 255);
     host.click_geometry("home_focus_tab");
     assert_eq!(host.cli(&["ui-snapshot"])["geometry"]["home_active"], true);
+    host.click_geometry("home_new_web");
+    let recovered = host.cli(&["list-tabs"]);
+    assert_eq!(recovered["tabs"].as_array().unwrap().len(), 256);
+    assert_eq!(recovered["tabs"][255]["id"], "@257");
+    assert_eq!(recovered["tabs"][255]["active"], true);
+    assert!(
+        recovered["tabs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|tab| tab["id"] == web)
+    );
+    assert_eq!(host.cli(&["ui-snapshot"])["host_notice"], Value::Null);
     host.close_and_wait();
 }
 
