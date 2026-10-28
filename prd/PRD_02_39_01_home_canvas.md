@@ -31,6 +31,11 @@ Console tabs; disabling row activation made the court fail. Public
 attention, scoped system status, visual mode, 256-tab overflow and native
 visual captures remain open. `screenshot-pane` captures the underlying Console
 pane while @0 is visible, so it is not Home visual evidence.
+The Windows `native_home_fleet_wheel_keeps_scrolled_row_target_exact` court
+also passed with 17 Console tabs: a real window wheel moved the list viewport,
+and the first newly visible row still opened its published @ID. Disabling the
+Home wheel route made this court fail. This proves native overflow navigation
+at that size, not the planned 256 mixed-tab or other-platform courts.
 
 ## Outcome tree DAG
 

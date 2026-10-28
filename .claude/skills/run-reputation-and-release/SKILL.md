@@ -30,13 +30,10 @@ reference for the manual path and for resuming a chain that stopped partway.
 - **Non-interactive stdin (an agent, CI, redirected stdin) stops safely after
   the dry run** — exit 3, nothing published — and prints the exact Promotion
   command. Dispatch that to finish, then delete the pinned branch.
-- **If `Cargo.toml` and `release-policy.json` already read `<version>`** (the
-  version was bumped in an earlier commit), the `1/8 bump` step has nothing to
-  commit and the script exits before the first dispatch. Drive steps 2–8 with the
-  same dispatches it encodes (the "Gate 0" chain and "The four gates" below),
-  pinning
-  `source_sha` to the current `main` HEAD, whose `Cargo.toml` already equals
-  `<version>`. Both 0.2.5 and 0.2.6 hit this.
+- **An already committed version is accepted.** The driver checks that
+  `Cargo.toml`, the MiniCon entry in `Cargo.lock`, and `release-policy.json`
+  agree with `<version>`, then uses the current `main` HEAD without an empty
+  bump commit. It still requires a clean, up-to-date tree and all release gates.
 
 The chain's shape, per-node timings and history are owned by the target repo's
 delivery PRD — for MiniCon, `prd/PRD_02_27_con_delivery.md` (§ "Driving the

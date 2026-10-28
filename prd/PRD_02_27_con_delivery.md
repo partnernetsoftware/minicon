@@ -1948,12 +1948,11 @@ easy to get wrong:
   records a separate controller as described above. If `main` moves without
   product changes, pin a throwaway `candidate-src-<v>` branch at the Candidate
   SHA and dispatch reputation/release on that ref.
-- **If `Cargo.toml` and `release-policy.json` already read `<version>`** (the
-  version was bumped in an earlier commit), the script's `1/8 bump` step has
-  nothing to commit and it exits before the first dispatch. Drive steps 2–8 by
-  hand with the same dispatches it encodes, pinning `source_sha` to the current
-  `main` HEAD (whose `Cargo.toml` already equals `<version>`). 0.2.5 and 0.2.6
-  both hit this.
+- **An already committed version follows the same driver.** The script checks
+  `Cargo.toml`, MiniCon's `Cargo.lock` entry and `release-policy.json` for an
+  exact version match, then uses the current `main` HEAD without an empty bump
+  commit. A mismatch fails before dispatch. The historical manual handoff in
+  0.2.5/0.2.6 remains in archived release records.
 
 ```mermaid
 flowchart LR

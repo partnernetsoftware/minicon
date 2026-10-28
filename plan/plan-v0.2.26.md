@@ -35,9 +35,9 @@ AIGC-specific workflow or fictional job cards.
 
 ```text
 Outcome: 0.2.26 @0 is a trustworthy default-list watch floor for tab-contained agents and local health
-├── [_] V26 — open next source version only after 0.2.25 public boundary is recorded
+├── [v] V26 — open next source version only after 0.2.25 public boundary is recorded
 │   invariant: released 0.2.25 artifacts remain immutable and new work has a distinct source identity
-│   evidence: version/policy/lockfile consistency and 0.2.25 release-history receipt
+│   evidence: cargo metadata --locked reports 0.2.26, release-policy.json matches, and prd/archive/v0.2.25-release-history.md records the public boundary
 │   safe failure: no version bump or publish inference from a design document
 │   dependency: exact 0.2.25 public Promotion; non-goal: overlapping release Candidates
 ├── [_] U26 — review tab-fleet scenes and alert routes with native captures
@@ -211,6 +211,8 @@ flowchart LR
 T26 has a first Windows native click court for three same-named Console tabs,
 with exact @ID row snapshots and a test mutation that removes activation and
 fails. The list now paints real tab/child facts and scrolls independently.
+The Windows native wheel court also passed with 17 Console tabs and an exact
+scrolled-row click; removing the Home wheel route made it fail.
 Search/filter/group, mixed 256-tab overflow, attention/system cards, native
 wide/narrow visual captures and other OS courts remain required before T26 or
 the default-list cut can be marked complete. `screenshot-pane` observes the

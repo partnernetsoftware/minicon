@@ -674,6 +674,100 @@ fn native_home_fleet_rows_target_exact_tab_ids() {
     host.close_and_wait();
 }
 
+#[cfg(windows)]
+#[test]
+#[ignore = "requires a native desktop; run the explicit @0 fleet wheel court"]
+fn native_home_fleet_wheel_keeps_scrolled_row_target_exact() {
+    use std::ffi::c_void;
+    type Hwnd = *mut c_void;
+    #[repr(C)]
+    struct Point {
+        x: i32,
+        y: i32,
+    }
+    struct Find {
+        pid: u32,
+        window: Hwnd,
+    }
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn EnumWindows(callback: unsafe extern "system" fn(Hwnd, isize) -> i32, data: isize)
+        -> i32;
+        fn GetWindowThreadProcessId(window: Hwnd, pid: *mut u32) -> u32;
+        fn IsWindowVisible(window: Hwnd) -> i32;
+        fn ClientToScreen(window: Hwnd, point: *mut Point) -> i32;
+        fn PostMessageW(window: Hwnd, message: u32, wparam: usize, lparam: isize) -> i32;
+    }
+    unsafe extern "system" fn visit(window: Hwnd, data: isize) -> i32 {
+        let find = unsafe { &mut *(data as *mut Find) };
+        let mut pid = 0;
+        unsafe { GetWindowThreadProcessId(window, &mut pid) };
+        if pid == find.pid && unsafe { IsWindowVisible(window) } != 0 {
+            find.window = window;
+            0
+        } else {
+            1
+        }
+    }
+    let mut host = BrowserGui::spawn(false, None, None);
+    for _ in 0..16 {
+        host.cli(&["new-tab"]);
+    }
+    host.click_geometry("home");
+    let before = host.cli(&["ui-snapshot"]);
+    let geometry = &before["geometry"];
+    let visible = geometry["home_list_row_ids"].as_array().unwrap();
+    assert!(
+        visible.len() < 17 && !visible.is_empty(),
+        "the native viewport must overflow: {geometry}"
+    );
+    let fleet = &geometry["home_fleet"];
+    let mut point = Point {
+        x: (fleet["x"].as_i64().unwrap() + fleet["width"].as_i64().unwrap() / 2) as i32,
+        y: (fleet["y"].as_i64().unwrap() + fleet["height"].as_i64().unwrap() / 2) as i32,
+    };
+    let mut find = Find {
+        pid: host.gui.child.id(),
+        window: std::ptr::null_mut(),
+    };
+    unsafe { EnumWindows(visit, &mut find as *mut Find as isize) };
+    assert!(!find.window.is_null(), "owned MiniCon window");
+    assert_ne!(unsafe { ClientToScreen(find.window, &mut point) }, 0);
+    let wheel_down = (-120i16 as u16 as usize) << 16;
+    let packed = (((point.y as u16 as u32) << 16) | point.x as u16 as u32) as isize;
+    assert_ne!(
+        unsafe { PostMessageW(find.window, 0x020A, wheel_down, packed) },
+        0
+    );
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let after = loop {
+        let current = host.cli(&["ui-snapshot"]);
+        if current["geometry"]["home_list_start"].as_u64().unwrap_or(0) > 0 {
+            break current;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Home wheel did not scroll: {current}"
+        );
+        thread::sleep(Duration::from_millis(25));
+    };
+    let target = after["geometry"]["home_list_row_ids"][0]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    host.click_geometry_row("home_list_row_rects", 0);
+    let listed = host.cli(&["list-tabs"]);
+    assert!(
+        listed["tabs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|tab| { tab["id"] == target && tab["active"] == true }),
+        "scrolled row retargeted: {listed}"
+    );
+    host.close_and_wait();
+}
+
 #[test]
 #[ignore = "requires a native desktop; run the explicit direct creation court"]
 fn native_header_buttons_create_terminal_web_and_open_harness_directly() {

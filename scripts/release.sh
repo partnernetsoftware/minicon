@@ -8,15 +8,13 @@
 #   - `gh` authenticated against partnernetsoftware/minicon with permission
 #     to dispatch workflows and read run artifacts.
 #   - A clean working tree on `main`, already up to date with origin/main.
-#   - This script bumps the version, commits, and pushes to `main` itself --
-#     do not run it with uncommitted changes you want to keep separate.
+#   - This script bumps, commits and pushes when the requested version is new;
+#     it also accepts a fully consistent version already committed on `main`.
+#     Do not run it with uncommitted changes you want to keep separate.
 #   - Signing keys are NOT a prerequisite: they live only in the CI
 #     `release-signing` environment; dispatching needs no local credentials.
-#   - If Cargo.toml and release-policy.json already read <version> (the version
-#     was bumped in an earlier commit), step 1/8 has nothing to commit and the
-#     script exits before dispatching. Drive steps 2-8 by hand with the same
-#     dispatches this script encodes, pinning source_sha to the current `main`
-#     HEAD (whose Cargo.toml already equals <version>). 0.2.5 and 0.2.6 hit this.
+#   - An already committed version is reused only when Cargo.toml, Cargo.lock
+#     and release-policy.json agree. No empty bump commit is attempted.
 #   - The chain's shape, per-node timings and history are owned by
 #     prd/PRD_02_27_con_delivery.md (section "Driving the chain"); this script
 #     and the skill only name the driver and the boundary.
@@ -94,34 +92,46 @@ if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
   exit 1
 fi
 
-log "1/8 bump version to ${VERSION} and push"
+log "1/8 select version ${VERSION}"
 CURRENT="$(grep -m1 '^version = "' Cargo.toml | sed -E 's/version = "([^"]+)"/\1/')"
-sed -i "0,/^version = \"${CURRENT}\"/{s/^version = \"${CURRENT}\"/version = \"${VERSION}\"/}" Cargo.toml
-# Update only the minicon package's own Cargo.lock entry, not dependencies
-# that happen to share the old version string.
-awk -v old="$CURRENT" -v new="$VERSION" '
-  BEGIN { in_minicon=0 }
-  /^name = "minicon"$/ { in_minicon=1; print; next }
-  in_minicon && /^version = / {
-    sub(old, new)
-    in_minicon=0
-    print
-    next
-  }
-  { print }
-' Cargo.lock > Cargo.lock.tmp && mv Cargo.lock.tmp Cargo.lock
-sed -i "s/\"version\": \"${CURRENT}\",/\"version\": \"${VERSION}\",/" release-policy.json
-git add Cargo.toml Cargo.lock release-policy.json
-git commit -m "release: bump minicon to ${VERSION}"
-git push origin main
+LOCK_VERSION="$(awk '/^name = "minicon"$/ { found=1; next } found && /^version = / { gsub(/"/, "", $3); print $3; exit }' Cargo.lock)"
+POLICY_VERSION="$(sed -n 's/^[[:space:]]*"version": "\([^"]*\)",/\1/p' release-policy.json | head -1)"
+if [ "$CURRENT" = "$VERSION" ]; then
+  if [ "$LOCK_VERSION" != "$VERSION" ] || [ "$POLICY_VERSION" != "$VERSION" ]; then
+    echo "release.sh: committed version mismatch: Cargo.toml=$CURRENT Cargo.lock=$LOCK_VERSION release-policy.json=$POLICY_VERSION" >&2
+    exit 1
+  fi
+  echo "version ${VERSION} already committed; using current main without a bump"
+else
+  if [ "$LOCK_VERSION" != "$CURRENT" ] || [ "$POLICY_VERSION" != "$CURRENT" ]; then
+    echo "release.sh: source versions disagree before bump: Cargo.toml=$CURRENT Cargo.lock=$LOCK_VERSION release-policy.json=$POLICY_VERSION" >&2
+    exit 1
+  fi
+  sed -i "0,/^version = \"${CURRENT}\"/{s/^version = \"${CURRENT}\"/version = \"${VERSION}\"/}" Cargo.toml
+  # Update only the minicon package's own Cargo.lock entry.
+  awk -v old="$CURRENT" -v new="$VERSION" '
+    BEGIN { in_minicon=0 }
+    /^name = "minicon"$/ { in_minicon=1; print; next }
+    in_minicon && /^version = / {
+      sub(old, new)
+      in_minicon=0
+      print
+      next
+    }
+    { print }
+  ' Cargo.lock > Cargo.lock.tmp && mv Cargo.lock.tmp Cargo.lock
+  sed -i "s/\"version\": \"${CURRENT}\",/\"version\": \"${VERSION}\",/" release-policy.json
+  git add Cargo.toml Cargo.lock release-policy.json
+  git commit -m "release: bump minicon to ${VERSION}"
+  git push origin main
+fi
 SHA="$(git rev-parse HEAD)"
 echo "source_sha=${SHA}"
-# The bump edits source and pushes; it does not rebuild the local binary, so
-# target/debug/minicon.exe (and the version in its window title) stays on the
-# old version until refreshed. Harmless for the release -- CI builds from the
-# pushed source -- but it reads as a failed bump when testing locally.
-echo "note: local target/debug/minicon.exe still reports the previous version;" >&2
-echo "      run ./scripts/build.sh dev to refresh it if you are testing locally." >&2
+if [ "$CURRENT" != "$VERSION" ]; then
+  # A fresh bump does not rebuild the local binary; CI builds the pushed source.
+  echo "note: local target/debug/minicon.exe still reports the previous version;" >&2
+  echo "      run ./scripts/build.sh dev to refresh it if you are testing locally." >&2
+fi
 
 T0="$(now_epoch)"
 log "2/8 minicon-com.yml (unsigned one-pack/six-cell)"
