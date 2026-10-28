@@ -401,6 +401,16 @@ impl ConApp {
                                         metrics.scale_factor,
                                     )),
                                 ),
+                                ("home_attention_coverage", "terminal-child-exit-only".into()),
+                                (
+                                    "home_attention_status",
+                                    (if self.home_exit_attention().is_empty() {
+                                        "none-observed"
+                                    } else {
+                                        "observed"
+                                    })
+                                    .into(),
+                                ),
                                 (
                                     "home_attention_items",
                                     json::JsonValue::Array(

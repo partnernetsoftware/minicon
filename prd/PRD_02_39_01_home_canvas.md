@@ -67,8 +67,12 @@ that @ID for inspection. It does not count a shell exit as agent failure. The
 Windows `native_home_child_exit_attention_inspects_exact_tab_and_resolves_on_close`
 court passed nonzero exit/time, exact click selection, and removal after tab
 close while a sibling survives; redirecting the click to the sibling made the
-court fail. This is one source-backed item class, not the mixed attention
-queue, actionable alert count or scoped system card required by HC-07.
+court fail. When no exit is observed, the Home header names that limited source
+while rows keep agent work Unknown; public snapshots identify
+`terminal-child-exit-only` coverage
+and distinguish `none-observed` from `observed`. The same native court checks
+the resolved quiet state. This is one source-backed item class, not the mixed
+attention queue or actionable alert count required by HC-07.
 The recaptured 500×650 native Home image confirms the short fleet heading and
 row status keep the exit fact and `Agent unknown` visible in the narrow column.
 The Home kind control now cycles All → Console → Web, with one filtered stable

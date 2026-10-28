@@ -1361,6 +1361,11 @@ fn native_home_child_exit_attention_inspects_exact_tab_and_resolves_on_close() {
     let items = before["geometry"]["home_attention_items"]
         .as_array()
         .unwrap();
+    assert_eq!(
+        before["geometry"]["home_attention_coverage"],
+        "terminal-child-exit-only"
+    );
+    assert_eq!(before["geometry"]["home_attention_status"], "observed");
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["key"], format!("terminal-child-exit:{exited}"));
     assert_eq!(items[0]["source"], "terminal-child");
@@ -1400,6 +1405,15 @@ fn native_home_child_exit_attention_inspects_exact_tab_and_resolves_on_close() {
             .is_empty()
     );
     assert_eq!(resolved["geometry"]["home_selected_stale"], true);
+    assert_eq!(
+        resolved["geometry"]["home_attention_status"],
+        "none-observed"
+    );
+    println!(
+        "Home quiet attention capture: {}",
+        host.capture_home_client("home-attention-none.png")
+            .display()
+    );
     assert_eq!(host.cli(&["list-tabs"])["tabs"][0]["id"], survivor);
     host.close_and_wait();
 }

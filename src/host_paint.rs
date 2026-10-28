@@ -2195,6 +2195,22 @@ impl ConApp {
                     scaled_host_ui_font(12, self.session_seed.font_size_logical(), scale),
                     action.width,
                 );
+            } else {
+                let label = match self.ui_language {
+                    ui::UiLanguage::English => "Child exits: none",
+                    ui::UiLanguage::ChineseSimplified => "终端退出：无",
+                    ui::UiLanguage::ChineseTraditional => "終端結束：無",
+                };
+                let action = layout.home_attention_action(width, height, scale);
+                paint_host_ui_text(
+                    &mut surface,
+                    action.x,
+                    action.y,
+                    label,
+                    t.muted,
+                    scaled_host_ui_font(12, self.session_seed.font_size_logical(), scale),
+                    action.width,
+                );
             }
             let search_placeholder = match self.ui_language {
                 ui::UiLanguage::English => "Search name or @ID",
