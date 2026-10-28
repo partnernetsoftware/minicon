@@ -53,6 +53,12 @@ passed with nine tabs: Up/Down, PageUp/PageDown and Home/End select by stable
 Replacing End's destination with the first row made the court fail. This is
 native keyboard navigation evidence at the tested size, not the complete
 focus-order, screen-reader or 256-tab acceptance.
+The Windows `native_home_list_scrollbar_pages_and_drags_without_retargeting`
+court passed with 17 tabs: a visible list-only track pages on click, thumb
+drag returns to the first row, and neither gesture selects a tab. The native
+Home capture shows the scrollbar beside four visible rows. Removing track
+paging made the court fail. Pointer capture is released on drag end or Home
+departure; other scales and 256 mixed tabs remain open.
 
 ## Outcome tree DAG
 
@@ -352,8 +358,8 @@ closes, the inspector becomes a bounded **Tab no longer exists** state and
 does not jump to the row now occupying the same position. A 256-tab workspace
 uses a bounded scroll/virtualization window, keyboard Home/End/Page navigation
 and a visible scrollbar; no 256-row paint storm or unbounded a11y tree. The
-development List has keyboard navigation and a bounded viewport; the visible
-scrollbar and 256 mixed-tab court remain open.
+development List has keyboard navigation, a bounded viewport and a visible
+scrollbar at its tested Windows size; the 256 mixed-tab court remains open.
 
 ## Visual mode: staged drag/drop contract
 

@@ -1036,6 +1036,7 @@ struct ConApp {
     settings_open: bool,
     home_active: bool,
     home_list_start: usize,
+    home_scroll_drag: Option<ScrollbarThumbDrag>,
     home_selected_id: Option<workspace::TabId>,
     settings_section: ui::SettingsSection,
     harness_settings: Option<harness_settings_ui::HarnessSettings>,
@@ -1550,6 +1551,7 @@ impl ConApp {
             settings_open: false,
             home_active: false,
             home_list_start: 0,
+            home_scroll_drag: None,
             home_selected_id: None,
             settings_section: ui::SettingsSection::default(),
             harness_settings: None,
@@ -3344,6 +3346,89 @@ impl ConApp {
         }
     }
 
+    fn route_home_scrollbar(
+        &mut self,
+        window: &PixelWindow,
+        event: &PixelWindowEvent,
+    ) -> Result<bool, PixelWindowError> {
+        if !self.home_active {
+            return Ok(false);
+        }
+        let metrics = window.metrics()?;
+        let scale = metrics.scale_factor.max(1.0);
+        let layout = self.layout(metrics.physical_width, metrics.physical_height, scale);
+        let capacity =
+            layout.home_fleet_capacity(metrics.physical_width, metrics.physical_height, scale);
+        let total = self.workspace.nodes().len();
+        let maximum = total.saturating_sub(capacity);
+        if maximum == 0 || capacity == 0 {
+            return Ok(false);
+        }
+        let first = ui::clamp_tree_scroll(self.home_list_start, total, capacity);
+        let geometry = ui::home_list_scrollbar_geometry(
+            layout,
+            metrics.physical_width,
+            metrics.physical_height,
+            scale,
+            first,
+            total,
+        );
+        let physical = |position: &LogicalPoint| {
+            (
+                minicon_core::numeric::round_f64(position.x * scale) as i32,
+                minicon_core::numeric::round_f64(position.y * scale) as i32,
+            )
+        };
+        match event {
+            PixelWindowEvent::PointerButton {
+                button: PointerButton::Left,
+                state: PointerButtonState::Pressed,
+                position: Some(position),
+                ..
+            } => {
+                let (x, y) = physical(position);
+                let Some(hit) = scrollbar_hit_test(&geometry, x, y) else {
+                    return Ok(false);
+                };
+                match hit {
+                    ScrollbarHit::Thumb => {
+                        self.home_scroll_drag =
+                            Some(ScrollbarThumbDrag::begin(y, geometry.thumb.top));
+                        let _ = window.set_pointer_capture(true);
+                    }
+                    ScrollbarHit::TrackAbove => {
+                        self.home_list_start = first.saturating_sub(capacity);
+                    }
+                    ScrollbarHit::TrackBelow => {
+                        self.home_list_start = first.saturating_add(capacity).min(maximum);
+                    }
+                }
+                self.mark_host_ui_full_and_repaint(window);
+                Ok(true)
+            }
+            PixelWindowEvent::PointerMoved { position, .. } => {
+                let Some(drag) = self.home_scroll_drag else {
+                    return Ok(false);
+                };
+                let (_, y) = physical(position);
+                let from_bottom = scrollback_for_thumb_top(geometry, drag.thumb_top(y), maximum);
+                self.home_list_start = maximum.saturating_sub(from_bottom);
+                self.mark_host_ui_full_and_repaint(window);
+                Ok(true)
+            }
+            PixelWindowEvent::PointerButton {
+                button: PointerButton::Left,
+                state: PointerButtonState::Released,
+                ..
+            } if self.home_scroll_drag.take().is_some() => {
+                let _ = window.set_pointer_capture(false);
+                self.mark_host_ui_full_and_repaint(window);
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+
     fn update_composer_ime_anchor(&self, window: &PixelWindow) -> Result<(), PixelWindowError> {
         let metrics = window.metrics()?;
         let scale = metrics.scale_factor.max(1.0);
@@ -4356,6 +4441,7 @@ impl PixelWindowApplication for ConApp {
         if matches!(event, PixelWindowEvent::PointerCaptureLost) {
             self.rename_selecting = false;
             self.composer_scroll_drag = None;
+            self.home_scroll_drag = None;
             self.composer_selecting = false;
             self.cancel_harness_pointer();
             self.cancel_pointer_gestures_for_activation(window);
@@ -4524,6 +4610,9 @@ impl PixelWindowApplication for ConApp {
             }
         }
         if self.route_composer_scrollbar(window, &event)? {
+            return Ok(PixelWindowDirective::Continue);
+        }
+        if self.route_home_scrollbar(window, &event)? {
             return Ok(PixelWindowDirective::Continue);
         }
         if let PixelWindowEvent::MouseWheel {

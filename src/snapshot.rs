@@ -253,6 +253,37 @@ impl ConApp {
                                 ),
                                 ("home_list_start", home_start.into()),
                                 ("home_tab_count", self.workspace.nodes().len().into()),
+                                (
+                                    "home_list_scrollbar",
+                                    rect_obj(layout.home_list_scrollbar(
+                                        metrics.physical_width,
+                                        metrics.physical_height,
+                                        metrics.scale_factor,
+                                    )),
+                                ),
+                                (
+                                    "home_list_scrollbar_visible",
+                                    (self.workspace.nodes().len() > home_capacity
+                                        && home_capacity > 0)
+                                        .into(),
+                                ),
+                                ("home_list_scrollbar_thumb", {
+                                    let thumb = ui::home_list_scrollbar_geometry(
+                                        layout,
+                                        metrics.physical_width,
+                                        metrics.physical_height,
+                                        metrics.scale_factor,
+                                        home_start,
+                                        self.workspace.nodes().len(),
+                                    )
+                                    .thumb;
+                                    json::object(vec![
+                                        ("x", (thumb.left.max(0) as u32).into()),
+                                        ("y", (thumb.top.max(0) as u32).into()),
+                                        ("width", (thumb.width().max(0) as u32).into()),
+                                        ("height", (thumb.height().max(0) as u32).into()),
+                                    ])
+                                }),
                                 ("home_selected_id", tab_id_json(self.home_selected_id)),
                                 (
                                     "home_selected_stale",

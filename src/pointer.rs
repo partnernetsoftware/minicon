@@ -46,6 +46,9 @@ impl ConApp {
     }
 
     pub(super) fn cancel_pointer_gestures_for_activation(&mut self, window: &PixelWindow) {
+        if self.home_scroll_drag.take().is_some() {
+            let _ = window.set_pointer_capture(false);
+        }
         if self.tree_drag.take().is_some() {
             let _ = window.set_pointer_capture(false);
         }

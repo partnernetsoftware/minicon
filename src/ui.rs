@@ -925,6 +925,11 @@ impl Layout {
     pub fn home_fleet_row(self, width: u32, height: u32, scale: f64, visible: usize) -> Rect {
         let fleet = self.home_fleet(width, height, scale);
         let inspector = self.home_inspector(width, height, scale);
+        let list_right = if inspector.x > fleet.x {
+            inspector.x.saturating_sub(dip(8.0, scale))
+        } else {
+            fleet.x.saturating_add(fleet.width)
+        };
         let row_height = dip(48.0, scale);
         let top = fleet
             .y
@@ -933,15 +938,30 @@ impl Layout {
         Rect {
             x: fleet.x,
             y: top,
-            width: if inspector.x > fleet.x {
-                inspector
-                    .x
-                    .saturating_sub(fleet.x)
-                    .saturating_sub(dip(8.0, scale))
-            } else {
-                fleet.width
-            },
+            width: list_right
+                .saturating_sub(fleet.x)
+                .saturating_sub(dip(20.0, scale)),
             height: row_height.min(fleet.y.saturating_add(fleet.height).saturating_sub(top)),
+        }
+    }
+
+    pub fn home_list_scrollbar(self, width: u32, height: u32, scale: f64) -> Rect {
+        let fleet = self.home_fleet(width, height, scale);
+        let inspector = self.home_inspector(width, height, scale);
+        let list_right = if inspector.x > fleet.x {
+            inspector.x.saturating_sub(dip(8.0, scale))
+        } else {
+            fleet.x.saturating_add(fleet.width)
+        };
+        let capacity = self.home_fleet_capacity(width, height, scale);
+        let top = fleet.y.saturating_add(dip(48.0, scale));
+        Rect {
+            x: list_right.saturating_sub(dip(14.0, scale)),
+            y: top,
+            width: dip(14.0, scale),
+            height: dip(48.0, scale)
+                .saturating_mul(capacity as u32)
+                .min(fleet.y.saturating_add(fleet.height).saturating_sub(top)),
         }
     }
 
@@ -1723,6 +1743,31 @@ pub fn composer_scrollbar_geometry(
         area.width.min(i32::MAX as u32) as i32,
         visible,
         maximum.saturating_sub(first_line.min(maximum)),
+        maximum,
+    )
+}
+
+pub fn home_list_scrollbar_geometry(
+    layout: Layout,
+    width: u32,
+    height: u32,
+    scale: f64,
+    first: usize,
+    total: usize,
+) -> minicon_ui_core::ScrollbarGeometry {
+    let area = layout.home_list_scrollbar(width, height, scale);
+    let visible = layout.home_fleet_capacity(width, height, scale);
+    let maximum = total.saturating_sub(visible);
+    minicon_ui_core::terminal_scrollbar_geometry(
+        minicon_ui_core::Rect {
+            left: area.x.min(i32::MAX as u32) as i32,
+            top: area.y.min(i32::MAX as u32) as i32,
+            right: area.x.saturating_add(area.width).min(i32::MAX as u32) as i32,
+            bottom: area.y.saturating_add(area.height).min(i32::MAX as u32) as i32,
+        },
+        area.width.min(i32::MAX as u32) as i32,
+        visible,
+        maximum.saturating_sub(first.min(maximum)),
         maximum,
     )
 }
@@ -2575,6 +2620,7 @@ mod tests {
             let inspector = layout.home_inspector(width, height, scale);
             let focus = layout.home_focus_action(width, height, scale);
             let capacity = layout.home_fleet_capacity(width, height, scale);
+            let scrollbar = layout.home_list_scrollbar(width, height, scale);
             if inspector.width == 0 || inspector.height == 0 {
                 continue;
             }
@@ -2585,6 +2631,7 @@ mod tests {
             for visible in 0..capacity {
                 let row = layout.home_fleet_row(width, height, scale, visible);
                 assert!(row.width > 0 && row.height > 0);
+                assert!(row.x + row.width <= scrollbar.x);
                 let overlaps = row.x < inspector.x + inspector.width
                     && inspector.x < row.x + row.width
                     && row.y < inspector.y + inspector.height

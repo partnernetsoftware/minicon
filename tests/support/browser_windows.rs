@@ -946,6 +946,86 @@ fn native_home_keyboard_navigation_reveals_exact_tab_ids() {
 
 #[cfg(windows)]
 #[test]
+#[ignore = "requires a native desktop; run the explicit Home scrollbar court"]
+fn native_home_list_scrollbar_pages_and_drags_without_retargeting() {
+    let mut host = BrowserGui::spawn(false, None, None);
+    for _ in 0..16 {
+        host.cli(&["new-tab"]);
+    }
+    host.click_geometry("home");
+    let before = host.cli(&["ui-snapshot"]);
+    let geometry = &before["geometry"];
+    assert_eq!(geometry["home_list_scrollbar_visible"], true);
+    println!(
+        "Home scrollbar capture: {}",
+        host.capture_home_client("home-list-scrollbar.png")
+            .display()
+    );
+    let scale = geometry["scale_permille"].as_u64().unwrap() as f64 / 1000.0;
+    let track = &geometry["home_list_scrollbar"];
+    let x = ((track["x"].as_u64().unwrap() + track["width"].as_u64().unwrap() / 2) as f64 / scale)
+        .round()
+        .to_string();
+    let bottom = ((track["y"].as_u64().unwrap() + track["height"].as_u64().unwrap() - 2) as f64
+        / scale)
+        .round()
+        .to_string();
+    host.cli(&[
+        "send-ui-mouse",
+        "--action",
+        "click",
+        "--button",
+        "left",
+        "--column",
+        &x,
+        "--row",
+        &bottom,
+    ]);
+    let paged = host.cli(&["ui-snapshot"]);
+    assert!(paged["geometry"]["home_list_start"].as_u64().unwrap() > 0);
+    assert_eq!(paged["geometry"]["home_selected_id"], Value::Null);
+
+    let thumb = &paged["geometry"]["home_list_scrollbar_thumb"];
+    let thumb_y = ((thumb["y"].as_u64().unwrap() + thumb["height"].as_u64().unwrap() / 2) as f64
+        / scale)
+        .round()
+        .to_string();
+    let top = ((track["y"].as_u64().unwrap() + 2) as f64 / scale)
+        .round()
+        .to_string();
+    for (action, button, row) in [
+        ("press", "left", thumb_y.as_str()),
+        ("move", "none", top.as_str()),
+        ("release", "left", top.as_str()),
+    ] {
+        host.cli(&[
+            "send-ui-mouse",
+            "--action",
+            action,
+            "--button",
+            button,
+            "--column",
+            &x,
+            "--row",
+            row,
+        ]);
+    }
+    let returned = host.cli(&["ui-snapshot"]);
+    assert_eq!(returned["geometry"]["home_list_start"], 0);
+    let first = returned["geometry"]["home_list_row_ids"][0]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    host.click_geometry_row("home_list_row_rects", 0);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["home_selected_id"],
+        first
+    );
+    host.close_and_wait();
+}
+
+#[cfg(windows)]
+#[test]
 #[ignore = "requires a native desktop; run the explicit @0 fleet wheel court"]
 fn native_home_fleet_wheel_keeps_scrolled_row_target_exact() {
     use std::ffi::c_void;

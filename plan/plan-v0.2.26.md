@@ -220,7 +220,10 @@ and native wide/narrow Home captures exposed and then cleared a resize repaint
 gap. Nine-tab Windows keyboard navigation now selects exact @IDs with arrows,
 PageUp/PageDown and Home/End, reveals the selected row and opens only on Enter;
 mutating End to the first row made the court fail. Full responsive, mixed-tab
-and other-platform qualification remains open.
+and other-platform qualification remains open. The Windows 17-tab Home
+scrollbar court passed track paging and thumb dragging with no row retarget;
+its native capture shows the list-only track. Removing paging made the court
+fail. Other scales and 256 mixed-tab overflow remain open.
 W26 has its Workspace identity prerequisite: distinct browser roots can
 now be allocated and closed independently in the product model. Internal
 runtime parking also preserves each Web @ID's address, proxy, navigation

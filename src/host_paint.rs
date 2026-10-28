@@ -2042,6 +2042,30 @@ impl ConApp {
                     row.width.saturating_sub(inset.saturating_mul(2)),
                 );
             }
+            if nodes.len() > capacity && capacity > 0 {
+                let scrollbar = ui::home_list_scrollbar_geometry(
+                    layout,
+                    width,
+                    height,
+                    scale,
+                    start,
+                    nodes.len(),
+                );
+                surface.fill_rect(
+                    scrollbar.track.left.max(0) as u32,
+                    scrollbar.track.top.max(0) as u32,
+                    scrollbar.track.width().max(0) as u32,
+                    scrollbar.track.height().max(0) as u32,
+                    t.canvas_bg.to_xrgb(),
+                );
+                surface.fill_rect(
+                    scrollbar.thumb.left.max(0) as u32,
+                    scrollbar.thumb.top.max(0) as u32,
+                    scrollbar.thumb.width().max(0) as u32,
+                    scrollbar.thumb.height().max(0) as u32,
+                    t.accent.to_xrgb(),
+                );
+            }
             let inspector = layout.home_inspector(width, height, scale);
             if inspector.height > 0 {
                 surface.fill_rect(
