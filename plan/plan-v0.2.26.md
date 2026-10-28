@@ -88,9 +88,9 @@ Outcome: 0.2.26 @0 is a trustworthy default-list watch floor for tab-contained a
 │   dependency: PRD 25 lifecycle, PRD 36 read-only projection and accepted observer seam; non-goal: provider polling
 ├── [_] B26 — decide the inside-tab agent observer seam
 │   invariant: a registered agent run binds to window/session incarnation, stable @ID, source and ordered run identity
-│   evidence: one real CLI/TUI agent adapter feasibility trace, disconnect/restart/closed-tab negative controls
+│   evidence: self @ID export contract, one real CLI/TUI adapter trace, peer-message envelope/receipt decision and stale/closed-tab controls
 │   safe failure: unregistered agents remain visible as tabs with Unknown work state
-│   dependency: PRD 26 control boundary, PRD 25 lifecycle and PRD 36 run view; non-goal: parsing PTY prose or controlling arbitrary agents
+│   dependency: PRD 26 control boundary, PRD 25 lifecycle and PRD 36 run view; non-goal: shipping a general message broker or parsing PTY prose
 ├── [_] R26 — qualify visual responsiveness, accessibility and idle cost
 │   invariant: essential meaning stays visible across scale/language/window states without continuous idle repaint
 │   evidence: 1x/1.5x/2x native visual courts, focus order, reduced-motion and idle repaint measurements
@@ -187,7 +187,10 @@ flowchart LR
 7. **Decide the inside-tab observer seam.** Assign its protocol/lifecycle owner
    outside the Home painter. A real CLI/TUI agent adapter feasibility trace
    must bind the event source to window/session incarnation and @ID and prove
-   stale/closed-tab refusal. A generic process name or PTY text is not enough.
+   stale/closed-tab refusal. Decide how a child learns its own @ID (today it
+   inherits only `MINICON_CONTROL`) and whether typed peer messages need a
+   delivery receipt beyond `send-paste`/`capture-pane`. A generic process name
+   or PTY text is not enough.
    This decision is part of the 0.2.26 design handoff even if the adapter
    implementation lands later.
 8. **Gate real actors separately.** If the independent worker or a separately

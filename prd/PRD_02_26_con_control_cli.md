@@ -17,6 +17,8 @@ minicon control protocol and public CLI
 ├── Boundary against `agenterm cli` (separate contract; shared verb spellings only)
 ├── Self-description
 ├── Public command set
+│   ├── [v] Explicit @ID cross-tab text/key/capture/screenshot primitives
+│   └── [_] Inside-tab self identity and typed agent coordination → 0.2.26 B26
 ├── Transport and bounds (ATC1 frame; local pipe/socket; process-lifetime)
 │   └── [-] Bounded completion of active replies during shutdown
 ├── JSON contract
@@ -28,8 +30,11 @@ minicon control protocol and public CLI
 ```mermaid
 flowchart LR
     S["script / harness"] -->|"minicon cli --control …"| C["ATC1 client<br/>short-lived"]
+    TAB["Console tab child"] -->|"MINICON_CONTROL / mux"| C
     C -->|local pipe / socket| H["minicon GUI process<br/>bound before the window, dies with it"]
     H --> V["visible GUI<br/>capture · screenshot · ui-snapshot · send-*"]
+    V --> ID["Explicit stable @ID target<br/>PTY text / keys / wait"]
+    ID -. no self @ID or agent envelope yet .-> GAP["0.2.26 B26 observer/coordination decision"]
     V --> SH["Screenshot: implicit visible host or explicit tab pane"]
     SH --> RESTORE["Discard scratch frame; retain latest tab and Harness destination"]
     V -. development redacted settings observation .-> G["PRD 31.01 Harness route<br/>separate inference listener"]
@@ -221,6 +226,26 @@ remains the input baseline.
   carries only text, never a path, so the GUI never opens a caller's file. This
   is a bounded read/write surface, not a message channel: MiniCon gains no
   server, queue or envelope format.
+- [v] a GUI started with `--control` exports `MINICON_CONTROL` to each Console
+  child. From inside that tab, `minicon mux` can use the endpoint implicitly;
+  `minicon cli` still requires `--control "$MINICON_CONTROL"`. Explicit stable
+  `@ID` targets let a caller enumerate tabs, capture the current PTY screen,
+  send literal text, bracketed paste or keys, wait for visible text/exit, and
+  request a PNG of a Console pane while a GUI window is attached. This is
+  sufficient for a script that knows the peer @ID to exchange bounded text
+  through a PTY. `capture-pane` is the visible screen, not arbitrary scrollback;
+  `mux capture-pane -S/-E` is refused. Screenshot reliability retains the
+  separately tracked `{SCRSHOT-HANG}` issue below.
+- [_] reliable inside-tab agent coordination needs an explicit self @ID and
+  process-incarnation binding, plus a typed message/run envelope and receipt
+  semantics if the product promises delivery. Currently the child receives
+  the endpoint but no self tab ID; titles and row positions cannot identify it
+  safely after rename/reorder. The control socket gives any connected local
+  caller the existing full command surface, not per-agent authority. The
+  0.2.26 [B26 decision](../plan/plan-v0.2.26.md) owns how a tab-bound observer
+  and peer messaging can build on these primitives. The robot workspace is not
+  a Harness TabId; its future tab membership is owned by
+  [PRD 39.01](PRD_02_39_01_home_canvas.md).
 - [v] the two public observation surfaces agree where they overlap. The
   per-render `--emit-snapshot` file (terminal state) and the on-demand
   `list-tabs`/`ui-snapshot` replies describe the same session, so the active

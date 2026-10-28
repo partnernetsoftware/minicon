@@ -58,12 +58,15 @@ minicon --control unix:/tmp/minicon-build/control.sock
 
 # run something, then wait for it — no sleeps
 minicon cli --control unix:/tmp/minicon-build/control.sock send-text "cargo test\r"
-minicon cli --control unix:/tmp/minicon-build/control.sock wait-text --timeout-ms 600000 "test result"
+minicon cli --control unix:/tmp/minicon-build/control.sock wait-text --timeout-ms 120000 "test result"
 
 # read the result as text, or as a picture
 minicon cli --control unix:/tmp/minicon-build/control.sock capture-pane
 minicon cli --control unix:/tmp/minicon-build/control.sock screenshot-pane --output run.png
 ```
+
+When started with `--control`, programs inside a tab inherit `MINICON_CONTROL`.
+Run `minicon mux list-panes` there, then address another terminal by its stable `@ID`.
 
 `ui-snapshot` returns focus, input-method state, pending work and layout as JSON;
 `wait-text` and `wait-tab-exit` block until a condition holds or times out;

@@ -51,12 +51,15 @@ minicon --control unix:/tmp/minicon-build/control.sock
 
 # 跑点东西，然后等它 —— 不用 sleep
 minicon cli --control unix:/tmp/minicon-build/control.sock send-text "cargo test\r"
-minicon cli --control unix:/tmp/minicon-build/control.sock wait-text --timeout-ms 600000 "test result"
+minicon cli --control unix:/tmp/minicon-build/control.sock wait-text --timeout-ms 120000 "test result"
 
 # 结果可以读成文字，也可以截成图
 minicon cli --control unix:/tmp/minicon-build/control.sock capture-pane
 minicon cli --control unix:/tmp/minicon-build/control.sock screenshot-pane --output run.png
 ```
+
+以 `--control` 启动时，标签内程序会继承 `MINICON_CONTROL`，可直接运行
+`minicon mux list-panes`，再用稳定的 `@ID` 指定其他终端标签。
 
 `ui-snapshot` 以 JSON 返回焦点、输入法状态、待处理工作与布局；`wait-text` 和
 `wait-tab-exit` 阻塞到条件成立或超时；`send-keys`、`send-mouse`、`send-wheel`、
