@@ -370,7 +370,18 @@ fn text_payload(cursor: &mut Cursor<'_>, verb: &str) -> Result<String, String> {
 pub fn parse_cli(args: &[String]) -> Result<CliRequest, String> {
     let mut cursor = Cursor::new(args);
     cursor.require("cli")?;
-    let control = cursor.required_value("--control")?.to_owned();
+    let control = if cursor
+        .args
+        .get(cursor.position)
+        .is_some_and(|arg| arg == "--control")
+    {
+        cursor.required_value("--control")?.to_owned()
+    } else {
+        std::env::var("MINICON_CONTROL")
+            .ok()
+            .filter(|endpoint| !endpoint.is_empty())
+            .ok_or_else(|| "--control ENDPOINT or MINICON_CONTROL is required".to_owned())?
+    };
     let verb = cursor.next().ok_or_else(usage)?;
 
     let command = match verb {
@@ -582,7 +593,7 @@ pub fn parse_cli(args: &[String]) -> Result<CliRequest, String> {
 }
 
 pub fn usage() -> String {
-    "usage: minicon cli list-commands\n       minicon cli --control ENDPOINT <list-tabs|ui-snapshot|perf-stats|reset-perf-stats|cancel-pointer|close-window|detach-gui|attach-gui|resize-window|new-tab|select-tab|close-tab|capture-pane|screenshot-pane|send-text|send-paste|send-keys|send-ui-ime|send-ui-keys|send-ui-mouse|send-mouse|send-wheel|wait-text|wait-tab-exit> ...".to_owned()
+    "usage: minicon cli list-commands\n       minicon cli [--control ENDPOINT] <list-tabs|ui-snapshot|perf-stats|reset-perf-stats|cancel-pointer|close-window|detach-gui|attach-gui|resize-window|new-tab|select-tab|close-tab|capture-pane|screenshot-pane|send-text|send-paste|send-keys|send-ui-ime|send-ui-keys|send-ui-mouse|send-mouse|send-wheel|wait-text|wait-tab-exit> ...\n       --control is required unless MINICON_CONTROL is set".to_owned()
 }
 
 const CLI_COMMAND_CATALOG: &str = "attach-gui\ncancel-pointer\ncapture-pane\nclose-tab\nclose-window\ndetach-gui\nlist-commands\nlist-tabs\nnew-tab\nperf-stats\nreset-perf-stats\nresize-window\nscreenshot-pane\nselect-tab\nsend-keys\nsend-mouse\nsend-paste\nsend-text\nsend-ui-ime\nsend-ui-keys\nsend-ui-mouse\nsend-wheel\nui-snapshot\nwait-tab-exit\nwait-text\n";

@@ -13,7 +13,7 @@ named black-box evidence exists.
 
 ```text
 Outcome: an agent can address, observe and drive a MiniCon tab with a predictable CLI contract
-├── [_] ID — same-instance executable, endpoint and self-tab context
+├── [-] ID — same-instance executable, endpoint and self-tab context
 │   invariant: each Console child can invoke this MiniCon build; tab-targeted calls resolve a live incarnation and @ID
 │   evidence: child PATH/binary/endpoint, two-instance, duplicate-title, rename/reorder, stale-tab and restart journeys
 │   safe failure: missing executable or mismatched context refuses without launching or selecting another instance/tab
@@ -70,7 +70,7 @@ flowchart LR
 
 | Concern | Current source behavior | Contract decision |
 | --- | --- | --- |
-| Binary and endpoint | Console children receive `MINICON_CONTROL` only if the host starts with `--control`; `mux` reads it, `cli` requires `--control`; `minicon` command lookup depends on inherited `PATH` | Make the child command resolve the running build, then let native `cli` use `--control` or inherited endpoint; fail closed when either is unavailable |
+| Binary and endpoint | Console children receive `MINICON_CONTROL` only if the host starts with `--control`; `cli` and `mux` read it; the child receives `MINICON_BIN` and a `PATH` prefixed with this host's executable directory | Qualify the same-build mapping on other native hosts and handle a renamed binary; fail closed when the endpoint is unavailable |
 | Identity | `list-tabs` gives stable `@ID`; children receive no self ID; omitted native targets use the active terminal | Export a self ID and instance incarnation as convenience, validate both against the live host, and never silently guess from title/order |
 | Read/write | `capture-pane` reads visible rows; `send-text` and `send-paste` accept UTF-8 `--file`; `send-keys` targets PTY keys | Name the mode and bounds in results; distinguish accepted bytes from observed response and agent receipt |
 | Paths | capture `--output` writes on the CLI client; screenshot `--output` is currently interpreted by the GUI process | Make v2 path ownership explicit and consistent without reinterpreting a legacy relative path silently |
@@ -102,8 +102,8 @@ bounded to 1 MiB. These are current limits, not a promise of scrollback.
    the agent-facing profile requires an explicit `@ID` or `self` for writes,
    waits and captures. Browser and future Harness tab capabilities are
    discovered by kind, never routed through a terminal handler by accident.
-   On a Console child, the host should prepend the directory containing its
-   own `minicon` executable to that child's `PATH` and export an absolute
+   On a Console child, the host prepends the directory containing its
+   own `minicon` executable to that child's `PATH` and exports an absolute
    `MINICON_BIN` escape hatch. If the executable is packaged under another
    basename, use an owned `minicon` launcher or report command discovery as
    unavailable; never let an unrelated global `minicon` silently stand in.

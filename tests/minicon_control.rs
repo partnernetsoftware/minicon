@@ -309,6 +309,123 @@ fn cli_text(exe: &Path, endpoint: &str, arguments: &[&str]) -> String {
     output_text(&output)
 }
 
+#[test]
+fn console_child_minicon_command_uses_its_own_control_endpoint() {
+    let exe = minicon_binary();
+    let exe = exe.as_path();
+    let absent = Command::new(exe)
+        .args(["cli", "list-tabs"])
+        .env_remove("MINICON_CONTROL")
+        .output()
+        .expect("start CLI without an endpoint");
+    assert!(!absent.status.success(), "missing endpoint must fail");
+    assert!(error_text(&absent).contains("MINICON_CONTROL"));
+
+    let suffix = unique_suffix();
+    let endpoint = control_endpoint(&suffix);
+    let shadow_dir = std::env::temp_dir().join(format!("minicon-shadow-{suffix}"));
+    fs::create_dir_all(&shadow_dir).expect("create shadow command directory");
+    if cfg!(windows) {
+        fs::write(
+            shadow_dir.join("minicon.cmd"),
+            "@echo SHADOW_MINICON_USED\r\n@exit /b 41\r\n",
+        )
+        .expect("write shadow command");
+    } else {
+        let shadow = shadow_dir.join("minicon");
+        fs::write(&shadow, "#!/bin/sh\necho SHADOW_MINICON_USED\nexit 41\n")
+            .expect("write shadow command");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            fs::set_permissions(&shadow, fs::Permissions::from_mode(0o755))
+                .expect("make shadow command executable");
+        }
+    }
+    let mut shadow_path = vec![shadow_dir.clone()];
+    if let Some(inherited) = std::env::var_os("PATH") {
+        shadow_path.extend(std::env::split_paths(&inherited));
+    }
+    let shadow_path = std::env::join_paths(shadow_path).expect("shadow PATH");
+    let mut host = Command::new(exe);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt as _;
+        host.process_group(0);
+    }
+    host.args(["--no-activate", "--control", &endpoint, "-e"]);
+    host.args(host_shell_args());
+    host.env("PATH", shadow_path);
+    host.stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    let mut gui = OwnedGui {
+        child: host.spawn().expect("start host with Console child"),
+        screenshot: std::env::temp_dir().join(format!("minicon-child-cli-{suffix}.png")),
+    };
+    let listed = wait_until_ready_for(
+        exe,
+        &endpoint,
+        Duration::from_secs(15),
+        Some(&mut gui.child),
+    );
+    let env_only = Command::new(exe)
+        .args(["cli", "list-tabs"])
+        .env("MINICON_CONTROL", &endpoint)
+        .output()
+        .expect("start CLI with inherited endpoint");
+    assert!(
+        env_only.status.success(),
+        "env endpoint: {}",
+        error_text(&env_only)
+    );
+    let wrong_endpoint = control_endpoint(&format!("{suffix}-wrong"));
+    let explicit = Command::new(exe)
+        .args(["cli", "--control", &endpoint, "list-tabs"])
+        .env("MINICON_CONTROL", wrong_endpoint)
+        .output()
+        .expect("start CLI with explicit endpoint");
+    assert!(
+        explicit.status.success(),
+        "explicit endpoint must win: {}",
+        error_text(&explicit)
+    );
+    let tab = tab_id(&listed["tabs"][0]["id"]).to_owned();
+    // Escape the underscore in the command line so wait-text cannot match
+    // the echoed input before the nested CLI returns successfully.
+    let child_command = if cfg!(windows) {
+        "minicon cli list-tabs && echo MINI_SELF_CLI^_OK\r"
+    } else {
+        "minicon cli list-tabs && echo MINI_SELF_CLI\\_OK\r"
+    };
+    cli_json(
+        exe,
+        &endpoint,
+        &["send-text", "--target", &tab, child_command],
+    );
+    cli_json(
+        exe,
+        &endpoint,
+        &[
+            "wait-text",
+            "--target",
+            &tab,
+            "--timeout-ms",
+            "15000",
+            "MINI_SELF_CLI_OK",
+        ],
+    );
+    let pane = cli_text(exe, &endpoint, &["capture-pane", "--target", &tab]);
+    assert!(
+        pane.contains("MINI_SELF_CLI_OK"),
+        "child CLI did not complete: {pane}"
+    );
+    assert!(
+        !pane.contains("SHADOW_MINICON_USED"),
+        "wrong binary ran: {pane}"
+    );
+    fs::remove_dir_all(shadow_dir).expect("remove shadow command directory");
+}
+
 /// A host whose `-e` program cannot be spawned exits non-zero and names the
 /// failure, rather than lingering as a windowless process.
 ///

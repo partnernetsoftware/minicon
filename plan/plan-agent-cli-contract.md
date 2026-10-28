@@ -20,7 +20,7 @@ Outcome: a local agent can use one predictable CLI to address, observe and drive
 │   evidence: reviewed syntax/output/target/host-state table and upstream tmux comparison
 │   safe failure: unsupported verbs and flags stay explicit errors
 │   dependency: A0 and PRD 26.01; non-goal: changing existing CLI output by documentation alone
-├── [_] A2 — provide same-instance command, endpoint, self-tab and capability discovery
+├── [-] A2 — provide same-instance command, endpoint, self-tab and capability discovery
 │   invariant: child command resolves this build/instance; self resolves only to a live @ID in its incarnation
 │   evidence: two instances, PATH reset, renamed executable, two same-name tabs, restart and absent endpoint black boxes
 │   safe failure: missing binary/endpoint or stale self refuses before a second launch, send or selection
@@ -114,6 +114,13 @@ flowchart LR
    and headless claims. PRD 33 selects broad tests; PRD 27 owns release.
 
 ## Version boundary
+
+The Console child command/endpoint slice of A2 has Windows public black-box
+evidence in `console_child_minicon_command_uses_its_own_control_endpoint`:
+an inherited endpoint works, explicit `--control` wins, and a shadow
+`minicon` earlier in the inherited `PATH` is bypassed. Removing the child
+`PATH` override made this black box fail. Self @ID, process incarnation,
+renamed-binary packaging and other native hosts remain open, so A2 is partial.
 
 The 0.2.26 [B26 leaf](plan-v0.2.26.md) decides the identity/observer/message
 contract and can deliver small compatible discovery improvements if their

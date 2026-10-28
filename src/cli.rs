@@ -504,7 +504,7 @@ Usage: minicon [--no-activate] [--headless] [--working-dir DIR]
        minicon --hostif-handshake
        minicon --status
        minicon --help
-       minicon cli --control ENDPOINT COMMAND [ARGS...]
+       minicon cli [--control ENDPOINT] COMMAND [ARGS...]
        minicon harness --root PATH --task TEXT [--backend deepseek|opencode-go]
        minicon harness --root PATH --task TEXT --gateway http://127.0.0.1:PORT/v1
                        [--client-key-env NAME] [--allow-cmd NAME]...
@@ -522,6 +522,7 @@ preferences in minicon.json. Repeatable and comma-separated; prefix a name with
 {feature_list}
 
 Control endpoint and CLI (TAB is a stable @ID; omitted target means active tab):
+  --control is required outside a Console child unless MINICON_CONTROL is set.
   minicon cli list-commands
 {control_examples}
   ... ui-snapshot | perf-stats | reset-perf-stats | cancel-pointer | close-window

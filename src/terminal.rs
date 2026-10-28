@@ -656,6 +656,23 @@ impl ConTerminal {
             command = command.env("MINICON_CONTROL", endpoint);
         }
 
+        // Resolve the command in this child to the executable that launched
+        // it, even when another MiniCon installation appears later on PATH.
+        // Keep the change local to the PTY child; login shells may rewrite
+        // PATH, so MINICON_BIN also gives scripts an absolute escape hatch.
+        if let Ok(executable) = std::env::current_exe() {
+            command = command.env("MINICON_BIN", executable.as_os_str());
+            if let Some(directory) = executable.parent() {
+                let mut paths = vec![directory.to_path_buf()];
+                if let Some(inherited) = std::env::var_os("PATH") {
+                    paths.extend(std::env::split_paths(&inherited));
+                }
+                if let Ok(child_path) = std::env::join_paths(paths) {
+                    command = command.env("PATH", child_path);
+                }
+            }
+        }
+
         if self.command.is_some() {
             for argument in extra_args {
                 command = command.arg(argument);

@@ -231,8 +231,14 @@ remains the input baseline.
   is a bounded read/write surface, not a message channel: MiniCon gains no
   server, queue or envelope format.
 - [v] a GUI started with `--control` exports `MINICON_CONTROL` to each Console
-  child. From inside that tab, `minicon mux` can use the endpoint implicitly;
-  `minicon cli` still requires `--control "$MINICON_CONTROL"`. Explicit stable
+  child. From inside that tab, `minicon mux` and `minicon cli` can use the
+  endpoint implicitly; an explicit `--control` wins. The child also receives
+  `MINICON_BIN` and a `PATH` that prioritizes this host's executable directory.
+  The public `console_child_minicon_command_uses_its_own_control_endpoint`
+  black box passed on Windows, including a shadow command placed earlier on
+  the inherited `PATH`; removing the host's `PATH` override made it fail.
+  A login shell can still rewrite `PATH`, so `MINICON_BIN` is the absolute
+  fallback. Explicit stable
   `@ID` targets let a caller enumerate tabs, capture the current PTY screen,
   send literal text, bracketed paste or keys, wait for visible text/exit, and
   request a PNG of a Console pane while a GUI window is attached. This is
