@@ -259,10 +259,12 @@ B26 now has a selected tab-bound observer and peer-receipt boundary in
 [PRD 26.01](../prd/PRD_02_26_01_agent_cli_contract.md#b26-tab-bound-observer-and-peer-message-decision):
 Native `--target self` now carries host incarnation and @ID in one request;
 the Windows child/wrong-instance/closed-tab court passed and the instance-check
-mutation failed. Typed adapter runs still need source and ordered stage;
-host-accepted PTY input never becomes an agent receipt. One real CLI/TUI
-adapter trace, two-instance/restart and other-platform controls remain open,
-so B26 remains partial.
+mutation failed. The Windows two-live-instance court passed separate child
+endpoint binding, tab isolation and cross-instance `self` refusal; a
+constant-incarnation mutation failed. Restart at a reused endpoint, renamed
+binaries and other-platform binding remain open. Typed adapter runs still need
+source and ordered stage; host-accepted PTY input never becomes an agent
+receipt. One real CLI/TUI adapter trace remains open, so B26 remains partial.
 The first A26 slice now publishes informational Console-child exit items with
 exact @ID, host observation time and exit code; the Home header selects the
 newest item for inspection. The Windows native court passed and a wrong-target

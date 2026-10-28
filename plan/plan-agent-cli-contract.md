@@ -131,8 +131,12 @@ also passed, and removing the child's endpoint made it fail with a
 missing-`MINICON_CONTROL` screen receipt. Its expanded journey now proves
 `MINICON_TAB_ID`/`MINICON_INSTANCE_ID` inside the child, native
 `--target self`, wrong-instance refusal and closed-tab refusal. Removing the
-host incarnation check made this court fail. Two simultaneous real instances,
-restart at a reused endpoint, renamed-binary packaging and macOS/Linux native
+host incarnation check made this court fail. The Windows
+`simultaneous_console_children_bind_to_their_own_minicon_instances` court
+passed two ordinary live hosts, distinct child endpoints/incarnations, isolated
+tab creation and cross-instance `self` refusal. Replacing fresh incarnation
+entropy with a constant made the court fail. Restart at a reused endpoint,
+renamed-binary packaging and macOS/Linux native
 courts remain open, so A2 is partial. Web has no shell; a future
 Harness child receives its own tab identity under the same instance-binding
 rule only after Harness tab lifecycle exists.

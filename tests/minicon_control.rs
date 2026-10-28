@@ -472,6 +472,131 @@ fn ordinary_console_child_reaches_its_automatic_control_endpoint() {
     let _ = fs::remove_file(self_result_file);
 }
 
+#[cfg(windows)]
+#[test]
+fn simultaneous_console_children_bind_to_their_own_minicon_instances() {
+    let exe = minicon_binary();
+    let suffix = unique_suffix();
+    let root = std::env::temp_dir().join(format!("minicon-two-instances-{suffix}"));
+    fs::create_dir_all(&root).expect("create two-instance court directory");
+    let mut hosts = Vec::new();
+    for index in 0..2 {
+        let endpoint_file = root.join(format!("endpoint-{index}.txt"));
+        let self_file = root.join(format!("self-{index}.txt"));
+        let result_file = root.join(format!("result-{index}.json"));
+        let snapshot_file = root.join(format!("snapshot-{index}.json"));
+        let config_dir = root.join(format!("config-{index}"));
+        let child = Command::new(&exe)
+            .args(["--no-activate", "--emit-snapshot"])
+            .arg(&snapshot_file)
+            .args([
+                "-e",
+                "powershell.exe",
+                "-NoLogo",
+                "-NoProfile",
+                "-Command",
+                "Set-Content -LiteralPath $env:MINICON_TEST_ENDPOINT -Value $env:MINICON_CONTROL; Set-Content -LiteralPath $env:MINICON_TEST_SELF -Value \"$env:MINICON_TAB_ID|$env:MINICON_INSTANCE_ID\"; minicon cli list-tabs | Set-Content -LiteralPath $env:MINICON_TEST_RESULT",
+            ])
+            .env("MINICON_CONFIG_DIR", config_dir)
+            .env("MINICON_TEST_ENDPOINT", &endpoint_file)
+            .env("MINICON_TEST_SELF", &self_file)
+            .env("MINICON_TEST_RESULT", &result_file)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("start ordinary MiniCon host");
+        hosts.push((
+            OwnedGui {
+                child,
+                screenshot: snapshot_file,
+            },
+            endpoint_file,
+            self_file,
+            result_file,
+        ));
+    }
+    let deadline = Instant::now() + Duration::from_secs(20);
+    for (host, _, self_file, result_file) in &mut hosts {
+        loop {
+            if fs::read_to_string(self_file.as_path()).is_ok()
+                && fs::read(result_file.as_path())
+                    .ok()
+                    .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+                    .is_some()
+            {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "child CLI did not reach its host"
+            );
+            assert!(
+                host.child.try_wait().unwrap().is_none(),
+                "host exited early"
+            );
+            thread::sleep(Duration::from_millis(50));
+        }
+    }
+    let endpoint_a = fs::read_to_string(&hosts[0].1).unwrap();
+    let endpoint_b = fs::read_to_string(&hosts[1].1).unwrap();
+    let endpoint_a = endpoint_a.trim();
+    let endpoint_b = endpoint_b.trim();
+    assert_ne!(
+        endpoint_a, endpoint_b,
+        "ordinary hosts need unique endpoints"
+    );
+    let identity_a = fs::read_to_string(&hosts[0].2).unwrap();
+    let identity_b = fs::read_to_string(&hosts[1].2).unwrap();
+    let (tab_a, instance_a) = identity_a.trim().split_once('|').unwrap();
+    let (tab_b, instance_b) = identity_b.trim().split_once('|').unwrap();
+    assert_ne!(instance_a, instance_b, "host incarnations must differ");
+    let list_a: Value = serde_json::from_slice(&fs::read(&hosts[0].3).unwrap()).unwrap();
+    let list_b: Value = serde_json::from_slice(&fs::read(&hosts[1].3).unwrap()).unwrap();
+    assert_eq!(list_a["tabs"][0]["id"], tab_a);
+    assert_eq!(list_b["tabs"][0]["id"], tab_b);
+    let second_a = cli_json(&exe, endpoint_a, &["new-tab"])["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(
+        cli_json(&exe, endpoint_a, &["list-tabs"])["tabs"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        cli_json(&exe, endpoint_b, &["list-tabs"])["tabs"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_ne!(second_a, tab_a);
+    for (endpoint, tab, instance) in [
+        (endpoint_b, tab_a, instance_a),
+        (endpoint_a, tab_b, instance_b),
+    ] {
+        let cross = Command::new(&exe)
+            .args([
+                "cli",
+                "--control",
+                endpoint,
+                "select-tab",
+                "--target",
+                "self",
+            ])
+            .env("MINICON_TAB_ID", tab)
+            .env("MINICON_INSTANCE_ID", instance)
+            .output()
+            .expect("cross-instance self request");
+        assert!(!cross.status.success(), "foreign self must be refused");
+        assert!(error_text(&cross).contains("another MiniCon instance"));
+    }
+    drop(hosts);
+    let _ = fs::remove_dir_all(root);
+}
+
 #[test]
 fn console_child_minicon_command_uses_its_own_control_endpoint() {
     let exe = minicon_binary();
