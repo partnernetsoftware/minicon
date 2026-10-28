@@ -443,12 +443,15 @@ for Unknown. Never loaded, loading, unavailable and untimestamped views all
 stay Unknown rather than silently using the View's default Stopped value. The
 line opens Harness for inspection and prints its fixed UTC reception time when
 available. `native_home_gateway_is_unknown_until_cached_runtime_and_routes_to_harness`
-passed the unknown → loaded/stopped route and a 500×650 capture without
-starting the listener; the focused
+passed the unknown → loaded/stopped → real listening/actual port → stopped
+route and a 500×650 capture. Its isolated synthetic profile served a local
+`GET /v1/models` with HTTP 200 while listening; no upstream authorization or
+inference is claimed. Replacing the listening Home projection with Stopped made
+the native court fail. The focused
 `home_gateway_projection_needs_loaded_timestamped_runtime_view` test covers
 unknown, listening/port, stopped and unavailable mappings, and a false-Stopped
-mutation made it fail. Real listener transitions, request attention, stale
-runtime observation and other-platform courts remain open.
+mutation made it fail. Request attention, stale runtime observation and
+other-platform courts remain open.
 
 The Home adapter reads bounded projections from the owning workspace, PRD 36
 and any accepted telemetry seam. It must not copy credentials, proxy addresses,

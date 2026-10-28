@@ -303,9 +303,11 @@ not retain a false relative age. The exit-attention empty state names its child-
 copy and public snapshot, and the native court covers removal to that state.
 The local API line now uses only PRD 36's cached Runtime View with a host
 reception time and an explicit Unknown before load; it opens Harness for
-inspection. The Windows unknown→loaded/stopped native court and state-mapping
-test passed, with a false-Stopped mutation failure. Real listener transitions
-and request attention still need source-backed courts.
+inspection. The Windows unknown→loaded/stopped→real listening/actual port→stopped
+native court passed with a local HTTP 200 model-list request and narrow capture;
+a wrong-listening-status mutation failed. The state-mapping test also passed,
+with a false-Stopped mutation failure. Request attention and stale runtime
+observation still need source-backed courts.
 Mixed severity/source deduplication, actionable counts, provider/gateway
 routing and whole-machine or other-platform resource courts remain open.
 Remaining sort/group modes, 256-tab interaction modes, full native

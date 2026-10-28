@@ -1188,7 +1188,22 @@ fn native_home_process_sample_names_scope_source_and_entry_time() {
 #[test]
 #[ignore = "requires a native desktop; run the explicit Home gateway projection court"]
 fn native_home_gateway_is_unknown_until_cached_runtime_and_routes_to_harness() {
-    let mut host = BrowserGui::spawn(false, None, None);
+    let reservation = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = reservation.local_addr().unwrap().port();
+    let root = minicon_binary()
+        .parent()
+        .unwrap()
+        .join("browser-court")
+        .join(unique_suffix())
+        .join("config");
+    harness_synthetic_profile(
+        &root,
+        port,
+        "synthetic-home-gateway-key",
+        "synthetic-unused-home-token",
+    );
+    drop(reservation);
+    let mut host = BrowserGui::spawn_with_config(false, None, None, Some(root));
     host.click_geometry("home");
     let unknown = host.cli(&["ui-snapshot"]);
     let gateway = &unknown["geometry"]["home_gateway"];
@@ -1216,6 +1231,44 @@ fn native_home_gateway_is_unknown_until_cached_runtime_and_routes_to_harness() {
     assert_eq!(gateway["reason"], Value::Null);
     assert_eq!(gateway["port"], Value::Null);
     assert!(gateway["observed_at_unix_ms"].as_u64().unwrap() > 0);
+    let stopped_at = gateway["observed_at_unix_ms"].as_u64().unwrap();
+    host.click_geometry("home_gateway_action");
+    open_harness(&host);
+    click_harness(&host, "listener_actions", 0);
+    let listening = wait_harness(&host, |state| state["listener"] == "listening");
+    assert_eq!(listening["actual_port"], port);
+    {
+        use std::io::{Read, Write};
+        let mut client = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        write!(client, "GET /v1/models HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer synthetic-home-gateway-key\r\nConnection: close\r\n\r\n").unwrap();
+        let mut response = String::new();
+        client.read_to_string(&mut response).unwrap();
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+    }
+    host.click_geometry("settings");
+    host.click_geometry("harness_entry");
+    let running = host.cli(&["ui-snapshot"]);
+    assert_eq!(running["geometry"]["home_active"], true);
+    let gateway = &running["geometry"]["home_gateway"];
+    assert_eq!(gateway["status"], "listening");
+    assert_eq!(gateway["port"], port);
+    assert_eq!(gateway["reason"], Value::Null);
+    assert!(gateway["observed_at_unix_ms"].as_u64().unwrap() >= stopped_at);
+    host.click_geometry("home_gateway_action");
+    open_harness(&host);
+    click_harness(&host, "listener_actions", 1);
+    wait_harness(&host, |state| state["listener"] == "stopped");
+    host.click_geometry("settings");
+    host.click_geometry("harness_entry");
+    let stopped = host.cli(&["ui-snapshot"]);
+    assert_eq!(stopped["geometry"]["home_active"], true);
+    let gateway = &stopped["geometry"]["home_gateway"];
+    assert_eq!(gateway["status"], "stopped");
+    assert_eq!(gateway["port"], Value::Null);
+    assert!(gateway["observed_at_unix_ms"].as_u64().unwrap() >= stopped_at);
     host.cli(&["resize-window", "--width", "500", "--height", "650"]);
     let deadline = Instant::now() + Duration::from_secs(5);
     while host.cli(&["ui-snapshot"])["geometry"]["frame"]["width"] != 500 {
