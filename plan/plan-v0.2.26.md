@@ -223,7 +223,10 @@ mutating End to the first row made the court fail. Full responsive, mixed-tab
 and other-platform qualification remains open. The Windows 17-tab Home
 scrollbar court passed track paging and thumb dragging with no row retarget;
 its native capture shows the list-only track. Removing paging made the court
-fail. Other scales and 256 mixed-tab overflow remain open.
+fail. Other scales remain open. The 256-tab Windows keyboard/search, capacity
+and stale-target court passed for 255 exited Console tabs plus one Web tab;
+[PRD 39.01](../prd/PRD_02_39_01_home_canvas.md) owns its exact receipt and
+remaining coverage limits.
 The native mixed Console/Web kind-filter court passed the shared visible-row
 projection, click and snapshot identity, hidden-tab exit attention, zero-match
 after Web close, and wide/narrow captures. The Web-includes-all mutation failed.
@@ -232,8 +235,8 @@ exact `@ID` queries, kind composition, hidden-tab attention, Escape and
 wide/narrow captures. Removing query filtering made it fail. A hidden live
 selection now offers Show filtered tab: the Windows kind-filter court passed
 pointer reveal without leaving @0, and the search court passed Enter reveal;
-closed targets remain disabled. Sorting/grouping and 256-tab evidence remain
-open; T26 stays partial.
+closed targets remain disabled. Sorting/grouping and other 256-tab interaction
+modes remain open; T26 stays partial.
 W26 has its Workspace identity prerequisite: distinct browser roots can
 now be allocated and closed independently in the product model. Internal
 runtime parking also preserves each Web @ID's address, proxy, navigation
@@ -280,7 +283,7 @@ exact @ID, host observation time and exit code; the Home header selects the
 newest item for inspection. The Windows native court passed and a wrong-target
 mutation failed; closing the tab removes the item. Mixed severity/source
 deduplication, actionable counts, provider/gateway routing and measured system
-cards remain open. Search/filter/group, mixed 256-tab overflow, full native
+cards remain open. Sort/group, remaining 256-tab interaction modes, full native
 wide/narrow/scale visual qualification and other OS courts remain required before T26 or
 the default-list cut can be marked complete. `screenshot-pane` observes the
 underlying Console pane on @0 and is not a Home capture receipt.

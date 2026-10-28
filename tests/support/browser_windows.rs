@@ -20,6 +20,27 @@ impl BrowserGui {
         https_proxy: Option<&str>,
         config_root: Option<PathBuf>,
     ) -> Self {
+        Self::spawn_with_console_command(
+            missing_runtime,
+            http_proxy,
+            https_proxy,
+            config_root,
+            false,
+        )
+    }
+
+    #[cfg(windows)]
+    fn spawn_with_exiting_console() -> Self {
+        Self::spawn_with_console_command(false, None, None, None, true)
+    }
+
+    fn spawn_with_console_command(
+        missing_runtime: bool,
+        http_proxy: Option<&str>,
+        https_proxy: Option<&str>,
+        config_root: Option<PathBuf>,
+        exiting_console: bool,
+    ) -> Self {
         let exe = minicon_binary();
         let suffix = unique_suffix();
         let endpoint = control_endpoint(&suffix);
@@ -30,11 +51,18 @@ impl BrowserGui {
         let mut command = Command::new(&exe);
         command.args(["--no-activate", "--control", &endpoint, "-e"]);
         #[cfg(windows)]
-        command.args(["cmd.exe", "/d", "/k"]);
+        if exiting_console {
+            command.args(["cmd.exe", "/d", "/c", "exit", "0"]);
+        } else {
+            command.args(["cmd.exe", "/d", "/k"]);
+        }
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
             command.arg("/bin/sh").process_group(0);
+            if exiting_console {
+                command.args(["-c", "exit 0"]);
+            }
         }
         command
             .env("MINICON_CONFIG_DIR", &config_root)
@@ -947,6 +975,88 @@ fn native_home_keyboard_navigation_reveals_exact_tab_ids() {
     let listed = host.cli(&["list-tabs"]);
     assert_eq!(listed["tabs"][8]["id"], ids[8]);
     assert_eq!(listed["tabs"][8]["active"], true);
+    host.close_and_wait();
+}
+
+#[cfg(windows)]
+#[test]
+#[ignore = "requires a native desktop; run the explicit 256-tab Home court"]
+fn native_home_256_mixed_tabs_keep_exact_overflow_targets() {
+    let mut host = BrowserGui::spawn_with_exiting_console();
+    let first = host.cli(&["list-tabs"])["tabs"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut middle = String::new();
+    for index in 1..255 {
+        let id = host.cli(&["new-tab"])["id"].as_str().unwrap().to_owned();
+        if index == 127 {
+            middle = id;
+        }
+    }
+    let web = host.open_browser_directly()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let listed = host.cli(&["list-tabs"]);
+    assert_eq!(listed["tabs"].as_array().unwrap().len(), 256);
+    assert_eq!(listed["tabs"][0]["id"], first);
+    assert_eq!(listed["tabs"][127]["id"], middle);
+    assert_eq!(listed["tabs"][255]["id"], web);
+
+    host.click_geometry("home");
+    let home = host.cli(&["ui-snapshot"]);
+    assert_eq!(home["geometry"]["home_tab_count"], 256);
+    assert_eq!(home["geometry"]["home_visible_count"], 256);
+    assert_eq!(home["geometry"]["home_list_scrollbar_visible"], true);
+    let capacity = home["geometry"]["home_list_row_ids"]
+        .as_array()
+        .unwrap()
+        .len();
+    assert!(capacity > 0 && capacity < 256);
+    host.cli(&["send-ui-keys", "End"]);
+    let end = host.cli(&["ui-snapshot"]);
+    assert_eq!(end["geometry"]["home_selected_id"], web);
+    assert!(
+        end["geometry"]["home_list_row_ids"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!(web))
+    );
+    assert!(end["geometry"]["home_list_start"].as_u64().unwrap() > 0);
+    host.click_geometry("home_focus_tab");
+    let focused = host.cli(&["list-tabs"]);
+    assert_eq!(focused["tabs"][255]["id"], web);
+    assert_eq!(focused["tabs"][255]["active"], true);
+
+    let over_cap = invoke(&host.exe, &host.endpoint, &["new-tab"]);
+    assert!(!over_cap.status.success(), "257th tab must be refused");
+    assert_eq!(
+        host.cli(&["list-tabs"])["tabs"].as_array().unwrap().len(),
+        256
+    );
+
+    host.click_geometry("home");
+    host.click_geometry("home_search");
+    assert_eq!(
+        host.cli(&["send-ui-ime", "commit", &middle])["route"],
+        "home_search"
+    );
+    let searched = host.cli(&["ui-snapshot"]);
+    assert_eq!(searched["geometry"]["home_visible_count"], 1);
+    assert_eq!(searched["geometry"]["home_list_row_ids"][0], middle);
+    host.click_geometry_row("home_list_row_rects", 0);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["home_selected_id"],
+        middle
+    );
+    host.cli(&["close-tab", "--target", &middle]);
+    let stale = host.cli(&["ui-snapshot"]);
+    assert_eq!(stale["geometry"]["home_selected_id"], middle);
+    assert_eq!(stale["geometry"]["home_selected_stale"], true);
+    assert_eq!(stale["geometry"]["home_tab_count"], 255);
+    host.click_geometry("home_focus_tab");
+    assert_eq!(host.cli(&["ui-snapshot"])["geometry"]["home_active"], true);
     host.close_and_wait();
 }
 

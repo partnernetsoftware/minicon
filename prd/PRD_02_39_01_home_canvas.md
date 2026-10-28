@@ -38,27 +38,28 @@ native 960x600 and 500x650 Home captures; the latter exposed a resize repaint
 gap that was corrected. The 210-pixel inspector also clipped its status copy;
 shorter child/agent labels are fully visible in the recaptured wide window.
 The geometry sweep proves list and inspector targets do
-not overlap at its sampled sizes. Search, grouping, full attention/system
-projection, visual mode, 256 mixed-tab overflow and other-platform native captures
-remain open. `screenshot-pane` captures the underlying Console pane while @0
+not overlap at its sampled sizes. Grouping, full attention/system projection,
+visual mode and other-platform native captures remain open. `screenshot-pane` captures the underlying Console pane while @0
 is visible, so it is not Home visual evidence.
 The Windows `native_home_fleet_wheel_keeps_scrolled_row_target_exact` court
 also passed with 17 Console tabs: a real window wheel moved the list viewport,
 and the first newly visible row selected and then focused its published @ID.
-Disabling the Home wheel route made this court fail. This proves native overflow navigation
-at that size, not the planned 256 mixed-tab or other-platform courts.
+Disabling the Home wheel route made this court fail. This proves native wheel
+navigation at that size; the 256-tab court below exercises keyboard and search,
+not a real wheel at that scale.
 The Windows `native_home_keyboard_navigation_reveals_exact_tab_ids` court
 passed with nine tabs: Up/Down, PageUp/PageDown and Home/End select by stable
 @ID and reveal the selection in the list; Enter focuses only the selected tab.
 Replacing End's destination with the first row made the court fail. This is
 native keyboard navigation evidence at the tested size, not the complete
-focus-order, screen-reader or 256-tab acceptance.
+focus-order or screen-reader acceptance; the 256-tab End route has its own
+court below.
 The Windows `native_home_list_scrollbar_pages_and_drags_without_retargeting`
 court passed with 17 tabs: a visible list-only track pages on click, thumb
 drag returns to the first row, and neither gesture selects a tab. The native
 Home capture shows the scrollbar beside four visible rows. Removing track
 paging made the court fail. Pointer capture is released on drag end or Home
-departure; other scales and 256 mixed tabs remain open.
+departure; other scales and 256-tab scrollbar dragging remain open.
 The first attention projection now observes Console child exits as
 **informational** items keyed by exact @ID. It carries the host observation
 time and exit code, shows the newest item in the Home list header and selects
@@ -96,7 +97,17 @@ Public geometry reports `home_inspector_action` as `reveal`, `focus` or
 `disabled`, plus a `home_reveal_tab` target only while reveal is valid. The
 Windows kind-filter court passed the narrow reveal button and stale-tab
 refusal; the search court passed keyboard reveal from a hidden selection.
-Sorting, grouping and 256-tab qualification remain open.
+The Windows native `native_home_256_mixed_tabs_keep_exact_overflow_targets`
+court passed with 255 retained, exited Console tabs and one Web tab. The
+public `list-tabs` and Home snapshot both reported 256 exact IDs; End selected
+and revealed the Web @ID at the bottom, Focus tab opened that ID, and a 257th
+tab was refused without changing the workspace. An exact middle `@ID` search
+returned one row; clicking it selected that ID, and closing it left a stale
+inspector rather than retargeting another row. Replacing End's destination
+with the first row made this 256-tab court fail; restoring it passed again.
+This qualifies Windows keyboard/search overflow for that tab-kind and child
+state mix. Sorting, grouping, 256-tab wheel/scrollbar drag, live-child mix and
+other-platform qualification remain open.
 
 ## Outcome tree DAG
 
@@ -397,7 +408,8 @@ does not jump to the row now occupying the same position. A 256-tab workspace
 uses a bounded scroll/virtualization window, keyboard Home/End/Page navigation
 and a visible scrollbar; no 256-row paint storm or unbounded a11y tree. The
 development List has keyboard navigation, a bounded viewport and a visible
-scrollbar at its tested Windows size; the 256 mixed-tab court remains open.
+scrollbar at its tested Windows sizes. Its 256-tab Windows keyboard/search
+court is recorded above; 256-tab wheel/drag and other-platform courts remain open.
 
 ## Visual mode: staged drag/drop contract
 
