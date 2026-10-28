@@ -1,19 +1,24 @@
-# v0.2.26 design target — make @0 the tab-agent watch floor
+# v0.2.26 — default list watch floor and staged visual mode
 
-Status: `[_]` selected next design sequence after public 0.2.25. This file
-selects a product direction for the next version; it does not claim that
-0.2.26 source, native evidence or publication exists. The owning behavior is in
+Status: `[-]` active development after public 0.2.25. Zero-tab convergence
+has Windows native evidence; the default list, visual mode and release remain
+open. The owning behavior is in
 [PRD 39.01](../prd/PRD_02_39_01_home_canvas.md), with @0 identity in
 [PRD 39](../prd/PRD_02_39_home_dashboard.md) and operation facts in
 [PRD 36](../prd/PRD_02_36_harness_workspace.md).
 
 ## Product decision
 
-Make @0 the distinctive, scene-first **watch floor** for agents working inside
-real MiniCon tabs and for the health of this MiniCon instance. A person should
+Make @0 the **watch floor** for agents working inside real MiniCon tabs and for
+the health of this MiniCon instance. Its default mode is a sortable, scannable
+list. A second spatial mode grows into user-arranged drag-and-drop management
+only as its persistence, identity and conflict behavior are qualified. Both
+modes read the same tab and observer projections. A person should
 spot the exact @ID needing attention, inspect what the host truly observed,
 and move to that tab or its owning detail view in one deliberate action.
-The office canvas represents tab stations even before typed agent events
+Console tabs are the first managed agents; Harness tabs join this same model
+when their ownership and event source are defined. The spatial office canvas
+represents tab stations even before typed agent events
 exist; characters appear only after an accepted event source binds an actual
 run to an @ID. Model API traffic or a process name alone never proves an
 agent's stage. The robot view owns detailed Harness operation/monitoring and
@@ -29,7 +34,7 @@ AIGC-specific workflow or fictional job cards.
 ## Outcome tree DAG
 
 ```text
-Outcome: 0.2.26 @0 is a trustworthy visual watch floor for tab-contained agents and local health
+Outcome: 0.2.26 @0 is a trustworthy default-list watch floor for tab-contained agents and local health
 ├── [_] V26 — open next source version only after 0.2.25 public boundary is recorded
 │   invariant: released 0.2.25 artifacts remain immutable and new work has a distinct source identity
 │   evidence: version/policy/lockfile consistency and 0.2.25 release-history receipt
@@ -40,24 +45,29 @@ Outcome: 0.2.26 @0 is a trustworthy visual watch floor for tab-contained agents 
 │   evidence: wide/4:3/narrow wireframes, English/Chinese copy and five-second multi-tab walkthrough notes
 │   safe failure: ambiguity remains an explicit design issue before coding a target
 │   dependency: PRD 39.01 states and the existing static shell; non-goal: final logo or unmeasured slogan claim
-├── [_] C26 — build the scene-first Home composition and navigation
+├── [_] C26 — build the default list Home composition and navigation
 │   invariant: Home is read-only, scene targets carry stable @IDs, and real tab/browser drafts survive round trips
 │   evidence: public GUI pointer/keyboard journey, native captures and no-side-effect traces
 │   safe failure: empty office retains a working primary route and explanation
 │   dependency: PRD 39 @0 host navigation; non-goal: another tab kind or Settings form on Home
-├── [_] T26 — represent the tab fleet and exact drill-down
+├── [_] T26 — represent the tab fleet as a default list with exact drill-down
 │   invariant: station/list/inspector select the same stable @ID through rename, reorder, exit and overflow
 │   evidence: 0/1/many/256 mixed-tab public journeys, stale-target refusal and native click/focus receipts
 │   safe failure: missing agent observer stays Unknown; closed tab never retargets another row
 │   dependency: PRD 25 tab tree/session lifecycle and PRD 39.01 HC-06; non-goal: reading hidden PTY output
+├── [_] D26 — design the optional spatial drag-and-drop mode in stages
+│   invariant: visual positions belong to stable @IDs and never alter the real tab tree or agent state
+│   evidence: V0 inspect-preview, V1 session-only card placement, V2 explicit tree-move contracts and native interaction prototype
+│   safe failure: an unqualified drag mode stays unavailable while the default list remains fully usable
+│   dependency: T26 identity and observer model, PRD 25.03 topology revision for V2; non-goal: cross-restart placement or a decorative fake drag target in 0.2.26
 ├── [_] A26 — prioritize attention and measured system health
 │   invariant: every alert names exact tab/component, source, freshness, severity and one safe action
 │   evidence: exited/stale/failed/host-unavailable mixed journeys, dedupe/resolve and measurement provenance
 │   safe failure: collector outage becomes Unknown rather than false healthy/zero or an alarm storm
 │   dependency: PRD 25 lifecycle, PRD 36 projection and qualified host telemetry; non-goal: unmeasured whole-OS health claim
-├── [-] Z26 — converge zero-tab workspace on @0
+├── [v] Z26 — converge zero-tab workspace on @0
 │   invariant: closing the last real tab opens the same @0 Home, with New Terminal/New Web routes
-│   evidence: development close-path/unit checks and Home action/snapshot geometry; native last-tab/action/window-close journey still due
+│   evidence: Windows native_home_is_a_fixed_destination_and_restores_real_tabs passed last-tab close and Home actions
 │   safe failure: an unavailable route leaves Home and explicit recovery visible
 │   dependency: PRD 39 Home identity and C26 routes; non-goal: treating @0 as a closable tab
 ├── [_] W26 — make +W a real New Web action
@@ -104,8 +114,9 @@ Outcome: 0.2.26 @0 is a trustworthy visual watch floor for tab-contained agents 
 flowchart LR
     P25["Public 0.2.25 exact boundary"] --> V26["0.2.26 source opened"]
     V26 --> UX["U26: scene/copy/native review"]
-    UX --> HOME["C26: @0 watch-floor composition"]
-    HOME --> FLEET["T26: stable @ID stations/list/inspector"]
+    UX --> HOME["C26: default list watch floor"]
+    HOME --> FLEET["T26: stable @ID rows/inspector"]
+    FLEET --> SPATIAL["D26: optional spatial drag mode design"]
     FLEET --> ATT["A26: exact attention + scoped system status"]
     HOME --> Z26["Zero real tabs use @0"]
     WEB["PRD 25/28.01 per-tab Web host + context lifetime"] --> W26["+W / Home / shortcut create distinct Web tab"]
@@ -138,9 +149,9 @@ flowchart LR
    an active gateway request with no exact tab/run correlation. Record the
    first concern noticed, exact @ID/owner, source time, primary route and
    recovery. Keep accepted behavior in PRD 39.01.
-3. **Implement composition and tab drill-down.** Build the tab office stage,
-   summary, attention rail, system card and bounded All tabs list in the native
-   host. Each station/inspector targets a stable @ID; rename, reorder, close
+3. **Implement the default list and tab drill-down.** Build a bounded tab list,
+   summary, attention queue and scoped system card in the native host. Each
+   row/inspector targets a stable @ID; rename, reorder, close
    and 256-tab overflow cannot retarget another row. Use code-native shapes
    and typography. Public CLI/snapshot tests prove exact selection and state
    preservation; captures prove hierarchy.
@@ -152,41 +163,51 @@ flowchart LR
    then can +W, Home New Web and the shortcut promise a new independent page;
    button copy alone is not acceptance. The native two-Web-tab navigation,
    switching, auth, close and reopen court is an explicit gate.
-4. **Join facts and attention through owners.** Present PRD 25 tab/child
+4. **Design the spatial mode as a distinct staged interaction.** Reuse T26's
+   stable IDs, observer facts, filters and exact inspect routes. V0 is an
+   inspectable preview; V1 permits only session-local card placement without
+   changing tab order; V2 exposes an explicit tree-move action through PRD
+   25.03's topology revision and atomic validation. Define collision,
+   cancellation, closed-tab and stale-revision behavior before V1/V2 unlock.
+   Keep List available on every window size; do not expose a Visual switch
+   until its V0 inspection route is useful and qualified.
+5. **Join facts and attention through owners.** Present PRD 25 tab/child
    lifecycle, PRD 36 model API/request projection and qualified MiniCon-host
    telemetry as separate evidence rungs. Instrument an output timestamp or
    CPU/RSS only if its source, cost and platform scope can be proven. Deduplicate
    attention by source/key; resolve it when the owner recovers. A model request
    without exact correlation cannot illuminate a specific tab's agent or
    spawn a character. Home entry adds no provider polling or process probe.
-5. **Qualify native presentation.** Claim each OS/scale/language only after its
+6. **Qualify native presentation.** Claim each OS/scale/language only after its
    named native court. Check short-height scroll, focus, hit targets, text
    contrast, reduced motion, browser parking and idle CPU/repaint behavior.
    Use captures to settle visual hierarchy and public journeys to settle
    behavior. Integrate shared `src/main.rs`, `src/host_paint.rs`, `src/ui.rs`,
    `src/snapshot.rs` changes serially against the public 0.2.25 baseline.
-6. **Decide the inside-tab observer seam.** Assign its protocol/lifecycle owner
+7. **Decide the inside-tab observer seam.** Assign its protocol/lifecycle owner
    outside the Home painter. A real CLI/TUI agent adapter feasibility trace
    must bind the event source to window/session incarnation and @ID and prove
    stale/closed-tab refusal. A generic process name or PTY text is not enough.
    This decision is part of the 0.2.26 design handoff even if the adapter
    implementation lands later.
-7. **Gate real actors separately.** If the independent worker or a separately
+8. **Gate real actors separately.** If the independent worker or a separately
    accepted inside-tab observer publishes exact @ID/run identity, ordered
    lifecycle and source freshness in time, run PRD 39.01's event/observer-loss
    court before enabling characters. Otherwise ship still tab stations with
    Unknown agent state and keep HC-05 open.
-8. **Run exact-source release gates.** Reconcile PRD status and evidence before
+9. **Run exact-source release gates.** Reconcile PRD status and evidence before
    archiving this plan. Promotion needs the owner-selected 0.2.26 decision and
    PRD 27 Candidate/Defender/reputation chain; this design request is not
    pre-authorization to publish the next version.
 
 ## Cut, deferrals and handoff
 
-The intended 0.2.26 cut is HC-01 through HC-04 plus HC-06/07: scene-first
+The intended 0.2.26 cut is the default list from HC-01 through HC-04 plus HC-06/07:
 @0 tab fleet, exact drill-down, prioritized attention, scoped system status
 and responsive native UX, plus the B26 observer-seam decision. HC-05 characters
-are a separately gated future capability. Arbitrary inside-tab agent stage
+and interactive spatial drag are separately gated future capabilities. D26
+delivers their interaction/identity design, not a decorative shipped toggle.
+Arbitrary inside-tab agent stage
 observation implementation, H2 task launch/Stop,
 cross-machine coordination,
 computer use, dynamic ujs/WASM scheduling, plugin management, provider auto

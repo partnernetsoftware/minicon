@@ -51,7 +51,7 @@ MiniCon — one-file local terminal
 │   │   └── prd/PRD_02_26_con_control_cli.md
 │   ├── [-] Robot entry / visual Harness operation and monitoring → prd/PRD_02_36_harness_workspace.md
 │   ├── [-] Fixed @0 home / future observed agent office → prd/PRD_02_39_home_dashboard.md
-│   │   └── [_] 0.2.26 visual home canvas → prd/PRD_02_39_01_home_canvas.md
+│   │   └── [_] 0.2.26 default-list tab-agent watch floor / later spatial mode → prd/PRD_02_39_01_home_canvas.md
 │   ├── [-] Optional Plugins and Apps layer / minicon-harness extraction → prd/PRD_02_40_plugins_apps.md
 │   ├── [_] Future cluster / cross-machine coordination → prd/PRD_02_37_cluster_horizon.md
 │   ├── [_] Future selected-window computer use → prd/PRD_02_38_computer_use.md
@@ -90,7 +90,7 @@ MiniCon — one-file local terminal
     ├── [v] public v0.2.23 → prd/archive/v0.2.23-release-history.md
     ├── [v] public v0.2.24 tree interactions and clipboard status → prd/archive/v0.2.24-release-history.md
     ├── [v] public v0.2.25 fixed @0 / direct creation / scrollbars / route clarity → prd/archive/v0.2.25-release-history.md
-    ├── [_] 0.2.26 @0 visual canvas → plan/plan-v0.2.26.md
+    ├── [-] 0.2.26 @0 watch floor / zero-tab convergence → plan/plan-v0.2.26.md
     ├── current independent tracks → plan/plan-v0.2.x-product-roadmap.md
     └── historical outcomes and receipts → prd/archive/README.md
 ```
@@ -128,7 +128,7 @@ flowchart LR
     APPS -. typed run events .-> ROB
     APPS -->|model-only client| GW
     REL25["Public 0.2.25: @0 shell / direct actions / route clarity"] --> HX & ROB
-    NEXT26["0.2.26 selected: scene-first @0 visual canvas"] --> HOME
+    NEXT26["0.2.26: default-list tab-agent watch floor and zero-tab @0"] --> HOME
     POOL & MON --> ROB
     BV["PRD 31.01.02.01.01: quoted profile checks / explicit commit cutoff"] --> POOL
     ROB -. later explicit task operation .-> HC
@@ -188,7 +188,7 @@ flowchart LR
 | Own the Windows console implementation | [Windows backend](prd/PRD_02_34_windows_console_backend.md) | planned API/bootstrap/lifecycle proofs; source research does not certify a replacement |
 | Organize and type without corrupting drafts | [Workspace](prd/PRD_02_25_con_workspace.md) | composer, IME, tabs, content vs chrome panels, notes/settings and input journeys; no stale targeting |
 | Return to @0 without creating a fake tab | [Home](prd/PRD_02_39_home_dashboard.md) | fixed destination, slogan shell, session preservation and future event-backed office |
-| Read the @0 visual scene and its truthful local status | [Home canvas](prd/PRD_02_39_01_home_canvas.md) | 0.2.26 scene hierarchy, source/freshness, reversible actions and responsive evidence |
+| Inspect tab agents and local health from @0 | [Home canvas](prd/PRD_02_39_01_home_canvas.md) | 0.2.26 default list, later spatial mode, attention, scoped system status and exact routes |
 | Browser proxy preferences | [Preferences](prd/PRD_02_25_01_browser_preferences.md) | Active override, saved candidates and Console/Web settings routes |
 | Consistent browser controls | [Controls](prd/PRD_02_25_02_browser_controls.md) | Development shared editing, keyboard menus, compact geometry and scoped native focus; final qualification open |
 | Built-in browser surface (not tray) | [Workspace](prd/PRD_02_25_con_workspace.md) + [horizon / minicon-web](prd/PRD_02_31_v0_2_horizon.md) | Tab / content panel; open/load via minicon-web; wry isolated; proxy hook; staged OAuth/dashboard/preview/wasm |
@@ -219,11 +219,13 @@ flowchart LR
   [dashboard](prd/PRD_02_36_harness_workspace.md),
   [Home](prd/PRD_02_39_home_dashboard.md) and
   [Web preferences](prd/PRD_02_25_01_browser_preferences.md).
-- [_] **v0.2.26 is the selected design frontier.**
+- [-] **v0.2.26 is the active tab-agent watch-floor frontier.**
   [The plan](plan/plan-v0.2.26.md) and
   [@0 visual canvas owner](prd/PRD_02_39_01_home_canvas.md) prioritize a
-  scene-first daily Home with truthful status and one clear next action.
-  Observed task characters wait for the typed app-run event seam.
+  default tab list, exact attention routes and scoped system status. Zero-tab
+  navigation is implemented and natively exercised; the fleet, observer seam
+  and independent multi-Web host remain open. Task characters wait for typed
+  tab-bound run evidence.
 
 - [_] **Computer use is a future product track.** [PRD 38](prd/PRD_02_38_computer_use.md)
   owns target-bound observation/action and the same-repo crate decision;

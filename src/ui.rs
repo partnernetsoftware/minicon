@@ -803,6 +803,45 @@ impl Layout {
             .unwrap_or(0) as usize
     }
 
+    /// Action targets on @0, shared by paint and pointer routing. The Web
+    /// action moves below Terminal when the content column is narrow.
+    pub fn home_actions(self, width: u32, height: u32, scale: f64) -> [Rect; 2] {
+        let content_width = width.saturating_sub(self.sidebar.width);
+        let pad = dip(28.0, scale).min(content_width / 4);
+        let gap = dip(12.0, scale);
+        let button_width =
+            dip(148.0, scale).min(content_width.saturating_sub(pad.saturating_mul(2)));
+        let button_height = dip(40.0, scale);
+        let y = (height / 7)
+            .max(dip(24.0, scale))
+            .saturating_add(dip(116.0, scale));
+        let first = Rect {
+            x: self.sidebar.width.saturating_add(pad),
+            y,
+            width: button_width,
+            height: button_height.min(height.saturating_sub(y)),
+        };
+        let two_buttons = pad
+            .saturating_mul(2)
+            .saturating_add(button_width.saturating_mul(2))
+            .saturating_add(gap);
+        let second = if content_width >= two_buttons {
+            Rect {
+                x: first.x.saturating_add(button_width).saturating_add(gap),
+                ..first
+            }
+        } else {
+            let y = first.y.saturating_add(first.height).saturating_add(gap);
+            Rect {
+                x: first.x,
+                y,
+                width: button_width,
+                height: button_height.min(height.saturating_sub(y)),
+            }
+        };
+        [first, second]
+    }
+
     /// Primary action on the zero-tab greeting page. The button is centred in
     /// the terminal side of the window and keeps the sidebar header available.
     pub fn empty_new_terminal(self, width: u32, height: u32, scale: f64) -> Rect {

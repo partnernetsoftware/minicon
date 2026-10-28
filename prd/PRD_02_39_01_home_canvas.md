@@ -1,20 +1,21 @@
-# @0 visual home canvas
+# @0 tab-agent watch floor
 
 Parent: [@0 destination and tab boundary](PRD_02_39_home_dashboard.md).
 Operational facts and exact Settings links: [PRD 36](PRD_02_36_harness_workspace.md).
 Optional worker/event authority: [PRD 40](PRD_02_40_plugins_apps.md).
 Delivery sequence: [0.2.26 design plan](../plan/plan-v0.2.26.md).
 
-Status: `[_]` 0.2.26 design target, refined for the owner's 2026-10-28
-direction: @0 is the command overview for agents working **inside MiniCon
-tabs** and for the local system, with a large visual scene. The public 0.2.25
+Status: `[-]` 0.2.26 design and partial development, refined for the owner's 2026-10-28
+direction: @0 manages agents working **inside MiniCon tabs** and local system
+health through two modes. **List is the default management view**; a separate
+visual drag/drop view grows in explicit stages. The public 0.2.25
 @0 implementation is a static brand/office card with host-chrome navigation;
 it supplies a truthful starting point, not this canvas's acceptance.
 
-The current 0.2.26 development tree already routes closing the last real tab
-to @0 and paints **New Terminal / New Web** actions there, with shared
-geometry in public snapshots. These are development implementations pending
-their named native journeys. New Web must not be described as independent
+The current 0.2.26 development tree routes closing the last real tab to @0
+and paints **New Terminal / New Web** actions there, with shared geometry in
+public snapshots. The Windows native Home court passed the close and both
+creation actions. New Web must not be described as independent
 per-tab browsing until PRD 25/28.01's W26 host/context lifecycle replaces the
 current single-browser-tab/page/address/auth assumption and proves two
 separate Web tab IDs, navigation, authorization isolation and return state.
@@ -23,13 +24,13 @@ The tab-office design below uses only observed Web facts in the accepted host.
 ## Outcome tree DAG
 
 ```text
-Outcome: @0 lets one person watch many tab-contained agents and local health, then act on the exact concern
-├── [_] HC-01 — scene-first visual hierarchy
-│   invariant: tab fleet, attention and system health have distinct ranks; the central scene remains dominant
-│   evidence: native 16:9, 4:3 and short-window captures; five-second tab/alert reading with English/Chinese labels
+Outcome: @0 lets one person manage and watch tab-contained agents and local health in list or visual mode
+├── [_] HC-01 — two-mode information architecture
+│   invariant: List opens by default; Visual is explicit; both render one @ID/observer/attention projection
+│   evidence: initial/reopen/mode-switch snapshots and native 16:9, 4:3, short-window captures
 │   safe failure: unavailable data leaves the composition intact with a clear empty explanation
 │   dependency: PRD 39 fixed destination and shared host theme/font metrics
-│   non-goal: a second Harness Settings page or an always-running wallpaper animation
+│   non-goal: divergent mode-specific task truth, a second Settings page or animated wallpaper
 ├── [_] HC-02 — truthful tab, agent and system projection
 │   invariant: tab/process facts, typed agent work and system telemetry remain separate, each with scope/source/freshness
 │   evidence: public snapshots and mixed active/exited/unreported/stale/error native journeys
@@ -48,10 +49,10 @@ Outcome: @0 lets one person watch many tab-contained agents and local health, th
 │   safe failure: condensed one-column view replaces decorative scene detail before essential controls clip
 │   dependency: host font scaling, language/theme choices and native input focus
 │   non-goal: color-only status or animation-only meaning
-├── [_] HC-06 — tab fleet and exact drill-down
-│   invariant: every station/card addresses a stable @ID and selects that tab or its evidenced inspector
-│   evidence: 0/1/many/256 mixed terminal-Web tabs, reorder/rename/exit and exact selection journeys
-│   safe failure: unobserved agent state stays unknown; overflow uses a bounded list, never clipped desks
+├── [_] HC-06 — default list management and exact drill-down
+│   invariant: filters/sorts/groups change presentation only; each row/inspector targets its stable @ID
+│   evidence: 0/1/many/256 tabs, duplicate names, filter/sort/group and exact focus/inspect journeys
+│   safe failure: hidden-by-filter alerts remain counted; closed/moved target never redirects to a row index
 │   dependency: PRD 25 tab tree and public stable IDs; non-goal: reading hidden tab text or controlling arbitrary child processes
 ├── [_] HC-07 — attention queue and scoped system status
 │   invariant: each item names its cause, affected @ID or component, observed time and one safe repair route
@@ -59,6 +60,12 @@ Outcome: @0 lets one person watch many tab-contained agents and local health, th
 │   safe failure: collector loss says Unknown, never healthy; a missing reading is not an alarm storm
 │   dependency: tab lifecycle, PRD 36 attention projection and measured host telemetry
 │   non-goal: unmeasured OS-wide health claims, automatic remediation or duplicate provider billing UI
+├── [_] HC-08 — staged visual drag/drop management
+│   invariant: visual placement never silently mutates the tab tree or an agent's working state
+│   evidence: mode parity, exact @ID drag/cancel/stale-revision/capture-loss and list-accessible alternative
+│   safe failure: invalid/stale drops leave topology and layout unchanged with a reason; no phantom station
+│   dependency: HC-06 shared projection and PRD 25.03 atomic subtree-move rules for an explicit topology action
+│   non-goal: persistent workspace restoration, cross-window transfer or drag-to-run/stop semantics
 └── [_] HC-05 — office characters only after typed runs
     invariant: one character maps to one observed run ID, stage and source time; request counts never become people
     evidence: real event start/tool/wait/cancel/final traces plus stale/restart/no-run states
@@ -72,32 +79,43 @@ Outcome: @0 lets one person watch many tab-contained agents and local health, th
 ```mermaid
 flowchart LR
     TAB["@1+ real tabs / current workspace"] -->|select @0| HOME["PRD 39 fixed Home"]
-    HOME --> HERO["Identity + fleet summary"]
-    HOME --> SCENE["Dominant tab-office scene / stable @IDs"]
-    HOME --> ALERTS["Prioritized attention + system rail"]
-    SCENE -->|select @ID| TAB
-    SCENE -->|inspect @ID| DETAIL["Tab evidence inspector"]
+    HOME --> MODE{Mode}
+    MODE -->|default| LIST["List: filter / sort / group / exact @ID rows"]
+    MODE -->|explicit| VIS["Visual: tab stations / staged drag-drop"]
+    DATA["One @ID + observer + alert projection"] --> LIST & VIS
+    HOME --> ALERTS["Shared attention + scoped system rail"]
+    LIST & VIS -->|focus exact @ID| TAB
+    LIST & VIS -->|inspect exact @ID| DETAIL["Shared tab evidence inspector"]
     DETAIL -->|open linked run| ROBOT["PRD 36 robot operation view"]
     ALERTS -->|affected @ID or component| DETAIL
     ALERTS -->|exact account/client| ROBOT
     ROBOT -->|change configuration| SETTINGS["Settings owner"]
-    TABSTATE["PRD 25 tab/process lifecycle"] -->|stable ID + observed exit| SCENE
+    TABSTATE["PRD 25 tab/process lifecycle + revision"] --> DATA
     GATEWAY["PRD 36 account / API / request projection"] -->|read-only scoped facts| ALERTS
-    GATEWAY -->|request signal; no agent claim| SCENE
+    GATEWAY -->|request signal; no agent claim| DATA
     HOST["Measured MiniCon host/process telemetry"] -->|source/time + unavailable| ALERTS
     EVENTS["Typed worker or accepted tab-bound agent events"] --> BIND{Exact @ID + run identity + fresh lifecycle?}
-    BIND -->|yes| ACTOR["One observed run → one character at its tab"]
-    BIND -->|no, stale, or absent| EMPTY["Tab station with unknown agent state"]
-    ACTOR & EMPTY --> SCENE
-    PREF["Theme / language / reduced motion"] --> HERO & SCENE & ALERTS
+    BIND -->|yes| ACTOR["Observed run state / optional character"]
+    BIND -->|no, stale, or absent| EMPTY["Unknown agent state in both modes"]
+    ACTOR & EMPTY --> DATA
+    VIS --> DRAG{Visual gesture}
+    DRAG -->|place card| VIEW["Window-session visual layout only"]
+    DRAG -->|explicit Move tab action| REV{PRD 25.03 revision + kind valid?}
+    REV -->|yes| MOVE["One atomic Workspace subtree move"]
+    REV -->|no / cancel| KEEP["No topology mutation; explain reason"]
+    MOVE --> TABSTATE
+    PREF["Theme / language / reduced motion"] --> LIST & VIS & ALERTS
     LOSS["Owner unavailable"] --> UNKNOWN["Unknown + source + route; preserve navigation"]
     UNKNOWN --> ALERTS & DETAIL
 ```
 
 ## Product role and first-glance questions
 
-@0 is the **window's watch floor** for work spread across real @1+ tabs. In
-five seconds it should answer: (1) which tab needs me, (2) what was actually
+@0 is the **window's watch floor** for work spread across real @1+ tabs. It
+opens in a compact **List** mode because management of many tabs must remain
+fast, searchable and legible before the visual scene is mature. The person can
+switch to **Visual** mode for spatial monitoring and staged drag/drop
+organization. Both modes answer: (1) which tab needs me, (2) what was actually
 observed there, (3) whether this MiniCon instance and its model gateway are
 healthy, and (4) where one click takes me to inspect or repair the exact
 entity. A Console tab running Codex, Cursor, Grok, pi or another CLI/TUI agent
@@ -108,45 +126,72 @@ model request alone. An explicit tab-bound event contract is required for
 those claims. A Web tab remains a Web tab unless a separately accepted adapter
 supplies equally scoped evidence.
 
-The visual scene represents the **tab fleet**, with one stable station per
-represented @ID. A station is useful before agent telemetry exists: it can
-show the tab label, kind, observed child state and an exact route. A character
-appears only for a typed agent run joined to that tab. The right rail ranks
-things needing attention and measured system status; a compact bottom strip
-shows recent observed changes. The robot view remains the detailed operation
-surface for account, client, request and owned worker activity. Settings
-remains the configuration editor. Home does not acquire their authority.
+The list is the **primary tab fleet**: one row per real @ID, including the
+Console tabs that host most current agents. The visual scene represents the
+same fleet as spatial stations; it never owns a second status cache. A station
+is useful before agent telemetry exists: it can show label, kind, observed
+child state and an exact route. A character appears only for a typed agent run
+joined to that tab. Both modes share attention, system status and the same
+tab inspector. The robot view remains the detailed operation surface for
+account, client, request and owned worker activity. Settings remains the
+configuration editor. Home does not acquire their authority.
 
-### Wide-window wireframe, content area excluding the existing tab tree
+Only Console and accepted Web tab kinds enter the current source set. A future
+**Harness tab** joins the same list/visual model only after PRD 25 owns a real
+Harness TabId and PRD 36/40 owns its lifecycle. The current robot workspace
+is a window-level view, not a Harness tab and not a row that can be dragged.
+
+### Default List mode, content area excluding the existing tab tree
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ MiniCon @0 · watch floor      N real tabs · M need attention · observed at time │
-│ Focus last tab        Open Harness       New Terminal / Web      system status  │
+│ MiniCon @0 · N tabs · M actionable alerts       [List ●] [Visual] [New +]  │
+│ Search name / @ID     Kind: Console | Web     Attention only     Clear filters│
+│ Group: Tree ▾    Sort: Tree order ▾     X visible / N total   updated at time │
 ├──────────────────────────────────────────────────────┬───────────────────────┤
-│                                                      │ Needs attention       │
-│     TAB OFFICE / dominant stage                       │ @7 child exited       │
-│     @3 terminal · child running · agent unknown       │ @3 observer stale     │
-│     @7 terminal · child exited · inspect              │ gateway error         │
-│     @9 Web · page state owner                         │ exact inspect route   │
-│                                                      ├───────────────────────┤
-│     character only for fresh typed run bound to @ID   │ This MiniCon instance │
-│     scene overflow → All tabs, not extra tiny desks  │ host / PTY / gateway  │
-│                                                      │ source + time         │
+│ ▾ Project A                                            │ Needs attention       │
+│   @3  Console · Build agent    child alive   agent ?   │ @7 child exited       │
+│        Last observed: 10:25 · source: PTY    [Inspect] │ @3 observer stale     │
+│   @7  Console · Review agent   child exited  agent ?   │ gateway error         │
+│        Last observed: 10:21 · source: PTY    [Inspect] │ exact inspect route   │
+│ @9  Web · Docs                page state     agent —   ├───────────────────────┤
+│        source: Web owner                  [Open tab]   │ This MiniCon instance │
+│                                                      │ process / PTY / API   │
 ├──────────────────────────────────────────────────────┴───────────────────────┤
-│ Recent observed changes: @ID / component · source · age     All tabs / details │
+│ Selected @ID inspector · Focus tab · observed facts · exact linked run only │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-The scene should occupy roughly three fifths of a wide content column and
-remain the largest single shape. The first row exposes **Focus last tab** when
-one exists; otherwise **New Terminal** is primary. The attention rail can
-raise a few exact tab or component issues, sorted by urgency then observation
-time, without hiding the rest behind a single global badge. A separate system
-card says **This MiniCon instance** so a host-process reading cannot be read
-as whole-computer health. Do not show generic zero KPI tiles above the scene.
-Keep the header, first attention item and at least one tab station visible
-before the activity strip when height is limited.
+List is the launch and restart default. Its left pane has bounded virtualized
+rows in stable @ID-backed tree order, not a fixed number of decorative cards.
+The right rail keeps the first actionable alert and a distinct **This MiniCon
+instance** card visible. Search and filters never hide the global alert count;
+the visible/total tally explains a filtered list. With zero tabs, the list
+area shows the existing New Terminal and New Web routes instead of an empty
+grid. The inspector is shared with Visual mode.
+
+### Optional Visual mode, same source and inspector
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ MiniCon @0 · N tabs · M actionable alerts       [List] [Visual ●] [New +]  │
+├──────────────────────────────────────────────────────┬───────────────────────┤
+│ TAB OFFICE / spatial view of the same @IDs           │ Needs attention       │
+│  @3 Console station      @7 Console station          │ @7 / @3 / component   │
+│  child alive · agent ?   child exited · agent ?       ├───────────────────────┤
+│  @9 Web station          [More tabs → List]           │ This MiniCon instance │
+│  characters only for fresh typed runs bound to @ID  │ source + time         │
+├──────────────────────────────────────────────────────┴───────────────────────┤
+│ Selected @ID inspector · Focus tab · visual arrangement is view-only       │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+Visual mode may devote most content width to the scene. Its spatial grouping
+is a user view of the same tab fleet, never a measure of agent progress. An
+explicit mode switch preserves selected @ID and inspector; if a filter hides
+that tab, show a hidden-by-filter chip with **Reveal @ID**. The attention rail
+and system card do not change facts on mode switch. No generic zero KPI tiles
+or simulated workers fill unused space.
 
 ### Visual language and copy
 
@@ -245,10 +290,75 @@ Home may focus or inspect; it does not kill an arbitrary CLI agent, restart a
 provider login or silently dismiss an error. Notification dismissal, if later
 added, is only a local view choice and does not change the underlying state.
 
+## Default List mode: management contract
+
+Each row has a stable @ID, user/derived label, kind, parent depth, observed
+child or page state, typed agent stage **only if registered**, latest source
+time, attention count and **Inspect / Focus tab** actions. Source and freshness
+remain visible when a row is selected; color never carries the only status.
+Console tabs are first-class and the initial primary use case. Web rows show
+their own page state; Harness rows appear only after a real Harness tab kind
+has an accepted owner. A CLI agent name in a title is searchable text, not a
+recognized agent identity.
+
+| Control | Default and options | Invariant |
+| --- | --- | --- |
+| Search | Empty; match normalized visible label and exact/partial `@ID` | Never searches private PTY output, URL, task text or credentials |
+| Kind filter | All; Console, accepted Web, later Harness | Only actually supported kinds are selectable; filtering does not close tabs |
+| Observation filter | All; Needs attention, Child exited, Observer connected/stale/unreported | Unreported is Unknown, not idle or healthy; source-specific failures remain distinct |
+| Sort | Tree order; Attention; Last observed; Label | Stable @ID tie-break; sort changes view only, never Workspace topology |
+| Group | Parent branch; Kind; Observer state; None | Branch grouping preserves parent context; collapsed groups retain alert count |
+
+The initial row order is the real tree preorder with parent indentation. The
+attention rail remains globally visible even when filters show zero rows;
+**X visible / N total** and a Clear filters action explain why. A filtered
+alert can reveal its @ID by temporarily clearing the obstructing filter,
+without changing the user's saved tab or underlying alert. The selected @ID
+survives sorting, grouping, mode changes and ordinary refresh. If its tab
+closes, the inspector becomes a bounded **Tab no longer exists** state and
+does not jump to the row now occupying the same position. A 256-tab workspace
+uses a bounded scroll/virtualization window, keyboard Home/End/Page navigation
+and a visible scrollbar; no 256-row paint storm or unbounded a11y tree.
+
+## Visual mode: staged drag/drop contract
+
+The Visual mode shares the same tab/observer projection and inspector as List.
+Its first available stage must be labelled according to actual capability:
+
+| Stage | Visible affordance | What may change |
+| --- | --- | --- |
+| V0 — inspectable scene | Stable @ID stations, selection, exact Focus tab and List return | Selection only; no drag handle or “Arrange” promise |
+| V1 — arrange this view | Dedicated card drag handle and drop preview; keyboard Move before/after alternative | Window-session **visual position only**, keyed by @ID; no tab tree, agent status or process effect |
+| V2 — explicit Move tab | Separate clearly named topology handle/drop zones, after PRD 25.03 validation | One atomic Workspace subtree move with current topology revision, kind/depth rules and no page/PTY recreation |
+
+Spatial position and tree hierarchy are different facts. Dropping a station
+onto a desk or lane in V1 does not imply that an agent became Running,
+Paused or assigned new work. Avoid state-named lanes unless they are merely
+filters over observed state and cannot accept drops. V2 uses a distinct
+**Move tab in tree** intent and the existing PRD 25.03 source/target/revision
+rules. A hover preview never commits. Escape, pointer capture loss, switching
+modes, closing either tab or a stale topology revision cancel the gesture
+without changing position or topology. Browser-root nesting, cycles and any
+future Harness-kind rule are validated by the owning Workspace and display
+the rejection reason. A below-threshold press remains selection.
+Keyboard users can select a station and invoke the same view arrangement or
+explicit tree move from a named action, with the same validation and feedback.
+
+The mode choice starts at List on a new window/restart. Within one window it
+may retain the chosen mode and V1 arrangement while @0 is hidden and reopened.
+That arrangement is scoped to the current live @IDs; a closed tab's slot is
+removed, and a new tab never inherits it. The tab tree and any future
+persistent workspace remain the only topology owner. No V1 coordinates are
+written to persistent config while tab identity is process-lifetime only;
+persisting a layout across launches first requires a separately accepted
+durable workspace identity and collision policy. A genuine V2 move follows
+the Workspace revision/atomicity contract and persists only to the extent
+that Workspace itself does; Visual does not create a second persisted tree.
+
 ## Interaction and responsive behavior
 
 One click/Enter on **Focus @ID** selects that exact real tab without changing
-its ID, text, page, proxy or process. Selecting a station first opens a compact
+its ID, text, page, proxy or process. Selecting a row or station first opens a compact
 **tab inspector** on @0, with stable @ID and label, kind, child lifecycle,
 last measured activity and time, agent-observer state, linked run/request only
 when exactly correlated, and one Focus tab action. It shows Unknown explicitly
@@ -262,16 +372,15 @@ Existing rename/close/tree actions remain in the PRD 25 tab tree; the inspector
 can route to that real tab's management affordances without silently closing
 its child or starting a new task from Home.
 
-An **All tabs** list preserves stable tree order, hierarchy, label and kind,
-with attention-first filtering and a bounded scroll viewport. The stage
-shows a small deterministic subset: selected tab, actionable tabs, then the
-most recently observed tabs, without duplicating any @ID; remaining tabs
-stay in All tabs. A 256-tab workspace is a list problem, not 256 tiny office
-desks. A rename/reorder updates the same @ID station rather than replacing it.
-Keyboard order follows visual reading order: summary/action, attention, scene
-stations, inspector, system, All tabs. Arrow movement inside the station/list
-group must not steal terminal keys while @0 is hidden. Escape closes an open
-inspector before leaving @0; tab tree remains an independent direct route.
+The visual stage shows a deterministic subset: selected tab, actionable tabs,
+then recently observed tabs, without duplicating @IDs; the List view always
+retains the full bounded fleet. A rename/reorder updates the same @ID row and
+station rather than replacing it. Keyboard order follows visual reading
+order: mode switch, search/filter, attention, rows or stations, inspector,
+system. Arrow movement inside a row/station group must not steal terminal
+keys while @0 is hidden. Escape cancels a drag first, closes an inspector
+next, then returns through the existing Home navigation; the tab tree remains
+an independent direct route.
 Visible focus, status text and screen-reader labels include the @ID so two
 identically named tabs remain distinguishable.
 
@@ -281,18 +390,19 @@ measure with real font metrics, not prequalified constants:
 
 | Available content width | Composition | Required retention |
 | --- | --- | --- |
-| >= 1080 DIP | Fleet summary + broad tab scene + right attention/system rail + bounded activity strip | Scene is largest, @ID targets and first alert remain labelled |
-| 720–1079 DIP | Scene above attention and system cards; activity below | First actionable tab and exact route stay visible; no horizontal scroll |
-| 480–719 DIP | One column: summary/actions, attention, simplified tab scene/list, system, activity | Alerts precede decoration; no status text overlays art |
-| < 480 DIP | Scrollable tab list replaces most decorative stage | Stable @IDs, first action, first alert and system Unknown remain reachable |
+| >= 1080 DIP | List: rows + right attention/system; Visual: broad scene + right rail | List density stays readable; Visual scene is largest; first alert and @ID remain labelled |
+| 720–1079 DIP | List: full-width rows with compact attention above; Visual: scene above attention/system | First actionable tab and exact route remain visible; no horizontal scroll |
+| 480–719 DIP | One column: summary/mode, attention, list rows or simplified scene, system | Alerts precede decoration; no status text overlays art |
+| < 480 DIP | List remains scrollable; Visual offers List return and minimal station preview | Stable @IDs, first action, first alert and system Unknown remain reachable |
 
 At short heights, content scrolls vertically while the host's global creation,
 Settings and robot routes remain reachable. At 1x/1.5x/2x and all three UI
 languages, no hit target overlaps another; text wraps within its card or moves
 below it. The first viewport exposes identity, tab count, first attention
-item or explicit none, and a Focus/New route. 16:9 is the hero composition;
-4:3 and narrow windows retain the same evidence with fewer objects. One
-screen-reader/a11y label describes each actionable @ID station, alert and
+item or explicit none, and a Focus/New route. A wide 16:9 window uses the
+visual mode's full composition; 4:3 and narrow windows retain the same facts
+with fewer objects. One screen-reader/a11y label describes each actionable
+@ID row or station, alert and
 system state without announcing decorative desks.
 
 The design follows the general responsive principle of reflowing around the
@@ -328,12 +438,15 @@ Visual mapping does not replace text or the source's final receipt. A playful
 transition is allowed only on a real state change, under the reduced-motion
 rule above.
 
-**0.2.26 target:** deliver HC-01 through HC-04 and HC-06/07 as a polished,
-truthful native watch floor: visible tab fleet, actionable attention, scoped
-system status and exact drill-down. A still office with tab stations remains
-useful even if no typed agent events exist. HC-05 remains `[_]` unless its
-event seam passes. The application must never ship character movement backed
-by a timer, request count, terminal pixel, fixture or unverified worker claim.
+**0.2.26 target:** deliver HC-01 through HC-04 and HC-06/07, with HC-08 V0
+as an honest second mode. List is the default complete management surface;
+Visual V0 is an inspectable representation of the same data. V1 card
+arrangement can enter the cut only after pointer/capture/keyboard and
+session-lifetime evidence passes; until then label the view **Visual preview**
+and show no drag affordance. V2 topology drag is a later explicit decision.
+HC-05 characters remain `[_]` unless their event seam passes. The application
+must never ship character movement backed by a timer, request count, terminal
+pixel, fixture or unverified worker claim.
 
 **Later typed-agent stage:** accept an explicit event contract with stable
 `@ID`, `run_id`, ordered stage transitions, source time, observer health and
@@ -354,15 +467,18 @@ coordination have no authority in this canvas today.
 
 ## Acceptance scenarios
 
-1. From a fresh zero-tab window, @0 shows identity, still empty office and
-   New Terminal/Web; it does not invent an agent or zero-valued resource.
+1. From a fresh zero-tab window, @0 opens List with a clear empty explanation
+   and New Terminal/Web. Visual shows the same zero-tab state on request;
+   neither mode invents an agent or zero-valued resource.
 2. With one terminal and a parked Web page, @0 shows two distinct @IDs. Focus
    each exact station and return; PTY/browser state, drafts and proxy choice
    survive. An agent-name-like title alone never creates a character.
 3. With many tabs including duplicate labels, reordered children and one
-   exited terminal, the scene and All tabs list retain exact @IDs. Selecting
-   an alert after its tab closes reports missing tab rather than opening a
-   different row. At 256 tabs, bounded overflow stays navigable.
+   exited terminal, List and Visual retain exact @IDs. Search `@ID`, filter
+   attention, sort by last observation and group by branch; none changes
+   topology or hides the global alert tally. Selecting an alert after its tab
+   closes reports missing tab rather than opening a
+   different row. At 256 tabs, bounded list/visual overflow stays navigable.
 4. With an applied profile and running listener but no typed agent runs, the
    system card says ready, while every tab's agent state is Unknown. A model
    request changes only its labelled gateway signal unless an exact tab/run
@@ -375,11 +491,16 @@ coordination have no authority in this canvas today.
    a timestamped display sample with a separate OS observation under a known
    load. Scope, units and sampling interval agree; an unsupported or failed
    sampler produces Unavailable without taking down the tab fleet.
-7. Resize across wide, medium, narrow and short windows at 1x/1.5x/2x in
-   English and both Chinese variants. The first alert, @ID route and scoped
-   system status stay reachable; the scene yields to a tab list before text
-   clips or target geometry overlaps.
-8. When a typed source exists later, run one exact-tab agent through start,
+7. Resize both modes across wide, medium, narrow and short windows at
+   1x/1.5x/2x in English and both Chinese variants. The first alert, @ID route
+   and scoped system status stay reachable; Visual yields to a List return
+   before text clips or target geometry overlaps.
+8. In V1, drag @3's visual card, cancel by Escape/capture loss, switch modes
+   and reopen @0: its session-local position remains only after a valid drop.
+   The tab tree, process and agent state are byte-equivalent; a stale/closed
+   source refuses the drop. An explicit V2 tree move uses PRD 25.03's revision
+   and kind rejection tests and remains a separate action.
+9. When a typed source exists later, run one exact-tab agent through start,
    tool, wait, observer loss, cancel/final and restart reconciliation. A
    character appears only at its bound station; a closed/reused tab ID cannot
    inherit that actor or its final state.

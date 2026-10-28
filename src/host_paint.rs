@@ -1828,24 +1828,30 @@ impl ConApp {
             title_size,
             text_width,
         );
-        let (slogan, intro, office, routes) = match self.ui_language {
+        let (slogan, intro, office, routes, new_terminal, new_web) = match self.ui_language {
             ui::UiLanguage::English => (
                 "Stable. Fast. Local.",
                 "A calm place for your terminals and agents.",
                 "Agent office — awaiting real task activity",
-                "Choose a tab, use +T or +W, or open Harness with the robot button.",
+                "Choose a tab or open Harness with the robot button.",
+                "New Terminal",
+                "New Web",
             ),
             ui::UiLanguage::ChineseSimplified => (
                 "稳定 · 高速 · 本地",
                 "让终端与智能体在同一个可靠空间工作。",
                 "Agent 办公室 · 等待真实任务",
-                "选择标签页、点击 +T／+W，或用机器人按钮进入 Harness。",
+                "选择标签页，或用机器人按钮进入 Harness。",
+                "新终端",
+                "新网页",
             ),
             ui::UiLanguage::ChineseTraditional => (
                 "穩定 · 高速 · 本地",
                 "讓終端與智能體在同一個可靠空間工作。",
                 "Agent 辦公室 · 等待真實任務",
-                "選擇分頁、點擊 +T／+W，或用機器人按鈕進入 Harness。",
+                "選擇分頁，或用機器人按鈕進入 Harness。",
+                "新終端",
+                "新網頁",
             ),
         };
         let line = font::cell_metrics(body_size)
@@ -1869,7 +1875,29 @@ impl ConApp {
             body_size,
             text_width,
         );
-        let card_y = top.saturating_add(line.saturating_mul(5));
+        let actions = layout.home_actions(width, height, scale);
+        for (rect, label) in actions.into_iter().zip([new_terminal, new_web]) {
+            if rect.width == 0 || rect.height == 0 {
+                continue;
+            }
+            surface.fill_rect(rect.x, rect.y, rect.width, rect.height, t.surface.to_xrgb());
+            stroke_rect(&mut surface, rect, scale.max(1.0) as u32, t.accent);
+            paint_host_ui_text(
+                &mut surface,
+                rect.x.saturating_add((12.0 * scale) as u32),
+                rect.y.saturating_add((8.0 * scale) as u32),
+                label,
+                t.text,
+                body_size,
+                rect.width.saturating_sub((24.0 * scale) as u32),
+            );
+        }
+        let card_y = top.saturating_add(line.saturating_mul(5)).max(
+            actions[1]
+                .y
+                .saturating_add(actions[1].height)
+                .saturating_add(pad),
+        );
         let card = ui::Rect {
             x: text_x,
             y: card_y,

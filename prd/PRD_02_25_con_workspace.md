@@ -497,11 +497,14 @@ current tree supports creation/close; a planned move is not a shipped ability.
   that stays deterministic O(n log n) and preserves second-input duplicate
   diagnostics.
 - [v] closing the final tab leaves the native window and control endpoint alive
-  with a valid zero-tab workspace. The terminal/composer disappear in favor of
-  a translated greeting, primary New Terminal action and `Ctrl+Shift+T` hint;
+  with a valid zero-tab workspace. The terminal/composer disappear and @0 Home
+  becomes the visible destination, with New Terminal and New Web actions;
   `list-tabs` reports an empty array and `ui-snapshot.active` is null. Creating
   the next tab inherits the last session's working directory, command and font
-  geometry. Only explicit window close / quit exits the application.
+  geometry. Only explicit window close exits the application. The 0.2.26
+  native `native_home_is_a_fixed_destination_and_restores_real_tabs` court
+  covers last-tab close and both Home creation actions; 0.2.25's separate
+  greeting remains part of its frozen release history.
 
 ## Host UI
 

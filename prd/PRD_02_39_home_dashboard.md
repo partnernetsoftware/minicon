@@ -76,6 +76,11 @@ The old zero-tab greeting with its separate New Terminal and Quit buttons is
 retired; Home owns the empty-workspace explanation and New Terminal/New Web
 routes. Quit remains available through the window close action. This avoids
 two different start screens for the same zero-tab workspace state.
+The 0.2.26 development native court
+`native_home_is_a_fixed_destination_and_restores_real_tabs` passed the
+last-tab close, empty `list-tabs`, Home New Terminal and Home New Web pointer
+journey on Windows. It proves this navigation slice, not the later watch-floor
+composition or multi-Web-tab independence.
 The robot still leads to the separate Harness operation view; the three
 settings routes remain Console/Web/Harness configuration.
 
@@ -87,6 +92,8 @@ reserved for the future office. Before task events exist, it shows a designed
 idle scene and a short explanation rather than moving pretend agents. Any
 account/request counts on @0 must come from the same read-only runtime view as
 PRD 36, with unknown/stale states. The detailed pool and activity stay there.
+The 0.2.26 watch-floor interaction, including its default list and progressive
+spatial mode, is owned by [PRD 39.01](PRD_02_39_01_home_canvas.md).
 
 The office is a future presentation layer over owned local runs, not an
 engine. A character may represent a task only after the worker exposes a

@@ -626,6 +626,24 @@ fn native_home_is_a_fixed_destination_and_restores_real_tabs() {
     host.cli(&["select-tab", "--target", &browser_id]);
     assert_eq!(host.cli(&["ui-snapshot"])["geometry"]["home_active"], false);
     assert_eq!(host.browser()["id"], browser_id);
+    host.cli(&["close-tab", "--target", &browser_id]);
+    host.cli(&["close-tab", "--target", &terminal_id]);
+    assert_eq!(host.cli(&["ui-snapshot"])["geometry"]["home_active"], true);
+    assert!(
+        host.cli(&["list-tabs"])["tabs"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    host.click_geometry("home_new_terminal");
+    let new_terminal = host.cli(&["list-tabs"]);
+    let new_terminal_id = new_terminal["tabs"][0]["id"].as_str().unwrap().to_owned();
+    assert_ne!(new_terminal_id, terminal_id);
+    host.cli(&["close-tab", "--target", &new_terminal_id]);
+    assert_eq!(host.cli(&["ui-snapshot"])["geometry"]["home_active"], true);
+    host.click_geometry("home_new_web");
+    let new_web = host.browser();
+    assert_ne!(new_web["id"], browser_id);
     host.close_and_wait();
 }
 

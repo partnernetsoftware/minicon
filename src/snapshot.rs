@@ -223,9 +223,16 @@ impl ConApp {
                             }
                             let new_choices =
                                 layout.new_tab_choices(metrics.scale_factor, self.new_menu_scroll);
+                            let [home_new_terminal, home_new_web] = layout.home_actions(
+                                metrics.physical_width,
+                                metrics.physical_height,
+                                metrics.scale_factor,
+                            );
                             fields.extend([
                                 ("home", rect_obj(layout.home)),
                                 ("home_active", self.home_active.into()),
+                                ("home_new_terminal", rect_obj(home_new_terminal)),
+                                ("home_new_web", rect_obj(home_new_web)),
                                 ("new_root", rect_obj(layout.new_root)),
                                 ("new_web", rect_obj(layout.new_web)),
                                 ("sidebar_toggle", rect_obj(layout.sidebar_toggle)),

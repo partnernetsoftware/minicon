@@ -1655,7 +1655,12 @@ impl ConApp {
                 settings.cancel_login();
             }
             self.restore_harness_auth(attempt);
-            return self.workspace.active().is_none();
+            let empty = self.workspace.active().is_none();
+            if empty {
+                self.home_active = true;
+                self.settings_open = false;
+            }
+            return empty;
         }
         if let Some(session) = self.sessions.remove(&id) {
             self.session_seed = SessionSeed::from_session(&session);
@@ -1671,7 +1676,12 @@ impl ConApp {
         {
             self.stop_page_host();
         }
-        self.workspace.active().is_none()
+        let empty = self.workspace.active().is_none();
+        if empty {
+            self.home_active = true;
+            self.settings_open = false;
+        }
+        empty
     }
 
     fn stop_page_host(&mut self) {
@@ -1967,8 +1977,8 @@ impl ConApp {
         if emptied {
             self.tree_scroll_offset = 0;
             self.composer = composer::ComposerState::default();
-            self.current_window_title = product_window_title();
-            window.set_title(&self.current_window_title);
+            self.refresh_title(window)?;
+            self.sync_embedded_page(window);
             self.mark_host_ui_full_and_repaint(window);
             return Ok(());
         }
@@ -2446,11 +2456,8 @@ impl ConApp {
     /// single page host and leave the new tab's page unmapped.
     fn open_browser_tab(&mut self, window: &PixelWindow) -> Result<(), PixelWindowError> {
         self.cancel_pointer_gestures_for_activation(window);
-        self.home_active = false;
         if let Some(id) = self.workspace.browser_tab() {
-            if self.workspace.active() != Some(id) {
-                self.select_tab(id);
-            }
+            self.select_tab(id);
             #[cfg(any(target_os = "macos", windows))]
             self.ensure_native_page(window);
             self.sync_embedded_page(window);
@@ -2474,6 +2481,7 @@ impl ConApp {
                 "stable tab id is already in use",
             ));
         }
+        self.home_active = false;
         #[cfg(any(target_os = "macos", windows))]
         self.ensure_native_page(window);
         self.sync_embedded_page(window);
@@ -4635,6 +4643,22 @@ impl PixelWindowApplication for ConApp {
                 return Ok(PixelWindowDirective::Continue);
             }
             if self.home_active {
+                let metrics = window.metrics()?;
+                let scale = metrics.scale_factor.max(1.0);
+                let layout = self.layout(
+                    metrics.physical_width,
+                    metrics.physical_height,
+                    metrics.scale_factor,
+                );
+                let x = (position.x * scale).max(0.0) as u32;
+                let y = (position.y * scale).max(0.0) as u32;
+                let [terminal, web] =
+                    layout.home_actions(metrics.physical_width, metrics.physical_height, scale);
+                if terminal.contains(x, y) {
+                    self.open_session_contained(window, false);
+                } else if web.contains(x, y) {
+                    self.open_browser_tab_contained(window);
+                }
                 return Ok(PixelWindowDirective::Continue);
             }
             if self.active_is_browser() {
@@ -6730,6 +6754,7 @@ mod tests {
         );
         assert!(app.workspace.nodes().is_empty());
         assert!(app.workspace.active().is_none());
+        assert!(app.home_active, "the empty workspace is the same @0 Home");
     }
 
     /// Q1 of `plan/archive/design-frame-channel-experiment.md`: a complete host-UI
@@ -6831,8 +6856,8 @@ mod tests {
     }
 
     /// Closing a tab drops its session and node, and reports whether that left
-    /// the workspace empty — the case the windowed caller answers with a
-    /// greeting page instead of a new active session. It also carries the
+    /// the workspace empty — the case the windowed caller answers with @0
+    /// Home instead of a new active session. It also carries the
     /// closed terminal's settings forward, so the next tab opens configured
     /// like the one that just closed.
     #[test]
@@ -6846,6 +6871,7 @@ mod tests {
             app.detach_session(only),
             "closing the only tab must report an empty workspace"
         );
+        assert!(app.home_active, "the last tab opens @0 Home");
         assert!(app.workspace.nodes().is_empty());
         assert!(app.workspace.active().is_none());
         assert!(
