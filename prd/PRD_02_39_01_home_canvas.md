@@ -135,10 +135,15 @@ station cards in two columns when the fleet area permits and one column when
 narrow. It has no drag affordance or invented agent characters. The Windows
 `native_home_visual_preview_keeps_exact_ids_and_list_return` court passed a
 three-tab Console/Web mode switch, card selection, exact Focus tab, return to
-Visual, 500×650 one-column capture, List return and unchanged tree/page facts.
-Disabling the mode transition made the court fail. The mode still needs
-zero-tab, overflow/scroll, filter/sort parity, other-scale and other-platform
-native evidence before HC-08 V0 or the 0.2.26 cut can close.
+Visual, Name/kind composition, 500×650 one-column capture, List return,
+unchanged tree/page facts, zero-tab Visual and its New Terminal recovery.
+Disabling the mode transition made the court fail.
+The Windows 256 mixed-tab court also passed Visual End-key reveal, exact Web
+card selection/Focus and List return at overflow. The mode still needs
+real wheel, other-scale and other-platform native
+evidence before HC-08 V0 or the 0.2.26 cut can close.
+The existing 17-tab scrollbar court now also passes Visual track paging and
+thumb drag back to the first station without changing the selected @ID.
 
 ### 0.2.26 native scene review
 

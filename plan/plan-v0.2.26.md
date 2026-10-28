@@ -314,8 +314,11 @@ of the same @IDs and facts, plus the B26 observer-seam decision. Visual V0 is
 an explicit second mode with a route back to List; it has no drag affordance.
 HC-05 characters and interactive spatial drag are separately gated future
 capabilities. D26 delivers the V0 mode and stages V1/V2 interaction design.
-The first Windows V0 switch/card/focus/list-return court and wide/narrow
-captures now pass (receipt in PRD 39.01); zero-tab, overflow, parity and
+The first Windows V0 switch/card/focus/list-return court, Name/kind
+composition, zero-tab recovery and wide/narrow captures now pass. The 256 mixed-tab court also
+passes Visual End-key reveal, exact card/Focus and List return (receipts in
+PRD 39.01). The 17-tab court also passes Visual scrollbar page/drag.
+Real wheel, other-scale and
 other-platform qualification remain open.
 Arbitrary inside-tab agent stage
 observation implementation, H2 task launch/Stop,

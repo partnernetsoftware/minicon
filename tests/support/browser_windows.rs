@@ -914,6 +914,18 @@ fn native_home_visual_preview_keeps_exact_ids_and_list_return() {
         "Home Visual V0 wide: {}",
         host.capture_home_client("home-visual-wide.png").display()
     );
+    host.click_geometry("home_sort_action");
+    let sorted = host.cli(&["ui-snapshot"]);
+    assert_eq!(sorted["geometry"]["home_sort"], "label");
+    assert_eq!(sorted["geometry"]["home_list_row_ids"][0], web);
+    host.click_geometry("home_filter_action");
+    let filtered = host.cli(&["ui-snapshot"]);
+    assert_eq!(filtered["geometry"]["home_mode"], "visual-preview");
+    assert_eq!(filtered["geometry"]["home_kind_filter"], "console");
+    assert_eq!(
+        filtered["geometry"]["home_list_row_ids"],
+        serde_json::json!([first, second])
+    );
     host.click_geometry_row("home_list_row_rects", 1);
     let selected = host.cli(&["ui-snapshot"]);
     assert_eq!(selected["geometry"]["home_selected_id"], second);
@@ -957,6 +969,25 @@ fn native_home_visual_preview_keeps_exact_ids_and_list_return() {
         assert_eq!(tab["parent"], original[index]["parent"]);
     }
     assert_eq!(after["tabs"][2]["browser"], original[2]["browser"]);
+    for id in [&first, &second, &web] {
+        host.cli(&["close-tab", "--target", id]);
+    }
+    assert_eq!(host.cli(&["ui-snapshot"])["geometry"]["home_active"], true);
+    host.click_geometry("home_mode_action");
+    let empty = host.cli(&["ui-snapshot"]);
+    assert_eq!(empty["geometry"]["home_mode"], "visual-preview");
+    assert_eq!(empty["geometry"]["home_tab_count"], 0);
+    assert!(
+        empty["geometry"]["home_list_row_ids"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    host.click_geometry("home_new_terminal");
+    assert_eq!(
+        host.cli(&["list-tabs"])["tabs"].as_array().unwrap().len(),
+        1
+    );
     host.close_and_wait();
 }
 
@@ -1259,6 +1290,29 @@ fn native_home_256_mixed_tabs_keep_exact_overflow_targets() {
         .unwrap()
         .len();
     assert!(capacity > 0 && capacity < 256);
+    host.click_geometry("home_mode_action");
+    let visual = host.cli(&["ui-snapshot"]);
+    assert_eq!(visual["geometry"]["home_mode"], "visual-preview");
+    assert_eq!(visual["geometry"]["home_list_scrollbar_visible"], true);
+    host.cli(&["send-ui-keys", "End"]);
+    let visual_end = host.cli(&["ui-snapshot"]);
+    assert_eq!(visual_end["geometry"]["home_selected_id"], web);
+    let web_index = visual_end["geometry"]["home_list_row_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|id| *id == web)
+        .expect("Visual overflow reveals the exact Web @ID");
+    host.click_geometry_row("home_list_row_rects", web_index);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["home_selected_id"],
+        web
+    );
+    host.click_geometry("home_focus_tab");
+    assert_eq!(host.cli(&["list-tabs"])["tabs"][255]["active"], true);
+    host.click_geometry("home");
+    host.click_geometry("home_mode_action");
+    assert_eq!(host.cli(&["ui-snapshot"])["geometry"]["home_mode"], "list");
     host.click_geometry("home_sort_action");
     let sorted = host.cli(&["ui-snapshot"]);
     assert_eq!(sorted["geometry"]["home_sort"], "label");
@@ -1425,6 +1479,53 @@ fn native_home_list_scrollbar_pages_and_drags_without_retargeting() {
         host.cli(&["ui-snapshot"])["geometry"]["home_selected_id"],
         first
     );
+    host.click_geometry("home_mode_action");
+    let visual = host.cli(&["ui-snapshot"]);
+    assert_eq!(visual["geometry"]["home_mode"], "visual-preview");
+    assert_eq!(visual["geometry"]["home_list_scrollbar_visible"], true);
+    host.cli(&[
+        "send-ui-mouse",
+        "--action",
+        "click",
+        "--button",
+        "left",
+        "--column",
+        &x,
+        "--row",
+        &bottom,
+    ]);
+    let visual_paged = host.cli(&["ui-snapshot"]);
+    assert!(
+        visual_paged["geometry"]["home_list_start"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert_eq!(visual_paged["geometry"]["home_selected_id"], first);
+    let visual_thumb = &visual_paged["geometry"]["home_list_scrollbar_thumb"];
+    let visual_thumb_y = ((visual_thumb["y"].as_u64().unwrap()
+        + visual_thumb["height"].as_u64().unwrap() / 2) as f64
+        / scale)
+        .round()
+        .to_string();
+    for (action, button, row) in [
+        ("press", "left", visual_thumb_y.as_str()),
+        ("move", "none", top.as_str()),
+        ("release", "left", top.as_str()),
+    ] {
+        host.cli(&[
+            "send-ui-mouse",
+            "--action",
+            action,
+            "--button",
+            button,
+            "--column",
+            &x,
+            "--row",
+            row,
+        ]);
+    }
+    assert_eq!(host.cli(&["ui-snapshot"])["geometry"]["home_list_start"], 0);
     host.close_and_wait();
 }
 
