@@ -1894,6 +1894,34 @@ impl ConApp {
                 text_width,
             );
         }
+        let mode_action = layout.home_mode_action(width, height, scale);
+        if mode_action.width > 0 && mode_action.height > 0 {
+            surface.fill_rect(
+                mode_action.x,
+                mode_action.y,
+                mode_action.width,
+                mode_action.height,
+                t.surface.to_xrgb(),
+            );
+            stroke_rect(&mut surface, mode_action, 1, t.border);
+            let mode_label = match (self.ui_language, self.home_mode) {
+                (ui::UiLanguage::English, HomeMode::List) => "Visual preview ›",
+                (ui::UiLanguage::English, HomeMode::Visual) => "‹ List view",
+                (ui::UiLanguage::ChineseSimplified, HomeMode::List) => "可视化预览 ›",
+                (ui::UiLanguage::ChineseSimplified, HomeMode::Visual) => "‹ 列表视图",
+                (ui::UiLanguage::ChineseTraditional, HomeMode::List) => "視覺化預覽 ›",
+                (ui::UiLanguage::ChineseTraditional, HomeMode::Visual) => "‹ 列表檢視",
+            };
+            paint_host_ui_text(
+                &mut surface,
+                mode_action.x.saturating_add((5.0 * scale) as u32),
+                mode_action.y.saturating_add((5.0 * scale) as u32),
+                mode_label,
+                t.text,
+                scaled_host_ui_font(11, self.session_seed.font_size_logical(), scale),
+                mode_action.width.saturating_sub((10.0 * scale) as u32),
+            );
+        }
         let actions = layout.home_actions(width, height, scale);
         for (rect, label) in actions.into_iter().zip([new_terminal, new_web]) {
             if rect.width == 0 || rect.height == 0 {
@@ -2264,14 +2292,31 @@ impl ConApp {
                 );
             }
             for (visible, node) in nodes.iter().skip(start).take(capacity).enumerate() {
-                let row = layout.home_fleet_row(width, height, scale, visible);
+                let row = if self.home_mode == HomeMode::Visual {
+                    layout.home_visual_station(width, height, scale, visible)
+                } else {
+                    layout.home_fleet_row(width, height, scale, visible)
+                };
                 if row.height == 0 {
                     break;
                 }
                 if self.home_selected_id == Some(node.id) {
                     surface.fill_rect(row.x, row.y, row.width, row.height, t.canvas_bg.to_xrgb());
                 }
-                surface.fill_rect(row.x, row.y, row.width, 1, t.border.to_xrgb());
+                if self.home_mode == HomeMode::Visual {
+                    stroke_rect(
+                        &mut surface,
+                        row,
+                        1,
+                        if self.home_selected_id == Some(node.id) {
+                            t.accent
+                        } else {
+                            t.border
+                        },
+                    );
+                } else {
+                    surface.fill_rect(row.x, row.y, row.width, 1, t.border.to_xrgb());
+                }
                 let session = self.session_for(node.id);
                 let name = tree_row_name(
                     node.custom_title.as_deref(),

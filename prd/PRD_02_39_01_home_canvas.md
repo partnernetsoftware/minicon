@@ -128,6 +128,18 @@ source/freshness projections are complete; grouping and 256-tab sorted
 interaction remain open. The 256-tab court also passed Name order's first Web
 @ID and tied Console @ID, then restored Tree order before its End-key journey.
 
+The first Visual V0 implementation is an explicit preview switch above the
+Home canvas. List stays the default. Visual reuses the filtered/sorted stable
+@ID sequence, attention line, system card and exact inspector; it arranges
+station cards in two columns when the fleet area permits and one column when
+narrow. It has no drag affordance or invented agent characters. The Windows
+`native_home_visual_preview_keeps_exact_ids_and_list_return` court passed a
+three-tab Console/Web mode switch, card selection, exact Focus tab, return to
+Visual, 500×650 one-column capture, List return and unchanged tree/page facts.
+Disabling the mode transition made the court fail. The mode still needs
+zero-tab, overflow/scroll, filter/sort parity, other-scale and other-platform
+native evidence before HC-08 V0 or the 0.2.26 cut can close.
+
 ### 0.2.26 native scene review
 
 The Windows `native_home_inspector_captures_wide_and_narrow_layouts` court now

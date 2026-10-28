@@ -1035,6 +1035,7 @@ struct ConApp {
     hovered_header: Option<HeaderIcon>,
     settings_open: bool,
     home_active: bool,
+    home_mode: HomeMode,
     home_list_start: usize,
     home_kind_filter: HomeKindFilter,
     home_sort: HomeSort,
@@ -1451,6 +1452,29 @@ impl HomeSystemSample {
 }
 
 #[derive(Clone, Copy, Default, Eq, PartialEq)]
+enum HomeMode {
+    #[default]
+    List,
+    Visual,
+}
+
+impl HomeMode {
+    fn toggle(self) -> Self {
+        match self {
+            Self::List => Self::Visual,
+            Self::Visual => Self::List,
+        }
+    }
+
+    fn key(self) -> &'static str {
+        match self {
+            Self::List => "list",
+            Self::Visual => "visual-preview",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
 enum HomeKindFilter {
     #[default]
     All,
@@ -1789,6 +1813,7 @@ impl ConApp {
             hovered_header: None,
             settings_open: false,
             home_active: false,
+            home_mode: HomeMode::List,
             home_list_start: 0,
             home_kind_filter: HomeKindFilter::All,
             home_sort: HomeSort::Tree,
@@ -5282,6 +5307,12 @@ impl PixelWindowApplication for ConApp {
                 } else if web.contains(x, y) {
                     self.open_browser_tab_contained(window);
                 } else if layout
+                    .home_mode_action(metrics.physical_width, metrics.physical_height, scale)
+                    .contains(x, y)
+                {
+                    self.home_mode = self.home_mode.toggle();
+                    self.mark_host_ui_full_and_repaint(window);
+                } else if layout
                     .home_system_card(metrics.physical_width, metrics.physical_height, scale)
                     .contains(x, y)
                 {
@@ -5351,22 +5382,29 @@ impl PixelWindowApplication for ConApp {
                         self.home_visible_nodes().len(),
                         capacity,
                     );
-                    let first = layout.home_fleet_row(
-                        metrics.physical_width,
-                        metrics.physical_height,
-                        scale,
-                        0,
-                    );
-                    if fleet.contains(x, y) && y >= first.y && first.height > 0 {
-                        let visible = ((y - first.y) / first.height) as usize;
-                        if visible < capacity
-                            && let Some(id) = self
-                                .home_visible_nodes()
-                                .get(start + visible)
-                                .map(|node| node.id)
-                        {
-                            self.home_selected_id = Some(id);
-                            self.mark_host_ui_full_and_repaint(window);
+                    if fleet.contains(x, y) {
+                        let nodes = self.home_visible_nodes();
+                        for visible in 0..capacity.min(nodes.len().saturating_sub(start)) {
+                            let rect = if self.home_mode == HomeMode::Visual {
+                                layout.home_visual_station(
+                                    metrics.physical_width,
+                                    metrics.physical_height,
+                                    scale,
+                                    visible,
+                                )
+                            } else {
+                                layout.home_fleet_row(
+                                    metrics.physical_width,
+                                    metrics.physical_height,
+                                    scale,
+                                    visible,
+                                )
+                            };
+                            if rect.contains(x, y) {
+                                self.home_selected_id = Some(nodes[start + visible].id);
+                                self.mark_host_ui_full_and_repaint(window);
+                                break;
+                            }
                         }
                     }
                 }

@@ -906,6 +906,20 @@ impl Layout {
         }
     }
 
+    pub fn home_mode_action(self, width: u32, height: u32, scale: f64) -> Rect {
+        let content_width = width.saturating_sub(self.sidebar.width);
+        let pad = dip(28.0, scale).min(content_width / 4);
+        let top = (height / 7).max(dip(24.0, scale));
+        let button_width = dip(120.0, scale);
+        let x = width.saturating_sub(pad.saturating_add(button_width));
+        Rect {
+            x,
+            y: top.saturating_sub(dip(36.0, scale)),
+            width: button_width.min(width.saturating_sub(x.saturating_add(pad))),
+            height: dip(28.0, scale),
+        }
+    }
+
     pub fn home_filter_action(self, width: u32, height: u32, scale: f64) -> Rect {
         let fleet = self.home_fleet(width, height, scale);
         let margin = dip(12.0, scale);
@@ -1047,6 +1061,25 @@ impl Layout {
                 .saturating_sub(fleet.x)
                 .saturating_sub(dip(20.0, scale)),
             height: row_height.min(fleet.y.saturating_add(fleet.height).saturating_sub(top)),
+        }
+    }
+
+    pub fn home_visual_station(self, width: u32, height: u32, scale: f64, visible: usize) -> Rect {
+        let first = self.home_fleet_row(width, height, scale, 0);
+        let two_columns = first.width >= dip(380.0, scale);
+        let columns = if two_columns { 2 } else { 1 };
+        let row = self.home_fleet_row(width, height, scale, visible / columns);
+        if !two_columns {
+            return row;
+        }
+        let gap = dip(8.0, scale);
+        let card_width = row.width.saturating_sub(gap) / 2;
+        Rect {
+            x: row
+                .x
+                .saturating_add((visible % 2) as u32 * (card_width + gap)),
+            width: card_width,
+            ..row
         }
     }
 

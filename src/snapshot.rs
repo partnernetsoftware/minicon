@@ -306,6 +306,15 @@ impl ConApp {
                             fields.extend([
                                 ("home", rect_obj(layout.home)),
                                 ("home_active", self.home_active.into()),
+                                ("home_mode", self.home_mode.key().into()),
+                                (
+                                    "home_mode_action",
+                                    rect_obj(layout.home_mode_action(
+                                        metrics.physical_width,
+                                        metrics.physical_height,
+                                        metrics.scale_factor,
+                                    )),
+                                ),
                                 ("home_new_terminal", rect_obj(home_new_terminal)),
                                 ("home_new_web", rect_obj(home_new_web)),
                                 (
@@ -509,12 +518,21 @@ impl ConApp {
                                         (0..home_capacity
                                             .min(home_nodes.len().saturating_sub(home_start)))
                                             .map(|visible| {
-                                                rect_obj(layout.home_fleet_row(
-                                                    metrics.physical_width,
-                                                    metrics.physical_height,
-                                                    metrics.scale_factor,
-                                                    visible,
-                                                ))
+                                                rect_obj(if self.home_mode == HomeMode::Visual {
+                                                    layout.home_visual_station(
+                                                        metrics.physical_width,
+                                                        metrics.physical_height,
+                                                        metrics.scale_factor,
+                                                        visible,
+                                                    )
+                                                } else {
+                                                    layout.home_fleet_row(
+                                                        metrics.physical_width,
+                                                        metrics.physical_height,
+                                                        metrics.scale_factor,
+                                                        visible,
+                                                    )
+                                                })
                                             })
                                             .collect(),
                                     ),

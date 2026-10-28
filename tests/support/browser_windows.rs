@@ -877,6 +877,91 @@ fn native_home_fleet_rows_target_exact_tab_ids() {
 
 #[cfg(windows)]
 #[test]
+#[ignore = "requires a native desktop; run the explicit Home Visual V0 court"]
+fn native_home_visual_preview_keeps_exact_ids_and_list_return() {
+    let mut host = BrowserGui::spawn(false, None, None);
+    let first = host.cli(&["list-tabs"])["tabs"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let second = host.cli(&["new-tab"])["id"].as_str().unwrap().to_owned();
+    let web = host.open_browser_directly()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let original = host.cli(&["list-tabs"])["tabs"].clone();
+    host.click_geometry("home");
+    let list = host.cli(&["ui-snapshot"]);
+    assert_eq!(list["geometry"]["home_mode"], "list");
+    assert_eq!(
+        list["geometry"]["home_list_row_ids"],
+        serde_json::json!([first, second, web])
+    );
+    host.click_geometry("home_mode_action");
+    let visual = host.cli(&["ui-snapshot"]);
+    assert_eq!(visual["geometry"]["home_mode"], "visual-preview");
+    assert_eq!(
+        visual["geometry"]["home_list_row_ids"],
+        list["geometry"]["home_list_row_ids"]
+    );
+    let cards = visual["geometry"]["home_list_row_rects"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cards.len(), 3);
+    assert_eq!(cards[0]["y"], cards[1]["y"]);
+    assert!(cards[1]["x"].as_u64().unwrap() > cards[0]["x"].as_u64().unwrap());
+    println!(
+        "Home Visual V0 wide: {}",
+        host.capture_home_client("home-visual-wide.png").display()
+    );
+    host.click_geometry_row("home_list_row_rects", 1);
+    let selected = host.cli(&["ui-snapshot"]);
+    assert_eq!(selected["geometry"]["home_selected_id"], second);
+    assert_eq!(selected["geometry"]["home_active"], true);
+    host.click_geometry("home_focus_tab");
+    assert_eq!(host.cli(&["list-tabs"])["tabs"][1]["active"], true);
+    host.click_geometry("home");
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["home_mode"],
+        "visual-preview"
+    );
+    host.cli(&["resize-window", "--width", "500", "--height", "650"]);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let narrow = loop {
+        let value = host.cli(&["ui-snapshot"]);
+        if value["geometry"]["frame"]["width"] == 500 {
+            break value;
+        }
+        assert!(Instant::now() < deadline, "narrow Visual V0 did not settle");
+        thread::sleep(Duration::from_millis(25));
+    };
+    let narrow_cards = narrow["geometry"]["home_list_row_rects"]
+        .as_array()
+        .unwrap();
+    assert!(!narrow_cards.is_empty());
+    if narrow_cards.len() > 1 {
+        assert!(narrow_cards[1]["y"].as_u64().unwrap() > narrow_cards[0]["y"].as_u64().unwrap());
+    }
+    thread::sleep(Duration::from_millis(250));
+    println!(
+        "Home Visual V0 narrow: {}",
+        host.capture_home_client("home-visual-narrow.png").display()
+    );
+    host.click_geometry("home_mode_action");
+    let returned = host.cli(&["ui-snapshot"]);
+    assert_eq!(returned["geometry"]["home_mode"], "list");
+    let after = host.cli(&["list-tabs"]);
+    for (index, tab) in after["tabs"].as_array().unwrap().iter().enumerate() {
+        assert_eq!(tab["id"], original[index]["id"]);
+        assert_eq!(tab["kind"], original[index]["kind"]);
+        assert_eq!(tab["parent"], original[index]["parent"]);
+    }
+    assert_eq!(after["tabs"][2]["browser"], original[2]["browser"]);
+    host.close_and_wait();
+}
+
+#[cfg(windows)]
+#[test]
 #[ignore = "requires a native desktop; run the explicit Home inspector visual court"]
 fn native_home_inspector_captures_wide_and_narrow_layouts() {
     let mut host = BrowserGui::spawn(false, None, None);
