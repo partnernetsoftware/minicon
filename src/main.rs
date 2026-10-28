@@ -759,7 +759,16 @@ fn main() {
     no_activate |=
         minicon_platform::runtime::ascii_environment_variable_present("AGENTERM_NO_ACTIVATE");
 
-    let mut app = ConApp::new(working_dir.clone(), control_endpoint);
+    let control_endpoint = match control::host_endpoint(control_endpoint) {
+        Ok(endpoint) => endpoint,
+        Err(error) => {
+            let _ = minicon_platform::parent_console::write_stderr(&format!(
+                "minicon: control endpoint unavailable: {error}\n"
+            ));
+            std::process::exit(1);
+        }
+    };
+    let mut app = ConApp::new(working_dir.clone(), Some(control_endpoint));
     // Before the window: the endpoint belongs to the process, so a bind failure
     // is a startup failure with no window to close, and a client racing startup
     // finds a listener rather than a refused connection.

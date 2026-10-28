@@ -58,8 +58,9 @@ minicon cli --control unix:/tmp/minicon-build/control.sock capture-pane
 minicon cli --control unix:/tmp/minicon-build/control.sock screenshot-pane --output run.png
 ```
 
-以 `--control` 启动时，标签内程序会继承 `MINICON_CONTROL`，可直接运行
-`minicon mux list-panes`，再用稳定的 `@ID` 指定其他终端标签。
+普通启动时，Console 标签内的程序也会继承所属 MiniCon 实例的本地控制端点。
+可直接运行 `minicon mux list-panes`，再用稳定的 `@ID` 指定其他终端标签。
+外部脚本需要已知端点时，仍可用 `--control` 指定。
 
 `ui-snapshot` 以 JSON 返回焦点、输入法状态、待处理工作与布局；`wait-text` 和
 `wait-tab-exit` 阻塞到条件成立或超时；`send-keys`、`send-mouse`、`send-wheel`、

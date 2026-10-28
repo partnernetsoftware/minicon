@@ -70,7 +70,7 @@ flowchart LR
 
 | Concern | Current source behavior | Contract decision |
 | --- | --- | --- |
-| Binary and endpoint | Console children receive `MINICON_CONTROL` only if the host starts with `--control`; `cli` and `mux` read it; the child receives `MINICON_BIN` and a `PATH` prefixed with this host's executable directory | Make ordinary GUI launches bind a unique local process-lifetime endpoint and export it to their Console children; qualify same-build resolution on other native hosts and renamed binaries; fail closed when unavailable |
+| Binary and endpoint | Ordinary GUI launches now generate a unique local endpoint before opening; explicit `--control` wins. Console children inherit `MINICON_CONTROL`, `MINICON_BIN` and a `PATH` prefixed with this host's executable directory | Qualify the default binding in a native child-to-host court on each OS, plus renamed binaries and login-shell `PATH` rewrites; fail closed when unavailable |
 | Identity | `list-tabs` gives stable `@ID`; children receive no self ID; omitted native targets use the active terminal | Export a self ID and instance incarnation as convenience, validate both against the live host, and never silently guess from title/order |
 | Read/write | `capture-pane` reads visible rows; `send-text` and `send-paste` accept UTF-8 `--file`; `send-keys` targets PTY keys | Name the mode and bounds in results; distinguish accepted bytes from observed response and agent receipt |
 | Paths | capture `--output` writes on the CLI client; screenshot `--output` is currently interpreted by the GUI process | Make v2 path ownership explicit and consistent without reinterpreting a legacy relative path silently |
@@ -94,11 +94,11 @@ bounded to 1 MiB. These are current limits, not a promise of scrollback.
    event/message adapter owns run identity and acknowledgement; it is not
    inferred from PTY text. Each surface reports its own compatibility level.
 2. **Resolution before mutation.** `--control` overrides `MINICON_CONTROL`;
-   no global socket/port is guessed. An ordinary GUI launch should create a
+   no global socket/port is guessed. An ordinary GUI launch creates a
    unique local endpoint before its first tab starts, without requiring the
    user to supply `--control`; an explicit `--control` keeps precedence.
-   Endpoint creation failure must be visible and leave CLI control unavailable,
-   never fall back to another running instance. `--target @N` is canonical. Planned
+   Endpoint creation or bind failure stops startup with a reported error,
+   never falling back to another running instance. `--target @N` is canonical. Planned
    `--target self` resolves from host-provided `MINICON_TAB_ID` plus an opaque
    process-incarnation marker, then checks the live target. Those environment
    values are context hints, not secrets or authority. Commands that omit a

@@ -46,6 +46,54 @@ impl RequestId {
     }
 }
 
+/// Generates a process-lifetime local address for an ordinary GUI launch.
+/// The endpoint is never published as a machine-wide default; only this
+/// process's Console children receive it in their environment.
+pub(crate) fn fresh_local_endpoint() -> Result<String, String> {
+    let random = minicon_platform::entropy::secure_random_array::<16>()
+        .map(u128::from_le_bytes)
+        .map_err(|error| format!("control endpoint entropy: {error}"))?;
+    #[cfg(windows)]
+    {
+        Ok(format!(
+            r"pipe:\\.\pipe\minicon-{}-{random:032x}",
+            std::process::id()
+        ))
+    }
+    #[cfg(unix)]
+    {
+        let path = minicon_platform::ipc::native_runtime_directory()
+            .join(format!("minicon-{}-{random:032x}.sock", std::process::id()));
+        let path = path
+            .into_os_string()
+            .into_string()
+            .map_err(|_| "control runtime directory is not UTF-8".to_owned())?;
+        Ok(format!("unix:{path}"))
+    }
+}
+
+pub(crate) fn host_endpoint(explicit: Option<String>) -> Result<String, String> {
+    explicit.map_or_else(fresh_local_endpoint, Ok)
+}
+
+#[cfg(test)]
+mod host_endpoint_tests {
+    use super::*;
+
+    #[test]
+    fn ordinary_launch_gets_a_unique_native_endpoint_and_explicit_binding_wins() {
+        let first = host_endpoint(None).unwrap();
+        let second = host_endpoint(None).unwrap();
+        assert_ne!(first, second);
+        assert!(IpcEndpoint::from_native_address(&first).is_ok());
+        assert!(IpcEndpoint::from_native_address(&second).is_ok());
+        assert_eq!(
+            host_endpoint(Some("manual-endpoint".into())).unwrap(),
+            "manual-endpoint"
+        );
+    }
+}
+
 pub(crate) fn contains_utf8(haystack: &str, needle: &str) -> bool {
     contains_bytes(haystack.as_bytes(), needle.as_bytes())
 }

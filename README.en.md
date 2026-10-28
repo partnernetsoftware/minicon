@@ -65,8 +65,10 @@ minicon cli --control unix:/tmp/minicon-build/control.sock capture-pane
 minicon cli --control unix:/tmp/minicon-build/control.sock screenshot-pane --output run.png
 ```
 
-When started with `--control`, programs inside a tab inherit `MINICON_CONTROL`.
-Run `minicon mux list-panes` there, then address another terminal by its stable `@ID`.
+Programs inside a Console tab inherit this MiniCon instance's local control
+endpoint, even on an ordinary launch. Run `minicon mux list-panes` there, then
+address another terminal by its stable `@ID`. `--control` remains available
+when an outside script needs a known endpoint.
 
 `ui-snapshot` returns focus, input-method state, pending work and layout as JSON;
 `wait-text` and `wait-tab-exit` block until a condition holds or times out;

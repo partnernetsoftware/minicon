@@ -62,6 +62,12 @@ flowchart LR
   Agent permission model. AgenTerm's server identity may outlive one window;
   MiniCon's must not. A listener inside the GUI is the design, not a missing
   server.
+- [-] Ordinary 0.2.26 GUI launches generate a random per-process native
+  endpoint before any tab starts and export it only to their Console children.
+  Explicit `--control` still selects the address. The unique-address unit
+  court passes; native child-to-host evidence for the default path is open.
+  [PRD 26.01](PRD_02_26_01_agent_cli_contract.md) owns the agent-facing
+  environment, self-tab and command-discovery contract.
 - [v] shared verb spellings (`capture-pane`, `screenshot-pane`, `send-text`,
   `send-keys`, `wait-text`) mean the same product action in both CLIs. Where the
   standalone host cannot honor a workbench verb it omits the verb rather than
