@@ -529,8 +529,14 @@ section means a **chrome panel** unless it says content/workspace panel.
   destructive close; the new-child button is Ctrl+Shift+N scoped to the
   clicked row (owner request 2026-10-22, evidence
   `a_collapsed_rail_never_closes_a_tab_by_a_row_click` ordering asserts in
-  src/ui.rs) — and a header of four tools: New, Settings, and the pair of
-  chrome toggles for the left sidebar and the right chrome panel (sent-history). A distinct bottom
+  src/ui.rs) — and a header with Terminal, Web, Harness, Settings, and the pair of
+  chrome toggles for the left sidebar and the right chrome panel (sent-history).
+  The Terminal and Web creation controls use distinct native-drawn prompt/page
+  icons with the same stroke, hit target and hover treatment as the other
+  header tools (`creation_icons_distinguish_terminal_from_web_in_every_theme`
+  and `a_host_ui_frame_renders_without_a_window`); their action semantics remain
+  owned by the New Web leaf above.
+  A distinct bottom
   composer owns input, Send and Newline, and a bottom status bar shows a
   fixed-width `L###:C###` readout that follows the grid crosshair (the hovered
   cell) and falls back to the text cursor. Two decisions here each have one

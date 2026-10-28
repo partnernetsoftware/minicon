@@ -51,51 +51,6 @@ pub(crate) fn paint_button_label(
     paint_host_ui_text(surface, x, y, label, color, font_size_px, button.width);
 }
 
-/// A compact direct creation action. The short label stays distinct on a rail.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn paint_new_tab_button(
-    surface: &mut Surface<'_>,
-    button: ui::Rect,
-    web: bool,
-    selected: bool,
-    theme: theme::Theme,
-    font_size: u16,
-    scale: f64,
-) {
-    if button.width == 0 || button.height == 0 {
-        return;
-    }
-    let unit = scale.max(1.0).round() as u32;
-    surface.fill_rect(
-        button.x,
-        button.y,
-        button.width,
-        button.height,
-        if selected {
-            theme.surface
-        } else {
-            theme.sidebar_bg
-        }
-        .to_xrgb(),
-    );
-    paint_button_label(
-        surface,
-        button,
-        if web { "+W" } else { "+T" },
-        theme.text,
-        font_size,
-    );
-    if selected {
-        surface.fill_rect(
-            button.x,
-            button.y.saturating_add(button.height.saturating_sub(unit)),
-            button.width,
-            unit,
-            theme.accent.to_xrgb(),
-        );
-    }
-}
-
 /// Disabled navigation remains visible without competing with usable actions.
 pub(crate) fn browser_navigation_color(theme: theme::Theme, enabled: bool) -> Rgb {
     if enabled {
@@ -831,7 +786,7 @@ pub(crate) fn paint_browser_navigation_icon(
 
 /// Paints the header as one aligned, borderless icon family.
 ///
-/// The full 24-DIP rectangles remain the hit targets, but no permanent box is
+/// The layout rectangles remain the hit targets, but no permanent box is
 /// drawn around them. Selection uses a quiet background and short underline;
 /// the icon itself stays high-contrast. Geometry avoids depending on a symbol
 /// font while keeping the zoom family to the simplest possible marks.
@@ -846,6 +801,9 @@ pub(crate) fn paint_header_icon_button(
     _font_size_px: u16,
     scale: f64,
 ) {
+    if button.width == 0 || button.height == 0 {
+        return;
+    }
     let stroke = minicon_core::numeric::round_f64(scale.clamp(1.0, 4.0)).clamp(1.0, 4.0) as u32;
     let inset = stroke.saturating_mul(3);
     if selected {
@@ -875,26 +833,65 @@ pub(crate) fn paint_header_icon_button(
             let window = ui::Rect {
                 x: button.x.saturating_add(inset),
                 y: button.y.saturating_add(inset),
-                width: button.width.saturating_sub(inset.saturating_mul(2)),
-                height: button.height.saturating_sub(inset.saturating_mul(2)),
+                width: button.width.saturating_sub(
+                    inset
+                        .saturating_mul(3)
+                        .saturating_add(stroke.saturating_mul(4)),
+                ),
+                height: button.height.saturating_sub(
+                    inset
+                        .saturating_mul(3)
+                        .saturating_add(stroke.saturating_mul(4)),
+                ),
             };
-            // An open terminal tray avoids reading as another button border.
-            surface.fill_rect(
-                window.x,
-                window.y.saturating_add(stroke.saturating_mul(2)),
-                stroke,
-                window.height.saturating_sub(stroke.saturating_mul(2)),
-                color.to_xrgb(),
-            );
-            surface.fill_rect(
-                window.x,
-                window
-                    .y
-                    .saturating_add(window.height.saturating_sub(stroke)),
-                window.width,
-                stroke,
-                color.to_xrgb(),
-            );
+            if icon == HeaderIcon::NewWeb {
+                // A framed page with a toolbar reads as Web at small rail
+                // sizes; it uses the same stroke and hover treatment as the
+                // terminal tray and the other header icons.
+                stroke_rect(surface, window, stroke, color);
+                surface.fill_rect(
+                    window.x,
+                    window.y.saturating_add(stroke.saturating_mul(4)),
+                    window.width,
+                    stroke,
+                    color.to_xrgb(),
+                );
+                surface.fill_rect(
+                    window.x.saturating_add(stroke.saturating_mul(2)),
+                    window.y.saturating_add(stroke.saturating_mul(2)),
+                    stroke,
+                    stroke,
+                    color.to_xrgb(),
+                );
+            } else {
+                // The prompt distinguishes a terminal from the browser's
+                // toolbar even when both buttons shrink to rail size.
+                stroke_rect(surface, window, stroke, color);
+                let prompt_x = window.x.saturating_add(stroke.saturating_mul(3));
+                let prompt_y = window.y.saturating_add(stroke.saturating_mul(4));
+                surface.fill_rect(prompt_x, prompt_y, stroke, stroke, color.to_xrgb());
+                surface.fill_rect(
+                    prompt_x.saturating_add(stroke),
+                    prompt_y.saturating_add(stroke),
+                    stroke,
+                    stroke,
+                    color.to_xrgb(),
+                );
+                surface.fill_rect(
+                    prompt_x,
+                    prompt_y.saturating_add(stroke.saturating_mul(2)),
+                    stroke,
+                    stroke,
+                    color.to_xrgb(),
+                );
+                surface.fill_rect(
+                    prompt_x.saturating_add(stroke.saturating_mul(3)),
+                    prompt_y.saturating_add(stroke.saturating_mul(2)),
+                    stroke.saturating_mul(3),
+                    stroke,
+                    color.to_xrgb(),
+                );
+            }
             let plus_x = button.x.saturating_add(
                 button
                     .width
@@ -1459,6 +1456,41 @@ fn paint_web_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn creation_icons_distinguish_terminal_from_web_in_every_theme() {
+        for choice in theme::ThemeChoice::ALL {
+            let theme = theme::Theme::for_choice(choice);
+            let paint = |icon| {
+                let mut pixels = vec![theme.sidebar_bg.to_xrgb(); 40 * 40];
+                paint_header_icon_button(
+                    &mut Surface::new(&mut pixels, 40, 40),
+                    ui::Rect {
+                        x: 4,
+                        y: 4,
+                        width: 32,
+                        height: 32,
+                    },
+                    icon,
+                    theme.accent,
+                    false,
+                    theme.surface,
+                    15,
+                    1.0,
+                );
+                pixels
+            };
+            let terminal = paint(HeaderIcon::NewRoot);
+            let web = paint(HeaderIcon::NewWeb);
+            assert_ne!(terminal, web, "terminal and Web must have distinct icons");
+            assert!(
+                terminal
+                    .iter()
+                    .any(|pixel| *pixel == theme.accent.to_xrgb())
+            );
+            assert!(web.iter().any(|pixel| *pixel == theme.accent.to_xrgb()));
+        }
+    }
 
     #[test]
     fn clipboard_status_pixels_keep_type_readable_without_cursor_overlap() {

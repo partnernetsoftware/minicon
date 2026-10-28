@@ -899,21 +899,23 @@ impl ConApp {
         let muted = t.muted;
         let header_icon_size = host_ui_size(HOST_UI_HEADER_SIZE_PX);
         self.paint_harness_entry(surface, layout, scale, header_icon_size);
-        host_ui::paint_new_tab_button(
+        paint_header_icon_button(
             surface,
             layout.new_root,
-            false,
+            HeaderIcon::NewRoot,
+            accent,
             self.hovered_header == Some(HeaderIcon::NewRoot),
-            t,
+            t.surface,
             header_icon_size,
             scale,
         );
-        host_ui::paint_new_tab_button(
+        paint_header_icon_button(
             surface,
             layout.new_web,
-            true,
+            HeaderIcon::NewWeb,
+            accent,
             self.hovered_header == Some(HeaderIcon::NewWeb),
-            t,
+            t.surface,
             header_icon_size,
             scale,
         );
@@ -1967,19 +1969,28 @@ impl ConApp {
         };
         let icon_size = host_ui_size(HOST_UI_HEADER_SIZE_PX);
         self.paint_harness_entry(&mut surface, layout, scale, icon_size);
-        for (button, web, selected) in [
+        for (button, icon, selected) in [
             (
                 layout.new_root,
-                false,
+                HeaderIcon::NewRoot,
                 self.hovered_header == Some(HeaderIcon::NewRoot),
             ),
             (
                 layout.new_web,
-                true,
+                HeaderIcon::NewWeb,
                 self.hovered_header == Some(HeaderIcon::NewWeb),
             ),
         ] {
-            host_ui::paint_new_tab_button(&mut surface, button, web, selected, t, icon_size, scale);
+            paint_header_icon_button(
+                &mut surface,
+                button,
+                icon,
+                t.accent,
+                selected,
+                t.surface,
+                icon_size,
+                scale,
+            );
         }
         paint_header_icon_button(
             &mut surface,
