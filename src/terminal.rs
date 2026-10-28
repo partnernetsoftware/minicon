@@ -27,11 +27,14 @@ pub(super) struct ConTerminal {
     /// `"pipe:foo"` or `"unix:/path"`). Exported into every spawned shell as
     /// `MINICON_CONTROL` so a script running inside a pane can drive `minicon
     /// mux`/`minicon cli` against its own instance without being told the
-    /// endpoint -- the same role `$TMUX` plays for tmux. `None` when the
-    /// instance was not started with `--control`, in which case nothing is
-    /// exported and scripts must be told the endpoint explicitly, same as
-    /// today.
+    /// endpoint -- the same role `$TMUX` plays for tmux. An ordinary GUI
+    /// launch generates its own endpoint; `None` is only for isolated sessions
+    /// built without a running host.
     control_endpoint: Option<String>,
+
+    /// Host-minted routing context for this exact Console tab. It is copied
+    /// into the child environment, never inherited by a newly created tab.
+    pub(super) self_context: Option<control::SelfContext>,
 
     /// Program to host, from `-e`. `None` runs the user's default shell.
     pub(super) command: Option<Vec<String>>,
@@ -280,6 +283,7 @@ impl ConTerminal {
         Self {
             working_dir,
             control_endpoint,
+            self_context: None,
             command: None,
             rust_console: false,
             term_override: None,
@@ -654,6 +658,11 @@ impl ConTerminal {
 
         if let Some(endpoint) = &self.control_endpoint {
             command = command.env("MINICON_CONTROL", endpoint);
+        }
+        if let Some(context) = self.self_context {
+            command = command
+                .env("MINICON_TAB_ID", format!("@{}", context.tab.get()))
+                .env("MINICON_INSTANCE_ID", format!("{:032x}", context.instance));
         }
 
         // Resolve the command in this child to the executable that launched

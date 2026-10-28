@@ -76,6 +76,18 @@ pub(crate) fn host_endpoint(explicit: Option<String>) -> Result<String, String> 
     explicit.map_or_else(fresh_local_endpoint, Ok)
 }
 
+pub(crate) fn fresh_instance_id() -> Result<u128, String> {
+    minicon_platform::entropy::secure_random_array::<16>()
+        .map(u128::from_le_bytes)
+        .map_err(|error| format!("control instance entropy: {error}"))
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SelfContext {
+    pub instance: u128,
+    pub tab: TabId,
+}
+
 #[cfg(test)]
 mod host_endpoint_tests {
     use super::*;
@@ -133,6 +145,7 @@ mod compact_channel_tests {
         assert_eq!(
             queue.push(IncomingRequest {
                 command: CliCommand::ListTabs,
+                self_context: None,
                 reply,
             }),
             Err(RequestQueueReject::Closed)
@@ -150,6 +163,7 @@ mod compact_channel_tests {
                 queue
                     .push(IncomingRequest {
                         command: CliCommand::ListTabs,
+                        self_context: None,
                         reply,
                     })
                     .is_ok()
@@ -159,6 +173,7 @@ mod compact_channel_tests {
         assert_eq!(
             queue.push(IncomingRequest {
                 command: CliCommand::ListTabs,
+                self_context: None,
                 reply,
             }),
             Err(RequestQueueReject::Full)
@@ -173,6 +188,7 @@ mod compact_channel_tests {
             let (reply, _receiver) = reply_channel();
             let should_wake = match queue.push(IncomingRequest {
                 command: CliCommand::ListTabs,
+                self_context: None,
                 reply,
             }) {
                 Ok(should_wake) => should_wake,
@@ -212,7 +228,13 @@ mod compact_channel_tests {
             },
         ] {
             let (reply, _receiver) = reply_channel();
-            queue.push(IncomingRequest { command, reply }).unwrap();
+            queue
+                .push(IncomingRequest {
+                    command,
+                    self_context: None,
+                    reply,
+                })
+                .unwrap();
         }
         let (resize_run, backlog) = queue.pop_batch(2);
         assert_eq!(resize_run.len(), 3);
@@ -320,6 +342,25 @@ pub enum CliCommand {
         target: TabId,
         timeout_ms: u64,
     },
+}
+
+impl CliCommand {
+    pub(crate) fn targets_self(&self, tab: TabId) -> bool {
+        match self {
+            Self::SelectTab { target }
+            | Self::CloseTab { target }
+            | Self::WaitTabExit { target, .. } => *target == tab,
+            Self::CapturePane { target, .. }
+            | Self::ScreenshotPane { target, .. }
+            | Self::SendText { target, .. }
+            | Self::SendPaste { target, .. }
+            | Self::SendKeys { target, .. }
+            | Self::SendMouse { target, .. }
+            | Self::SendWheel { target, .. }
+            | Self::WaitText { target, .. } => *target == Some(tab),
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -641,7 +682,7 @@ pub fn parse_cli(args: &[String]) -> Result<CliRequest, String> {
 }
 
 pub fn usage() -> String {
-    "usage: minicon cli list-commands\n       minicon cli [--control ENDPOINT] <list-tabs|ui-snapshot|perf-stats|reset-perf-stats|cancel-pointer|close-window|detach-gui|attach-gui|resize-window|new-tab|select-tab|close-tab|capture-pane|screenshot-pane|send-text|send-paste|send-keys|send-ui-ime|send-ui-keys|send-ui-mouse|send-mouse|send-wheel|wait-text|wait-tab-exit> ...\n       --control is required unless MINICON_CONTROL is set".to_owned()
+    "usage: minicon cli list-commands\n       minicon cli [--control ENDPOINT] <list-tabs|ui-snapshot|perf-stats|reset-perf-stats|cancel-pointer|close-window|detach-gui|attach-gui|resize-window|new-tab|select-tab|close-tab|capture-pane|screenshot-pane|send-text|send-paste|send-keys|send-ui-ime|send-ui-keys|send-ui-mouse|send-mouse|send-wheel|wait-text|wait-tab-exit> ...\n       --control is required unless MINICON_CONTROL is set\n       --target self uses this Console child's MINICON_TAB_ID and MINICON_INSTANCE_ID".to_owned()
 }
 
 const CLI_COMMAND_CATALOG: &str = "attach-gui\ncancel-pointer\ncapture-pane\nclose-tab\nclose-window\ndetach-gui\nlist-commands\nlist-tabs\nnew-tab\nperf-stats\nreset-perf-stats\nresize-window\nscreenshot-pane\nselect-tab\nsend-keys\nsend-mouse\nsend-paste\nsend-text\nsend-ui-ime\nsend-ui-keys\nsend-ui-mouse\nsend-wheel\nui-snapshot\nwait-tab-exit\nwait-text\n";
@@ -1225,6 +1266,7 @@ impl ConnectionQueue {
 
 pub struct IncomingRequest {
     pub command: CliCommand,
+    pub self_context: Option<SelfContext>,
     pub reply: ReplySender,
 }
 
@@ -1543,7 +1585,8 @@ pub fn run_cli(args: &[String]) -> Result<String, String> {
     if args.len() == 2 && args[0] == "cli" && args[1] == "list-commands" {
         return Ok(CLI_COMMAND_CATALOG.to_owned());
     }
-    let request = parse_cli(args)?;
+    let (args, self_context) = resolve_self_target(args)?;
+    let request = parse_cli(&args)?;
     let endpoint = parse_native_endpoint(&request.control)?;
     // Where `capture-pane --output` should land. Read before the command is
     // encoded, because the destination is the caller's business and never
@@ -1552,7 +1595,12 @@ pub fn run_cli(args: &[String]) -> Result<String, String> {
         CliCommand::CapturePane { output, .. } => output.clone(),
         _ => None,
     };
-    let payload = encode_wire_request(RequestId::fresh()?, request.command)?;
+    let id = RequestId::fresh()?;
+    let payload = if self_context.is_some() {
+        encode_wire_request_with_context(id, request.command, self_context)?
+    } else {
+        encode_wire_request(id, request.command)?
+    };
     let mut last_error = String::new();
     for attempt in 0..LOST_REPLY_ATTEMPTS {
         match run_cli_exchange(&endpoint, &request.control, &payload) {
@@ -1570,6 +1618,44 @@ pub fn run_cli(args: &[String]) -> Result<String, String> {
         }
     }
     Err(last_error)
+}
+
+fn resolve_self_target(args: &[String]) -> Result<(Vec<String>, Option<SelfContext>), String> {
+    let mut resolved = args.to_vec();
+    let positions: Vec<_> = resolved
+        .windows(2)
+        .enumerate()
+        .filter_map(|(index, pair)| {
+            (pair[0] == "--target" && pair[1] == "self").then_some(index + 1)
+        })
+        .collect();
+    if positions.is_empty() {
+        return Ok((resolved, None));
+    }
+    let raw_tab = std::env::var("MINICON_TAB_ID")
+        .map_err(|_| "--target self requires MINICON_TAB_ID".to_owned())?;
+    let tab = raw_tab
+        .strip_prefix('@')
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value != 0)
+        .ok_or_else(|| "MINICON_TAB_ID must be a nonzero @ID".to_owned())?;
+    let raw_instance = std::env::var("MINICON_INSTANCE_ID")
+        .map_err(|_| "--target self requires MINICON_INSTANCE_ID".to_owned())?;
+    if raw_instance.len() != 32 || !raw_instance.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("MINICON_INSTANCE_ID must be a 32-digit hex value".to_owned());
+    }
+    let instance = u128::from_str_radix(&raw_instance, 16)
+        .map_err(|_| "MINICON_INSTANCE_ID is invalid".to_owned())?;
+    for position in positions {
+        resolved[position] = format!("@{tab}");
+    }
+    Ok((
+        resolved,
+        Some(SelfContext {
+            instance,
+            tab: TabId::new(tab),
+        }),
+    ))
 }
 
 /// Writes a capture to disk instead of returning it on stdout, so a large pane
@@ -1638,6 +1724,7 @@ fn serve_one(
                 let should_wake = request_tx
                     .push(IncomingRequest {
                         command: request.command,
+                        self_context: request.self_context,
                         reply,
                     })
                     .map_err(|reason| reason.message().to_owned())?;
@@ -1684,6 +1771,7 @@ fn reject_busy(mut stream: NativeStream) {
 
 struct WireRequest {
     id: Option<RequestId>,
+    self_context: Option<SelfContext>,
     command: CliCommand,
 }
 
@@ -1772,10 +1860,22 @@ fn read_frame(stream: &mut impl std::io::Read, max_bytes: usize) -> Result<Vec<u
 }
 
 fn encode_wire_request(id: RequestId, command: CliCommand) -> Result<Vec<u8>, String> {
+    encode_wire_request_with_context(id, command, None)
+}
+
+fn encode_wire_request_with_context(
+    id: RequestId,
+    command: CliCommand,
+    self_context: Option<SelfContext>,
+) -> Result<Vec<u8>, String> {
     let command = encode_request(command)?;
-    let mut payload = Vec::with_capacity(17 + command.len());
-    payload.push(21);
+    let mut payload = Vec::with_capacity(41 + command.len());
+    payload.push(if self_context.is_some() { 23 } else { 21 });
     payload.extend_from_slice(&id.0.to_le_bytes());
+    if let Some(context) = self_context {
+        payload.extend_from_slice(&context.instance.to_le_bytes());
+        payload.extend_from_slice(&context.tab.get().to_le_bytes());
+    }
     payload.extend_from_slice(&command);
     if payload.len() > REQUEST_MAX_BYTES {
         return Err("control request is oversized".to_owned());
@@ -1784,22 +1884,43 @@ fn encode_wire_request(id: RequestId, command: CliCommand) -> Result<Vec<u8>, St
 }
 
 fn decode_wire_request(bytes: &[u8]) -> Result<WireRequest, String> {
-    if bytes.first() != Some(&21) {
+    if !matches!(bytes.first(), Some(21 | 23)) {
         return Ok(WireRequest {
             id: None,
+            self_context: None,
             command: decode_request(bytes)?,
         });
     }
     let envelope = bytes
         .get(1..)
         .ok_or_else(|| "truncated control request envelope".to_owned())?;
-    let (id, command) = envelope
+    let (id, rest) = envelope
         .split_at_checked(16)
         .ok_or_else(|| "control request envelope has no request id".to_owned())?;
+    let (self_context, command) = if bytes.first() == Some(&23) {
+        let (identity, command) = rest
+            .split_at_checked(24)
+            .ok_or_else(|| "control self context is truncated".to_owned())?;
+        let instance = u128::from_le_bytes(identity[..16].try_into().expect("instance id"));
+        let tab = u64::from_le_bytes(identity[16..].try_into().expect("tab id"));
+        if tab == 0 {
+            return Err("control self tab id must not be zero".to_owned());
+        }
+        (
+            Some(SelfContext {
+                instance,
+                tab: TabId::new(tab),
+            }),
+            command,
+        )
+    } else {
+        (None, rest)
+    };
     Ok(WireRequest {
         id: Some(RequestId(u128::from_le_bytes(
             id.try_into().expect("sixteen-byte request id"),
         ))),
+        self_context,
         command: decode_request(command)?,
     })
 }
@@ -2341,7 +2462,11 @@ mod tests {
         for command in commands {
             let (reply, _receiver) = reply_channel();
             queue
-                .push(IncomingRequest { command, reply })
+                .push(IncomingRequest {
+                    command,
+                    self_context: None,
+                    reply,
+                })
                 .expect("push within capacity");
         }
         (queue, alive)
@@ -2425,6 +2550,7 @@ mod tests {
                 let (reply, _receiver) = reply_channel();
                 let request = IncomingRequest {
                     command: resize(),
+                    self_context: None,
                     reply,
                 };
                 match queue.push(request) {
@@ -3278,6 +3404,40 @@ mod tests {
             let decoded = decode_request(&bytes).expect("wire command decodes");
             assert_eq!(decoded, command);
         }
+    }
+
+    #[test]
+    fn self_envelope_does_not_steal_legacy_ui_mouse_tag() {
+        let mouse = CliCommand::SendUiMouse {
+            action: MouseAction::Click,
+            button: MouseButton::Left,
+            column: 5,
+            row: 7,
+        };
+        let legacy = encode_request(mouse.clone()).unwrap();
+        assert_eq!(legacy[0], 22);
+        let decoded_legacy = decode_wire_request(&legacy).unwrap();
+        assert_eq!(decoded_legacy.id, None);
+        assert_eq!(decoded_legacy.self_context, None);
+        assert_eq!(decoded_legacy.command, mouse);
+
+        let context = SelfContext {
+            instance: 0x1234,
+            tab: TabId::new(9),
+        };
+        let bound = encode_wire_request_with_context(
+            RequestId(7),
+            CliCommand::SelectTab {
+                target: context.tab,
+            },
+            Some(context),
+        )
+        .unwrap();
+        assert_eq!(bound[0], 23);
+        let decoded_bound = decode_wire_request(&bound).unwrap();
+        assert_eq!(decoded_bound.id, Some(RequestId(7)));
+        assert_eq!(decoded_bound.self_context, Some(context));
+        assert!(decoded_bound.command.targets_self(context.tab));
     }
 
     /// The round-trip above gives each command one tab-presence state, so a bug

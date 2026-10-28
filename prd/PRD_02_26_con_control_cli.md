@@ -21,7 +21,7 @@ minicon control protocol and public CLI
 ├── Self-description
 ├── Public command set
 │   ├── [v] Explicit @ID cross-tab text/key/capture/screenshot primitives
-│   └── [_] Agent-facing identity, target, result and I/O contract → PRD_02_26_01_agent_cli_contract.md
+│   └── [-] Agent-facing identity, target, result and I/O contract → PRD_02_26_01_agent_cli_contract.md
 ├── Transport and bounds (ATC1 frame; local pipe/socket; process-lifetime)
 │   └── [-] Bounded completion of active replies during shutdown
 ├── JSON contract
@@ -37,7 +37,8 @@ flowchart LR
     C -->|local pipe / socket| H["minicon GUI process<br/>bound before the window, dies with it"]
     H --> V["visible GUI<br/>capture · screenshot · ui-snapshot · send-*"]
     V --> ID["Explicit stable @ID target<br/>PTY text / keys / wait"]
-    ID -. no self @ID or agent envelope yet .-> GAP["0.2.26 B26 observer/coordination decision"]
+    ID --> SELF["Native self @ID + host incarnation check"]
+    SELF -. no typed agent envelope yet .-> GAP["0.2.26 B26 observer/coordination decision"]
     GAP --> SPEC["PRD 26.01 agent CLI normalization contract"]
     V --> SH["Screenshot: implicit visible host or explicit tab pane"]
     SH --> RESTORE["Discard scratch frame; retain latest tab and Harness destination"]
@@ -259,7 +260,12 @@ remains the input baseline.
   black box passed on Windows, including a shadow command placed earlier on
   the inherited `PATH`; removing the host's `PATH` override made it fail.
   A login shell can still rewrite `PATH`, so `MINICON_BIN` is the absolute
-  fallback. Explicit stable
+  fallback. Console children also receive `MINICON_TAB_ID` and
+  `MINICON_INSTANCE_ID`; native `--target self` carries both with the command,
+  and the host refuses a wrong incarnation or a closed tab. The Windows
+  `ordinary_console_child_reaches_its_automatic_control_endpoint` black box
+  passed self selection, wrong-instance refusal and closed-tab refusal; removing
+  the instance check made it fail. Explicit stable
   `@ID` targets let a caller enumerate tabs, capture the current PTY screen,
   send literal text, bracketed paste or keys, wait for visible text/exit, and
   request a PNG of a Console pane while a GUI window is attached. This is
@@ -267,10 +273,10 @@ remains the input baseline.
   through a PTY. `capture-pane` is the visible screen, not arbitrary scrollback;
   `mux capture-pane -S/-E` is refused. Screenshot reliability retains the
   separately tracked `{SCRSHOT-HANG}` issue below.
-- [_] reliable inside-tab agent coordination needs an explicit self @ID and
-  process-incarnation binding, plus a typed message/run envelope and receipt
-  semantics if the product promises delivery. Currently the child receives
-  the endpoint but no self tab ID; titles and row positions cannot identify it
+- [-] reliable inside-tab agent coordination now has a native self @ID and
+  process-incarnation binding on Windows evidence; it still needs cross-platform
+  qualification and a typed message/run envelope and receipt semantics before
+  promising agent delivery. Titles and row positions cannot identify a tab
   safely after rename/reorder. The control socket gives any connected local
   caller the existing full command surface, not per-agent authority. The
   [PRD 26.01](PRD_02_26_01_agent_cli_contract.md) owns the normalized CLI

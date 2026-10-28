@@ -315,6 +315,9 @@ fn ordinary_console_child_reaches_its_automatic_control_endpoint() {
     let suffix = unique_suffix();
     let endpoint_file = std::env::temp_dir().join(format!("minicon-auto-ep-{suffix}.txt"));
     let result_file = std::env::temp_dir().join(format!("minicon-auto-out-{suffix}.json"));
+    let self_file = std::env::temp_dir().join(format!("minicon-auto-self-{suffix}.txt"));
+    let self_result_file =
+        std::env::temp_dir().join(format!("minicon-auto-self-result-{suffix}.json"));
     let snapshot_file = std::env::temp_dir().join(format!("minicon-auto-snap-{suffix}.json"));
     let mut host = Command::new(&exe);
     #[cfg(unix)]
@@ -331,17 +334,19 @@ fn ordinary_console_child_reaches_its_automatic_control_endpoint() {
             "-NoLogo",
             "-NoProfile",
             "-Command",
-            "Set-Content -LiteralPath $env:MINICON_TEST_ENDPOINT -Value $env:MINICON_CONTROL; minicon cli list-tabs | Set-Content -LiteralPath $env:MINICON_TEST_RESULT",
+            "Set-Content -LiteralPath $env:MINICON_TEST_ENDPOINT -Value $env:MINICON_CONTROL; Set-Content -LiteralPath $env:MINICON_TEST_SELF -Value \"$env:MINICON_TAB_ID|$env:MINICON_INSTANCE_ID\"; minicon cli select-tab --target self | Set-Content -LiteralPath $env:MINICON_TEST_SELF_RESULT; minicon cli list-tabs | Set-Content -LiteralPath $env:MINICON_TEST_RESULT",
         ]);
     } else {
         host.args([
             "/bin/sh",
             "-c",
-            "printf '%s' \"$MINICON_CONTROL\" > \"$MINICON_TEST_ENDPOINT\"; minicon cli list-tabs > \"$MINICON_TEST_RESULT\"",
+            "printf '%s' \"$MINICON_CONTROL\" > \"$MINICON_TEST_ENDPOINT\"; printf '%s|%s' \"$MINICON_TAB_ID\" \"$MINICON_INSTANCE_ID\" > \"$MINICON_TEST_SELF\"; minicon cli select-tab --target self > \"$MINICON_TEST_SELF_RESULT\"; minicon cli list-tabs > \"$MINICON_TEST_RESULT\"",
         ]);
     }
     host.env("MINICON_TEST_ENDPOINT", &endpoint_file)
         .env("MINICON_TEST_RESULT", &result_file)
+        .env("MINICON_TEST_SELF", &self_file)
+        .env("MINICON_TEST_SELF_RESULT", &self_result_file)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
     let mut gui = OwnedGui {
@@ -374,9 +379,97 @@ fn ordinary_console_child_reaches_its_automatic_control_endpoint() {
     let outside = cli_json(&exe, endpoint, &["list-tabs"]);
     assert_eq!(outside["tabs"][0]["id"], result["tabs"][0]["id"]);
     assert_eq!(outside["tabs"][0]["kind"], result["tabs"][0]["kind"]);
+    let self_values = fs::read_to_string(&self_file).expect("child self context");
+    let (tab, instance) = self_values.trim().split_once('|').expect("tab|instance");
+    assert_eq!(tab, outside["tabs"][0]["id"].as_str().unwrap());
+    assert_eq!(instance.len(), 32);
+    let child_self: Value =
+        serde_json::from_slice(&fs::read(&self_result_file).expect("child self result"))
+            .expect("child self JSON");
+    assert_eq!(child_self["active"], tab);
+    let explicit_self = Command::new(&exe)
+        .args([
+            "cli",
+            "--control",
+            endpoint,
+            "select-tab",
+            "--target",
+            "self",
+        ])
+        .env("MINICON_TAB_ID", tab)
+        .env("MINICON_INSTANCE_ID", instance)
+        .output()
+        .expect("invoke self target");
+    assert!(
+        explicit_self.status.success(),
+        "{}",
+        error_text(&explicit_self)
+    );
+    let wrong_instance = format!("{:032x}", u128::from_str_radix(instance, 16).unwrap() ^ 1);
+    let refused = Command::new(&exe)
+        .args([
+            "cli",
+            "--control",
+            endpoint,
+            "select-tab",
+            "--target",
+            "self",
+        ])
+        .env("MINICON_TAB_ID", tab)
+        .env("MINICON_INSTANCE_ID", wrong_instance)
+        .output()
+        .expect("invoke wrong-instance self target");
+    assert!(!refused.status.success());
+    assert!(error_text(&refused).contains("another MiniCon instance"));
+    let second = cli_json(&exe, endpoint, &["new-tab"])["id"]
+        .as_str()
+        .expect("second tab id")
+        .to_owned();
+    assert_ne!(second, tab);
+    let second_deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let exported = fs::read_to_string(&self_file).unwrap_or_default();
+        let selected = fs::read(&self_result_file)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
+        if exported.trim().starts_with(&format!("{second}|"))
+            && selected
+                .as_ref()
+                .is_some_and(|value| value["active"] == second)
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < second_deadline,
+            "second tab self context missing"
+        );
+        thread::sleep(Duration::from_millis(50));
+    }
+    cli_json(&exe, endpoint, &["close-tab", "--target", tab]);
+    let stale = Command::new(&exe)
+        .args([
+            "cli",
+            "--control",
+            endpoint,
+            "select-tab",
+            "--target",
+            "self",
+        ])
+        .env("MINICON_TAB_ID", tab)
+        .env("MINICON_INSTANCE_ID", instance)
+        .output()
+        .expect("invoke stale self target");
+    assert!(!stale.status.success());
+    assert!(error_text(&stale).contains("no longer exists"));
+    assert_eq!(
+        cli_json(&exe, endpoint, &["list-tabs"])["tabs"][0]["id"],
+        second
+    );
     drop(gui);
     let _ = fs::remove_file(endpoint_file);
     let _ = fs::remove_file(result_file);
+    let _ = fs::remove_file(self_file);
+    let _ = fs::remove_file(self_result_file);
 }
 
 #[test]

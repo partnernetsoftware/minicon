@@ -38,8 +38,8 @@
 
       <h2>This is not a server</h2>
       <p>
-        <code>--control</code> binds a <em>local</em> named pipe or Unix socket
-        <em>inside the GUI process</em>, and only if you pass the flag. A second
+        Each MiniCon process binds its own <em>local</em> named pipe or Unix socket.
+        <code>--control</code> lets the caller choose its address. A second
         invocation, <code>minicon cli --control …</code>, is a short-lived client:
         it connects, sends one ATC1 request, prints JSON, and exits. Close the
         window and the endpoint is gone. There is no daemon, no default port, and
@@ -60,7 +60,7 @@
       </p>
 
       <h2>Opening an endpoint</h2>
-      <p>Start MiniCon with a control endpoint, then talk to it with the same executable:</p>
+      <p>For an outside script, start MiniCon with a known control endpoint, then talk to it with the same executable:</p>
       <pre><code>minicon --control pipe:\\.\pipe\my-session
 minicon cli --control pipe:\\.\pipe\my-session list-tabs</code></pre>
       <p>
@@ -69,8 +69,15 @@ minicon cli --control pipe:\\.\pipe\my-session list-tabs</code></pre>
         rather than silently misinterpreted.
       </p>
       <p>
-        Every command prints JSON on stdout and exits nonzero on failure, so a script can branch
-        on the exit status and parse the body without scraping prose.
+        Inside a Console tab, <code>minicon cli</code> and <code>minicon mux</code>
+        already use that tab's MiniCon process. Use
+        <code>minicon cli capture-pane --target self</code> to name the current tab;
+        a closed tab or mismatched process context is refused. Bare
+        <code>minicon</code> still starts the application. Web tabs have no shell.
+      </p>
+      <p>
+        Commands exit nonzero on failure. Output varies by command:
+        state and mutations return JSON, while <code>capture-pane</code> returns text.
       </p>
 
       <h2>Reading state</h2>

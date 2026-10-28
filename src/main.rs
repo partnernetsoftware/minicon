@@ -768,7 +768,24 @@ fn main() {
             std::process::exit(1);
         }
     };
+    let instance_id = match control::fresh_instance_id() {
+        Ok(id) => id,
+        Err(error) => {
+            let _ = minicon_platform::parent_console::write_stderr(&format!("minicon: {error}\n"));
+            std::process::exit(1);
+        }
+    };
     let mut app = ConApp::new(working_dir.clone(), Some(control_endpoint));
+    app.instance_id = Some(instance_id);
+    if let Some(tab) = app.workspace.active() {
+        let context = control::SelfContext {
+            instance: instance_id,
+            tab,
+        };
+        app.active_session_mut()
+            .expect("initial terminal")
+            .self_context = Some(context);
+    }
     // Before the window: the endpoint belongs to the process, so a bind failure
     // is a startup failure with no window to close, and a client racing startup
     // finds a listener rather than a refused connection.
@@ -1065,6 +1082,7 @@ struct ConApp {
     sidebar_resizing: bool,
     exit: bool,
     control_endpoint: Option<String>,
+    instance_id: Option<u128>,
     control_server: Option<control::ControlServer>,
     /// The event loop's waker, once a window exists to supply it.
     ///
@@ -1564,6 +1582,7 @@ impl ConApp {
             sidebar_resizing: false,
             exit: false,
             control_endpoint,
+            instance_id: None,
             control_server: None,
             waker_slot: Arc::new(Mutex::new(None)),
             attachment: None,
@@ -2520,6 +2539,9 @@ impl ConApp {
         })?;
 
         let mut session = seed.create_session();
+        session.self_context = self
+            .instance_id
+            .map(|instance| control::SelfContext { instance, tab: id });
         session.apply_theme(self.ui_theme);
         let (sidebar_width, panel_width) = self.terminal_inset_widths();
         Self::configure_host_ui(

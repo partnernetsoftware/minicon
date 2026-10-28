@@ -71,7 +71,7 @@ flowchart LR
 | Concern | Current source behavior | Contract decision |
 | --- | --- | --- |
 | Binary and endpoint | Ordinary GUI launches now generate a unique local endpoint before opening; explicit `--control` wins. Console children inherit `MINICON_CONTROL`, `MINICON_BIN` and a `PATH` prefixed with this host's executable directory. A Windows child-to-host public court passed | Qualify the default binding on macOS/Linux, plus renamed binaries and login-shell `PATH` rewrites; fail closed when unavailable |
-| Identity | `list-tabs` gives stable `@ID`; children receive no self ID; omitted native targets use the active terminal | Export a self ID and instance incarnation as convenience, validate both against the live host, and never silently guess from title/order |
+| Identity | `list-tabs` gives stable `@ID`; Console children now receive `MINICON_TAB_ID` and `MINICON_INSTANCE_ID`. Native `--target self` carries both in one ATC1 request and the host checks them against a live Console tab before dispatch. The Windows child/closed-tab/wrong-instance court passed; omitted native targets still use the active terminal | Qualify two simultaneous real instances, restart with a reused explicit endpoint, duplicate names and macOS/Linux; never guess from title/order |
 | Read/write | `capture-pane` reads visible rows; `send-text` and `send-paste` accept UTF-8 `--file`; `send-keys` targets PTY keys | Name the mode and bounds in results; distinguish accepted bytes from observed response and agent receipt |
 | Paths | capture `--output` writes on the CLI client; screenshot `--output` is currently interpreted by the GUI process | Make v2 path ownership explicit and consistent without reinterpreting a legacy relative path silently |
 | Results | Several native verbs return JSON, capture returns text, file output returns prose; failures are strings | Add opt-in versioned JSON envelope and stable exit/error mapping; retain legacy output during migration |
@@ -98,9 +98,9 @@ bounded to 1 MiB. These are current limits, not a promise of scrollback.
    unique local endpoint before its first tab starts, without requiring the
    user to supply `--control`; an explicit `--control` keeps precedence.
    Endpoint creation or bind failure stops startup with a reported error,
-   never falling back to another running instance. `--target @N` is canonical. Planned
-   `--target self` resolves from host-provided `MINICON_TAB_ID` plus an opaque
-   process-incarnation marker, then checks the live target. Those environment
+   never falling back to another running instance. `--target @N` is canonical.
+   Native `--target self` resolves from host-provided `MINICON_TAB_ID` plus
+   `MINICON_INSTANCE_ID`, then checks the live target in the same host request. Those environment
    values are context hints, not secrets or authority. Commands that omit a
    target keep their current active-terminal behavior in the legacy surface;
    the agent-facing profile requires an explicit `@ID` or `self` for writes,
@@ -156,11 +156,11 @@ bounded to 1 MiB. These are current limits, not a promise of scrollback.
 
 ## B26 tab-bound observer and peer-message decision
 
-The Console child will receive `MINICON_TAB_ID` and an opaque
-`MINICON_INSTANCE_ID` only when the host has minted a new process incarnation.
+The Console child receives `MINICON_TAB_ID` and an opaque
+`MINICON_INSTANCE_ID` minted for the current process incarnation.
 The former names its stable `@ID`; the latter distinguishes a restarted host
 even when the user reuses an explicit endpoint. These are routing hints, not
-authentication. `--target self` must carry both values in the *same* local
+authentication. `--target self` carries both values in the *same* local
 control request as the desired operation; the host checks its own incarnation,
 the live tab kind and the exact `@ID` before any side effect. A client-side
 `list-tabs` preflight is insufficient because the host could restart between

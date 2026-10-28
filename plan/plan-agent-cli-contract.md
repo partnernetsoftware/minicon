@@ -128,9 +128,12 @@ unique local process-lifetime endpoint;
 passed, and replacing its entropy result with a constant made it fail.
 The Windows public `ordinary_console_child_reaches_its_automatic_control_endpoint`
 also passed, and removing the child's endpoint made it fail with a
-missing-`MINICON_CONTROL` screen receipt. Self @ID, process incarnation,
-renamed-binary packaging and macOS/Linux native courts remain open, so A2 is
-partial. Web has no shell; a future
+missing-`MINICON_CONTROL` screen receipt. Its expanded journey now proves
+`MINICON_TAB_ID`/`MINICON_INSTANCE_ID` inside the child, native
+`--target self`, wrong-instance refusal and closed-tab refusal. Removing the
+host incarnation check made this court fail. Two simultaneous real instances,
+restart at a reused endpoint, renamed-binary packaging and macOS/Linux native
+courts remain open, so A2 is partial. Web has no shell; a future
 Harness child receives its own tab identity under the same instance-binding
 rule only after Harness tab lifecycle exists.
 

@@ -187,9 +187,9 @@ flowchart LR
 7. **Decide the inside-tab observer seam.** Assign its protocol/lifecycle owner
    outside the Home painter. A real CLI/TUI agent adapter feasibility trace
    must bind the event source to window/session incarnation and @ID and prove
-   stale/closed-tab refusal. Decide how a child learns its own @ID (today it
-   inherits only `MINICON_CONTROL`), how its `minicon` command resolves the
-   same running build, and whether typed peer messages need a
+   stale/closed-tab refusal. The child now receives an exact self @ID and host
+   incarnation for native CLI targeting; decide how a real adapter uses that
+   context, and whether typed peer messages need a
    delivery receipt beyond `send-paste`/`capture-pane`. A generic process name
    or PTY text is not enough. [PRD 26.01](../prd/PRD_02_26_01_agent_cli_contract.md)
    owns the contract; the [agent CLI plan](plan-agent-cli-contract.md) sequences
@@ -251,10 +251,12 @@ passed; global-flag and global-auth masking mutations each made it fail.
 The Windows two-Web court also passed its new parked-history assertion.
 B26 now has a selected tab-bound observer and peer-receipt boundary in
 [PRD 26.01](../prd/PRD_02_26_01_agent_cli_contract.md#b26-tab-bound-observer-and-peer-message-decision):
-`self` needs atomic host-side incarnation/@ID validation; typed adapter runs
-name source and ordered stage; host-accepted PTY input never becomes an agent
-receipt. The actual self environment/request binding, one real CLI/TUI adapter
-trace and stale/closed/restart controls are still open, so B26 remains partial.
+Native `--target self` now carries host incarnation and @ID in one request;
+the Windows child/wrong-instance/closed-tab court passed and the instance-check
+mutation failed. Typed adapter runs still need source and ordered stage;
+host-accepted PTY input never becomes an agent receipt. One real CLI/TUI
+adapter trace, two-instance/restart and other-platform controls remain open,
+so B26 remains partial.
 Search/filter/group, mixed 256-tab overflow, attention/system cards, full native
 wide/narrow/scale visual qualification and other OS courts remain required before T26 or
 the default-list cut can be marked complete. `screenshot-pane` observes the

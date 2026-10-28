@@ -9,6 +9,31 @@
 use super::*;
 
 impl ConApp {
+    fn validate_self_context(
+        &self,
+        context: Option<control::SelfContext>,
+        command: &control::CliCommand,
+    ) -> Result<(), String> {
+        let Some(context) = context else {
+            return Ok(());
+        };
+        if self.instance_id != Some(context.instance) {
+            return Err("self target belongs to another MiniCon instance".to_owned());
+        }
+        if !self.workspace.node(context.tab).is_some_and(|node| {
+            node.kind == workspace::TabKind::Terminal && self.session_for(context.tab).is_some()
+        }) {
+            return Err(format!(
+                "self terminal @{} no longer exists",
+                context.tab.get()
+            ));
+        }
+        if !command.targets_self(context.tab) {
+            return Err("self target does not match the control command".to_owned());
+        }
+        Ok(())
+    }
+
     fn reap_finished_control_screenshot(&mut self) {
         self.pending_control.reap_finished_screenshot();
     }
@@ -197,6 +222,10 @@ impl ConApp {
 
     fn dispatch_control(&mut self, window: &PixelWindow, request: control::IncomingRequest) {
         use control::CliCommand;
+        if let Err(error) = self.validate_self_context(request.self_context, &request.command) {
+            let _ = request.reply.send(Err(error));
+            return;
+        }
         self.perf_stats.sync_present_stats(window.present_stats());
         self.poll_harness_settings(window);
         if matches!(&request.command, CliCommand::UiSnapshot) && self.refresh_ime_status() {
@@ -659,8 +688,13 @@ impl ConApp {
             self.perf_stats
                 .record_control_dispatch_wait(request.reply.age_before_dispatch());
             let result = self
-                .windowless_command(&request.command)
-                .unwrap_or_else(|| Err("the window is detached; attach-gui first".to_owned()));
+                .validate_self_context(request.self_context, &request.command)
+                .and_then(|()| {
+                    self.windowless_command(&request.command)
+                        .unwrap_or_else(|| {
+                            Err("the window is detached; attach-gui first".to_owned())
+                        })
+                });
             let _ = request.reply.send(result);
         }
         if self.exit {
