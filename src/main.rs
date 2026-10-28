@@ -1798,6 +1798,10 @@ impl ConApp {
                 let _ = page.set_visible(false);
             }
             let runtime = harness_auth_ui::OrdinaryBrowser::take_current(self);
+            #[cfg(target_os = "linux")]
+            let mut runtime = runtime;
+            #[cfg(target_os = "linux")]
+            runtime.hide_parked_if_ready();
             if let Err(mut runtime) = self.parked_browsers.insert(previous, runtime) {
                 runtime.restore_current(self);
                 self.loaded_browser_id = Some(previous);

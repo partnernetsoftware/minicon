@@ -47,6 +47,7 @@ impl ProcessState {
                 && let Some(parent) = ready["parent"].as_u64().filter(|p| *p != 0)
             {
                 self.embedding = Some((pid, parent));
+                return true;
             }
         } else if let Some(shortcut) = value["shortcut"].as_str().and_then(|s| s.chars().next()) {
             if self.shortcuts.len() < 16 {
@@ -135,11 +136,15 @@ impl BrowserProcess {
             .is_ok_and(|state| state.embedding == Some((pid, parent)))
     }
 
-    pub(super) fn hide_for_release(&self, pid: u32) -> bool {
+    pub(super) fn hide_embedded(&self, pid: u32) -> bool {
         self.parent != 0
             && self.pid == pid
             && self.embedded_ready(self.parent, pid)
             && crate::browser::set_embedded_page_visible_for_process(self.parent, pid, false)
+    }
+
+    pub(super) fn hide_for_release(&self, pid: u32) -> bool {
+        self.hide_embedded(pid)
     }
 
     pub(super) fn take_state(&self) -> Option<serde_json::Value> {
@@ -413,20 +418,20 @@ mod tests {
         let mut state = ProcessState::default();
         let page = serde_json::json!({"url":"https://ordinary.invalid/live", "title":"Ordinary"});
         assert!(state.receive(page.clone(), 17));
-        state.receive(
+        assert!(!state.receive(
             serde_json::json!({"embedded_ready":{"pid":29,"parent":42}}),
             17,
-        );
+        ));
         assert_eq!(state.embedding, None);
-        state.receive(
+        assert!(!state.receive(
             serde_json::json!({"embedded_ready":{"pid":17,"parent":0}}),
             17,
-        );
+        ));
         assert_eq!(state.embedding, None);
-        state.receive(
+        assert!(state.receive(
             serde_json::json!({"embedded_ready":{"pid":17,"parent":42}}),
             17,
-        );
+        ));
         assert_eq!(state.embedding, Some((17, 42)));
         assert_eq!(state.latest, Some(page));
         let (commands, _receiver) = mpsc::sync_channel(1);

@@ -709,6 +709,9 @@ impl ConApp {
 
     #[cfg(target_os = "linux")]
     pub(super) fn drain_browser_process(&mut self, window: &PixelWindow) {
+        for (_, parked) in self.parked_browsers.entries_mut() {
+            parked.hide_parked_if_ready();
+        }
         let state = self
             .browser_process
             .as_ref()

@@ -812,6 +812,10 @@ The optional helper explicitly publishes its own PID, completes initial GTK
 mapping, synchronizes GDK and verifies parent/class/PID through the checked
 selectors before emitting the separate `embedded_ready` frame containing only
 PID and parent. It never presents that acknowledgement as a URL/title snapshot.
+The product-side helper reader wakes on a valid ready frame even when an older
+URL/title snapshot is pending, allowing the parked-tab owner to apply checked
+process-owned hide after delayed initial mapping. Invalid PID/parent ready
+frames never arm that path. Native two-page visibility remains unqualified.
 The product owns parking admission and retry meaning in PRD 31.01.02.
 The helper's older startup reparent operations still use Xlib inside the isolated
 child; the new parent selector does not certify those startup failure paths.

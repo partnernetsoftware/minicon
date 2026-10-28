@@ -360,7 +360,11 @@ names above.
   that resume made it fail. Native/helper observations, page load notes and
   timeouts now target the loaded Web @ID; stale-owner observations are refused.
   `browser_observation_updates_only_its_loaded_web_id` passed, and restoring
-  first-browser observation routing made it fail. Native
+  first-browser observation routing made it fail. On Linux, the product now
+  hides a parked helper after its checked ready frame; the helper-readiness
+  mechanism is owned in [PRD 28](PRD_02_28_shared_core.md#process-owned-linux-embedding-development-join).
+  This is not a two-page native verdict.
+  Native
   two-page host and authorization isolation evidence remains open; +W still
   focuses the existing Web tab.
 - [v] **`minicon-web` module (adopted 2026-10-23).** Browser content-panel

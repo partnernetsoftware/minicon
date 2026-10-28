@@ -14,6 +14,8 @@ pub(super) struct OrdinaryBrowser {
     process: Option<browser_process::BrowserProcess>,
     #[cfg(target_os = "linux")]
     program: Option<browser::EmbeddedPageProgram>,
+    #[cfg(target_os = "linux")]
+    parked_hidden: bool,
     #[cfg(any(target_os = "macos", windows))]
     native: Option<browser::NativePageHost>,
 }
@@ -33,6 +35,8 @@ impl OrdinaryBrowser {
             process: app.browser_process.take(),
             #[cfg(target_os = "linux")]
             program: app.browser_embedded_program.take(),
+            #[cfg(target_os = "linux")]
+            parked_hidden: false,
             #[cfg(any(target_os = "macos", windows))]
             native: app.native_browser_page.take(),
         }
@@ -56,6 +60,16 @@ impl OrdinaryBrowser {
             app.native_browser_page = self.native.take();
         }
         app.browser_visible = None;
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(super) fn hide_parked_if_ready(&mut self) {
+        if !self.parked_hidden
+            && let (Some(child), Some(process)) = (&self.page, &self.process)
+            && process.hide_embedded(child.id())
+        {
+            self.parked_hidden = true;
+        }
     }
 }
 
@@ -807,6 +821,8 @@ mod tests {
                 process: None,
                 #[cfg(target_os = "linux")]
                 program: None,
+                #[cfg(target_os = "linux")]
+                parked_hidden: false,
                 #[cfg(any(target_os = "macos", windows))]
                 native: None,
             },
