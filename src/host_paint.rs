@@ -1952,6 +1952,7 @@ impl ConApp {
                 ),
             };
             let filter = layout.home_filter_action(width, height, scale);
+            let sort = layout.home_sort_action(width, height, scale);
             paint_host_ui_text(
                 &mut surface,
                 card.x.saturating_add((12.0 * scale) as u32),
@@ -1959,10 +1960,36 @@ impl ConApp {
                 &heading,
                 t.text,
                 body_size,
-                card.width
-                    .saturating_sub((36.0 * scale) as u32)
-                    .saturating_sub(filter.width),
+                sort.x
+                    .saturating_sub(card.x.saturating_add((18.0 * scale) as u32)),
             );
+            if sort.width > 0 && sort.height > 0 {
+                surface.fill_rect(
+                    sort.x,
+                    sort.y,
+                    sort.width,
+                    sort.height,
+                    t.canvas_bg.to_xrgb(),
+                );
+                stroke_rect(&mut surface, sort, 1, t.border);
+                let sort_label = match (self.ui_language, self.home_sort) {
+                    (ui::UiLanguage::English, HomeSort::Tree) => "Tree ›",
+                    (ui::UiLanguage::English, HomeSort::Label) => "Name ›",
+                    (ui::UiLanguage::ChineseSimplified, HomeSort::Tree) => "树序 ›",
+                    (ui::UiLanguage::ChineseSimplified, HomeSort::Label) => "名称 ›",
+                    (ui::UiLanguage::ChineseTraditional, HomeSort::Tree) => "樹序 ›",
+                    (ui::UiLanguage::ChineseTraditional, HomeSort::Label) => "名稱 ›",
+                };
+                paint_host_ui_text(
+                    &mut surface,
+                    sort.x.saturating_add((5.0 * scale) as u32),
+                    sort.y.saturating_add((4.0 * scale) as u32),
+                    sort_label,
+                    t.text,
+                    scaled_host_ui_font(11, self.session_seed.font_size_logical(), scale),
+                    sort.width.saturating_sub((10.0 * scale) as u32),
+                );
+            }
             if filter.width > 0 && filter.height > 0 {
                 surface.fill_rect(
                     filter.x,

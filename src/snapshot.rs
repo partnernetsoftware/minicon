@@ -269,6 +269,7 @@ impl ConApp {
                                 ("home_tab_count", self.workspace.nodes().len().into()),
                                 ("home_visible_count", home_nodes.len().into()),
                                 ("home_kind_filter", self.home_kind_filter.key().into()),
+                                ("home_sort", self.home_sort.key().into()),
                                 (
                                     "home_search",
                                     rect_obj(layout.home_search(
@@ -285,6 +286,14 @@ impl ConApp {
                                 (
                                     "home_filter_action",
                                     rect_obj(layout.home_filter_action(
+                                        metrics.physical_width,
+                                        metrics.physical_height,
+                                        metrics.scale_factor,
+                                    )),
+                                ),
+                                (
+                                    "home_sort_action",
+                                    rect_obj(layout.home_sort_action(
                                         metrics.physical_width,
                                         metrics.physical_height,
                                         metrics.scale_factor,

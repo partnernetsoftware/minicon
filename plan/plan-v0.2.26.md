@@ -235,8 +235,10 @@ exact `@ID` queries, kind composition, hidden-tab attention, Escape and
 wide/narrow captures. Removing query filtering made it fail. A hidden live
 selection now offers Show filtered tab: the Windows kind-filter court passed
 pointer reveal without leaving @0, and the search court passed Enter reveal;
-closed targets remain disabled. Sorting/grouping and other 256-tab interaction
-modes remain open; T26 stays partial.
+closed targets remain disabled. Tree/Name sorting now has a Windows mixed-tab
+pointer/focus court and a 500×650 native capture; the behavior receipt is owned
+by [PRD 39.01](../prd/PRD_02_39_01_home_canvas.md). Attention/Last observed
+sorts, grouping and other 256-tab interaction modes remain open; T26 stays partial.
 W26 has its Workspace identity prerequisite: distinct browser roots can
 now be allocated and closed independently in the product model. Internal
 runtime parking also preserves each Web @ID's address, proxy, navigation
@@ -286,7 +288,7 @@ exact @ID, host observation time and exit code; the Home header selects the
 newest item for inspection. The Windows native court passed and a wrong-target
 mutation failed; closing the tab removes the item. Mixed severity/source
 deduplication, actionable counts, provider/gateway routing and measured system
-cards remain open. Sort/group, remaining 256-tab interaction modes, full native
+cards remain open. Remaining sort/group modes, 256-tab interaction modes, full native
 wide/narrow/scale visual qualification and other OS courts remain required before T26 or
 the default-list cut can be marked complete. `screenshot-pane` observes the
 underlying Console pane on @0 and is not a Home capture receipt.

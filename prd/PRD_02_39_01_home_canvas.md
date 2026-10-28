@@ -109,8 +109,20 @@ The same court also exercises +W and Home New Web at capacity, then Home New
 Web after releasing one slot; [PRD 25](PRD_02_25_con_workspace.md) owns that
 creation and notice result.
 This qualifies Windows keyboard/search overflow for that tab-kind and child
-state mix. Sorting, grouping, 256-tab wheel/scrollbar drag, live-child mix and
+state mix. Other sort modes, grouping, 256-tab wheel/scrollbar drag, live-child mix and
 other-platform qualification remain open.
+The development List now offers Tree order and Name sort from one shared
+visible-@ID projection. Name compares the rendered tab label case-insensitively
+and breaks ties by stable @ID; sorting changes neither Workspace topology nor
+the selected tab. The Windows native
+`native_home_label_sort_changes_view_without_changing_tab_tree` court passed
+mixed Console/Web order, pointer selection and focus, Home return, kind-filter
+composition and unchanged `list-tabs` tree order. Disabling the sort transition
+made it fail. A native 500×650 capture shows the separate Name and kind controls
+without overlap. Attention and Last observed sorts remain unoffered until their
+source/freshness projections are complete; grouping and 256-tab sorted
+interaction remain open. The 256-tab court also passed Name order's first Web
+@ID and tied Console @ID, then restored Tree order before its End-key journey.
 
 ## Outcome tree DAG
 

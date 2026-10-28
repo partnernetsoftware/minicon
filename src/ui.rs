@@ -877,6 +877,20 @@ impl Layout {
         }
     }
 
+    pub fn home_sort_action(self, width: u32, height: u32, scale: f64) -> Rect {
+        let filter = self.home_filter_action(width, height, scale);
+        let fleet = self.home_fleet(width, height, scale);
+        let gap = dip(6.0, scale);
+        let left = fleet.x.saturating_add(dip(12.0, scale));
+        let width = dip(76.0, scale).min(filter.x.saturating_sub(left.saturating_add(gap)));
+        Rect {
+            x: filter.x.saturating_sub(gap.saturating_add(width)),
+            y: filter.y,
+            width,
+            height: filter.height,
+        }
+    }
+
     pub fn home_search(self, width: u32, height: u32, scale: f64) -> Rect {
         let fleet = self.home_fleet(width, height, scale);
         let inspector = self.home_inspector(width, height, scale);

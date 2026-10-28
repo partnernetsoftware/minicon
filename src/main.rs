@@ -1037,6 +1037,7 @@ struct ConApp {
     home_active: bool,
     home_list_start: usize,
     home_kind_filter: HomeKindFilter,
+    home_sort: HomeSort,
     home_search: composer::ComposerState,
     home_scroll_drag: Option<ScrollbarThumbDrag>,
     home_selected_id: Option<workspace::TabId>,
@@ -1436,6 +1437,29 @@ enum HomeKindFilter {
     Web,
 }
 
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
+enum HomeSort {
+    #[default]
+    Tree,
+    Label,
+}
+
+impl HomeSort {
+    fn next(self) -> Self {
+        match self {
+            Self::Tree => Self::Label,
+            Self::Label => Self::Tree,
+        }
+    }
+
+    fn key(self) -> &'static str {
+        match self {
+            Self::Tree => "tree",
+            Self::Label => "label",
+        }
+    }
+}
+
 impl HomeKindFilter {
     fn next(self) -> Self {
         match self {
@@ -1542,7 +1566,8 @@ impl ConApp {
 
     fn home_visible_nodes(&self) -> Vec<&workspace::TabNode> {
         let query = self.home_search.text.trim().to_lowercase();
-        self.workspace
+        let mut nodes: Vec<_> = self
+            .workspace
             .nodes()
             .iter()
             .filter(|node| {
@@ -1563,7 +1588,19 @@ impl ConApp {
                 );
                 label.to_lowercase().contains(&query)
             })
-            .collect()
+            .collect();
+        if self.home_sort == HomeSort::Label {
+            nodes.sort_by_cached_key(|node| {
+                let session = self.session_for(node.id);
+                let label = host_paint::tree_row_name(
+                    node.custom_title.as_deref(),
+                    session.map(|terminal| terminal.program_label()),
+                    &node.title,
+                );
+                (label.to_lowercase(), node.id)
+            });
+        }
+        nodes
     }
 
     fn home_selected_hidden_by_filter(&self) -> bool {
@@ -1733,6 +1770,7 @@ impl ConApp {
             home_active: false,
             home_list_start: 0,
             home_kind_filter: HomeKindFilter::All,
+            home_sort: HomeSort::Tree,
             home_search: composer::ComposerState::default(),
             home_scroll_drag: None,
             home_selected_id: None,
@@ -5241,6 +5279,16 @@ impl PixelWindowApplication for ConApp {
                         let _ = window.set_pointer_capture(false);
                     }
                     self.home_kind_filter = self.home_kind_filter.next();
+                    self.home_list_start = 0;
+                    self.mark_host_ui_full_and_repaint(window);
+                } else if layout
+                    .home_sort_action(metrics.physical_width, metrics.physical_height, scale)
+                    .contains(x, y)
+                {
+                    if self.home_scroll_drag.take().is_some() {
+                        let _ = window.set_pointer_capture(false);
+                    }
+                    self.home_sort = self.home_sort.next();
                     self.home_list_start = 0;
                     self.mark_host_ui_full_and_repaint(window);
                 } else if layout

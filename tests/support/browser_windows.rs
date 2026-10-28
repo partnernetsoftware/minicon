@@ -1014,6 +1014,13 @@ fn native_home_256_mixed_tabs_keep_exact_overflow_targets() {
         .unwrap()
         .len();
     assert!(capacity > 0 && capacity < 256);
+    host.click_geometry("home_sort_action");
+    let sorted = host.cli(&["ui-snapshot"]);
+    assert_eq!(sorted["geometry"]["home_sort"], "label");
+    assert_eq!(sorted["geometry"]["home_list_row_ids"][0], web);
+    assert_eq!(sorted["geometry"]["home_list_row_ids"][1], first);
+    host.click_geometry("home_sort_action");
+    assert_eq!(host.cli(&["ui-snapshot"])["geometry"]["home_sort"], "tree");
     host.cli(&["send-ui-keys", "End"]);
     let end = host.cli(&["ui-snapshot"]);
     assert_eq!(end["geometry"]["home_selected_id"], web);
@@ -1365,6 +1372,87 @@ fn native_home_kind_filter_keeps_exact_rows_and_global_exit_attention() {
     assert_eq!(empty_web["geometry"]["home_reveal_tab"], Value::Null);
     host.click_geometry("home_focus_tab");
     assert_eq!(host.cli(&["ui-snapshot"])["geometry"]["home_active"], true);
+    host.close_and_wait();
+}
+
+#[cfg(windows)]
+#[test]
+#[ignore = "requires a native desktop; run the explicit Home sort court"]
+fn native_home_label_sort_changes_view_without_changing_tab_tree() {
+    let mut host = BrowserGui::spawn(false, None, None);
+    let first = host.cli(&["list-tabs"])["tabs"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let second = host.cli(&["new-tab"])["id"].as_str().unwrap().to_owned();
+    let web = host.open_browser_directly()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    host.click_geometry("home");
+    let tree = host.cli(&["ui-snapshot"]);
+    assert_eq!(tree["geometry"]["home_sort"], "tree");
+    assert_eq!(tree["geometry"]["home_list_row_ids"][0], first);
+    assert_eq!(tree["geometry"]["home_list_row_ids"][1], second);
+    assert_eq!(tree["geometry"]["home_list_row_ids"][2], web);
+
+    host.click_geometry("home_sort_action");
+    let sorted = host.cli(&["ui-snapshot"]);
+    assert_eq!(sorted["geometry"]["home_sort"], "label");
+    assert_eq!(sorted["geometry"]["home_list_row_ids"][0], web);
+    assert_eq!(sorted["geometry"]["home_list_row_ids"][1], first);
+    assert_eq!(sorted["geometry"]["home_list_row_ids"][2], second);
+    host.cli(&["resize-window", "--width", "500", "--height", "650"]);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let narrow = loop {
+        let snapshot = host.cli(&["ui-snapshot"]);
+        if snapshot["geometry"]["frame"]["width"] == 500 {
+            break snapshot;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "narrow sorted Home did not settle"
+        );
+        thread::sleep(Duration::from_millis(25));
+    };
+    let sort = &narrow["geometry"]["home_sort_action"];
+    let filter = &narrow["geometry"]["home_filter_action"];
+    assert!(sort["width"].as_u64().unwrap() > 0);
+    assert!(
+        sort["x"].as_u64().unwrap() + sort["width"].as_u64().unwrap()
+            < filter["x"].as_u64().unwrap()
+    );
+    thread::sleep(Duration::from_millis(250));
+    println!(
+        "Home sorted narrow capture: {}",
+        host.capture_home_client("home-sort-narrow.png").display()
+    );
+    host.click_geometry_row("home_list_row_rects", 0);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["home_selected_id"],
+        web
+    );
+    host.click_geometry("home_focus_tab");
+    assert_eq!(host.cli(&["list-tabs"])["tabs"][2]["active"], true);
+    host.click_geometry("home");
+    let persisted = host.cli(&["ui-snapshot"]);
+    assert_eq!(persisted["geometry"]["home_sort"], "label");
+    assert_eq!(persisted["geometry"]["home_list_row_ids"][0], web);
+    let tree_unchanged = host.cli(&["list-tabs"]);
+    assert_eq!(tree_unchanged["tabs"][0]["id"], first);
+    assert_eq!(tree_unchanged["tabs"][1]["id"], second);
+    assert_eq!(tree_unchanged["tabs"][2]["id"], web);
+
+    host.click_geometry("home_filter_action");
+    let consoles = host.cli(&["ui-snapshot"]);
+    assert_eq!(consoles["geometry"]["home_kind_filter"], "console");
+    assert_eq!(consoles["geometry"]["home_sort"], "label");
+    assert_eq!(consoles["geometry"]["home_list_row_ids"][0], first);
+    assert_eq!(consoles["geometry"]["home_list_row_ids"][1], second);
+    host.click_geometry("home_sort_action");
+    let restored = host.cli(&["ui-snapshot"]);
+    assert_eq!(restored["geometry"]["home_sort"], "tree");
+    assert_eq!(restored["geometry"]["home_list_row_ids"][0], first);
     host.close_and_wait();
 }
 
