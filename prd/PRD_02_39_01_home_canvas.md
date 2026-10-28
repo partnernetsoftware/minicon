@@ -453,6 +453,20 @@ unknown, listening/port, stopped and unavailable mappings, and a false-Stopped
 mutation made it fail. Request attention, stale runtime observation and
 other-platform courts remain open.
 
+A listener bind error now contributes one component-scoped `local-api-listener`
+attention item ahead of informational child exits. Its public record names the
+Runtime View source, error severity, host reception time and `open-harness`
+action, with no tab ID or private error text. The Home rail prints a fixed UTC
+observation time and opens Harness; a successful retry resolves the item.
+`native_home_gateway_is_unknown_until_cached_runtime_and_routes_to_harness`
+also passed a real port-collision → error alert → Harness inspection → retry →
+alert removal journey while an exited Console child remained present. The error
+led the informational exit; after recovery the exit became the primary item
+and still selected its exact @ID. Removing the error-status admission made that
+native court fail. The quiet state and public coverage now name both child exits and
+local API listener errors. Request failures, other provider/account alerts and
+cross-source deduplication remain open.
+
 The Home adapter reads bounded projections from the owning workspace, PRD 36
 and any accepted telemetry seam. It must not copy credentials, proxy addresses,
 raw PTY lines, private task output, unrestricted model text or page URLs into

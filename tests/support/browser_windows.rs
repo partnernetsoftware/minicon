@@ -1232,8 +1232,48 @@ fn native_home_gateway_is_unknown_until_cached_runtime_and_routes_to_harness() {
     assert_eq!(gateway["port"], Value::Null);
     assert!(gateway["observed_at_unix_ms"].as_u64().unwrap() > 0);
     let stopped_at = gateway["observed_at_unix_ms"].as_u64().unwrap();
+    let exited = host.cli(&["list-tabs"])["tabs"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    host.cli(&["send-text", "--target", &exited, "exit 7\r"]);
+    assert_eq!(
+        host.cli(&["wait-tab-exit", "--target", &exited])["child_exit_code"],
+        7
+    );
     host.click_geometry("home_gateway_action");
     open_harness(&host);
+    let collision = std::net::TcpListener::bind(("127.0.0.1", port)).unwrap();
+    click_harness(&host, "listener_actions", 0);
+    wait_harness(&host, |state| state["listener"] == "error");
+    host.click_geometry("settings");
+    host.click_geometry("harness_entry");
+    let failed = host.cli(&["ui-snapshot"]);
+    assert_eq!(failed["geometry"]["home_gateway"]["status"], "error");
+    let attention = &failed["geometry"]["home_attention_items"][0];
+    assert_eq!(attention["key"], "local-api-listener");
+    assert_eq!(attention["source"], "harness-runtime-view");
+    assert_eq!(attention["severity"], "error");
+    assert_eq!(attention["tab_id"], Value::Null);
+    assert_eq!(attention["component"], "local-api");
+    assert_eq!(attention["action"], "open-harness");
+    assert!(attention["observed_at_unix_ms"].as_u64().unwrap() >= stopped_at);
+    assert_eq!(
+        failed["geometry"]["home_attention_items"][1]["tab_id"],
+        exited
+    );
+    println!(
+        "Home gateway error attention: {}",
+        host.capture_home_client("home-gateway-error-attention.png")
+            .display()
+    );
+    host.click_geometry("home_attention_action");
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["harness_workspace"]["active"],
+        true
+    );
+    open_harness(&host);
+    drop(collision);
     click_harness(&host, "listener_actions", 0);
     let listening = wait_harness(&host, |state| state["listener"] == "listening");
     assert_eq!(listening["actual_port"], port);
@@ -1257,6 +1297,17 @@ fn native_home_gateway_is_unknown_until_cached_runtime_and_routes_to_harness() {
     assert_eq!(gateway["port"], port);
     assert_eq!(gateway["reason"], Value::Null);
     assert!(gateway["observed_at_unix_ms"].as_u64().unwrap() >= stopped_at);
+    let recovered_items = running["geometry"]["home_attention_items"]
+        .as_array()
+        .unwrap();
+    assert_eq!(recovered_items.len(), 1);
+    assert_eq!(recovered_items[0]["source"], "terminal-child");
+    assert_eq!(recovered_items[0]["tab_id"], exited);
+    host.click_geometry("home_attention_action");
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["home_selected_id"],
+        exited
+    );
     host.click_geometry("home_gateway_action");
     open_harness(&host);
     click_harness(&host, "listener_actions", 1);
@@ -1652,7 +1703,7 @@ fn native_home_child_exit_attention_inspects_exact_tab_and_resolves_on_close() {
         .unwrap();
     assert_eq!(
         before["geometry"]["home_attention_coverage"],
-        "terminal-child-exit-only"
+        "terminal-child-exit+local-api-listener-error"
     );
     assert_eq!(before["geometry"]["home_attention_status"], "observed");
     assert_eq!(items.len(), 1);

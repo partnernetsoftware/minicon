@@ -442,10 +442,13 @@ impl ConApp {
                                         metrics.scale_factor,
                                     )),
                                 ),
-                                ("home_attention_coverage", "terminal-child-exit-only".into()),
+                                (
+                                    "home_attention_coverage",
+                                    "terminal-child-exit+local-api-listener-error".into(),
+                                ),
                                 (
                                     "home_attention_status",
-                                    (if self.home_exit_attention().is_empty() {
+                                    (if self.home_attention().is_empty() {
                                         "none-observed"
                                     } else {
                                         "observed"
@@ -455,31 +458,47 @@ impl ConApp {
                                 (
                                     "home_attention_items",
                                     json::JsonValue::Array(
-                                        self.home_exit_attention()
+                                        self.home_attention()
                                             .into_iter()
-                                            .map(|item| {
-                                                json::object(vec![
-                                                    (
-                                                        "key",
-                                                        format!(
-                                                            "terminal-child-exit:@{}",
-                                                            item.tab.get()
-                                                        )
-                                                        .into(),
-                                                    ),
-                                                    ("source", "terminal-child".into()),
-                                                    ("severity", "info".into()),
-                                                    ("tab_id", tab_id_json(Some(item.tab))),
-                                                    (
-                                                        "child_exit_code",
-                                                        exit_code_json(item.exit_code),
-                                                    ),
-                                                    (
-                                                        "observed_at_unix_ms",
-                                                        observed_unix_millis(item.observed_at),
-                                                    ),
-                                                    ("action", "inspect-tab".into()),
-                                                ])
+                                            .map(|item| match item {
+                                                HomeAttention::ListenerError { observed_at } => {
+                                                    json::object(vec![
+                                                        ("key", "local-api-listener".into()),
+                                                        ("source", "harness-runtime-view".into()),
+                                                        ("severity", "error".into()),
+                                                        ("tab_id", json::JsonValue::Null),
+                                                        ("component", "local-api".into()),
+                                                        (
+                                                            "observed_at_unix_ms",
+                                                            observed_unix_millis(Some(observed_at)),
+                                                        ),
+                                                        ("action", "open-harness".into()),
+                                                    ])
+                                                }
+                                                HomeAttention::ChildExit(item) => {
+                                                    json::object(vec![
+                                                        (
+                                                            "key",
+                                                            format!(
+                                                                "terminal-child-exit:@{}",
+                                                                item.tab.get()
+                                                            )
+                                                            .into(),
+                                                        ),
+                                                        ("source", "terminal-child".into()),
+                                                        ("severity", "info".into()),
+                                                        ("tab_id", tab_id_json(Some(item.tab))),
+                                                        (
+                                                            "child_exit_code",
+                                                            exit_code_json(item.exit_code),
+                                                        ),
+                                                        (
+                                                            "observed_at_unix_ms",
+                                                            observed_unix_millis(item.observed_at),
+                                                        ),
+                                                        ("action", "inspect-tab".into()),
+                                                    ])
+                                                }
                                             })
                                             .collect(),
                                     ),

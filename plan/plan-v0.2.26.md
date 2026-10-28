@@ -308,6 +308,13 @@ native court passed with a local HTTP 200 model-list request and narrow capture;
 a wrong-listening-status mutation failed. The state-mapping test also passed,
 with a false-Stopped mutation failure. Request attention and stale runtime
 observation still need source-backed courts.
+The A26 attention rail now admits a source-backed local API listener error
+before child-exit notices, routes it to Harness and removes it after a real
+retry. The port-collision native journey kept an exited Console child as a
+second item, then restored that exact @ID as the primary route; the
+status-admission mutation failed;
+the existing exact-tab child-exit court still passes. Request failure,
+account/provider alerts and mixed-source deduplication remain open.
 Mixed severity/source deduplication, actionable counts, provider/gateway
 routing and whole-machine or other-platform resource courts remain open.
 Remaining sort/group modes, 256-tab interaction modes, full native

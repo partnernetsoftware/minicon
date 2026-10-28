@@ -2240,8 +2240,12 @@ impl ConApp {
                     filter.width.saturating_sub((10.0 * scale) as u32),
                 );
             }
-            if let Some(attention) = self.home_exit_attention().first().copied() {
-                let age = attention.observed_at.and_then(|at| {
+            if let Some(attention) = self.home_attention().first().copied() {
+                let observed_at = match attention {
+                    HomeAttention::ListenerError { observed_at } => Some(observed_at),
+                    HomeAttention::ChildExit(item) => item.observed_at,
+                };
+                let age = observed_at.and_then(|at| {
                     SystemTime::now()
                         .duration_since(at)
                         .ok()
@@ -2257,15 +2261,41 @@ impl ConApp {
                         }
                     },
                 );
-                let label = match self.ui_language {
-                    ui::UiLanguage::English => {
-                        format!("@{} exited · {age} ago · Inspect", attention.tab.get())
+                let fixed_time = observed_at.and_then(|at| {
+                    at.duration_since(UNIX_EPOCH).ok().map(|elapsed| {
+                        let utc = minicon_platform::contract::local_clock::civil_from_unix_seconds(
+                            elapsed.as_secs().min(i64::MAX as u64) as i64,
+                        );
+                        format!("{:02}:{:02}Z", utc.hour, utc.minute)
+                    })
+                });
+                let label = match (attention, self.ui_language) {
+                    (HomeAttention::ListenerError { .. }, ui::UiLanguage::English) => {
+                        format!(
+                            "Local API error · {} · Harness ›",
+                            fixed_time.as_deref().unwrap_or("?")
+                        )
                     }
-                    ui::UiLanguage::ChineseSimplified => {
-                        format!("@{} 已退出 · {age}前 · 检查", attention.tab.get())
+                    (HomeAttention::ListenerError { .. }, ui::UiLanguage::ChineseSimplified) => {
+                        format!(
+                            "本地 API 出错 · {} · Harness ›",
+                            fixed_time.as_deref().unwrap_or("?")
+                        )
                     }
-                    ui::UiLanguage::ChineseTraditional => {
-                        format!("@{} 已結束 · {age}前 · 檢查", attention.tab.get())
+                    (HomeAttention::ListenerError { .. }, ui::UiLanguage::ChineseTraditional) => {
+                        format!(
+                            "本地 API 出錯 · {} · Harness ›",
+                            fixed_time.as_deref().unwrap_or("?")
+                        )
+                    }
+                    (HomeAttention::ChildExit(item), ui::UiLanguage::English) => {
+                        format!("@{} exited · {age} ago · Inspect", item.tab.get())
+                    }
+                    (HomeAttention::ChildExit(item), ui::UiLanguage::ChineseSimplified) => {
+                        format!("@{} 已退出 · {age}前 · 检查", item.tab.get())
+                    }
+                    (HomeAttention::ChildExit(item), ui::UiLanguage::ChineseTraditional) => {
+                        format!("@{} 已結束 · {age}前 · 檢查", item.tab.get())
                     }
                 };
                 let action = layout.home_attention_action(width, height, scale);
@@ -2280,9 +2310,9 @@ impl ConApp {
                 );
             } else {
                 let label = match self.ui_language {
-                    ui::UiLanguage::English => "Child exits: none",
-                    ui::UiLanguage::ChineseSimplified => "终端退出：无",
-                    ui::UiLanguage::ChineseTraditional => "終端結束：無",
+                    ui::UiLanguage::English => "Child/API alerts: none",
+                    ui::UiLanguage::ChineseSimplified => "终端/API 告警：无",
+                    ui::UiLanguage::ChineseTraditional => "終端/API 告警：無",
                 };
                 let action = layout.home_attention_action(width, height, scale);
                 paint_host_ui_text(

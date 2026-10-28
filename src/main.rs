@@ -1433,6 +1433,12 @@ struct HomeExitAttention {
 }
 
 #[derive(Clone, Copy)]
+enum HomeAttention {
+    ListenerError { observed_at: SystemTime },
+    ChildExit(HomeExitAttention),
+}
+
+#[derive(Clone, Copy)]
 struct HomeSystemSample {
     observed_at: SystemTime,
     process: Result<
@@ -1586,6 +1592,22 @@ fn ime_status_json(status: Option<&minicon_platform::ime::ImeStatus>) -> json::J
 }
 
 impl ConApp {
+    fn home_attention(&self) -> Vec<HomeAttention> {
+        let mut items = Vec::new();
+        let gateway = self.home_gateway_observation();
+        if gateway.status == "error"
+            && let Some(observed_at) = gateway.observed_at
+        {
+            items.push(HomeAttention::ListenerError { observed_at });
+        }
+        items.extend(
+            self.home_exit_attention()
+                .into_iter()
+                .map(HomeAttention::ChildExit),
+        );
+        items
+    }
+
     fn home_exit_attention(&self) -> Vec<HomeExitAttention> {
         let mut items: Vec<_> = self
             .workspace
@@ -5363,10 +5385,17 @@ impl PixelWindowApplication for ConApp {
                 } else if layout
                     .home_attention_action(metrics.physical_width, metrics.physical_height, scale)
                     .contains(x, y)
-                    && let Some(attention) = self.home_exit_attention().first()
+                    && let Some(attention) = self.home_attention().first()
                 {
-                    self.home_selected_id = Some(attention.tab);
-                    self.mark_host_ui_full_and_repaint(window);
+                    match attention {
+                        HomeAttention::ListenerError { .. } => {
+                            self.toggle_harness_workspace(window)?;
+                        }
+                        HomeAttention::ChildExit(item) => {
+                            self.home_selected_id = Some(item.tab);
+                            self.mark_host_ui_full_and_repaint(window);
+                        }
+                    }
                 } else if layout
                     .home_focus_action(metrics.physical_width, metrics.physical_height, scale)
                     .contains(x, y)
