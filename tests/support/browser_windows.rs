@@ -123,8 +123,14 @@ impl BrowserGui {
             NativeCaptureArea::Client {
                 left: 0,
                 top: 0,
-                width: geometry["frame"]["width"].as_i64().unwrap() as i32,
-                height: geometry["frame"]["height"].as_i64().unwrap() as i32,
+                width: geometry["frame"]["width"]
+                    .as_i64()
+                    .unwrap_or_else(|| panic!("Home frame width missing: {geometry}"))
+                    as i32,
+                height: geometry["frame"]["height"]
+                    .as_i64()
+                    .unwrap_or_else(|| panic!("Home frame height missing: {geometry}"))
+                    as i32,
             },
         )
         .expect("capture Home client");
@@ -1082,6 +1088,105 @@ fn native_home_child_exit_attention_inspects_exact_tab_and_resolves_on_close() {
     );
     assert_eq!(resolved["geometry"]["home_selected_stale"], true);
     assert_eq!(host.cli(&["list-tabs"])["tabs"][0]["id"], survivor);
+    host.close_and_wait();
+}
+
+#[cfg(windows)]
+#[test]
+#[ignore = "requires a native desktop; run the explicit Home kind-filter court"]
+fn native_home_kind_filter_keeps_exact_rows_and_global_exit_attention() {
+    let mut host = BrowserGui::spawn(false, None, None);
+    let exited = host.cli(&["list-tabs"])["tabs"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let console = host.cli(&["new-tab"])["id"].as_str().unwrap().to_owned();
+    let web = host.open_browser_directly()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    host.cli(&["send-text", "--target", &exited, "exit 7\r"]);
+    assert_eq!(
+        host.cli(&["wait-tab-exit", "--target", &exited])["child_exit_code"],
+        7
+    );
+    host.click_geometry("home");
+    let all = host.cli(&["ui-snapshot"]);
+    assert_eq!(all["geometry"]["home_kind_filter"], "all");
+    assert_eq!(all["geometry"]["home_visible_count"], 3);
+    assert_eq!(all["geometry"]["home_tab_count"], 3);
+    host.click_geometry("home_filter_action");
+    let consoles = host.cli(&["ui-snapshot"]);
+    assert_eq!(consoles["geometry"]["home_kind_filter"], "console");
+    assert_eq!(consoles["geometry"]["home_visible_count"], 2);
+    assert_eq!(consoles["geometry"]["home_list_row_ids"][0], exited);
+    assert_eq!(consoles["geometry"]["home_list_row_ids"][1], console);
+    host.click_geometry("home_filter_action");
+    let webs = host.cli(&["ui-snapshot"]);
+    assert_eq!(webs["geometry"]["home_kind_filter"], "web");
+    assert_eq!(webs["geometry"]["home_visible_count"], 1);
+    assert_eq!(webs["geometry"]["home_list_row_ids"][0], web);
+    assert_eq!(
+        webs["geometry"]["home_attention_items"][0]["tab_id"],
+        exited
+    );
+    println!(
+        "Home filtered capture: {}",
+        host.capture_home_client("home-filter-web.png").display()
+    );
+    host.cli(&["resize-window", "--width", "500", "--height", "650"]);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while host.cli(&["ui-snapshot"])["geometry"]["frame"]["width"] != 500 {
+        assert!(
+            Instant::now() < deadline,
+            "narrow filtered Home did not settle"
+        );
+        thread::sleep(Duration::from_millis(25));
+    }
+    thread::sleep(Duration::from_millis(250));
+    println!(
+        "Home narrow filtered capture: {}",
+        host.capture_home_client("home-filter-web-narrow.png")
+            .display()
+    );
+    host.click_geometry("home_attention_action");
+    let hidden_inspector = host.cli(&["ui-snapshot"]);
+    assert_eq!(hidden_inspector["geometry"]["home_selected_id"], exited);
+    assert_eq!(hidden_inspector["geometry"]["home_kind_filter"], "web");
+    assert_eq!(
+        hidden_inspector["geometry"]["home_selected_hidden_by_filter"],
+        true
+    );
+    host.click_geometry_row("home_list_row_rects", 0);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["home_selected_id"],
+        web
+    );
+    host.click_geometry("home_filter_action");
+    let restored = host.cli(&["ui-snapshot"]);
+    assert_eq!(restored["geometry"]["home_kind_filter"], "all");
+    assert_eq!(restored["geometry"]["home_visible_count"], 3);
+    assert_eq!(restored["geometry"]["home_selected_id"], web);
+    assert_eq!(
+        restored["geometry"]["home_selected_hidden_by_filter"],
+        false
+    );
+    host.click_geometry("home_filter_action");
+    host.click_geometry("home_filter_action");
+    host.cli(&["close-tab", "--target", &web]);
+    let empty_web = host.cli(&["ui-snapshot"]);
+    assert_eq!(empty_web["geometry"]["home_kind_filter"], "web");
+    assert_eq!(empty_web["geometry"]["home_visible_count"], 0);
+    assert!(
+        empty_web["geometry"]["home_list_row_ids"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        empty_web["geometry"]["home_attention_items"][0]["tab_id"],
+        exited
+    );
     host.close_and_wait();
 }
 

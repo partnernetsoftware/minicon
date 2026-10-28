@@ -215,6 +215,15 @@ impl ConApp {
                     .or_else(|| Some(json::object(vec![])))
                     .map(|mut geometry| {
                         if let json::JsonValue::Object(fields) = &mut geometry {
+                            if !fields.iter().any(|(name, _)| *name == "frame") {
+                                fields.push((
+                                    "frame",
+                                    json::object(vec![
+                                        ("width", metrics.physical_width.into()),
+                                        ("height", metrics.physical_height.into()),
+                                    ]),
+                                ));
+                            }
                             if !fields.iter().any(|(name, _)| *name == "scale_permille") {
                                 fields.push((
                                     "scale_permille",
@@ -233,9 +242,10 @@ impl ConApp {
                                 metrics.physical_height,
                                 metrics.scale_factor,
                             );
+                            let home_nodes = self.home_visible_nodes();
                             let home_start = ui::clamp_tree_scroll(
                                 self.home_list_start,
-                                self.workspace.nodes().len(),
+                                home_nodes.len(),
                                 home_capacity,
                             );
                             fields.extend([
@@ -253,6 +263,16 @@ impl ConApp {
                                 ),
                                 ("home_list_start", home_start.into()),
                                 ("home_tab_count", self.workspace.nodes().len().into()),
+                                ("home_visible_count", home_nodes.len().into()),
+                                ("home_kind_filter", self.home_kind_filter.key().into()),
+                                (
+                                    "home_filter_action",
+                                    rect_obj(layout.home_filter_action(
+                                        metrics.physical_width,
+                                        metrics.physical_height,
+                                        metrics.scale_factor,
+                                    )),
+                                ),
                                 (
                                     "home_list_scrollbar",
                                     rect_obj(layout.home_list_scrollbar(
@@ -263,9 +283,7 @@ impl ConApp {
                                 ),
                                 (
                                     "home_list_scrollbar_visible",
-                                    (self.workspace.nodes().len() > home_capacity
-                                        && home_capacity > 0)
-                                        .into(),
+                                    (home_nodes.len() > home_capacity && home_capacity > 0).into(),
                                 ),
                                 ("home_list_scrollbar_thumb", {
                                     let thumb = ui::home_list_scrollbar_geometry(
@@ -274,7 +292,7 @@ impl ConApp {
                                         metrics.physical_height,
                                         metrics.scale_factor,
                                         home_start,
-                                        self.workspace.nodes().len(),
+                                        home_nodes.len(),
                                     )
                                     .thumb;
                                     json::object(vec![
@@ -285,6 +303,15 @@ impl ConApp {
                                     ])
                                 }),
                                 ("home_selected_id", tab_id_json(self.home_selected_id)),
+                                (
+                                    "home_selected_hidden_by_filter",
+                                    self.home_selected_id
+                                        .and_then(|id| self.workspace.node(id))
+                                        .is_some_and(|node| {
+                                            !self.home_kind_filter.includes(node.kind)
+                                        })
+                                        .into(),
+                                ),
                                 (
                                     "home_attention_action",
                                     rect_obj(layout.home_attention_action(
@@ -356,8 +383,7 @@ impl ConApp {
                                 (
                                     "home_list_row_ids",
                                     json::JsonValue::Array(
-                                        self.workspace
-                                            .nodes()
+                                        home_nodes
                                             .iter()
                                             .skip(home_start)
                                             .take(home_capacity)
@@ -368,9 +394,8 @@ impl ConApp {
                                 (
                                     "home_list_row_rects",
                                     json::JsonValue::Array(
-                                        (0..home_capacity.min(
-                                            self.workspace.nodes().len().saturating_sub(home_start),
-                                        ))
+                                        (0..home_capacity
+                                            .min(home_nodes.len().saturating_sub(home_start)))
                                             .map(|visible| {
                                                 rect_obj(layout.home_fleet_row(
                                                     metrics.physical_width,

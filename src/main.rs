@@ -1036,6 +1036,7 @@ struct ConApp {
     settings_open: bool,
     home_active: bool,
     home_list_start: usize,
+    home_kind_filter: HomeKindFilter,
     home_scroll_drag: Option<ScrollbarThumbDrag>,
     home_selected_id: Option<workspace::TabId>,
     settings_section: ui::SettingsSection,
@@ -1426,6 +1427,40 @@ struct HomeExitAttention {
     observed_at: Option<SystemTime>,
 }
 
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
+enum HomeKindFilter {
+    #[default]
+    All,
+    Console,
+    Web,
+}
+
+impl HomeKindFilter {
+    fn next(self) -> Self {
+        match self {
+            Self::All => Self::Console,
+            Self::Console => Self::Web,
+            Self::Web => Self::All,
+        }
+    }
+
+    fn key(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Console => "console",
+            Self::Web => "web",
+        }
+    }
+
+    fn includes(self, kind: workspace::TabKind) -> bool {
+        match self {
+            Self::All => true,
+            Self::Console => kind == workspace::TabKind::Terminal,
+            Self::Web => kind == workspace::TabKind::Browser,
+        }
+    }
+}
+
 fn observed_unix_millis(at: Option<SystemTime>) -> json::JsonValue {
     at.and_then(|time| time.duration_since(UNIX_EPOCH).ok())
         .map_or(json::JsonValue::Null, |elapsed| {
@@ -1502,6 +1537,14 @@ impl ConApp {
                 .then_with(|| left.tab.cmp(&right.tab))
         });
         items
+    }
+
+    fn home_visible_nodes(&self) -> Vec<&workspace::TabNode> {
+        self.workspace
+            .nodes()
+            .iter()
+            .filter(|node| self.home_kind_filter.includes(node.kind))
+            .collect()
     }
 
     fn service_presentation_deadlines(&mut self, now: Instant) -> (bool, Option<Instant>) {
@@ -1591,6 +1634,7 @@ impl ConApp {
             settings_open: false,
             home_active: false,
             home_list_start: 0,
+            home_kind_filter: HomeKindFilter::All,
             home_scroll_drag: None,
             home_selected_id: None,
             settings_section: ui::SettingsSection::default(),
@@ -3399,7 +3443,7 @@ impl ConApp {
         let layout = self.layout(metrics.physical_width, metrics.physical_height, scale);
         let capacity =
             layout.home_fleet_capacity(metrics.physical_width, metrics.physical_height, scale);
-        let total = self.workspace.nodes().len();
+        let total = self.home_visible_nodes().len();
         let maximum = total.saturating_sub(capacity);
         if maximum == 0 || capacity == 0 {
             return Ok(false);
@@ -4602,7 +4646,7 @@ impl PixelWindowApplication for ConApp {
                     | NamedKey::Home
                     | NamedKey::End,
                 ) => {
-                    let nodes = self.workspace.nodes();
+                    let nodes = self.home_visible_nodes();
                     if !nodes.is_empty() {
                         let metrics = window.metrics()?;
                         let capacity = self
@@ -4639,11 +4683,13 @@ impl PixelWindowApplication for ConApp {
                                 .min(nodes.len() - 1),
                             _ => unreachable!("Home navigation key"),
                         };
-                        self.home_selected_id = Some(nodes[index].id);
+                        let selected_id = nodes[index].id;
+                        let visible_len = nodes.len();
+                        self.home_selected_id = Some(selected_id);
                         self.home_list_start = ui::reveal_tree_index(
                             self.home_list_start,
                             index,
-                            nodes.len(),
+                            visible_len,
                             capacity,
                         );
                         self.mark_host_ui_full_and_repaint(window);
@@ -4713,7 +4759,7 @@ impl PixelWindowApplication for ConApp {
                 self.home_list_start = ui::scroll_tree(
                     self.home_list_start,
                     -rows,
-                    self.workspace.nodes().len(),
+                    self.home_visible_nodes().len(),
                     layout.home_fleet_capacity(
                         metrics.physical_width,
                         metrics.physical_height,
@@ -5007,6 +5053,16 @@ impl PixelWindowApplication for ConApp {
                 } else if web.contains(x, y) {
                     self.open_browser_tab_contained(window);
                 } else if layout
+                    .home_filter_action(metrics.physical_width, metrics.physical_height, scale)
+                    .contains(x, y)
+                {
+                    if self.home_scroll_drag.take().is_some() {
+                        let _ = window.set_pointer_capture(false);
+                    }
+                    self.home_kind_filter = self.home_kind_filter.next();
+                    self.home_list_start = 0;
+                    self.mark_host_ui_full_and_repaint(window);
+                } else if layout
                     .home_attention_action(metrics.physical_width, metrics.physical_height, scale)
                     .contains(x, y)
                     && let Some(attention) = self.home_exit_attention().first()
@@ -5028,7 +5084,7 @@ impl PixelWindowApplication for ConApp {
                     );
                     let start = ui::clamp_tree_scroll(
                         self.home_list_start,
-                        self.workspace.nodes().len(),
+                        self.home_visible_nodes().len(),
                         capacity,
                     );
                     let first = layout.home_fleet_row(
@@ -5041,8 +5097,7 @@ impl PixelWindowApplication for ConApp {
                         let visible = ((y - first.y) / first.height) as usize;
                         if visible < capacity
                             && let Some(id) = self
-                                .workspace
-                                .nodes()
+                                .home_visible_nodes()
                                 .get(start + visible)
                                 .map(|node| node.id)
                         {

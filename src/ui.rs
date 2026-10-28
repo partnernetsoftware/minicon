@@ -863,6 +863,20 @@ impl Layout {
         }
     }
 
+    pub fn home_filter_action(self, width: u32, height: u32, scale: f64) -> Rect {
+        let fleet = self.home_fleet(width, height, scale);
+        let margin = dip(12.0, scale);
+        let action_width = dip(76.0, scale).min(fleet.width.saturating_sub(margin * 2));
+        Rect {
+            x: fleet
+                .x
+                .saturating_add(fleet.width.saturating_sub(margin + action_width)),
+            y: fleet.y.saturating_add(dip(8.0, scale)),
+            width: action_width,
+            height: dip(23.0, scale).min(fleet.height.saturating_sub(dip(8.0, scale))),
+        }
+    }
+
     pub fn home_fleet_capacity(self, width: u32, height: u32, scale: f64) -> usize {
         let fleet = self.home_fleet(width, height, scale);
         let inspector = self.home_inspector(width, height, scale);

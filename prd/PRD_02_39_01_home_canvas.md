@@ -38,8 +38,8 @@ native 960x600 and 500x650 Home captures; the latter exposed a resize repaint
 gap that was corrected. The 210-pixel inspector also clipped its status copy;
 shorter child/agent labels are fully visible in the recaptured wide window.
 The geometry sweep proves list and inspector targets do
-not overlap at its sampled sizes. Search, grouping, attention, scoped system
-full attention/system projection, visual mode, 256 mixed-tab overflow and other-platform native captures
+not overlap at its sampled sizes. Search, grouping, full attention/system
+projection, visual mode, 256 mixed-tab overflow and other-platform native captures
 remain open. `screenshot-pane` captures the underlying Console pane while @0
 is visible, so it is not Home visual evidence.
 The Windows `native_home_fleet_wheel_keeps_scrolled_row_target_exact` court
@@ -70,6 +70,17 @@ court fail. This is one source-backed item class, not the mixed attention
 queue, actionable alert count or scoped system card required by HC-07.
 The recaptured 500×650 native Home image confirms the short fleet heading and
 row status keep the exit fact and `Agent unknown` visible in the narrow column.
+The Home kind control now cycles All → Console → Web, with one filtered stable
+@ID sequence shared by paint, pointer, keyboard, wheel, scrollbar and public
+row snapshots. The header shows visible/total tabs; exit attention still reads
+the complete workspace. A selected tab may remain in the inspector when its
+kind is filtered out, and `home_selected_hidden_by_filter` reports that state.
+The Windows `native_home_kind_filter_keeps_exact_rows_and_global_exit_attention`
+court passed mixed tab rows, hidden exit inspection, closing the last Web tab
+under Web filter, and wide/narrow native captures. Making Web include all
+tab kinds caused the court to fail. The 500×650 capture also verifies the
+short Home intro is legible. Name search, sorting, grouping, an explicit
+Reveal @ID control and 256-tab qualification remain open.
 
 ## Outcome tree DAG
 

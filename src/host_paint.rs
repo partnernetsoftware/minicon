@@ -1850,6 +1850,15 @@ impl ConApp {
                 "新網頁",
             ),
         };
+        let intro = if text_width < (300.0 * scale) as u32 {
+            match self.ui_language {
+                ui::UiLanguage::English => "Your tabs, in one place.",
+                ui::UiLanguage::ChineseSimplified => "终端与智能体，一目了然。",
+                ui::UiLanguage::ChineseTraditional => "終端與智能體，一目了然。",
+            }
+        } else {
+            intro
+        };
         let line = font::cell_metrics(body_size)
             .height
             .saturating_add((10.0 * scale) as u32);
@@ -1892,8 +1901,11 @@ impl ConApp {
         if card.width > 0 && card.height > 0 {
             surface.fill_rect(card.x, card.y, card.width, card.height, t.surface.to_xrgb());
             stroke_rect(&mut surface, card, scale.max(1.0) as u32, t.border);
-            let nodes = self.workspace.nodes();
-            let exited = nodes
+            let nodes = self.home_visible_nodes();
+            let total = self.workspace.nodes().len();
+            let exited = self
+                .workspace
+                .nodes()
                 .iter()
                 .filter(|node| {
                     self.session_for(node.id)
@@ -1906,36 +1918,40 @@ impl ConApp {
             let compact_header = card.width < (360.0 * scale) as u32;
             let heading = match (self.ui_language, compact_header) {
                 (ui::UiLanguage::English, true) => {
-                    format!("Tabs {} · Exited {}", nodes.len(), exited)
+                    format!("{}/{} tabs", nodes.len(), total)
                 }
                 (ui::UiLanguage::ChineseSimplified, true) => {
-                    format!("标签 {} · 已退出 {}", nodes.len(), exited)
+                    format!("标签 {}/{}", nodes.len(), total)
                 }
                 (ui::UiLanguage::ChineseTraditional, true) => {
-                    format!("分頁 {} · 已結束 {}", nodes.len(), exited)
+                    format!("分頁 {}/{}", nodes.len(), total)
                 }
                 (ui::UiLanguage::English, false) => format!(
-                    "Tabs {} · Exited {} · Showing {}–{}",
+                    "Tabs {}/{} · Exited {} · Showing {}–{}",
                     nodes.len(),
+                    total,
                     exited,
                     start.saturating_add(1).min(nodes.len()),
                     end
                 ),
                 (ui::UiLanguage::ChineseSimplified, false) => format!(
-                    "标签页 {} · 已退出 {} · 显示 {}–{}",
+                    "标签页 {}/{} · 已退出 {} · 显示 {}–{}",
                     nodes.len(),
+                    total,
                     exited,
                     start.saturating_add(1).min(nodes.len()),
                     end
                 ),
                 (ui::UiLanguage::ChineseTraditional, false) => format!(
-                    "分頁 {} · 已結束 {} · 顯示 {}–{}",
+                    "分頁 {}/{} · 已結束 {} · 顯示 {}–{}",
                     nodes.len(),
+                    total,
                     exited,
                     start.saturating_add(1).min(nodes.len()),
                     end
                 ),
             };
+            let filter = layout.home_filter_action(width, height, scale);
             paint_host_ui_text(
                 &mut surface,
                 card.x.saturating_add((12.0 * scale) as u32),
@@ -1943,8 +1959,40 @@ impl ConApp {
                 &heading,
                 t.text,
                 body_size,
-                card.width.saturating_sub((24.0 * scale) as u32),
+                card.width
+                    .saturating_sub((36.0 * scale) as u32)
+                    .saturating_sub(filter.width),
             );
+            if filter.width > 0 && filter.height > 0 {
+                surface.fill_rect(
+                    filter.x,
+                    filter.y,
+                    filter.width,
+                    filter.height,
+                    t.canvas_bg.to_xrgb(),
+                );
+                stroke_rect(&mut surface, filter, 1, t.border);
+                let filter_label = match (self.ui_language, self.home_kind_filter) {
+                    (ui::UiLanguage::English, HomeKindFilter::All) => "All ›",
+                    (ui::UiLanguage::English, HomeKindFilter::Console) => "Console ›",
+                    (ui::UiLanguage::English, HomeKindFilter::Web) => "Web ›",
+                    (ui::UiLanguage::ChineseSimplified, HomeKindFilter::All) => "全部 ›",
+                    (ui::UiLanguage::ChineseSimplified, HomeKindFilter::Console) => "终端 ›",
+                    (ui::UiLanguage::ChineseSimplified, HomeKindFilter::Web) => "网页 ›",
+                    (ui::UiLanguage::ChineseTraditional, HomeKindFilter::All) => "全部 ›",
+                    (ui::UiLanguage::ChineseTraditional, HomeKindFilter::Console) => "終端 ›",
+                    (ui::UiLanguage::ChineseTraditional, HomeKindFilter::Web) => "網頁 ›",
+                };
+                paint_host_ui_text(
+                    &mut surface,
+                    filter.x.saturating_add((5.0 * scale) as u32),
+                    filter.y.saturating_add((4.0 * scale) as u32),
+                    filter_label,
+                    t.text,
+                    scaled_host_ui_font(11, self.session_seed.font_size_logical(), scale),
+                    filter.width.saturating_sub((10.0 * scale) as u32),
+                );
+            }
             if let Some(attention) = self.home_exit_attention().first().copied() {
                 let age = attention.observed_at.and_then(|at| {
                     SystemTime::now()
@@ -1985,13 +2033,29 @@ impl ConApp {
                 );
             }
             if nodes.is_empty() {
-                let empty = match self.ui_language {
-                    ui::UiLanguage::English => "No tabs yet. Create a Terminal or Web tab above.",
-                    ui::UiLanguage::ChineseSimplified => {
-                        "还没有标签页。可使用上方按钮新建终端或网页。"
+                let empty = if total > 0 {
+                    match self.ui_language {
+                        ui::UiLanguage::English => {
+                            "No tabs match this filter. Select All to see every tab."
+                        }
+                        ui::UiLanguage::ChineseSimplified => {
+                            "此筛选下没有标签页。选择“全部”查看所有标签。"
+                        }
+                        ui::UiLanguage::ChineseTraditional => {
+                            "此篩選下沒有分頁。選擇「全部」查看所有分頁。"
+                        }
                     }
-                    ui::UiLanguage::ChineseTraditional => {
-                        "尚無分頁。可使用上方按鈕新增終端或網頁。"
+                } else {
+                    match self.ui_language {
+                        ui::UiLanguage::English => {
+                            "No tabs yet. Create a Terminal or Web tab above."
+                        }
+                        ui::UiLanguage::ChineseSimplified => {
+                            "还没有标签页。可使用上方按钮新建终端或网页。"
+                        }
+                        ui::UiLanguage::ChineseTraditional => {
+                            "尚無分頁。可使用上方按鈕新增終端或網頁。"
+                        }
                     }
                 };
                 paint_host_ui_text(

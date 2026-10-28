@@ -224,6 +224,11 @@ and other-platform qualification remains open. The Windows 17-tab Home
 scrollbar court passed track paging and thumb dragging with no row retarget;
 its native capture shows the list-only track. Removing paging made the court
 fail. Other scales and 256 mixed-tab overflow remain open.
+The native mixed Console/Web kind-filter court passed the shared visible-row
+projection, click and snapshot identity, hidden-tab exit attention, zero-match
+after Web close, and wide/narrow captures. The Web-includes-all mutation failed.
+Name search, sorting/grouping, filtered-selection reveal and 256-tab evidence
+remain open; T26 stays partial.
 W26 has its Workspace identity prerequisite: distinct browser roots can
 now be allocated and closed independently in the product model. Internal
 runtime parking also preserves each Web @ID's address, proxy, navigation
