@@ -70,7 +70,7 @@ Outcome: 0.2.26 @0 is a trustworthy default-list watch floor for tab-contained a
 │   evidence: Windows native_home_is_a_fixed_destination_and_restores_real_tabs passed last-tab close and Home actions
 │   safe failure: an unavailable route leaves Home and explicit recovery visible
 │   dependency: PRD 39 Home identity and C26 routes; non-goal: treating @0 as a closable tab
-├── [_] W26 — make +W a real New Web action
+├── [-] W26 — make +W a real New Web action
 │   invariant: +W, Home New Web and shortcut create distinct Web tab IDs and independent page state
 │   evidence: two-Web-tab native navigation, independent URL/history/proxy/context, auth detour, switch/close/reopen and public snapshots
 │   safe failure: allocation failure preserves existing pages and shows a notice
@@ -213,6 +213,11 @@ with exact @ID row snapshots and a test mutation that removes activation and
 fails. The list now paints real tab/child facts and scrolls independently.
 The Windows native wheel court also passed with 17 Console tabs and an exact
 scrolled-row click; removing the Home wheel route made it fail.
+W26 has only its Workspace identity prerequisite: distinct browser roots can
+now be allocated and closed independently in the product model. The GUI still
+owns one page host and its +W action still focuses the existing Web tab.
+Per-tab native page, address/history, proxy and auth lifetime plus the
+two-Web-tab native court remain required before W26 is delivered.
 Search/filter/group, mixed 256-tab overflow, attention/system cards, native
 wide/narrow visual captures and other OS courts remain required before T26 or
 the default-list cut can be marked complete. `screenshot-pane` observes the

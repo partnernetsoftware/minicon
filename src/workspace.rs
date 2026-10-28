@@ -266,7 +266,9 @@ impl Workspace {
 
     /// A browser tab at the root of the strip: same open/close/switch identity
     /// as a terminal tab, and no child of a tray window.
-    /// The one browser tab. A second root is not the current panel model.
+    /// The first browser tab in tree order. Existing single-page host callers
+    /// use this as a compatibility lookup; new per-tab host routing must use
+    /// `active_browser_tab` or an explicit stable ID.
     pub fn browser_tab(&self) -> Option<TabId> {
         self.nodes
             .iter()
@@ -274,12 +276,14 @@ impl Workspace {
             .map(|node| node.id)
     }
 
-    /// Insert the single browser root. A second call returns `None` and does
-    /// not move the selection: one page host is shared by that one tab.
+    pub fn active_browser_tab(&self) -> Option<TabId> {
+        let id = self.active?;
+        (self.node(id)?.kind == TabKind::Browser).then_some(id)
+    }
+
+    /// Insert an independent browser root identity. The GUI must attach a
+    /// distinct page host before exposing a second root to the user.
     pub fn add_browser_root(&mut self) -> Option<TabId> {
-        if self.browser_tab().is_some() {
-            return None;
-        }
         self.add(
             None,
             "browser".to_owned(),
@@ -525,7 +529,7 @@ mod tests {
     }
 
     #[test]
-    fn a_browser_tab_is_a_root_peer_of_a_terminal_tab() {
+    fn browser_tabs_keep_distinct_root_identities_and_close_independently() {
         let mut workspace = Workspace::default();
         let terminal = workspace.add_root("terminal".into()).unwrap();
         let browser = workspace.add_browser_root().unwrap();
@@ -534,20 +538,23 @@ mod tests {
         assert_eq!(workspace.node(browser).unwrap().parent, None);
         assert_eq!(workspace.active(), Some(browser));
         assert_eq!(workspace.browser_tab(), Some(browser));
-        let count = workspace.nodes().len();
-        assert_eq!(workspace.add_browser_root(), None);
-        assert_eq!(workspace.nodes().len(), count);
+        let second = workspace.add_browser_root().expect("second browser root");
+        assert_ne!(second, browser);
+        assert_eq!(workspace.active(), Some(second));
         assert_eq!(
             workspace
                 .nodes()
                 .iter()
                 .filter(|node| node.kind == TabKind::Browser)
                 .count(),
-            1
+            2
         );
         assert_eq!(workspace.browser_tab(), Some(browser));
-        assert_eq!(workspace.active(), Some(browser));
+        assert_eq!(workspace.active_browser_tab(), Some(second));
         workspace.close(browser).unwrap();
+        assert_eq!(workspace.browser_tab(), Some(second));
+        assert_eq!(workspace.active(), Some(second));
+        workspace.close(second).unwrap();
         assert_eq!(workspace.browser_tab(), None);
         assert_eq!(workspace.active(), Some(terminal));
     }

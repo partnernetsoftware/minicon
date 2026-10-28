@@ -318,9 +318,12 @@ names above.
   current-Mac development trial remains in its archived plan. Multiple browser tabs, split
   panels, persistent workspaces, downloads, dashboard/wasm, installation and
   provider-login UI are outside this delivery.
-- [v] **one browser root, and separate page/composer geometry (0.2.21).**
-  `add_browser_root` inserts one browser root; a second call returns `None`
-  and leaves the strip and the selection unchanged. `Layout::content_column`
+- [v] **one exposed browser root, and separate page/composer geometry (0.2.21).**
+  The released GUI creates or focuses its one browser root. In 0.2.26
+  development, `Workspace::add_browser_root` now accepts distinct root IDs;
+  `browser_tabs_keep_distinct_root_identities_and_close_independently` failed
+  under the singleton guard and passed after its removal. The GUI still keeps
+  one page host and does not expose a second Web tab yet. `Layout::content_column`
   retains terminal geometry above its composer. A browser instead uses
   `Layout::browser_page`: below its responsive navigation toolbar, extending to the
   bottom, inset by sidebar/history chrome. It has no terminal composer. A
@@ -328,10 +331,10 @@ names above.
   history geometry changes plus tab activation call the same resize seam.
   Evidence: the canonical browser workspace journeys and actual window captures
   linked in the [0.2.21 release history](archive/v0.2.21-release-history.md),
-  alongside `a_browser_tab_is_a_root_peer_of_a_terminal_tab`. A real Windows
+  alongside the current Workspace root-identity test. A real Windows
   per-monitor DPI transition remains outside this qualification; resize
   evidence does not certify that transition.
-- [_] **New Web creates a real new Web tab.** The +W button, Home New Web
+- [-] **New Web creates a real new Web tab.** The +W button, Home New Web
   action and keyboard route must share one creation command; each successful
   press creates a distinct @1+ Web tab with its own URL, history, proxy/page
   lifecycle and stable ID. A failed host allocation leaves existing Web tabs

@@ -1819,7 +1819,7 @@ impl ConApp {
             && !(self.new_tab_menu_open && self.sidebar_collapsed)
             && !self
                 .workspace
-                .browser_tab()
+                .active_browser_tab()
                 .and_then(|id| self.browsers.get(&id))
                 .is_some_and(|tab| {
                     matches!(tab.panel().load, browser::PageLoad::Unavailable { .. })
