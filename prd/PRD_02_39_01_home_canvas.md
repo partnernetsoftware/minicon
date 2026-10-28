@@ -47,6 +47,12 @@ also passed with 17 Console tabs: a real window wheel moved the list viewport,
 and the first newly visible row selected and then focused its published @ID.
 Disabling the Home wheel route made this court fail. This proves native overflow navigation
 at that size, not the planned 256 mixed-tab or other-platform courts.
+The Windows `native_home_keyboard_navigation_reveals_exact_tab_ids` court
+passed with nine tabs: Up/Down, PageUp/PageDown and Home/End select by stable
+@ID and reveal the selection in the list; Enter focuses only the selected tab.
+Replacing End's destination with the first row made the court fail. This is
+native keyboard navigation evidence at the tested size, not the complete
+focus-order, screen-reader or 256-tab acceptance.
 
 ## Outcome tree DAG
 
@@ -345,7 +351,9 @@ survives sorting, grouping, mode changes and ordinary refresh. If its tab
 closes, the inspector becomes a bounded **Tab no longer exists** state and
 does not jump to the row now occupying the same position. A 256-tab workspace
 uses a bounded scroll/virtualization window, keyboard Home/End/Page navigation
-and a visible scrollbar; no 256-row paint storm or unbounded a11y tree.
+and a visible scrollbar; no 256-row paint storm or unbounded a11y tree. The
+development List has keyboard navigation and a bounded viewport; the visible
+scrollbar and 256 mixed-tab court remain open.
 
 ## Visual mode: staged drag/drop contract
 

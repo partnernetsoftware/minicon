@@ -217,7 +217,10 @@ scrolls independently. The Windows native wheel court passed with 17 Console
 tabs and exact scrolled-row selection/focus; removing the Home wheel route made
 it fail. A sampled geometry sweep proved row/inspector hit targets disjoint,
 and native wide/narrow Home captures exposed and then cleared a resize repaint
-gap. Full responsive, mixed-tab and other-platform qualification remains open.
+gap. Nine-tab Windows keyboard navigation now selects exact @IDs with arrows,
+PageUp/PageDown and Home/End, reveals the selected row and opens only on Enter;
+mutating End to the first row made the court fail. Full responsive, mixed-tab
+and other-platform qualification remains open.
 W26 has its Workspace identity prerequisite: distinct browser roots can
 now be allocated and closed independently in the product model. Internal
 runtime parking also preserves each Web @ID's address, proxy, navigation

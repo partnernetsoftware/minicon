@@ -4464,6 +4464,62 @@ impl PixelWindowApplication for ConApp {
                     self.focus_home_selected(window)?;
                     return Ok(PixelWindowDirective::Continue);
                 }
+                LogicalKey::Named(
+                    NamedKey::ArrowUp
+                    | NamedKey::ArrowDown
+                    | NamedKey::PageUp
+                    | NamedKey::PageDown
+                    | NamedKey::Home
+                    | NamedKey::End,
+                ) => {
+                    let nodes = self.workspace.nodes();
+                    if !nodes.is_empty() {
+                        let metrics = window.metrics()?;
+                        let capacity = self
+                            .layout(
+                                metrics.physical_width,
+                                metrics.physical_height,
+                                metrics.scale_factor,
+                            )
+                            .home_fleet_capacity(
+                                metrics.physical_width,
+                                metrics.physical_height,
+                                metrics.scale_factor,
+                            )
+                            .max(1);
+                        let current = self
+                            .home_selected_id
+                            .and_then(|id| nodes.iter().position(|node| node.id == id));
+                        let first_visible = self.home_list_start.min(nodes.len() - 1);
+                        let index = match key.logical {
+                            LogicalKey::Named(NamedKey::Home) => 0,
+                            LogicalKey::Named(NamedKey::End) => nodes.len() - 1,
+                            LogicalKey::Named(NamedKey::ArrowUp) => {
+                                current.map_or(first_visible, |index| index.saturating_sub(1))
+                            }
+                            LogicalKey::Named(NamedKey::ArrowDown) => current
+                                .map_or(first_visible, |index| index.saturating_add(1))
+                                .min(nodes.len() - 1),
+                            LogicalKey::Named(NamedKey::PageUp) => {
+                                current.unwrap_or(first_visible).saturating_sub(capacity)
+                            }
+                            LogicalKey::Named(NamedKey::PageDown) => current
+                                .unwrap_or(first_visible)
+                                .saturating_add(capacity)
+                                .min(nodes.len() - 1),
+                            _ => unreachable!("Home navigation key"),
+                        };
+                        self.home_selected_id = Some(nodes[index].id);
+                        self.home_list_start = ui::reveal_tree_index(
+                            self.home_list_start,
+                            index,
+                            nodes.len(),
+                            capacity,
+                        );
+                        self.mark_host_ui_full_and_repaint(window);
+                    }
+                    return Ok(PixelWindowDirective::Continue);
+                }
                 _ => {}
             }
         }

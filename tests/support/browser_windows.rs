@@ -876,6 +876,76 @@ fn native_home_inspector_captures_wide_and_narrow_layouts() {
 
 #[cfg(windows)]
 #[test]
+#[ignore = "requires a native desktop; run the explicit Home keyboard court"]
+fn native_home_keyboard_navigation_reveals_exact_tab_ids() {
+    let mut host = BrowserGui::spawn(false, None, None);
+    let first = host.cli(&["list-tabs"])["tabs"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut ids = vec![first.clone()];
+    for _ in 0..8 {
+        ids.push(host.cli(&["new-tab"])["id"].as_str().unwrap().to_owned());
+    }
+    host.click_geometry("home");
+    let capacity = host.cli(&["ui-snapshot"])["geometry"]["home_list_row_ids"]
+        .as_array()
+        .unwrap()
+        .len();
+    assert!(capacity > 0 && capacity < ids.len());
+
+    host.cli(&["send-ui-keys", "End"]);
+    let last = host.cli(&["ui-snapshot"]);
+    assert_eq!(last["geometry"]["home_selected_id"], ids[8]);
+    assert!(last["geometry"]["home_list_start"].as_u64().unwrap() > 0);
+    assert!(
+        last["geometry"]["home_list_row_ids"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!(ids[8]))
+    );
+    assert_eq!(last["geometry"]["home_active"], true);
+
+    host.cli(&["send-ui-keys", "PageUp"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["home_selected_id"],
+        ids[8 - capacity]
+    );
+    host.cli(&["send-ui-keys", "PageDown"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["home_selected_id"],
+        ids[8]
+    );
+    host.cli(&["send-ui-keys", "Home"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["home_selected_id"],
+        first
+    );
+    host.cli(&["send-ui-keys", "Down"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["home_selected_id"],
+        ids[1]
+    );
+    host.cli(&["send-ui-keys", "Up"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["home_selected_id"],
+        first
+    );
+    host.cli(&["send-ui-keys", "Escape"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["home_selected_id"],
+        Value::Null
+    );
+    host.cli(&["send-ui-keys", "End", "Enter"]);
+    assert_eq!(host.cli(&["ui-snapshot"])["geometry"]["home_active"], false);
+    let listed = host.cli(&["list-tabs"]);
+    assert_eq!(listed["tabs"][8]["id"], ids[8]);
+    assert_eq!(listed["tabs"][8]["active"], true);
+    host.close_and_wait();
+}
+
+#[cfg(windows)]
+#[test]
 #[ignore = "requires a native desktop; run the explicit @0 fleet wheel court"]
 fn native_home_fleet_wheel_keeps_scrolled_row_target_exact() {
     use std::ffi::c_void;
