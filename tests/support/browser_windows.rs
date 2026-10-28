@@ -648,6 +648,33 @@ fn native_home_is_a_fixed_destination_and_restores_real_tabs() {
 }
 
 #[test]
+#[ignore = "requires a native desktop; run the explicit @0 fleet court"]
+fn native_home_fleet_rows_target_exact_tab_ids() {
+    let mut host = BrowserGui::spawn(false, None, None);
+    let first = host.cli(&["list-tabs"])["tabs"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let second = host.cli(&["new-tab"])["id"].as_str().unwrap().to_owned();
+    let third = host.cli(&["new-tab"])["id"].as_str().unwrap().to_owned();
+    host.click_geometry("home");
+    let snapshot = host.cli(&["ui-snapshot"]);
+    let geometry = &snapshot["geometry"];
+    assert_eq!(geometry["home_active"], true);
+    assert_eq!(geometry["home_tab_count"], 3);
+    assert_eq!(
+        geometry["home_list_row_ids"],
+        serde_json::json!([&first, &second, &third])
+    );
+    host.click_geometry_row("home_list_row_rects", 0);
+    let selected = host.cli(&["list-tabs"]);
+    assert_eq!(selected["tabs"][0]["active"], true);
+    assert_eq!(selected["tabs"][0]["id"], first);
+    assert_eq!(host.cli(&["ui-snapshot"])["geometry"]["home_active"], false);
+    host.close_and_wait();
+}
+
+#[test]
 #[ignore = "requires a native desktop; run the explicit direct creation court"]
 fn native_header_buttons_create_terminal_web_and_open_harness_directly() {
     let mut host = BrowserGui::spawn(false, None, None);

@@ -842,6 +842,51 @@ impl Layout {
         [first, second]
     }
 
+    /// The @0 fleet viewport is shared by painting, wheel routing and row
+    /// hit-testing. Its rows are presentation indexes resolved to stable IDs
+    /// at the instant of an action, never cached tab identities.
+    pub fn home_fleet(self, width: u32, height: u32, scale: f64) -> Rect {
+        let content_width = width.saturating_sub(self.sidebar.width);
+        let pad = dip(28.0, scale).min(content_width / 4);
+        let actions = self.home_actions(width, height, scale);
+        let top = actions
+            .iter()
+            .map(|rect| rect.y.saturating_add(rect.height))
+            .max()
+            .unwrap_or(0)
+            .saturating_add(pad);
+        Rect {
+            x: self.sidebar.width.saturating_add(pad),
+            y: top,
+            width: content_width.saturating_sub(pad.saturating_mul(2)),
+            height: height.saturating_sub(top.saturating_add(pad)),
+        }
+    }
+
+    pub fn home_fleet_capacity(self, width: u32, height: u32, scale: f64) -> usize {
+        let fleet = self.home_fleet(width, height, scale);
+        fleet
+            .height
+            .saturating_sub(dip(48.0, scale))
+            .checked_div(dip(48.0, scale).max(1))
+            .unwrap_or(0) as usize
+    }
+
+    pub fn home_fleet_row(self, width: u32, height: u32, scale: f64, visible: usize) -> Rect {
+        let fleet = self.home_fleet(width, height, scale);
+        let row_height = dip(48.0, scale);
+        let top = fleet
+            .y
+            .saturating_add(row_height)
+            .saturating_add(row_height.saturating_mul(visible as u32));
+        Rect {
+            x: fleet.x,
+            y: top,
+            width: fleet.width,
+            height: row_height.min(fleet.y.saturating_add(fleet.height).saturating_sub(top)),
+        }
+    }
+
     /// Primary action on the zero-tab greeting page. The button is centred in
     /// the terminal side of the window and keeps the sidebar header available.
     pub fn empty_new_terminal(self, width: u32, height: u32, scale: f64) -> Rect {

@@ -52,7 +52,7 @@ MiniCon — one-file local terminal
 │   │       └── [_] agent-facing CLI normalization → prd/PRD_02_26_01_agent_cli_contract.md
 │   ├── [-] Robot entry / visual Harness operation and monitoring → prd/PRD_02_36_harness_workspace.md
 │   ├── [-] Fixed @0 home / future observed agent office → prd/PRD_02_39_home_dashboard.md
-│   │   └── [_] 0.2.26 default-list tab-agent watch floor / later spatial mode → prd/PRD_02_39_01_home_canvas.md
+│   │   └── [-] 0.2.26 default-list tab-agent watch floor / later spatial mode → prd/PRD_02_39_01_home_canvas.md
 │   ├── [-] Optional Plugins and Apps layer / minicon-harness extraction → prd/PRD_02_40_plugins_apps.md
 │   ├── [_] Future cluster / cross-machine coordination → prd/PRD_02_37_cluster_horizon.md
 │   ├── [_] Future selected-window computer use → prd/PRD_02_38_computer_use.md

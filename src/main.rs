@@ -1005,6 +1005,7 @@ struct ConApp {
     hovered_header: Option<HeaderIcon>,
     settings_open: bool,
     home_active: bool,
+    home_list_start: usize,
     settings_section: ui::SettingsSection,
     harness_settings: Option<harness_settings_ui::HarnessSettings>,
     harness_workspace: harness_workspace_ui::HarnessWorkspace,
@@ -1514,6 +1515,7 @@ impl ConApp {
             hovered_header: None,
             settings_open: false,
             home_active: false,
+            home_list_start: 0,
             settings_section: ui::SettingsSection::default(),
             harness_settings: None,
             harness_workspace: harness_workspace_ui::HarnessWorkspace::default(),
@@ -4375,6 +4377,34 @@ impl PixelWindowApplication for ConApp {
                 self.request_dirty_redraw(window);
                 return Ok(PixelWindowDirective::Continue);
             }
+            if self.home_active
+                && layout
+                    .home_fleet(metrics.physical_width, metrics.physical_height, scale)
+                    .contains(
+                        (position.x * scale).max(0.0) as u32,
+                        (position.y * scale).max(0.0) as u32,
+                    )
+            {
+                let rows = match delta {
+                    WheelDelta::Lines { y, .. } => minicon_core::numeric::round_f32(*y) as isize,
+                    WheelDelta::LogicalPixels { y, .. } => {
+                        minicon_core::numeric::round_f64(*y / 48.0) as isize
+                    }
+                    _ => 0,
+                };
+                self.home_list_start = ui::scroll_tree(
+                    self.home_list_start,
+                    -rows,
+                    self.workspace.nodes().len(),
+                    layout.home_fleet_capacity(
+                        metrics.physical_width,
+                        metrics.physical_height,
+                        scale,
+                    ),
+                );
+                self.mark_host_ui_full_and_repaint(window);
+                return Ok(PixelWindowDirective::Continue);
+            }
             // The history panel owns the wheel while the pointer is over it,
             // exactly as the sidebar does: a list that could not be scrolled
             // would hide everything older than its own height.
@@ -4658,6 +4688,42 @@ impl PixelWindowApplication for ConApp {
                     self.open_session_contained(window, false);
                 } else if web.contains(x, y) {
                     self.open_browser_tab_contained(window);
+                } else {
+                    let fleet =
+                        layout.home_fleet(metrics.physical_width, metrics.physical_height, scale);
+                    let capacity = layout.home_fleet_capacity(
+                        metrics.physical_width,
+                        metrics.physical_height,
+                        scale,
+                    );
+                    let start = ui::clamp_tree_scroll(
+                        self.home_list_start,
+                        self.workspace.nodes().len(),
+                        capacity,
+                    );
+                    let first = layout.home_fleet_row(
+                        metrics.physical_width,
+                        metrics.physical_height,
+                        scale,
+                        0,
+                    );
+                    if fleet.contains(x, y) && y >= first.y && first.height > 0 {
+                        let visible = ((y - first.y) / first.height) as usize;
+                        if visible < capacity
+                            && let Some(id) = self
+                                .workspace
+                                .nodes()
+                                .get(start + visible)
+                                .map(|node| node.id)
+                        {
+                            self.activate_session(window, id);
+                            self.reveal_active_tree_row(window)?;
+                            self.apply_active_geometry(metrics)?;
+                            self.refresh_title(window)?;
+                            window.focus();
+                            self.mark_host_ui_full_and_repaint(window);
+                        }
+                    }
                 }
                 return Ok(PixelWindowDirective::Continue);
             }

@@ -21,6 +21,17 @@ current single-browser-tab/page/address/auth assumption and proves two
 separate Web tab IDs, navigation, authorization isolation and return state.
 The tab-office design below uses only observed Web facts in the accepted host.
 
+The development tree now has a first real List slice: @0 paints stable @ID
+rows from the current Workspace, reports observed Console child exit separately
+from unknown agent work, scrolls its own viewport and routes a row click to the
+exact live tab. The Windows native
+`native_home_fleet_rows_target_exact_tab_ids` court passed on three same-named
+Console tabs; disabling row activation made the court fail. Public
+`ui-snapshot` publishes visible row IDs and hit rectangles. Search, grouping,
+attention, scoped system status, visual mode, 256-tab overflow and native
+visual captures remain open. `screenshot-pane` captures the underlying Console
+pane while @0 is visible, so it is not Home visual evidence.
+
 ## Outcome tree DAG
 
 ```text
@@ -49,7 +60,7 @@ Outcome: @0 lets one person manage and watch tab-contained agents and local heal
 │   safe failure: condensed one-column view replaces decorative scene detail before essential controls clip
 │   dependency: host font scaling, language/theme choices and native input focus
 │   non-goal: color-only status or animation-only meaning
-├── [_] HC-06 — default list management and exact drill-down
+├── [-] HC-06 — default list management and exact drill-down
 │   invariant: filters/sorts/groups change presentation only; each row/inspector targets its stable @ID
 │   evidence: 0/1/many/256 tabs, duplicate names, filter/sort/group and exact focus/inspect journeys
 │   safe failure: hidden-by-filter alerts remain counted; closed/moved target never redirects to a row index

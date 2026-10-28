@@ -1830,28 +1830,22 @@ impl ConApp {
             title_size,
             text_width,
         );
-        let (slogan, intro, office, routes, new_terminal, new_web) = match self.ui_language {
+        let (slogan, intro, new_terminal, new_web) = match self.ui_language {
             ui::UiLanguage::English => (
                 "Stable. Fast. Local.",
                 "A calm place for your terminals and agents.",
-                "Agent office — awaiting real task activity",
-                "Choose a tab or open Harness with the robot button.",
                 "New Terminal",
                 "New Web",
             ),
             ui::UiLanguage::ChineseSimplified => (
                 "稳定 · 高速 · 本地",
                 "让终端与智能体在同一个可靠空间工作。",
-                "Agent 办公室 · 等待真实任务",
-                "选择标签页，或用机器人按钮进入 Harness。",
                 "新终端",
                 "新网页",
             ),
             ui::UiLanguage::ChineseTraditional => (
                 "穩定 · 高速 · 本地",
                 "讓終端與智能體在同一個可靠空間工作。",
-                "Agent 辦公室 · 等待真實任務",
-                "選擇分頁，或用機器人按鈕進入 Harness。",
                 "新終端",
                 "新網頁",
             ),
@@ -1894,40 +1888,161 @@ impl ConApp {
                 rect.width.saturating_sub((24.0 * scale) as u32),
             );
         }
-        let card_y = top.saturating_add(line.saturating_mul(5)).max(
-            actions[1]
-                .y
-                .saturating_add(actions[1].height)
-                .saturating_add(pad),
-        );
-        let card = ui::Rect {
-            x: text_x,
-            y: card_y,
-            width: text_width,
-            height: height.saturating_sub(card_y.saturating_add(pad.saturating_mul(3))),
-        };
+        let card = layout.home_fleet(width, height, scale);
         if card.width > 0 && card.height > 0 {
             surface.fill_rect(card.x, card.y, card.width, card.height, t.surface.to_xrgb());
             stroke_rect(&mut surface, card, scale.max(1.0) as u32, t.border);
+            let nodes = self.workspace.nodes();
+            let exited = nodes
+                .iter()
+                .filter(|node| {
+                    self.session_for(node.id)
+                        .is_some_and(|session| session.child_gone)
+                })
+                .count();
+            let capacity = layout.home_fleet_capacity(width, height, scale);
+            let start = ui::clamp_tree_scroll(self.home_list_start, nodes.len(), capacity);
+            let end = start.saturating_add(capacity).min(nodes.len());
+            let heading = match self.ui_language {
+                ui::UiLanguage::English => format!(
+                    "Tabs {} · Exited {} · Showing {}–{}",
+                    nodes.len(),
+                    exited,
+                    start.saturating_add(1).min(nodes.len()),
+                    end
+                ),
+                ui::UiLanguage::ChineseSimplified => {
+                    format!(
+                        "标签页 {} · 已退出 {} · 显示 {}–{}",
+                        nodes.len(),
+                        exited,
+                        start.saturating_add(1).min(nodes.len()),
+                        end
+                    )
+                }
+                ui::UiLanguage::ChineseTraditional => {
+                    format!(
+                        "分頁 {} · 已結束 {} · 顯示 {}–{}",
+                        nodes.len(),
+                        exited,
+                        start.saturating_add(1).min(nodes.len()),
+                        end
+                    )
+                }
+            };
             paint_host_ui_text(
                 &mut surface,
-                card.x.saturating_add(pad),
-                card.y.saturating_add(pad),
-                office,
+                card.x.saturating_add((12.0 * scale) as u32),
+                card.y.saturating_add((12.0 * scale) as u32),
+                &heading,
                 t.text,
                 body_size,
-                card.width.saturating_sub(pad.saturating_mul(2)),
+                card.width.saturating_sub((24.0 * scale) as u32),
             );
+            if nodes.is_empty() {
+                let empty = match self.ui_language {
+                    ui::UiLanguage::English => "No tabs yet. Create a Terminal or Web tab above.",
+                    ui::UiLanguage::ChineseSimplified => {
+                        "还没有标签页。可使用上方按钮新建终端或网页。"
+                    }
+                    ui::UiLanguage::ChineseTraditional => {
+                        "尚無分頁。可使用上方按鈕新增終端或網頁。"
+                    }
+                };
+                paint_host_ui_text(
+                    &mut surface,
+                    card.x.saturating_add((12.0 * scale) as u32),
+                    card.y.saturating_add((56.0 * scale) as u32),
+                    empty,
+                    t.muted,
+                    body_size,
+                    card.width.saturating_sub((24.0 * scale) as u32),
+                );
+            }
+            for (visible, node) in nodes.iter().skip(start).take(capacity).enumerate() {
+                let row = layout.home_fleet_row(width, height, scale, visible);
+                if row.height == 0 {
+                    break;
+                }
+                if self.workspace.active() == Some(node.id) {
+                    surface.fill_rect(row.x, row.y, row.width, row.height, t.canvas_bg.to_xrgb());
+                }
+                surface.fill_rect(row.x, row.y, row.width, 1, t.border.to_xrgb());
+                let session = self.session_for(node.id);
+                let name = tree_row_name(
+                    node.custom_title.as_deref(),
+                    session.map(|terminal| terminal.program_label()),
+                    &node.title,
+                );
+                let label = format!("@{}  {}", node.id.get(), name);
+                let exited = session.map(|terminal| terminal.child_gone);
+                let status = match (self.ui_language, node.kind, exited) {
+                    (ui::UiLanguage::English, workspace::TabKind::Terminal, Some(true)) => {
+                        "Console · exited · agent unknown"
+                    }
+                    (ui::UiLanguage::English, workspace::TabKind::Terminal, Some(false)) => {
+                        "Console · child active · agent unknown"
+                    }
+                    (ui::UiLanguage::English, workspace::TabKind::Terminal, None) => {
+                        "Console · status unknown"
+                    }
+                    (ui::UiLanguage::English, workspace::TabKind::Browser, _) => {
+                        "Web · agent status unavailable"
+                    }
+                    (
+                        ui::UiLanguage::ChineseSimplified,
+                        workspace::TabKind::Terminal,
+                        Some(true),
+                    ) => "终端 · 已退出 · Agent 状态未知",
+                    (
+                        ui::UiLanguage::ChineseSimplified,
+                        workspace::TabKind::Terminal,
+                        Some(false),
+                    ) => "终端 · 子进程活动中 · Agent 状态未知",
+                    (ui::UiLanguage::ChineseSimplified, workspace::TabKind::Terminal, None) => {
+                        "终端 · 状态未知"
+                    }
+                    (ui::UiLanguage::ChineseSimplified, workspace::TabKind::Browser, _) => {
+                        "网页 · Agent 状态不可用"
+                    }
+                    (
+                        ui::UiLanguage::ChineseTraditional,
+                        workspace::TabKind::Terminal,
+                        Some(true),
+                    ) => "終端 · 已結束 · Agent 狀態未知",
+                    (
+                        ui::UiLanguage::ChineseTraditional,
+                        workspace::TabKind::Terminal,
+                        Some(false),
+                    ) => "終端 · 子程序活動中 · Agent 狀態未知",
+                    (ui::UiLanguage::ChineseTraditional, workspace::TabKind::Terminal, None) => {
+                        "終端 · 狀態未知"
+                    }
+                    (ui::UiLanguage::ChineseTraditional, workspace::TabKind::Browser, _) => {
+                        "網頁 · Agent 狀態不可用"
+                    }
+                };
+                let inset = (12.0 * scale) as u32;
+                paint_host_ui_text(
+                    &mut surface,
+                    row.x.saturating_add(inset),
+                    row.y.saturating_add((4.0 * scale) as u32),
+                    &label,
+                    t.text,
+                    body_size,
+                    row.width.saturating_sub(inset.saturating_mul(2)),
+                );
+                paint_host_ui_text(
+                    &mut surface,
+                    row.x.saturating_add(inset),
+                    row.y.saturating_add((25.0 * scale) as u32),
+                    status,
+                    t.muted,
+                    scaled_host_ui_font(12, self.session_seed.font_size_logical(), scale),
+                    row.width.saturating_sub(inset.saturating_mul(2)),
+                );
+            }
         }
-        paint_host_ui_text(
-            &mut surface,
-            text_x,
-            height.saturating_sub(line.saturating_mul(2)),
-            routes,
-            t.muted,
-            body_size,
-            text_width,
-        );
     }
 
     pub(crate) fn paint_empty_workspace(

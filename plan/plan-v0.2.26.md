@@ -50,7 +50,7 @@ Outcome: 0.2.26 @0 is a trustworthy default-list watch floor for tab-contained a
 │   evidence: public GUI pointer/keyboard journey, native captures and no-side-effect traces
 │   safe failure: empty office retains a working primary route and explanation
 │   dependency: PRD 39 @0 host navigation; non-goal: another tab kind or Settings form on Home
-├── [_] T26 — represent the tab fleet as a default list with exact drill-down
+├── [-] T26 — represent the tab fleet as a default list with exact drill-down
 │   invariant: station/list/inspector select the same stable @ID through rename, reorder, exit and overflow
 │   evidence: 0/1/many/256 mixed-tab public journeys, stale-target refusal and native click/focus receipts
 │   safe failure: missing agent observer stays Unknown; closed tab never retargets another row
@@ -207,6 +207,14 @@ flowchart LR
    pre-authorization to publish the next version.
 
 ## Cut, deferrals and handoff
+
+T26 has a first Windows native click court for three same-named Console tabs,
+with exact @ID row snapshots and a test mutation that removes activation and
+fails. The list now paints real tab/child facts and scrolls independently.
+Search/filter/group, mixed 256-tab overflow, attention/system cards, native
+wide/narrow visual captures and other OS courts remain required before T26 or
+the default-list cut can be marked complete. `screenshot-pane` observes the
+underlying Console pane on @0 and is not a Home capture receipt.
 
 The intended 0.2.26 cut is the default list from HC-01 through HC-04 plus HC-06/07:
 @0 tab fleet, exact drill-down, prioritized attention, scoped system status

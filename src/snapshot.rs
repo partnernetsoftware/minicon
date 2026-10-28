@@ -228,11 +228,60 @@ impl ConApp {
                                 metrics.physical_height,
                                 metrics.scale_factor,
                             );
+                            let home_capacity = layout.home_fleet_capacity(
+                                metrics.physical_width,
+                                metrics.physical_height,
+                                metrics.scale_factor,
+                            );
+                            let home_start = ui::clamp_tree_scroll(
+                                self.home_list_start,
+                                self.workspace.nodes().len(),
+                                home_capacity,
+                            );
                             fields.extend([
                                 ("home", rect_obj(layout.home)),
                                 ("home_active", self.home_active.into()),
                                 ("home_new_terminal", rect_obj(home_new_terminal)),
                                 ("home_new_web", rect_obj(home_new_web)),
+                                (
+                                    "home_fleet",
+                                    rect_obj(layout.home_fleet(
+                                        metrics.physical_width,
+                                        metrics.physical_height,
+                                        metrics.scale_factor,
+                                    )),
+                                ),
+                                ("home_list_start", home_start.into()),
+                                ("home_tab_count", self.workspace.nodes().len().into()),
+                                (
+                                    "home_list_row_ids",
+                                    json::JsonValue::Array(
+                                        self.workspace
+                                            .nodes()
+                                            .iter()
+                                            .skip(home_start)
+                                            .take(home_capacity)
+                                            .map(|node| format!("@{}", node.id.get()).into())
+                                            .collect(),
+                                    ),
+                                ),
+                                (
+                                    "home_list_row_rects",
+                                    json::JsonValue::Array(
+                                        (0..home_capacity.min(
+                                            self.workspace.nodes().len().saturating_sub(home_start),
+                                        ))
+                                            .map(|visible| {
+                                                rect_obj(layout.home_fleet_row(
+                                                    metrics.physical_width,
+                                                    metrics.physical_height,
+                                                    metrics.scale_factor,
+                                                    visible,
+                                                ))
+                                            })
+                                            .collect(),
+                                    ),
+                                ),
                                 ("new_root", rect_obj(layout.new_root)),
                                 ("new_web", rect_obj(layout.new_web)),
                                 ("sidebar_toggle", rect_obj(layout.sidebar_toggle)),
