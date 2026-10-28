@@ -70,7 +70,7 @@ flowchart LR
 
 | Concern | Current source behavior | Contract decision |
 | --- | --- | --- |
-| Binary and endpoint | Ordinary GUI launches now generate a unique local endpoint before opening; explicit `--control` wins. Console children inherit `MINICON_CONTROL`, `MINICON_BIN` and a `PATH` prefixed with this host's executable directory | Qualify the default binding in a native child-to-host court on each OS, plus renamed binaries and login-shell `PATH` rewrites; fail closed when unavailable |
+| Binary and endpoint | Ordinary GUI launches now generate a unique local endpoint before opening; explicit `--control` wins. Console children inherit `MINICON_CONTROL`, `MINICON_BIN` and a `PATH` prefixed with this host's executable directory. A Windows child-to-host public court passed | Qualify the default binding on macOS/Linux, plus renamed binaries and login-shell `PATH` rewrites; fail closed when unavailable |
 | Identity | `list-tabs` gives stable `@ID`; children receive no self ID; omitted native targets use the active terminal | Export a self ID and instance incarnation as convenience, validate both against the live host, and never silently guess from title/order |
 | Read/write | `capture-pane` reads visible rows; `send-text` and `send-paste` accept UTF-8 `--file`; `send-keys` targets PTY keys | Name the mode and bounds in results; distinguish accepted bytes from observed response and agent receipt |
 | Paths | capture `--output` writes on the CLI client; screenshot `--output` is currently interpreted by the GUI process | Make v2 path ownership explicit and consistent without reinterpreting a legacy relative path silently |

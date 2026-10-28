@@ -122,12 +122,15 @@ The Console child command/endpoint slice of A2 has Windows public black-box
 evidence in `console_child_minicon_command_uses_its_own_control_endpoint`:
 an inherited endpoint works, explicit `--control` wins, and a shadow
 `minicon` earlier in the inherited `PATH` is bypassed. Removing the child
-`PATH` override made this black box fail. Self @ID, process incarnation,
-The ordinary launch now generates a unique local process-lifetime endpoint;
+`PATH` override made this black box fail. The ordinary launch now generates a
+unique local process-lifetime endpoint;
 `ordinary_launch_gets_a_unique_native_endpoint_and_explicit_binding_wins`
 passed, and replacing its entropy result with a constant made it fail.
-Its actual child-to-host native court, renamed-binary packaging and other
-native hosts remain open, so A2 is partial. Web has no shell; a future
+The Windows public `ordinary_console_child_reaches_its_automatic_control_endpoint`
+also passed, and removing the child's endpoint made it fail with a
+missing-`MINICON_CONTROL` screen receipt. Self @ID, process incarnation,
+renamed-binary packaging and macOS/Linux native courts remain open, so A2 is
+partial. Web has no shell; a future
 Harness child receives its own tab identity under the same instance-binding
 rule only after Harness tab lifecycle exists.
 

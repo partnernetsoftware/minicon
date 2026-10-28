@@ -310,6 +310,76 @@ fn cli_text(exe: &Path, endpoint: &str, arguments: &[&str]) -> String {
 }
 
 #[test]
+fn ordinary_console_child_reaches_its_automatic_control_endpoint() {
+    let exe = minicon_binary();
+    let suffix = unique_suffix();
+    let endpoint_file = std::env::temp_dir().join(format!("minicon-auto-ep-{suffix}.txt"));
+    let result_file = std::env::temp_dir().join(format!("minicon-auto-out-{suffix}.json"));
+    let snapshot_file = std::env::temp_dir().join(format!("minicon-auto-snap-{suffix}.json"));
+    let mut host = Command::new(&exe);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt as _;
+        host.process_group(0);
+    }
+    host.args(["--no-activate", "--emit-snapshot"])
+        .arg(&snapshot_file)
+        .arg("-e");
+    if cfg!(windows) {
+        host.args([
+            "powershell.exe",
+            "-NoLogo",
+            "-NoProfile",
+            "-Command",
+            "Set-Content -LiteralPath $env:MINICON_TEST_ENDPOINT -Value $env:MINICON_CONTROL; minicon cli list-tabs | Set-Content -LiteralPath $env:MINICON_TEST_RESULT",
+        ]);
+    } else {
+        host.args([
+            "/bin/sh",
+            "-c",
+            "printf '%s' \"$MINICON_CONTROL\" > \"$MINICON_TEST_ENDPOINT\"; minicon cli list-tabs > \"$MINICON_TEST_RESULT\"",
+        ]);
+    }
+    host.env("MINICON_TEST_ENDPOINT", &endpoint_file)
+        .env("MINICON_TEST_RESULT", &result_file)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    let mut gui = OwnedGui {
+        child: host.spawn().expect("start ordinary host"),
+        screenshot: snapshot_file.clone(),
+    };
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let result = loop {
+        if let Ok(bytes) = fs::read(&result_file)
+            && let Ok(value) = serde_json::from_slice::<Value>(&bytes)
+        {
+            break value;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "child CLI did not answer; snapshot: {}",
+            fs::read_to_string(&snapshot_file).unwrap_or_default()
+        );
+        assert!(gui.child.try_wait().unwrap().is_none(), "host exited early");
+        thread::sleep(Duration::from_millis(50));
+    };
+    let endpoint = fs::read_to_string(&endpoint_file).expect("child endpoint");
+    let endpoint = endpoint.trim();
+    assert!(endpoint.starts_with(if cfg!(windows) { "pipe:" } else { "unix:" }));
+    assert!(
+        result["tabs"]
+            .as_array()
+            .is_some_and(|tabs| !tabs.is_empty())
+    );
+    let outside = cli_json(&exe, endpoint, &["list-tabs"]);
+    assert_eq!(outside["tabs"][0]["id"], result["tabs"][0]["id"]);
+    assert_eq!(outside["tabs"][0]["kind"], result["tabs"][0]["kind"]);
+    drop(gui);
+    let _ = fs::remove_file(endpoint_file);
+    let _ = fs::remove_file(result_file);
+}
+
+#[test]
 fn console_child_minicon_command_uses_its_own_control_endpoint() {
     let exe = minicon_binary();
     let exe = exe.as_path();

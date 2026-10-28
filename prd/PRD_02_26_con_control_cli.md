@@ -65,7 +65,12 @@ flowchart LR
 - [-] Ordinary 0.2.26 GUI launches generate a random per-process native
   endpoint before any tab starts and export it only to their Console children.
   Explicit `--control` still selects the address. The unique-address unit
-  court passes; native child-to-host evidence for the default path is open.
+  court and Windows public
+  `ordinary_console_child_reaches_its_automatic_control_endpoint` passed:
+  the child ran `minicon cli list-tabs` and an external CLI read matching tabs
+  from its exported endpoint. Removing the Console child's endpoint made the
+  court fail with a missing-`MINICON_CONTROL` screen receipt. Other native
+  hosts and renamed-binary packaging remain open.
   [PRD 26.01](PRD_02_26_01_agent_cli_contract.md) owns the agent-facing
   environment, self-tab and command-discovery contract.
 - [v] shared verb spellings (`capture-pane`, `screenshot-pane`, `send-text`,
