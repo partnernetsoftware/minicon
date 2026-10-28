@@ -545,6 +545,14 @@ fn native_two_web_tabs_keep_independent_pages_when_switched_and_closed() {
     host.wait_browser(&second_url, "ready", Some("Next preview"));
     assert_eq!(host.browser_by_id(&first_id)["browser"]["url"], first_url);
     assert_eq!(
+        host.browser_by_id(&first_id)["browser"]["can_forward"],
+        true
+    );
+    assert_eq!(
+        host.browser_by_id(&second_id)["browser"]["can_forward"],
+        false
+    );
+    assert_eq!(
         host.browser_by_id(&first_id)["browser"]["title"],
         "Local preview ready"
     );

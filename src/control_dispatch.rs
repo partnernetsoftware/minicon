@@ -44,12 +44,17 @@ impl ConApp {
                     .iter()
                     .map(|node| {
                         let session = self.session_for(node.id);
+                        let auth_role_page = self
+                            .browser_auth
+                            .as_ref()
+                            .is_some_and(|auth| auth.tab_id == node.id);
                         let authorization_page = self.browsers.get(&node.id).is_some_and(|tab| {
-                            self.browser_auth.is_some() || tab.panel()
+                            auth_role_page || tab.panel()
                                 .url
                                 .as_deref()
                                 .is_some_and(browser_ui::is_authorization_page)
                         });
+                        let (can_back, can_forward) = self.browser_navigation_flags(node.id);
                         json::object(vec![
                             ("id", tab_id_json(Some(node.id))),
                             ("parent", tab_id_json(node.parent)),
@@ -93,7 +98,7 @@ impl ConApp {
                                                 panel
                                                     .url
                                                     .as_deref()
-                                                    .map(|url| if self.browser_auth.is_some() { "authorization://private" } else { browser_ui::public_browser_url(url) })
+                                                    .map(|url| if auth_role_page { "authorization://private" } else { browser_ui::public_browser_url(url) })
                                                     .map_or(json::JsonValue::Null, Into::into),
                                             ),
                                             ("url_redacted", authorization_page.into()),
@@ -107,8 +112,8 @@ impl ConApp {
                                                 }
                                                 .into(),
                                             ),
-                                            ("can_back", self.browser_can_back.into()),
-                                            ("can_forward", self.browser_can_forward.into()),
+                                            ("can_back", can_back.into()),
+                                            ("can_forward", can_forward.into()),
                                             (
                                                 "reason",
                                                 reason.map_or(json::JsonValue::Null, |reason| {
@@ -721,6 +726,67 @@ impl ConApp {
 #[cfg(test)]
 mod title_tests {
     use super::*;
+
+    #[test]
+    fn list_tabs_keeps_parked_web_flags_and_other_web_public_during_auth() {
+        let mut app = ConApp::new(None, None);
+        let auth_id = app.workspace.add_browser_root().unwrap();
+        let ordinary_id = app.workspace.add_browser_root().unwrap();
+        let auth_url = "https://platform.deepseek.com/dsh/authorized?state=private-token";
+        let ordinary_url = "https://ordinary.test/page?public=yes";
+        let mut auth_tab = browser::BrowserTab::shell();
+        assert!(auth_tab.show_http(auth_url));
+        let mut ordinary_tab = browser::BrowserTab::shell();
+        assert!(ordinary_tab.show_http(ordinary_url));
+        ordinary_tab.note_title("Public page");
+        assert!(app.browsers.insert(auth_id, auth_tab).is_ok());
+        assert!(app.browsers.insert(ordinary_id, ordinary_tab).is_ok());
+
+        app.loaded_browser_id = Some(auth_id);
+        app.browser_can_forward = true;
+        let parked_auth = harness_auth_ui::OrdinaryBrowser::take_current(&mut app);
+        assert!(app.parked_browsers.insert(auth_id, parked_auth).is_ok());
+        let ordinary = harness_auth_ui::OrdinaryBrowser::take_current(&mut app);
+        app.loaded_browser_id = Some(ordinary_id);
+        app.browser_can_back = true;
+        app.browser_auth = Some(harness_auth_ui::AuthPresentation {
+            tab_id: auth_id,
+            attempt: provider_runtime::AttemptId(41),
+            context: browser::PageContext {
+                profile: minicon_web::PageProfile {
+                    data_directory: std::env::temp_dir().join("unused-list-tabs-auth"),
+                    store_identifier: [4; 16],
+                },
+                proxy: browser::BrowserProxy::default(),
+            },
+            ordinary,
+        });
+
+        let reply = app
+            .windowless_command(&control::CliCommand::ListTabs)
+            .unwrap()
+            .unwrap();
+        let observed: serde_json::Value = serde_json::from_slice(&json::to_vec(&reply)).unwrap();
+        let rows = observed["tabs"].as_array().unwrap();
+        let auth = rows
+            .iter()
+            .find(|row| row["id"] == format!("@{}", auth_id.get()))
+            .unwrap();
+        let other = rows
+            .iter()
+            .find(|row| row["id"] == format!("@{}", ordinary_id.get()))
+            .unwrap();
+        assert_eq!(auth["browser"]["url"], "authorization://private");
+        assert_eq!(auth["browser"]["url_redacted"], true);
+        assert_eq!(auth["browser"]["can_back"], false);
+        assert_eq!(auth["browser"]["can_forward"], true);
+        assert_eq!(other["browser"]["url"], ordinary_url);
+        assert_eq!(other["browser"]["url_redacted"], false);
+        assert_eq!(other["browser"]["title"], "Public page");
+        assert_eq!(other["browser"]["can_back"], true);
+        assert_eq!(other["browser"]["can_forward"], false);
+        assert!(!observed.to_string().contains("private-token"));
+    }
 
     fn authorization_failure_observation(
         app: &mut ConApp,

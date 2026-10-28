@@ -1815,6 +1815,17 @@ impl ConApp {
         self.browser_visible = None;
     }
 
+    fn browser_navigation_flags(&self, id: workspace::TabId) -> (bool, bool) {
+        if self.loaded_browser_id == Some(id) {
+            (self.browser_can_back, self.browser_can_forward)
+        } else {
+            self.parked_browsers
+                .get(&id)
+                .map(harness_auth_ui::OrdinaryBrowser::navigation_flags)
+                .unwrap_or((false, false))
+        }
+    }
+
     fn activate_session(&mut self, window: &PixelWindow, id: workspace::TabId) {
         if self.workspace.active() == Some(id) && !self.home_active {
             return;

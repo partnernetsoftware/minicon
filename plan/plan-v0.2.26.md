@@ -86,7 +86,7 @@ Outcome: 0.2.26 @0 is a trustworthy default-list watch floor for tab-contained a
 │   evidence: request-without-tab, typed exact-tab run, partial/stale/offline public scenarios
 │   safe failure: Unknown/Last known replaces inferred agent work or unmeasured system health
 │   dependency: PRD 25 lifecycle, PRD 36 read-only projection and accepted observer seam; non-goal: provider polling
-├── [_] B26 — decide the inside-tab agent observer seam
+├── [-] B26 — decide the inside-tab agent observer seam
 │   invariant: a registered agent run binds to window/session incarnation, stable @ID, source and ordered run identity
 │   evidence: self @ID export contract, one real CLI/TUI adapter trace, peer-message envelope/receipt decision and stale/closed-tab controls
 │   safe failure: unregistered agents remain visible as tabs with Unknown work state
@@ -239,6 +239,17 @@ local-preview/retry, Home and header-entry courts also passed after this
 change. Live authorization detour/return, allocation failure and macOS/Linux
 two-page visibility remain open; W26 is partial and
 release qualification cannot infer those results from Windows navigation.
+Public `list-tabs` now uses each Web @ID's loaded/parked navigation flags and
+redacts only the auth-owning @ID or a recognized auth URL. The focused
+`list_tabs_keeps_parked_web_flags_and_other_web_public_during_auth` test
+passed; global-flag and global-auth masking mutations each made it fail.
+The Windows two-Web court also passed its new parked-history assertion.
+B26 now has a selected tab-bound observer and peer-receipt boundary in
+[PRD 26.01](../prd/PRD_02_26_01_agent_cli_contract.md#b26-tab-bound-observer-and-peer-message-decision):
+`self` needs atomic host-side incarnation/@ID validation; typed adapter runs
+name source and ordered stage; host-accepted PTY input never becomes an agent
+receipt. The actual self environment/request binding, one real CLI/TUI adapter
+trace and stale/closed/restart controls are still open, so B26 remains partial.
 Search/filter/group, mixed 256-tab overflow, attention/system cards, native
 wide/narrow visual captures and other OS courts remain required before T26 or
 the default-list cut can be marked complete. `screenshot-pane` observes the

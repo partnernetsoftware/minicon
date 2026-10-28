@@ -89,6 +89,16 @@ known-authorization-URL detection. `list-tabs` and browser field snapshots
 redact the role's URL as `authorization://private`, use a fixed title and omit
 private title/error/editor contents across provider redirects. Pixel screenshots
 remain observations of the actual visible page; they are not sanitized text.
+With two Web tabs, only the authorization owner's @ID receives that role;
+another ordinary Web row keeps its public URL/title and its own navigation
+flags. A recognized authorization URL without the explicit role keeps its
+existing path-only public URL shape. The focused
+`list_tabs_keeps_parked_web_flags_and_other_web_public_during_auth` test passed;
+restoring global auth masking and global navigation flags made it fail in
+separate controls. The Windows native
+`native_two_web_tabs_keep_independent_pages_when_switched_and_closed` court
+also observes the parked page's forward flag through public `list-tabs`.
+These observations do not replace the live two-Web authorization-return court.
 
 `close-tab` on that presentation consumes the dismissal and leaves its Browser
 node alive with the restored ordinary page. Its development success object is

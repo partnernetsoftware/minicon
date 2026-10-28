@@ -386,6 +386,12 @@ names above.
   courts passed after the behavior change. Native authorization return and
   macOS/Linux two-page courts remain open; W26 stays
   partial until those journeys and failure recovery are qualified.
+  Public `list-tabs` now takes `can_back`/`can_forward` from each Web @ID's
+  loaded or parked runtime, and its authorization mask applies only to the
+  recorded auth @ID or a recognized authorization URL. The focused
+  `list_tabs_keeps_parked_web_flags_and_other_web_public_during_auth` test
+  passed; reverting either scoping rule made it fail. The Windows two-Web
+  court also checks the parked page's forward flag through public `list-tabs`.
 - [v] **`minicon-web` module (adopted 2026-10-23).** Browser content-panel
   API. Product face remains **Tab / content panel** (now 1:1, future 1:N);
   **no tray**. Chrome panels stay chrome. Path: `crates/minicon-web/` (lib +

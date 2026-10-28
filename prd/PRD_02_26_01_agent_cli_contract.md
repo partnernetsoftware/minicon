@@ -154,6 +154,46 @@ bounded to 1 MiB. These are current limits, not a promise of scrollback.
    tmux flags fail clearly; no full tmux, remote server or permission policy
    is implied.
 
+## B26 tab-bound observer and peer-message decision
+
+The Console child will receive `MINICON_TAB_ID` and an opaque
+`MINICON_INSTANCE_ID` only when the host has minted a new process incarnation.
+The former names its stable `@ID`; the latter distinguishes a restarted host
+even when the user reuses an explicit endpoint. These are routing hints, not
+authentication. `--target self` must carry both values in the *same* local
+control request as the desired operation; the host checks its own incarnation,
+the live tab kind and the exact `@ID` before any side effect. A client-side
+`list-tabs` preflight is insufficient because the host could restart between
+preflight and mutation. An explicit `--control` may select another endpoint,
+but a mismatched `self` context is refused there. A closed tab, restarted
+instance, malformed hint or Browser tab refuses rather than falling back to
+the active tab. Explicit `@ID` remains the current cross-tab route.
+
+The first accepted inside-tab adapter uses an opt-in, versioned typed event
+request through the existing local control endpoint. It registers one Console
+`@ID` and source kind for one run ID, then sends monotonic sequence numbers
+for start, work/wait, cancellation and final outcomes. The host stamps receipt
+time, validates the live tab/incarnation and transition order, bounds retained
+history, and reports the source as **adapter reported**. This is a local
+same-user observation contract, not a claim that an environment value proves
+who produced the event. Adapter silence becomes **Lost contact / last known**
+after a named freshness deadline; tab close and host restart invalidate the
+run binding. Unregistered CLI/TUI programs remain ordinary Console tabs with
+Unknown agent work. The @0 and robot views consume one read-only projection;
+neither parses PTY text, window titles or model request counts into stages.
+
+Peer delivery has two distinct receipts. `send-paste`/`send-keys` can report
+only that MiniCon accepted input for an exact live PTY. A later typed
+`send-message` route may return a host-accepted envelope with sender/recipient
+incarnations, `@ID`s, message ID and bounded payload; **agent received**
+requires a separate acknowledgement from the recipient's registered adapter.
+There is no synthetic acknowledgement from terminal pixels, prompt matching
+or a successful write. Missing adapter, stale receiver or expired message is
+explicitly unavailable/failed; no general broker, offline queue or remote
+delivery is added to the 0.2.26 cut. The exact event/message command syntax,
+one real CLI/TUI adapter trace and stale/closed/restart negative controls are
+still required before any agent-run state or receipt is enabled in the UI.
+
 ## Acceptance boundary
 
 The first delivery is a contract and compatibility matrix, followed by

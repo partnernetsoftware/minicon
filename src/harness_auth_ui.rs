@@ -21,6 +21,10 @@ pub(super) struct OrdinaryBrowser {
 }
 
 impl OrdinaryBrowser {
+    pub(super) fn navigation_flags(&self) -> (bool, bool) {
+        (self.can_back, self.can_forward)
+    }
+
     pub(super) fn take_current(app: &mut ConApp) -> Self {
         Self {
             model: None,
