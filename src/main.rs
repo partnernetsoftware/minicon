@@ -1664,7 +1664,10 @@ impl ConApp {
     /// what an empty window paints and titles, and a test can drive the state
     /// transition without a pixel window.
     fn detach_session(&mut self, id: workspace::TabId) -> bool {
-        if self.workspace.browser_tab() == Some(id)
+        if self
+            .browser_auth
+            .as_ref()
+            .is_some_and(|auth| auth.tab_id == id)
             && let Some(attempt) = self.browser_auth.as_ref().map(|auth| auth.attempt)
         {
             self.dismissed_auth_attempt = Some(attempt);
@@ -2513,7 +2516,11 @@ impl ConApp {
     /// single page host and leave the new tab's page unmapped.
     fn open_browser_tab(&mut self, window: &PixelWindow) -> Result<(), PixelWindowError> {
         self.cancel_pointer_gestures_for_activation(window);
-        if let Some(id) = self.workspace.browser_tab() {
+        if let Some(id) = self
+            .workspace
+            .active_browser_tab()
+            .or_else(|| self.workspace.browser_tab())
+        {
             self.select_tab(id);
             #[cfg(any(target_os = "macos", windows))]
             self.ensure_native_page(window);
@@ -2562,7 +2569,9 @@ impl ConApp {
         if browser::http_url_at(url, 0).as_deref() != Some(url) {
             return false;
         }
-        let existing = workspace.browser_tab();
+        let existing = workspace
+            .active_browser_tab()
+            .or_else(|| workspace.browser_tab());
         let id = if let Some(id) = existing {
             workspace.set_active(id);
             id
@@ -2705,7 +2714,7 @@ impl ConApp {
             .as_ref()
             .ok_or_else(|| {
                 self.workspace
-                    .browser_tab()
+                    .active_browser_tab()
                     .and_then(|id| self.browsers.get(&id))
                     .and_then(|tab| match &tab.panel().load {
                         browser::PageLoad::Unavailable { reason, .. } => Some(reason.clone()),
@@ -5581,6 +5590,31 @@ mod tests {
                 .filter(|node| node.kind == workspace::TabKind::Browser)
                 .count(),
             1
+        );
+    }
+
+    #[test]
+    fn http_handoff_targets_the_active_web_id_with_two_browser_roots() {
+        let mut workspace = workspace::Workspace::default();
+        let first = workspace.add_browser_root().unwrap();
+        let second = workspace.add_browser_root().unwrap();
+        let mut browsers = SessionStore::default();
+        browsers
+            .insert(first, browser::BrowserTab::shell())
+            .unwrap();
+        browsers
+            .insert(second, browser::BrowserTab::shell())
+            .unwrap();
+        assert!(ConApp::handoff_http_link(
+            &mut workspace,
+            &mut browsers,
+            "https://second.invalid/only"
+        ));
+        assert_eq!(workspace.active_browser_tab(), Some(second));
+        assert!(browsers.get(&first).unwrap().panel().url.is_none());
+        assert_eq!(
+            browsers.get(&second).unwrap().panel().url.as_deref(),
+            Some("https://second.invalid/only")
         );
     }
 

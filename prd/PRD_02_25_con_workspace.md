@@ -349,8 +349,13 @@ names above.
   handles are moved on switch and released on close. The focused
   `web_runtime_parks_address_proxy_and_navigation_by_stable_tab_id` and
   `closing_loaded_web_restores_surviving_web_runtime` tests cover state
-  separation and close restoration. Native two-page host and authorization
-  isolation evidence remains open; +W still focuses the existing Web tab.
+  separation and close restoration. HTTP handoff now prefers the active Web
+  @ID, and authorization presentation stores its owning @ID for close and
+  restoration. `http_handoff_targets_the_active_web_id_with_two_browser_roots`
+  and `authorization_close_restores_its_exact_web_id_with_an_earlier_web_present`
+  passed; restoring the old first-browser lookup made each fail. Native
+  two-page host and authorization isolation evidence remains open; +W still
+  focuses the existing Web tab.
 - [v] **`minicon-web` module (adopted 2026-10-23).** Browser content-panel
   API. Product face remains **Tab / content panel** (now 1:1, future 1:N);
   **no tray**. Chrome panels stay chrome. Path: `crates/minicon-web/` (lib +

@@ -69,6 +69,7 @@ impl Drop for OrdinaryBrowser {
 }
 
 pub(super) struct AuthPresentation {
+    pub(super) tab_id: workspace::TabId,
     pub(super) attempt: provider_runtime::AttemptId,
     pub(super) context: browser::PageContext,
     pub(super) ordinary: OrdinaryBrowser,
@@ -264,7 +265,7 @@ impl ConApp {
                 self.fail_harness_auth("Could not open the authorization view.");
                 return;
             }
-            let Some(id) = self.workspace.browser_tab() else {
+            let Some(id) = self.workspace.active_browser_tab() else {
                 return;
             };
             self.sync_embedded_page(window);
@@ -299,6 +300,7 @@ impl ConApp {
             let mut ordinary = OrdinaryBrowser::take_current(self);
             ordinary.model = model;
             self.browser_auth = Some(AuthPresentation {
+                tab_id: id,
                 attempt,
                 context,
                 ordinary,
@@ -371,9 +373,9 @@ impl ConApp {
     ) {
         self.present_http_link(window, url);
         let unavailable = self
-            .workspace
-            .browser_tab()
-            .and_then(|id| self.browsers.get(&id))
+            .browser_auth
+            .as_ref()
+            .and_then(|auth| self.browsers.get(&auth.tab_id))
             .is_some_and(|tab| matches!(tab.panel().load, browser::PageLoad::Unavailable { .. }));
         if unavailable {
             self.fail_harness_auth("The requested isolated authorization browser is unavailable.");
@@ -533,10 +535,11 @@ impl ConApp {
         }
         let return_to_settings = self.active_is_browser();
         self.stop_page_host();
-        if let Some(id) = self.workspace.browser_tab() {
-            if let (Some(target), Some(model)) =
-                (self.browsers.get_mut(&id), auth.ordinary.model.take())
-            {
+        if self.workspace.node(auth.tab_id).is_some() {
+            if let (Some(target), Some(model)) = (
+                self.browsers.get_mut(&auth.tab_id),
+                auth.ordinary.model.take(),
+            ) {
                 *target = model;
             }
             auth.ordinary.restore_current(self);
@@ -772,6 +775,7 @@ mod tests {
         address.caret = 5;
         address.anchor = Some(2);
         app.browser_auth = Some(AuthPresentation {
+            tab_id: browser,
             attempt,
             context: browser::PageContext {
                 profile: minicon_web::PageProfile {
@@ -826,6 +830,36 @@ mod tests {
         assert!(!app.detach_session(browser));
         assert!(app.workspace.browser_tab().is_none());
         assert!(app.sessions.contains_key(&terminal));
+    }
+
+    #[test]
+    fn authorization_close_restores_its_exact_web_id_with_an_earlier_web_present() {
+        let (mut app, _, first, attempt) = parked_browser();
+        assert!(
+            app.browsers
+                .get_mut(&first)
+                .unwrap()
+                .show_http("https://first.invalid/still-here")
+        );
+        let second = app.workspace.add_browser_root().unwrap();
+        app.browsers
+            .insert(second, browser::BrowserTab::shell())
+            .unwrap();
+        app.loaded_browser_id = Some(second);
+        app.browser_auth.as_mut().unwrap().tab_id = second;
+
+        assert!(!app.detach_session(second));
+        assert_eq!(app.workspace.active_browser_tab(), Some(second));
+        assert_eq!(app.browser_auth.as_ref().map(|auth| auth.attempt), None);
+        assert_eq!(
+            app.browsers.get(&first).unwrap().panel().url.as_deref(),
+            Some("https://first.invalid/still-here")
+        );
+        assert_eq!(
+            app.browsers.get(&second).unwrap().panel().url.as_deref(),
+            Some("https://ordinary.invalid/live")
+        );
+        assert_eq!(app.dismissed_auth_attempt, Some(attempt));
     }
 
     #[test]

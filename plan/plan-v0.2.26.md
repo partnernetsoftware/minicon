@@ -217,6 +217,9 @@ W26 has its Workspace identity prerequisite: distinct browser roots can
 now be allocated and closed independently in the product model. Internal
 runtime parking also preserves each Web @ID's address, proxy, navigation
 flags and page handles across switches and closes; focused state tests pass.
+HTTP handoff and authorization close/restore now route by active or recorded
+Web @ID instead of the first Browser root; two-Web model tests and old-path
+mutations prove those exact decisions.
 The GUI still exposes one Web tab and +W still focuses it. Per-tab native
 page and auth isolation plus the two-Web-tab native court remain required
 before W26 is delivered.
