@@ -229,8 +229,11 @@ projection, click and snapshot identity, hidden-tab exit attention, zero-match
 after Web close, and wide/narrow captures. The Web-includes-all mutation failed.
 The Windows native Home search court passed case-insensitive tab-label and
 exact `@ID` queries, kind composition, hidden-tab attention, Escape and
-wide/narrow captures. Removing query filtering made it fail. Sorting/grouping,
-filtered-selection reveal and 256-tab evidence remain open; T26 stays partial.
+wide/narrow captures. Removing query filtering made it fail. A hidden live
+selection now offers Show filtered tab: the Windows kind-filter court passed
+pointer reveal without leaving @0, and the search court passed Enter reveal;
+closed targets remain disabled. Sorting/grouping and 256-tab evidence remain
+open; T26 stays partial.
 W26 has its Workspace identity prerequisite: distinct browser roots can
 now be allocated and closed independently in the product model. Internal
 runtime parking also preserves each Web @ID's address, proxy, navigation

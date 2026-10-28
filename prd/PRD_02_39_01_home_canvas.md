@@ -88,8 +88,15 @@ snapshots expose focus, query byte count and result IDs, never the query text.
 The Windows `native_home_search_name_and_exact_id_keep_global_attention` court
 passed mixed-tab name and exact-ID searches, kind composition, hidden-tab
 attention, Escape, and wide/narrow captures. Removing query filtering made the
-court fail. Sorting, grouping, an explicit Reveal @ID control and 256-tab
-qualification remain open.
+court fail. A selected live tab hidden by kind or name now changes the
+inspector's action from Focus tab to **Show filtered tab**. Pointer or Enter
+clears both filters, keeps @0 and the exact selected @ID, and scrolls its row
+into view; the next action can focus it. A closed @ID has neither action.
+Public geometry reports `home_inspector_action` as `reveal`, `focus` or
+`disabled`, plus a `home_reveal_tab` target only while reveal is valid. The
+Windows kind-filter court passed the narrow reveal button and stale-tab
+refusal; the search court passed keyboard reveal from a hidden selection.
+Sorting, grouping and 256-tab qualification remain open.
 
 ## Outcome tree DAG
 

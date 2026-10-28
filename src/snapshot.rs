@@ -248,6 +248,10 @@ impl ConApp {
                                 home_nodes.len(),
                                 home_capacity,
                             );
+                            let home_selected_hidden = self.home_selected_hidden_by_filter();
+                            let home_selected_live = self
+                                .home_selected_id
+                                .is_some_and(|id| self.workspace.node(id).is_some());
                             fields.extend([
                                 ("home", rect_obj(layout.home)),
                                 ("home_active", self.home_active.into()),
@@ -318,12 +322,7 @@ impl ConApp {
                                 ("home_selected_id", tab_id_json(self.home_selected_id)),
                                 (
                                     "home_selected_hidden_by_filter",
-                                    self.home_selected_id
-                                        .and_then(|id| self.workspace.node(id))
-                                        .is_some_and(|node| {
-                                            !home_nodes.iter().any(|visible| visible.id == node.id)
-                                        })
-                                        .into(),
+                                    home_selected_hidden.into(),
                                 ),
                                 (
                                     "home_attention_action",
@@ -389,9 +388,30 @@ impl ConApp {
                                 ),
                                 (
                                     "home_focus_enabled",
-                                    self.home_selected_id
-                                        .is_some_and(|id| self.workspace.node(id).is_some())
-                                        .into(),
+                                    (home_selected_live && !home_selected_hidden).into(),
+                                ),
+                                (
+                                    "home_reveal_tab",
+                                    if home_selected_hidden {
+                                        rect_obj(layout.home_focus_action(
+                                            metrics.physical_width,
+                                            metrics.physical_height,
+                                            metrics.scale_factor,
+                                        ))
+                                    } else {
+                                        json::JsonValue::Null
+                                    },
+                                ),
+                                (
+                                    "home_inspector_action",
+                                    if home_selected_hidden {
+                                        "reveal"
+                                    } else if home_selected_live {
+                                        "focus"
+                                    } else {
+                                        "disabled"
+                                    }
+                                    .into(),
                                 ),
                                 (
                                     "home_list_row_ids",

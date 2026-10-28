@@ -2368,6 +2368,7 @@ impl ConApp {
                 }
                 if live {
                     let focus = layout.home_focus_action(width, height, scale);
+                    let hidden = self.home_selected_hidden_by_filter();
                     surface.fill_rect(
                         focus.x,
                         focus.y,
@@ -2376,10 +2377,13 @@ impl ConApp {
                         t.surface.to_xrgb(),
                     );
                     stroke_rect(&mut surface, focus, scale.max(1.0) as u32, t.accent);
-                    let label = match self.ui_language {
-                        ui::UiLanguage::English => "Focus tab",
-                        ui::UiLanguage::ChineseSimplified => "打开标签页",
-                        ui::UiLanguage::ChineseTraditional => "開啟分頁",
+                    let label = match (self.ui_language, hidden) {
+                        (ui::UiLanguage::English, true) => "Show filtered tab",
+                        (ui::UiLanguage::ChineseSimplified, true) => "显示筛选标签",
+                        (ui::UiLanguage::ChineseTraditional, true) => "顯示篩選分頁",
+                        (ui::UiLanguage::English, false) => "Focus tab",
+                        (ui::UiLanguage::ChineseSimplified, false) => "打开标签页",
+                        (ui::UiLanguage::ChineseTraditional, false) => "開啟分頁",
                     };
                     paint_host_ui_text(
                         &mut surface,
@@ -2387,7 +2391,11 @@ impl ConApp {
                         focus.y.saturating_add((5.0 * scale) as u32),
                         label,
                         t.text,
-                        scaled_host_ui_font(13, self.session_seed.font_size_logical(), scale),
+                        scaled_host_ui_font(
+                            if hidden { 12 } else { 13 },
+                            self.session_seed.font_size_logical(),
+                            scale,
+                        ),
                         focus.width.saturating_sub((20.0 * scale) as u32),
                     );
                 }

@@ -1566,6 +1566,46 @@ impl ConApp {
             .collect()
     }
 
+    fn home_selected_hidden_by_filter(&self) -> bool {
+        self.home_selected_id
+            .and_then(|id| self.workspace.node(id))
+            .is_some_and(|node| {
+                !self
+                    .home_visible_nodes()
+                    .iter()
+                    .any(|visible| visible.id == node.id)
+            })
+    }
+
+    fn reveal_home_selected(&mut self, window: &PixelWindow) -> Result<(), PixelWindowError> {
+        let Some(id) = self
+            .home_selected_id
+            .filter(|_| self.home_selected_hidden_by_filter())
+        else {
+            return Ok(());
+        };
+        self.home_kind_filter = HomeKindFilter::All;
+        self.home_search = composer::ComposerState::default();
+        let metrics = window.metrics()?;
+        let capacity = self
+            .layout(
+                metrics.physical_width,
+                metrics.physical_height,
+                metrics.scale_factor,
+            )
+            .home_fleet_capacity(
+                metrics.physical_width,
+                metrics.physical_height,
+                metrics.scale_factor,
+            );
+        let nodes = self.home_visible_nodes();
+        if let Some(index) = nodes.iter().position(|node| node.id == id) {
+            self.home_list_start = ui::reveal_tree_index(0, index, nodes.len(), capacity);
+        }
+        self.mark_host_ui_full_and_repaint(window);
+        Ok(())
+    }
+
     fn update_home_search_ime_anchor(&self, window: &PixelWindow) {
         let Ok(metrics) = window.metrics() else {
             return;
@@ -4749,7 +4789,11 @@ impl PixelWindowApplication for ConApp {
                     return Ok(PixelWindowDirective::Continue);
                 }
                 LogicalKey::Named(NamedKey::Enter) if self.home_selected_id.is_some() => {
-                    self.focus_home_selected(window)?;
+                    if self.home_selected_hidden_by_filter() {
+                        self.reveal_home_selected(window)?;
+                    } else {
+                        self.focus_home_selected(window)?;
+                    }
                     return Ok(PixelWindowDirective::Continue);
                 }
                 LogicalKey::Named(
@@ -5208,7 +5252,11 @@ impl PixelWindowApplication for ConApp {
                     .home_focus_action(metrics.physical_width, metrics.physical_height, scale)
                     .contains(x, y)
                 {
-                    self.focus_home_selected(window)?;
+                    if self.home_selected_hidden_by_filter() {
+                        self.reveal_home_selected(window)?;
+                    } else {
+                        self.focus_home_selected(window)?;
+                    }
                 } else {
                     let fleet =
                         layout.home_fleet(metrics.physical_width, metrics.physical_height, scale);

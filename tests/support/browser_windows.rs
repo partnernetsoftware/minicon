@@ -1157,6 +1157,34 @@ fn native_home_kind_filter_keeps_exact_rows_and_global_exit_attention() {
         hidden_inspector["geometry"]["home_selected_hidden_by_filter"],
         true
     );
+    assert_eq!(
+        hidden_inspector["geometry"]["home_inspector_action"],
+        "reveal"
+    );
+    assert_eq!(hidden_inspector["geometry"]["home_focus_enabled"], false);
+    println!(
+        "Home filtered reveal capture: {}",
+        host.capture_home_client("home-filter-reveal-narrow.png")
+            .display()
+    );
+    host.click_geometry("home_reveal_tab");
+    let revealed = host.cli(&["ui-snapshot"]);
+    assert_eq!(revealed["geometry"]["home_active"], true);
+    assert_eq!(revealed["geometry"]["home_kind_filter"], "all");
+    assert_eq!(revealed["geometry"]["home_selected_id"], exited);
+    assert_eq!(
+        revealed["geometry"]["home_selected_hidden_by_filter"],
+        false
+    );
+    assert_eq!(revealed["geometry"]["home_inspector_action"], "focus");
+    assert!(
+        revealed["geometry"]["home_list_row_ids"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!(exited))
+    );
+    host.click_geometry("home_filter_action");
+    host.click_geometry("home_filter_action");
     host.click_geometry_row("home_list_row_rects", 0);
     assert_eq!(
         host.cli(&["ui-snapshot"])["geometry"]["home_selected_id"],
@@ -1187,6 +1215,10 @@ fn native_home_kind_filter_keeps_exact_rows_and_global_exit_attention() {
         empty_web["geometry"]["home_attention_items"][0]["tab_id"],
         exited
     );
+    assert_eq!(empty_web["geometry"]["home_inspector_action"], "disabled");
+    assert_eq!(empty_web["geometry"]["home_reveal_tab"], Value::Null);
+    host.click_geometry("home_focus_tab");
+    assert_eq!(host.cli(&["ui-snapshot"])["geometry"]["home_active"], true);
     host.close_and_wait();
 }
 
@@ -1269,6 +1301,22 @@ fn native_home_search_name_and_exact_id_keep_global_attention() {
     assert_eq!(cleared["geometry"]["home_search_query_bytes"], 0);
     assert_eq!(cleared["geometry"]["home_kind_filter"], "web");
     assert_eq!(cleared["geometry"]["home_list_row_ids"][0], web);
+    assert_eq!(cleared["geometry"]["home_inspector_action"], "reveal");
+    host.cli(&["send-ui-keys", "Enter"]);
+    let keyboard_revealed = host.cli(&["ui-snapshot"]);
+    assert_eq!(keyboard_revealed["geometry"]["home_active"], true);
+    assert_eq!(keyboard_revealed["geometry"]["home_kind_filter"], "all");
+    assert_eq!(keyboard_revealed["geometry"]["home_selected_id"], exited);
+    assert_eq!(
+        keyboard_revealed["geometry"]["home_inspector_action"],
+        "focus"
+    );
+    assert!(
+        keyboard_revealed["geometry"]["home_list_row_ids"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!(exited))
+    );
     host.close_and_wait();
 }
 
