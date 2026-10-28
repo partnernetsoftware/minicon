@@ -298,7 +298,8 @@ mutation failed; closing the tab removes the item. A measured MiniCon-process
 card now samples on Home entry or explicit refresh and names scope, OS source,
 sample time, RSS and cumulative CPU time; its Windows native court and the
 Unknown-on-read-failure projection test passed, with refresh-removal mutation
-proof. The exit-attention empty state now names its child-only coverage in
+proof. Its visible sample time is fixed UTC so an idle, unpainted card does
+not retain a false relative age. The exit-attention empty state names its child-only coverage in
 copy and public snapshot, and the native court covers removal to that state.
 Mixed severity/source deduplication, actionable counts, provider/gateway
 routing and whole-machine or other-platform resource courts remain open.

@@ -1948,11 +1948,16 @@ impl ConApp {
                 t.surface.to_xrgb(),
             );
             stroke_rect(&mut surface, system_card, 1, t.border);
-            let age = self.home_system_sample.and_then(|sample| {
-                SystemTime::now()
-                    .duration_since(sample.observed_at)
+            let sampled_utc = self.home_system_sample.and_then(|sample| {
+                sample
+                    .observed_at
+                    .duration_since(UNIX_EPOCH)
                     .ok()
-                    .map(|elapsed| elapsed.as_secs())
+                    .map(|elapsed| {
+                        minicon_platform::contract::local_clock::civil_from_unix_seconds(
+                            elapsed.as_secs().min(i64::MAX as u64) as i64,
+                        )
+                    })
             });
             let (heading, computer) = match self.ui_language {
                 ui::UiLanguage::English => ("This MiniCon · Refresh", "Computer: unavailable"),
@@ -1992,43 +1997,44 @@ impl ConApp {
                     ui::UiLanguage::ChineseTraditional => "程序指標：未知".to_owned(),
                 },
             };
-            let source = match (self.ui_language, age) {
-                (ui::UiLanguage::English, Some(seconds)) => {
-                    format!("OS process · {seconds}s ago")
+            let source = match (self.ui_language, sampled_utc, compact) {
+                (ui::UiLanguage::English, Some(at), false) => format!(
+                    "OS process · {:02}-{:02} {:02}:{:02}Z",
+                    at.month, at.day, at.hour, at.minute
+                ),
+                (ui::UiLanguage::ChineseSimplified, Some(at), false) => format!(
+                    "系统进程 · {:02}-{:02} {:02}:{:02}Z",
+                    at.month, at.day, at.hour, at.minute
+                ),
+                (ui::UiLanguage::ChineseTraditional, Some(at), false) => format!(
+                    "系統程序 · {:02}-{:02} {:02}:{:02}Z",
+                    at.month, at.day, at.hour, at.minute
+                ),
+                (ui::UiLanguage::English, Some(at), true) => {
+                    format!("OS {:02}:{:02}Z · Computer unavailable", at.hour, at.minute)
                 }
-                (ui::UiLanguage::ChineseSimplified, Some(seconds)) => {
-                    format!("系统进程 · {seconds}秒前")
+                (ui::UiLanguage::ChineseSimplified, Some(at), true) => {
+                    format!("系统 {:02}:{:02}Z · 整机不可用", at.hour, at.minute)
                 }
-                (ui::UiLanguage::ChineseTraditional, Some(seconds)) => {
-                    format!("系統程序 · {seconds}秒前")
+                (ui::UiLanguage::ChineseTraditional, Some(at), true) => {
+                    format!("系統 {:02}:{:02}Z · 整機不可用", at.hour, at.minute)
                 }
-                (ui::UiLanguage::English, None) => "OS process · time unknown".to_owned(),
-                (ui::UiLanguage::ChineseSimplified, None) => "系统进程 · 时间未知".to_owned(),
-                (ui::UiLanguage::ChineseTraditional, None) => "系統程序 · 時間未知".to_owned(),
-            };
-            let source = if compact {
-                match (self.ui_language, age) {
-                    (ui::UiLanguage::English, Some(seconds)) => {
-                        format!("OS {seconds}s · Computer unavailable")
-                    }
-                    (ui::UiLanguage::ChineseSimplified, Some(seconds)) => {
-                        format!("系统{seconds}秒前 · 整机不可用")
-                    }
-                    (ui::UiLanguage::ChineseTraditional, Some(seconds)) => {
-                        format!("系統{seconds}秒前 · 整機不可用")
-                    }
-                    (ui::UiLanguage::English, None) => {
-                        "OS time ? · Computer unavailable".to_owned()
-                    }
-                    (ui::UiLanguage::ChineseSimplified, None) => {
-                        "系统时间未知 · 整机不可用".to_owned()
-                    }
-                    (ui::UiLanguage::ChineseTraditional, None) => {
-                        "系統時間未知 · 整機不可用".to_owned()
-                    }
+                (ui::UiLanguage::English, None, true) => {
+                    "OS time ? · Computer unavailable".to_owned()
                 }
-            } else {
-                source
+                (ui::UiLanguage::ChineseSimplified, None, true) => {
+                    "系统时间未知 · 整机不可用".to_owned()
+                }
+                (ui::UiLanguage::ChineseTraditional, None, true) => {
+                    "系統時間未知 · 整機不可用".to_owned()
+                }
+                (ui::UiLanguage::English, None, false) => "OS process · time unknown".to_owned(),
+                (ui::UiLanguage::ChineseSimplified, None, false) => {
+                    "系统进程 · 时间未知".to_owned()
+                }
+                (ui::UiLanguage::ChineseTraditional, None, false) => {
+                    "系統程序 · 時間未知".to_owned()
+                }
             };
             let line_size = scaled_host_ui_font(11, self.session_seed.font_size_logical(), scale);
             let pitch = if compact {

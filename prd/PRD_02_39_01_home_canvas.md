@@ -423,6 +423,10 @@ process CPU time, not a CPU utilization rate. Its snapshot names the process
 scope, OS metric source, raw byte/millisecond values and observation time;
 failed reads are Unknown with a reason and null values, never zero. The card
 marks whole-computer metrics unavailable until a separate sampler is qualified.
+The card prints the fixed sample time in UTC instead of a relative age that
+would freeze while Home is idle without repaint; the snapshot retains the
+precise Unix millisecond observation time. Windows wide/narrow native captures
+show the timestamp beside the scoped reading without clipping.
 `native_home_process_sample_names_scope_source_and_entry_time` proves Windows
 entry, refresh, stable repeated snapshots, narrow-card/list separation and a
 return-to-Home sample; removing refresh sampling made the court fail. The
