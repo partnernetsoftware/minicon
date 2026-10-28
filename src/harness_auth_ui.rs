@@ -473,6 +473,12 @@ impl ConApp {
             return false;
         }
         let mut auth = self.browser_auth.take().unwrap();
+        let resume_loaded = self
+            .loaded_browser_id
+            .filter(|loaded| *loaded != auth.tab_id);
+        if self.workspace.node(auth.tab_id).is_some() {
+            self.load_browser_runtime(auth.tab_id);
+        }
         #[cfg(any(windows, target_os = "linux"))]
         {
             if self
@@ -533,7 +539,7 @@ impl ConApp {
                 self.auth_context_lifecycle.overflowed = true;
             }
         }
-        let return_to_settings = self.active_is_browser();
+        let return_to_settings = self.workspace.active_browser_tab() == Some(auth.tab_id);
         self.stop_page_host();
         if self.workspace.node(auth.tab_id).is_some() {
             if let (Some(target), Some(model)) = (
@@ -547,6 +553,9 @@ impl ConApp {
                 self.settings_open = true;
                 self.settings_section = ui::SettingsSection::Harness;
             }
+        }
+        if let Some(id) = resume_loaded.filter(|id| self.workspace.node(*id).is_some()) {
+            self.load_browser_runtime(id);
         }
         self.harness_workspace.finish_auth(attempt);
         self.browser_visible = None;
@@ -860,6 +869,32 @@ mod tests {
             Some("https://ordinary.invalid/live")
         );
         assert_eq!(app.dismissed_auth_attempt, Some(attempt));
+    }
+
+    #[test]
+    fn auth_completion_after_switch_keeps_other_web_runtime_loaded() {
+        let (mut app, _, auth_tab, attempt) = parked_browser();
+        app.loaded_browser_id = Some(auth_tab);
+        app.browser_proxy_applied = "authorization-proxy".into();
+        let other = app.workspace.add_browser_root().unwrap();
+        app.browsers
+            .insert(other, browser::BrowserTab::shell())
+            .unwrap();
+        app.load_browser_runtime(other);
+        app.browser_proxy_applied = "other-web-proxy".into();
+
+        assert!(app.restore_harness_auth(attempt));
+        assert_eq!(app.workspace.active_browser_tab(), Some(other));
+        assert_eq!(app.loaded_browser_id, Some(other));
+        assert_eq!(app.browser_proxy_applied, "other-web-proxy");
+        assert_eq!(
+            app.parked_browsers.get(&auth_tab).unwrap().proxy_applied,
+            "http://ordinary-proxy.invalid:8080"
+        );
+        assert_eq!(
+            app.browsers.get(&auth_tab).unwrap().panel().url.as_deref(),
+            Some("https://ordinary.invalid/live")
+        );
     }
 
     #[test]

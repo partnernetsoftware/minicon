@@ -353,7 +353,11 @@ names above.
   @ID, and authorization presentation stores its owning @ID for close and
   restoration. `http_handoff_targets_the_active_web_id_with_two_browser_roots`
   and `authorization_close_restores_its_exact_web_id_with_an_earlier_web_present`
-  passed; restoring the old first-browser lookup made each fail. Native
+  passed; restoring the old first-browser lookup made each fail. An auth
+  completion after switching to another Web now temporarily loads the auth
+  page by @ID, restores its ordinary page, then resumes the user's loaded Web.
+  `auth_completion_after_switch_keeps_other_web_runtime_loaded` passed; removing
+  that resume made it fail. Native
   two-page host and authorization isolation evidence remains open; +W still
   focuses the existing Web tab.
 - [v] **`minicon-web` module (adopted 2026-10-23).** Browser content-panel
