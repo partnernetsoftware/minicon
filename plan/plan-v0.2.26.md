@@ -45,7 +45,7 @@ Outcome: 0.2.26 @0 is a trustworthy default-list watch floor for tab-contained a
 │   evidence: wide/4:3/narrow wireframes, English/Chinese copy and five-second multi-tab walkthrough notes
 │   safe failure: ambiguity remains an explicit design issue before coding a target
 │   dependency: PRD 39.01 states and the existing static shell; non-goal: final logo or unmeasured slogan claim
-├── [_] C26 — build the default list Home composition and navigation
+├── [-] C26 — build the default list Home composition and navigation
 │   invariant: Home is read-only, scene targets carry stable @IDs, and real tab/browser drafts survive round trips
 │   evidence: public GUI pointer/keyboard journey, native captures and no-side-effect traces
 │   safe failure: empty office retains a working primary route and explanation
@@ -55,7 +55,7 @@ Outcome: 0.2.26 @0 is a trustworthy default-list watch floor for tab-contained a
 │   evidence: 0/1/many/256 mixed-tab public journeys, stale-target refusal and native click/focus receipts
 │   safe failure: missing agent observer stays Unknown; closed tab never retargets another row
 │   dependency: PRD 25 tab tree/session lifecycle and PRD 39.01 HC-06; non-goal: reading hidden PTY output
-├── [_] D26 — design the optional spatial drag-and-drop mode in stages
+├── [-] D26 — deliver inspectable Visual V0 and stage drag-and-drop separately
 │   invariant: visual positions belong to stable @IDs and never alter the real tab tree or agent state
 │   evidence: V0 inspect-preview, V1 session-only card placement, V2 explicit tree-move contracts and native interaction prototype
 │   safe failure: an unqualified drag mode stays unavailable while the default list remains fully usable
@@ -91,7 +91,7 @@ Outcome: 0.2.26 @0 is a trustworthy default-list watch floor for tab-contained a
 │   evidence: self @ID export contract, one real CLI/TUI adapter trace, peer-message envelope/receipt decision and stale/closed-tab controls
 │   safe failure: unregistered agents remain visible as tabs with Unknown work state
 │   dependency: PRD 26.01 CLI contract, PRD 25 lifecycle and PRD 36 run view; non-goal: shipping a general message broker or parsing PTY prose
-├── [_] R26 — qualify visual responsiveness, accessibility and idle cost
+├── [-] R26 — qualify visual responsiveness, accessibility and idle cost
 │   invariant: essential meaning stays visible across scale/language/window states without continuous idle repaint
 │   evidence: 1x/1.5x/2x native visual courts, focus order, reduced-motion and idle repaint measurements
 │   safe failure: decorative detail collapses before targets or state text do
@@ -132,7 +132,7 @@ flowchart LR
     H2 -->|yes| ACTOR["One observed run: actor at its tab"]
     H2 -->|no| STILL["Tab station; agent state Unknown"]
     ACTOR & STILL --> HOME
-    HOME & FLEET & ATT & B26 & R26 & Z26 & W26 & F26 --> Q26{Exact-source release gates}
+    HOME & FLEET & SPATIAL & ATT & B26 & R26 & Z26 & W26 & F26 --> Q26{Exact-source release gates}
     Q26 -->|pass + authority| PUB["Public 0.2.26"]
     Q26 -->|missing native/real proof| BLOCK["BLOCKED claim; no invented evidence"]
 ```
@@ -307,11 +307,13 @@ wide/narrow/scale visual qualification and other OS courts remain required befor
 the default-list cut can be marked complete. `screenshot-pane` observes the
 underlying Console pane on @0 and is not a Home capture receipt.
 
-The intended 0.2.26 cut is the default list from HC-01 through HC-04 plus HC-06/07:
-@0 tab fleet, exact drill-down, prioritized attention, scoped system status
-and responsive native UX, plus the B26 observer-seam decision. HC-05 characters
-and interactive spatial drag are separately gated future capabilities. D26
-delivers their interaction/identity design, not a decorative shipped toggle.
+The intended 0.2.26 cut is the default list from HC-01 through HC-04 plus HC-06/07
+and HC-08 Visual V0: @0 tab fleet, exact drill-down, prioritized attention,
+scoped system status, responsive native UX and an inspectable spatial preview
+of the same @IDs and facts, plus the B26 observer-seam decision. Visual V0 is
+an explicit second mode with a route back to List; it has no drag affordance.
+HC-05 characters and interactive spatial drag are separately gated future
+capabilities. D26 delivers the V0 mode and stages V1/V2 interaction design.
 Arbitrary inside-tab agent stage
 observation implementation, H2 task launch/Stop,
 cross-machine coordination,

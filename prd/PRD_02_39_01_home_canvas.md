@@ -163,25 +163,25 @@ closes U26's complete system/alert first-glance invariant or HC-02/07.
 
 ```text
 Outcome: @0 lets one person manage and watch tab-contained agents and local health in list or visual mode
-├── [_] HC-01 — two-mode information architecture
+├── [-] HC-01 — two-mode information architecture
 │   invariant: List opens by default; Visual is explicit; both render one @ID/observer/attention projection
 │   evidence: initial/reopen/mode-switch snapshots and native 16:9, 4:3, short-window captures
 │   safe failure: unavailable data leaves the composition intact with a clear empty explanation
 │   dependency: PRD 39 fixed destination and shared host theme/font metrics
 │   non-goal: divergent mode-specific task truth, a second Settings page or animated wallpaper
-├── [_] HC-02 — truthful tab, agent and system projection
+├── [-] HC-02 — truthful tab, agent and system projection
 │   invariant: tab/process facts, typed agent work and system telemetry remain separate, each with scope/source/freshness
 │   evidence: public snapshots and mixed active/exited/unreported/stale/error native journeys
 │   safe failure: lost owner data removes claims and preserves explicit routes to inspection/retry
 │   dependency: PRD 25 tab/session state, host telemetry owner and PRD 36 typed run/request projection
 │   non-goal: detecting agents from title/PTY text, polling providers or exposing private output
-├── [_] HC-03 — focused, reversible navigation
+├── [-] HC-03 — focused, reversible navigation
 │   invariant: every clickable region has one target and opening @0 does not mutate a service, account, task or tab
 │   evidence: pointer, keyboard, focus and no-activation journeys across Home, real tab, robot and Settings
 │   safe failure: unavailable destination remains explained and Home remains usable
 │   dependency: PRD 39 @0 routing and PRD 36 typed deep links
 │   non-goal: task Start/Stop, account editing or direct PTY input on Home
-├── [_] HC-04 — responsive and accessible canvas
+├── [-] HC-04 — responsive and accessible canvas
 │   invariant: identity, primary action and status retain order and full targets at every supported window size
 │   evidence: 1x/1.5x/2x native captures, narrow/short scroll and tab-order/readout courts
 │   safe failure: condensed one-column view replaces decorative scene detail before essential controls clip
@@ -198,7 +198,7 @@ Outcome: @0 lets one person manage and watch tab-contained agents and local heal
 │   safe failure: collector loss says Unknown, never healthy; a missing reading is not an alarm storm
 │   dependency: tab lifecycle, PRD 36 attention projection and measured host telemetry
 │   non-goal: unmeasured OS-wide health claims, automatic remediation or duplicate provider billing UI
-├── [_] HC-08 — staged visual drag/drop management
+├── [-] HC-08 — staged visual drag/drop management
 │   invariant: visual placement never silently mutates the tab tree or an agent's working state
 │   evidence: mode parity, exact @ID drag/cancel/stale-revision/capture-loss and list-accessible alternative
 │   safe failure: invalid/stale drops leave topology and layout unchanged with a reason; no phantom station
