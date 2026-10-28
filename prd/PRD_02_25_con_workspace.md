@@ -400,6 +400,15 @@ names above.
   `list_tabs_keeps_parked_web_flags_and_other_web_public_during_auth` test
   passed; reverting either scoping rule made it fail. The Windows two-Web
   court also checks the parked page's forward flag through public `list-tabs`.
+  The first 0.2.26 six-cell run `40662566301` failed all native browser
+  workspace cells at an obsolete assertion in `scripts/browser-workspace-smoke.py`
+  that still expected New Web to reuse one root. The product's new-tab behavior
+  was the cause; the script now checks two distinct @IDs, independent navigation
+  and switch preservation, then selects the exact existing Web tab when returning
+  from Console. The full revised public script passed locally against the
+  Windows 0.2.26 release build. This local result does not replace the failed
+  six-cell run or qualify the other platforms; the corrected exact-source CI
+  run remains required.
 - [v] **`minicon-web` module (adopted 2026-10-23).** Browser content-panel
   API. Product face remains **Tab / content panel** (now 1:1, future 1:N);
   **no tray**. Chrome panels stay chrome. Path: `crates/minicon-web/` (lib +

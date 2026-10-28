@@ -300,7 +300,7 @@ def main() -> int:
         return json.loads(response)
 
     def browser() -> dict:
-        return next(tab for tab in cli("list-tabs")["tabs"] if tab["kind"] == "browser")
+        return next(tab for tab in cli("list-tabs")["tabs"] if tab["kind"] == "browser" and tab["active"])
 
     def wait(predicate, label: str, timeout: float | None = None):
         timeout = args.timeout if timeout is None else timeout
@@ -1144,8 +1144,17 @@ if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopEl
             cli("send-ui-ime", "commit", terminal_draft)
             assert cli("ui-snapshot")["composer_text"] == terminal_draft
             first_id = open_browser_directly()["id"]
-            assert open_browser_directly()["id"] == first_id, "one browser page host must reuse its root"
             navigate(origin + "/first")
+            loaded("/first", "First page")
+            second_id = open_browser_directly()["id"]
+            assert second_id != first_id, "New Web must allocate an independent root"
+            navigate(origin + "/second")
+            loaded("/second", "Second page")
+            cli("select-tab", "--target", str(first_id))
+            loaded("/first", "First page")
+            cli("select-tab", "--target", str(second_id))
+            loaded("/second", "Second page")
+            cli("select-tab", "--target", str(first_id))
             loaded("/first", "First page")
             if args.physical:
                 assert windows, "the physical court requires interactive Windows"
@@ -1195,7 +1204,7 @@ if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopEl
                 native.keybd_event(0x11, 0, 2, 0)
                 wait(lambda: not browser()["active"],
                      "physical page Ctrl+Shift+[ selects the terminal", 5)
-                cli("send-ui-keys", "Ctrl+Shift+O")
+                cli("select-tab", "--target", str(first_id))
                 loaded("/first", "First page")
             capture("first")
             navigate(origin + "/redirect")
@@ -1218,7 +1227,7 @@ if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopEl
             terminal = cli("ui-snapshot")
             assert terminal["active"] == terminal_id
             assert terminal["composer_text"] == terminal_draft, "returning from preview lost the terminal draft"
-            cli("send-ui-keys", "Ctrl+Shift+O")
+            cli("select-tab", "--target", str(first_id))
             loaded("/second", "Second page")
             capture("resized")
             with socket.socket() as refused:
@@ -1365,7 +1374,7 @@ if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopEl
                    "script_sha256": script_sha256,
                    "product_source_authority": "bound by enclosing exact-artifact build receipt; not inferred from local HEAD",
                    "physical_page_ctrl_l": args.physical, "physical_page_tab_switch": args.physical,
-                   "visible_browser_entry": True, "single_browser_root_reused": True,
+                   "visible_browser_entry": True, "independent_browser_roots": True,
                    "service_restart_retry": True, "terminal_draft_preserved": True,
                    "visible_proxy_applied": True, "proxy_clear_restores_direct": True,
                    "invalid_proxy_blocks_direct": True, "proxy_candidates_persisted": True,

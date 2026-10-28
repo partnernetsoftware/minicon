@@ -281,6 +281,11 @@ redacts only the auth-owning @ID or a recognized auth URL. The focused
 `list_tabs_keeps_parked_web_flags_and_other_web_public_during_auth` test
 passed; global-flag and global-auth masking mutations each made it fail.
 The Windows two-Web court also passed its new parked-history assertion.
+The first 0.2.26 six-cell run `40662566301` failed all six native browser
+workspace cells at the old single-Web-root assertion in the public smoke
+script. The revised script tests distinct Web @IDs and two-page navigation,
+then uses exact tab selection for return; its full Windows release-build
+journey passed locally. A new exact-source six-cell run is still required.
 B26 now has a selected tab-bound observer and peer-receipt boundary in
 [PRD 26.01](../prd/PRD_02_26_01_agent_cli_contract.md#b26-tab-bound-observer-and-peer-message-decision):
 Native `--target self` now carries host incarnation and @ID in one request;
