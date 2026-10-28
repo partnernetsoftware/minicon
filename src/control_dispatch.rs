@@ -273,9 +273,19 @@ impl ConApp {
                 if self.workspace.node(target).is_none() {
                     return Err(format!("terminal @{} does not exist", target.get()));
                 }
+                let home_before = self.home_active;
+                let previous_active = self.workspace.active();
                 self.activate_session(window, target);
                 self.close_active_session(window)
                     .map_err(|error| error.to_string())?;
+                if home_before && self.browser_auth.is_none() {
+                    if let Some(previous) =
+                        previous_active.filter(|id| self.workspace.node(*id).is_some())
+                    {
+                        self.select_tab(previous);
+                    }
+                    self.show_home(window);
+                }
                 if self.workspace.node(target).is_some() {
                     Ok(single_field_json(
                         "authorization_dismissed",

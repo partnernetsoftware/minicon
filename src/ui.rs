@@ -865,15 +865,66 @@ impl Layout {
 
     pub fn home_fleet_capacity(self, width: u32, height: u32, scale: f64) -> usize {
         let fleet = self.home_fleet(width, height, scale);
+        let inspector = self.home_inspector(width, height, scale);
+        let reserved = if inspector.x > fleet.x {
+            0
+        } else {
+            inspector.height.saturating_add(dip(8.0, scale))
+        };
         fleet
             .height
             .saturating_sub(dip(48.0, scale))
+            .saturating_sub(reserved)
             .checked_div(dip(48.0, scale).max(1))
             .unwrap_or(0) as usize
     }
 
+    pub fn home_inspector(self, width: u32, height: u32, scale: f64) -> Rect {
+        let fleet = self.home_fleet(width, height, scale);
+        if fleet.width >= dip(520.0, scale) {
+            let inspector_width = dip(210.0, scale).min(fleet.width / 3);
+            let top = fleet.y.saturating_add(dip(48.0, scale));
+            return Rect {
+                x: fleet
+                    .x
+                    .saturating_add(fleet.width.saturating_sub(inspector_width)),
+                y: top,
+                width: inspector_width,
+                height: fleet.y.saturating_add(fleet.height).saturating_sub(top),
+            };
+        }
+        let available = fleet.height.saturating_sub(dip(56.0, scale));
+        let inspector_height = dip(100.0, scale).min(available);
+        Rect {
+            x: fleet.x,
+            y: fleet
+                .y
+                .saturating_add(fleet.height.saturating_sub(inspector_height)),
+            width: fleet.width,
+            height: inspector_height,
+        }
+    }
+
+    pub fn home_focus_action(self, width: u32, height: u32, scale: f64) -> Rect {
+        let inspector = self.home_inspector(width, height, scale);
+        let pad = dip(12.0, scale);
+        let button_height = dip(32.0, scale).min(inspector.height.saturating_sub(pad));
+        Rect {
+            x: inspector.x.saturating_add(pad),
+            y: inspector.y.saturating_add(
+                inspector
+                    .height
+                    .saturating_sub(button_height)
+                    .saturating_sub(pad),
+            ),
+            width: dip(154.0, scale).min(inspector.width.saturating_sub(pad.saturating_mul(2))),
+            height: button_height,
+        }
+    }
+
     pub fn home_fleet_row(self, width: u32, height: u32, scale: f64, visible: usize) -> Rect {
         let fleet = self.home_fleet(width, height, scale);
+        let inspector = self.home_inspector(width, height, scale);
         let row_height = dip(48.0, scale);
         let top = fleet
             .y
@@ -882,7 +933,14 @@ impl Layout {
         Rect {
             x: fleet.x,
             y: top,
-            width: fleet.width,
+            width: if inspector.x > fleet.x {
+                inspector
+                    .x
+                    .saturating_sub(fleet.x)
+                    .saturating_sub(dip(8.0, scale))
+            } else {
+                fleet.width
+            },
             height: row_height.min(fleet.y.saturating_add(fleet.height).saturating_sub(top)),
         }
     }
@@ -2509,6 +2567,37 @@ mod tests {
         (1000, 700, 1.75),
         (900, 1600, 3.0),
     ];
+
+    #[test]
+    fn home_inspector_and_rows_have_disjoint_targets_at_supported_sizes() {
+        for &(width, height, scale) in LAYOUT_SWEEP {
+            let layout = Layout::new(width, height, scale);
+            let inspector = layout.home_inspector(width, height, scale);
+            let focus = layout.home_focus_action(width, height, scale);
+            let capacity = layout.home_fleet_capacity(width, height, scale);
+            if inspector.width == 0 || inspector.height == 0 {
+                continue;
+            }
+            assert!(focus.width > 0 && focus.height > 0);
+            assert!(focus.x >= inspector.x && focus.y >= inspector.y);
+            assert!(focus.x + focus.width <= inspector.x + inspector.width);
+            assert!(focus.y + focus.height <= inspector.y + inspector.height);
+            for visible in 0..capacity {
+                let row = layout.home_fleet_row(width, height, scale, visible);
+                assert!(row.width > 0 && row.height > 0);
+                let overlaps = row.x < inspector.x + inspector.width
+                    && inspector.x < row.x + row.width
+                    && row.y < inspector.y + inspector.height
+                    && inspector.y < row.y + row.height;
+                assert!(
+                    !overlaps,
+                    "Home row {visible} overlaps inspector at {width}x{height}@{scale}"
+                );
+            }
+        }
+        let layout = Layout::new(960, 600, 1.0);
+        assert!(layout.home_fleet_capacity(960, 600, 1.0) >= 3);
+    }
 
     #[test]
     fn web_proxy_settings_page_keeps_controls_and_pagination_inside_panel() {

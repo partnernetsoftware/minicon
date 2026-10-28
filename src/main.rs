@@ -1019,6 +1019,7 @@ struct ConApp {
     settings_open: bool,
     home_active: bool,
     home_list_start: usize,
+    home_selected_id: Option<workspace::TabId>,
     settings_section: ui::SettingsSection,
     harness_settings: Option<harness_settings_ui::HarnessSettings>,
     harness_workspace: harness_workspace_ui::HarnessWorkspace,
@@ -1531,6 +1532,7 @@ impl ConApp {
             settings_open: false,
             home_active: false,
             home_list_start: 0,
+            home_selected_id: None,
             settings_section: ui::SettingsSection::default(),
             harness_settings: None,
             harness_workspace: harness_workspace_ui::HarnessWorkspace::default(),
@@ -1851,6 +1853,23 @@ impl ConApp {
         self.sync_embedded_page(window);
         let _ = self.refresh_title(window);
         self.mark_host_ui_full_and_repaint(window);
+    }
+
+    fn focus_home_selected(&mut self, window: &PixelWindow) -> Result<(), PixelWindowError> {
+        let Some(id) = self
+            .home_selected_id
+            .filter(|id| self.workspace.node(*id).is_some())
+        else {
+            return Ok(());
+        };
+        let metrics = window.metrics()?;
+        self.activate_session(window, id);
+        self.reveal_active_tree_row(window)?;
+        self.apply_active_geometry(metrics)?;
+        self.refresh_title(window)?;
+        window.focus();
+        self.mark_host_ui_full_and_repaint(window);
+        Ok(())
     }
 
     /// The page host is a child of this window. Show it only while the
@@ -4371,7 +4390,7 @@ impl PixelWindowApplication for ConApp {
             return Ok(PixelWindowDirective::Continue);
         }
         if let PixelWindowEvent::GeometryChanged { metrics, .. } = &event {
-            self.mark_host_ui_full();
+            self.mark_host_ui_full_and_repaint(window);
             if self.active_is_browser() {
                 #[cfg(any(target_os = "macos", windows))]
                 {
@@ -4405,6 +4424,26 @@ impl PixelWindowApplication for ConApp {
             self.settings_open = false;
             self.mark_host_ui_full_and_repaint(window);
             return Ok(PixelWindowDirective::Continue);
+        }
+        if self.home_active
+            && let PixelWindowEvent::Keyboard(key) = &event
+            && key.state == KeyPressState::Pressed
+            && !key.modifiers.control
+            && !key.modifiers.alt
+            && !key.modifiers.meta
+        {
+            match key.logical {
+                LogicalKey::Named(NamedKey::Escape) => {
+                    self.home_selected_id = None;
+                    self.mark_host_ui_full_and_repaint(window);
+                    return Ok(PixelWindowDirective::Continue);
+                }
+                LogicalKey::Named(NamedKey::Enter) if self.home_selected_id.is_some() => {
+                    self.focus_home_selected(window)?;
+                    return Ok(PixelWindowDirective::Continue);
+                }
+                _ => {}
+            }
         }
         if self.route_composer_scrollbar(window, &event)? {
             return Ok(PixelWindowDirective::Continue);
@@ -4756,6 +4795,11 @@ impl PixelWindowApplication for ConApp {
                     self.open_session_contained(window, false);
                 } else if web.contains(x, y) {
                     self.open_browser_tab_contained(window);
+                } else if layout
+                    .home_focus_action(metrics.physical_width, metrics.physical_height, scale)
+                    .contains(x, y)
+                {
+                    self.focus_home_selected(window)?;
                 } else {
                     let fleet =
                         layout.home_fleet(metrics.physical_width, metrics.physical_height, scale);
@@ -4784,11 +4828,7 @@ impl PixelWindowApplication for ConApp {
                                 .get(start + visible)
                                 .map(|node| node.id)
                         {
-                            self.activate_session(window, id);
-                            self.reveal_active_tree_row(window)?;
-                            self.apply_active_geometry(metrics)?;
-                            self.refresh_title(window)?;
-                            window.focus();
+                            self.home_selected_id = Some(id);
                             self.mark_host_ui_full_and_repaint(window);
                         }
                     }

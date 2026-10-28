@@ -253,6 +253,35 @@ impl ConApp {
                                 ),
                                 ("home_list_start", home_start.into()),
                                 ("home_tab_count", self.workspace.nodes().len().into()),
+                                ("home_selected_id", tab_id_json(self.home_selected_id)),
+                                (
+                                    "home_selected_stale",
+                                    self.home_selected_id
+                                        .is_some_and(|id| self.workspace.node(id).is_none())
+                                        .into(),
+                                ),
+                                (
+                                    "home_inspector",
+                                    rect_obj(layout.home_inspector(
+                                        metrics.physical_width,
+                                        metrics.physical_height,
+                                        metrics.scale_factor,
+                                    )),
+                                ),
+                                (
+                                    "home_focus_tab",
+                                    rect_obj(layout.home_focus_action(
+                                        metrics.physical_width,
+                                        metrics.physical_height,
+                                        metrics.scale_factor,
+                                    )),
+                                ),
+                                (
+                                    "home_focus_enabled",
+                                    self.home_selected_id
+                                        .is_some_and(|id| self.workspace.node(id).is_some())
+                                        .into(),
+                                ),
                                 (
                                     "home_list_row_ids",
                                     json::JsonValue::Array(

@@ -208,11 +208,16 @@ flowchart LR
 
 ## Cut, deferrals and handoff
 
-T26 has a first Windows native click court for three same-named Console tabs,
-with exact @ID row snapshots and a test mutation that removes activation and
-fails. The list now paints real tab/child facts and scrolls independently.
-The Windows native wheel court also passed with 17 Console tabs and an exact
-scrolled-row click; removing the Home wheel route made it fail.
+T26 has a Windows native click court for three same-named Console tabs. A row
+selects an exact @ID on @0; its inspector's Focus tab button or Enter opens the
+tab, and Escape clears selection. Closing the inspected tab leaves a disabled
+stale inspector without redirecting to another row. Restoring direct row
+activation made the court fail. The list paints real tab/child facts and
+scrolls independently. The Windows native wheel court passed with 17 Console
+tabs and exact scrolled-row selection/focus; removing the Home wheel route made
+it fail. A sampled geometry sweep proved row/inspector hit targets disjoint,
+and native wide/narrow Home captures exposed and then cleared a resize repaint
+gap. Full responsive, mixed-tab and other-platform qualification remains open.
 W26 has its Workspace identity prerequisite: distinct browser roots can
 now be allocated and closed independently in the product model. Internal
 runtime parking also preserves each Web @ID's address, proxy, navigation
@@ -250,8 +255,8 @@ B26 now has a selected tab-bound observer and peer-receipt boundary in
 name source and ordered stage; host-accepted PTY input never becomes an agent
 receipt. The actual self environment/request binding, one real CLI/TUI adapter
 trace and stale/closed/restart controls are still open, so B26 remains partial.
-Search/filter/group, mixed 256-tab overflow, attention/system cards, native
-wide/narrow visual captures and other OS courts remain required before T26 or
+Search/filter/group, mixed 256-tab overflow, attention/system cards, full native
+wide/narrow/scale visual qualification and other OS courts remain required before T26 or
 the default-list cut can be marked complete. `screenshot-pane` observes the
 underlying Console pane on @0 and is not a Home capture receipt.
 

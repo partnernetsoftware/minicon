@@ -1964,7 +1964,7 @@ impl ConApp {
                 if row.height == 0 {
                     break;
                 }
-                if self.workspace.active() == Some(node.id) {
+                if self.home_selected_id == Some(node.id) {
                     surface.fill_rect(row.x, row.y, row.width, row.height, t.canvas_bg.to_xrgb());
                 }
                 surface.fill_rect(row.x, row.y, row.width, 1, t.border.to_xrgb());
@@ -2041,6 +2041,155 @@ impl ConApp {
                     scaled_host_ui_font(12, self.session_seed.font_size_logical(), scale),
                     row.width.saturating_sub(inset.saturating_mul(2)),
                 );
+            }
+            let inspector = layout.home_inspector(width, height, scale);
+            if inspector.height > 0 {
+                surface.fill_rect(
+                    inspector.x,
+                    inspector.y,
+                    inspector.width,
+                    inspector.height,
+                    t.canvas_bg.to_xrgb(),
+                );
+                surface.fill_rect(
+                    inspector.x,
+                    inspector.y,
+                    inspector.width,
+                    1,
+                    t.border.to_xrgb(),
+                );
+                let selected = self.home_selected_id.and_then(|id| {
+                    self.workspace.node(id).map(|node| {
+                        let session = self.session_for(id);
+                        let name = tree_row_name(
+                            node.custom_title.as_deref(),
+                            session.map(|terminal| terminal.program_label()),
+                            &node.title,
+                        );
+                        (
+                            id,
+                            node.kind,
+                            name.to_owned(),
+                            session.map(|s| s.child_gone),
+                        )
+                    })
+                });
+                let (heading, detail, live) = if let Some((id, kind, name, child_gone)) = selected {
+                    let detail = match (self.ui_language, kind, child_gone) {
+                        (ui::UiLanguage::English, workspace::TabKind::Terminal, Some(true)) => {
+                            "Child exited · Agent unknown"
+                        }
+                        (ui::UiLanguage::English, workspace::TabKind::Terminal, Some(false)) => {
+                            "Child active · Agent unknown"
+                        }
+                        (ui::UiLanguage::English, workspace::TabKind::Terminal, None) => {
+                            "Child unknown · Agent unknown"
+                        }
+                        (ui::UiLanguage::English, workspace::TabKind::Browser, _) => {
+                            "Web · Agent unavailable"
+                        }
+                        (
+                            ui::UiLanguage::ChineseSimplified,
+                            workspace::TabKind::Terminal,
+                            Some(true),
+                        ) => "子进程已退出 · Agent 未知",
+                        (
+                            ui::UiLanguage::ChineseSimplified,
+                            workspace::TabKind::Terminal,
+                            Some(false),
+                        ) => "子进程活动中 · Agent 未知",
+                        (ui::UiLanguage::ChineseSimplified, workspace::TabKind::Terminal, None) => {
+                            "子进程未知 · Agent 未知"
+                        }
+                        (ui::UiLanguage::ChineseSimplified, workspace::TabKind::Browser, _) => {
+                            "网页 · Agent 不可用"
+                        }
+                        (
+                            ui::UiLanguage::ChineseTraditional,
+                            workspace::TabKind::Terminal,
+                            Some(true),
+                        ) => "子程序已結束 · Agent 未知",
+                        (
+                            ui::UiLanguage::ChineseTraditional,
+                            workspace::TabKind::Terminal,
+                            Some(false),
+                        ) => "子程序活動中 · Agent 未知",
+                        (
+                            ui::UiLanguage::ChineseTraditional,
+                            workspace::TabKind::Terminal,
+                            None,
+                        ) => "子程序未知 · Agent 未知",
+                        (ui::UiLanguage::ChineseTraditional, workspace::TabKind::Browser, _) => {
+                            "網頁 · Agent 不可用"
+                        }
+                    };
+                    (format!("@{}  {name}", id.get()), detail, true)
+                } else if let Some(id) = self.home_selected_id {
+                    let detail = match self.ui_language {
+                        ui::UiLanguage::English => "Select another tab to continue.",
+                        ui::UiLanguage::ChineseSimplified => "请选择其他标签页继续。",
+                        ui::UiLanguage::ChineseTraditional => "請選擇其他分頁繼續。",
+                    };
+                    let heading = match self.ui_language {
+                        ui::UiLanguage::English => format!("@{}  Tab no longer exists", id.get()),
+                        ui::UiLanguage::ChineseSimplified => format!("@{}  标签页已关闭", id.get()),
+                        ui::UiLanguage::ChineseTraditional => format!("@{}  分頁已關閉", id.get()),
+                    };
+                    (heading, detail, false)
+                } else {
+                    let heading = match self.ui_language {
+                        ui::UiLanguage::English => "Select a tab to inspect",
+                        ui::UiLanguage::ChineseSimplified => "选择标签页查看详情",
+                        ui::UiLanguage::ChineseTraditional => "選擇分頁查看詳情",
+                    };
+                    (heading.to_owned(), "", false)
+                };
+                let inset = (12.0 * scale) as u32;
+                paint_host_ui_text(
+                    &mut surface,
+                    inspector.x.saturating_add(inset),
+                    inspector.y.saturating_add((8.0 * scale) as u32),
+                    &heading,
+                    t.text,
+                    body_size,
+                    inspector.width.saturating_sub(inset.saturating_mul(2)),
+                );
+                if !detail.is_empty() {
+                    paint_host_ui_text(
+                        &mut surface,
+                        inspector.x.saturating_add(inset),
+                        inspector.y.saturating_add((31.0 * scale) as u32),
+                        detail,
+                        t.muted,
+                        scaled_host_ui_font(12, self.session_seed.font_size_logical(), scale),
+                        inspector.width.saturating_sub(inset.saturating_mul(2)),
+                    );
+                }
+                if live {
+                    let focus = layout.home_focus_action(width, height, scale);
+                    surface.fill_rect(
+                        focus.x,
+                        focus.y,
+                        focus.width,
+                        focus.height,
+                        t.surface.to_xrgb(),
+                    );
+                    stroke_rect(&mut surface, focus, scale.max(1.0) as u32, t.accent);
+                    let label = match self.ui_language {
+                        ui::UiLanguage::English => "Focus tab",
+                        ui::UiLanguage::ChineseSimplified => "打开标签页",
+                        ui::UiLanguage::ChineseTraditional => "開啟分頁",
+                    };
+                    paint_host_ui_text(
+                        &mut surface,
+                        focus.x.saturating_add((10.0 * scale) as u32),
+                        focus.y.saturating_add((5.0 * scale) as u32),
+                        label,
+                        t.text,
+                        scaled_host_ui_font(13, self.session_seed.font_size_logical(), scale),
+                        focus.width.saturating_sub((20.0 * scale) as u32),
+                    );
+                }
             }
         }
     }

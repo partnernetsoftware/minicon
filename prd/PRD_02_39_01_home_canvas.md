@@ -26,18 +26,24 @@ The tab-office design below uses only observed Web facts in the accepted host.
 
 The development tree now has a first real List slice: @0 paints stable @ID
 rows from the current Workspace, reports observed Console child exit separately
-from unknown agent work, scrolls its own viewport and routes a row click to the
-exact live tab. The Windows native
-`native_home_fleet_rows_target_exact_tab_ids` court passed on three same-named
-Console tabs; disabling row activation made the court fail. Public
-`ui-snapshot` publishes visible row IDs and hit rectangles. Search, grouping,
-attention, scoped system status, visual mode, 256-tab overflow and native
-visual captures remain open. `screenshot-pane` captures the underlying Console
-pane while @0 is visible, so it is not Home visual evidence.
+from unknown agent work, and scrolls its own viewport. A row click selects its
+exact @ID and keeps @0 visible; the inspector's Focus tab button or Enter opens
+that tab. Escape clears the selection. Closing an inspected tab leaves its @ID
+in a disabled **Tab no longer exists** inspector, without selecting a surviving
+row. The Windows native `native_home_fleet_rows_target_exact_tab_ids` court
+passed on three same-named Console tabs; restoring direct row activation made
+it fail. `ui-snapshot` publishes visible row IDs, selection/staleness and hit
+rectangles. `native_home_inspector_captures_wide_and_narrow_layouts` produced
+native 960x600 and 500x650 Home captures; the latter exposed a resize repaint
+gap that was corrected. The geometry sweep proves list and inspector targets do
+not overlap at its sampled sizes. Search, grouping, attention, scoped system
+status, visual mode, 256 mixed-tab overflow and other-platform native captures
+remain open. `screenshot-pane` captures the underlying Console pane while @0
+is visible, so it is not Home visual evidence.
 The Windows `native_home_fleet_wheel_keeps_scrolled_row_target_exact` court
 also passed with 17 Console tabs: a real window wheel moved the list viewport,
-and the first newly visible row still opened its published @ID. Disabling the
-Home wheel route made this court fail. This proves native overflow navigation
+and the first newly visible row selected and then focused its published @ID.
+Disabling the Home wheel route made this court fail. This proves native overflow navigation
 at that size, not the planned 256 mixed-tab or other-platform courts.
 
 ## Outcome tree DAG

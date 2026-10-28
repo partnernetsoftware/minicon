@@ -104,6 +104,33 @@ impl BrowserGui {
             .clone()
     }
 
+    #[cfg(windows)]
+    fn capture_home_client(&self, name: &str) -> PathBuf {
+        use minicon_platform::{
+            process_window,
+            screenshot::{NativeCaptureArea, ScreenshotWindowHandle, capture_native_window_png},
+        };
+        let facts = process_window::facts(self.gui.child.id());
+        assert!(facts.present && facts.window_id != 0, "owned Home window");
+        let geometry = self.cli(&["ui-snapshot"])["geometry"].clone();
+        assert_eq!(geometry["home_active"], true);
+        let handle = unsafe { ScreenshotWindowHandle::from_raw(facts.window_id as isize) }
+            .expect("owned native handle");
+        let path = self.gui.screenshot.parent().unwrap().join(name);
+        capture_native_window_png(
+            handle,
+            &path,
+            NativeCaptureArea::Client {
+                left: 0,
+                top: 0,
+                width: geometry["frame"]["width"].as_i64().unwrap() as i32,
+                height: geometry["frame"]["height"].as_i64().unwrap() as i32,
+            },
+        )
+        .expect("capture Home client");
+        path
+    }
+
     fn click_geometry(&self, name: &str) {
         let snapshot = self.cli(&["ui-snapshot"]);
         let geometry = &snapshot["geometry"];
@@ -777,10 +804,73 @@ fn native_home_fleet_rows_target_exact_tab_ids() {
         serde_json::json!([&first, &second, &third])
     );
     host.click_geometry_row("home_list_row_rects", 0);
-    let selected = host.cli(&["list-tabs"]);
-    assert_eq!(selected["tabs"][0]["active"], true);
-    assert_eq!(selected["tabs"][0]["id"], first);
+    let inspected = host.cli(&["ui-snapshot"]);
+    assert_eq!(inspected["geometry"]["home_active"], true);
+    assert_eq!(inspected["geometry"]["home_selected_id"], first);
+    assert_eq!(inspected["geometry"]["home_focus_enabled"], true);
+    assert_eq!(host.cli(&["list-tabs"])["tabs"][2]["active"], true);
+    host.click_geometry("home_focus_tab");
+    assert_eq!(host.cli(&["list-tabs"])["tabs"][0]["active"], true);
     assert_eq!(host.cli(&["ui-snapshot"])["geometry"]["home_active"], false);
+
+    host.click_geometry("home");
+    host.click_geometry_row("home_list_row_rects", 1);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["home_selected_id"],
+        second
+    );
+    host.cli(&["close-tab", "--target", &second]);
+    let stale = host.cli(&["ui-snapshot"]);
+    assert_eq!(stale["geometry"]["home_active"], true);
+    assert_eq!(stale["geometry"]["home_selected_id"], second);
+    assert_eq!(stale["geometry"]["home_selected_stale"], true);
+    assert_eq!(stale["geometry"]["home_focus_enabled"], false);
+    host.click_geometry("home_focus_tab");
+    assert_eq!(host.cli(&["ui-snapshot"])["geometry"]["home_active"], true);
+    assert_eq!(host.cli(&["list-tabs"])["tabs"][1]["id"], third);
+    host.click_geometry_row("home_list_row_rects", 1);
+    host.cli(&["send-ui-keys", "Escape"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["home_selected_id"],
+        Value::Null
+    );
+    host.click_geometry_row("home_list_row_rects", 1);
+    host.cli(&["send-ui-keys", "Enter"]);
+    assert_eq!(host.cli(&["list-tabs"])["tabs"][1]["id"], third);
+    assert_eq!(host.cli(&["list-tabs"])["tabs"][1]["active"], true);
+    host.close_and_wait();
+}
+
+#[cfg(windows)]
+#[test]
+#[ignore = "requires a native desktop; run the explicit Home inspector visual court"]
+fn native_home_inspector_captures_wide_and_narrow_layouts() {
+    let mut host = BrowserGui::spawn(false, None, None);
+    let selected = host.cli(&["new-tab"])["id"].as_str().unwrap().to_owned();
+    host.cli(&["new-tab"]);
+    host.click_geometry("home");
+    host.click_geometry_row("home_list_row_rects", 1);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["home_selected_id"],
+        selected
+    );
+    let wide = host.capture_home_client("home-inspector-wide.png");
+    host.cli(&["resize-window", "--width", "500", "--height", "650"]);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while host.cli(&["ui-snapshot"])["geometry"]["frame"]["width"] != 500 {
+        assert!(
+            Instant::now() < deadline,
+            "narrow Home resize did not settle"
+        );
+        thread::sleep(Duration::from_millis(25));
+    }
+    thread::sleep(Duration::from_millis(250));
+    let narrow = host.capture_home_client("home-inspector-narrow.png");
+    println!(
+        "Home visual captures: {} | {}",
+        wide.display(),
+        narrow.display()
+    );
     host.close_and_wait();
 }
 
@@ -866,6 +956,11 @@ fn native_home_fleet_wheel_keeps_scrolled_row_target_exact() {
         .unwrap()
         .to_owned();
     host.click_geometry_row("home_list_row_rects", 0);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["home_selected_id"],
+        target
+    );
+    host.click_geometry("home_focus_tab");
     let listed = host.cli(&["list-tabs"]);
     assert!(
         listed["tabs"]
