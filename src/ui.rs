@@ -860,7 +860,7 @@ impl Layout {
             .unwrap_or(0)
             .saturating_add(pad)
             .saturating_add(if content_width < dip(520.0, scale) {
-                dip(52.0, scale)
+                dip(58.0, scale)
             } else {
                 0
             });
@@ -887,7 +887,7 @@ impl Layout {
                 x: self.sidebar.width.saturating_add(pad),
                 y,
                 width: content_width.saturating_sub(pad.saturating_mul(2)),
-                height: dip(46.0, scale).min(height.saturating_sub(y)),
+                height: dip(52.0, scale).min(height.saturating_sub(y)),
             }
         } else {
             let right = width.saturating_sub(pad);
@@ -903,6 +903,31 @@ impl Layout {
                 width: card_width,
                 height: dip(100.0, scale).min(actions[0].y.saturating_sub(y)),
             }
+        }
+    }
+
+    pub fn home_gateway_action(self, width: u32, height: u32, scale: f64) -> Rect {
+        let card = self.home_system_card(width, height, scale);
+        let compact = card.height < dip(70.0, scale);
+        let inset = if compact {
+            dip(3.0, scale)
+        } else {
+            dip(5.0, scale)
+        };
+        let pitch = if compact {
+            dip(12.0, scale)
+        } else {
+            dip(18.0, scale)
+        };
+        let y = card
+            .y
+            .saturating_add(inset)
+            .saturating_add(pitch * if compact { 3 } else { 4 });
+        Rect {
+            x: card.x.saturating_add(inset),
+            y,
+            width: card.width.saturating_sub(inset * 2),
+            height: card.y.saturating_add(card.height).saturating_sub(y),
         }
     }
 

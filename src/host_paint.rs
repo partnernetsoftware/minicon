@@ -2036,24 +2036,67 @@ impl ConApp {
                     "系統程序 · 時間未知".to_owned()
                 }
             };
-            let line_size = scaled_host_ui_font(11, self.session_seed.font_size_logical(), scale);
-            let pitch = if compact {
-                (14.0 * scale) as u32
+            let gateway = self.home_gateway_observation();
+            let gateway_status = match (self.ui_language, gateway.status) {
+                (ui::UiLanguage::English, "stopped") => "stopped",
+                (ui::UiLanguage::English, "starting") => "starting",
+                (ui::UiLanguage::English, "listening") => "listening",
+                (ui::UiLanguage::English, "stopping") => "stopping",
+                (ui::UiLanguage::English, "error") => "error",
+                (ui::UiLanguage::ChineseSimplified, "stopped") => "已停止",
+                (ui::UiLanguage::ChineseSimplified, "starting") => "启动中",
+                (ui::UiLanguage::ChineseSimplified, "listening") => "监听中",
+                (ui::UiLanguage::ChineseSimplified, "stopping") => "停止中",
+                (ui::UiLanguage::ChineseSimplified, "error") => "错误",
+                (ui::UiLanguage::ChineseTraditional, "stopped") => "已停止",
+                (ui::UiLanguage::ChineseTraditional, "starting") => "啟動中",
+                (ui::UiLanguage::ChineseTraditional, "listening") => "監聽中",
+                (ui::UiLanguage::ChineseTraditional, "stopping") => "停止中",
+                (ui::UiLanguage::ChineseTraditional, "error") => "錯誤",
+                (ui::UiLanguage::English, _) => "unknown",
+                (ui::UiLanguage::ChineseSimplified, _) => "未知",
+                (ui::UiLanguage::ChineseTraditional, _) => "未知",
+            };
+            let gateway_time = gateway.observed_at.and_then(|at| {
+                at.duration_since(UNIX_EPOCH).ok().map(|elapsed| {
+                    let utc = minicon_platform::contract::local_clock::civil_from_unix_seconds(
+                        elapsed.as_secs().min(i64::MAX as u64) as i64,
+                    );
+                    format!("{:02}:{:02}Z", utc.hour, utc.minute)
+                })
+            });
+            let gateway_line = if compact {
+                gateway_time.map_or_else(
+                    || format!("API {gateway_status} · Harness ›"),
+                    |time| format!("API {gateway_status} {time} · Harness ›"),
+                )
             } else {
-                (21.0 * scale) as u32
+                gateway_time.map_or_else(
+                    || format!("Local API: {gateway_status} · Harness ›"),
+                    |time| format!("Local API: {gateway_status} · {time} · Harness ›"),
+                )
+            };
+            let line_size = scaled_host_ui_font(
+                if compact { 10 } else { 11 },
+                self.session_seed.font_size_logical(),
+                scale,
+            );
+            let pitch = if compact {
+                (12.0 * scale) as u32
+            } else {
+                (18.0 * scale) as u32
             };
             let inset = if compact {
-                (4.0 * scale) as u32
+                (3.0 * scale) as u32
             } else {
-                (8.0 * scale) as u32
+                (5.0 * scale) as u32
             };
-            for (index, line) in [heading, &resources, &source, computer]
-                .into_iter()
-                .enumerate()
-            {
-                if index == 3 && compact {
-                    break;
-                }
+            let lines: Vec<&str> = if compact {
+                vec![heading, &resources, &source, &gateway_line]
+            } else {
+                vec![heading, &resources, &source, computer, &gateway_line]
+            };
+            for (index, line) in lines.into_iter().enumerate() {
                 paint_host_ui_text(
                     &mut surface,
                     system_card.x.saturating_add(inset),
@@ -2062,7 +2105,13 @@ impl ConApp {
                         .saturating_add(inset)
                         .saturating_add(pitch * index as u32),
                     line,
-                    if index == 0 { t.text } else { t.muted },
+                    if index == 0 {
+                        t.text
+                    } else if index == if compact { 3 } else { 4 } {
+                        t.accent
+                    } else {
+                        t.muted
+                    },
                     line_size,
                     system_card.width.saturating_sub(inset.saturating_mul(2)),
                 );

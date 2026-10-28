@@ -3112,6 +3112,7 @@ impl ConApp {
                 settings.challenge_expired = false;
             }
             settings.view = next;
+            self.harness_view_observed_at = Some(SystemTime::now());
             settings.reconcile_auth_result();
             settings.sync_account_drafts();
             settings.sync_connection_forms();
@@ -4502,6 +4503,47 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn home_gateway_projection_needs_loaded_timestamped_runtime_view() {
+        let mut app = ConApp::new(None, None);
+        let absent = app.home_gateway_observation();
+        assert_eq!(absent.status, "unknown");
+        assert_eq!(absent.reason, Some("not-loaded"));
+        assert_eq!(absent.observed_at, None);
+
+        let mut settings = HarnessSettings::default();
+        settings.view.load_state = provider_runtime::LoadState::Loaded;
+        settings.view.listener = ListenerState::Listening;
+        settings.view.actual_port = Some(28789);
+        app.harness_settings = Some(settings);
+        let unobserved = app.home_gateway_observation();
+        assert_eq!(unobserved.status, "unknown");
+        assert_eq!(unobserved.reason, Some("not-observed"));
+        assert_eq!(unobserved.port, None);
+
+        let at = UNIX_EPOCH + Duration::from_secs(123);
+        app.harness_view_observed_at = Some(at);
+        let listening = app.home_gateway_observation();
+        assert_eq!(listening.status, "listening");
+        assert_eq!(listening.observed_at, Some(at));
+        assert_eq!(listening.port, Some(28789));
+        assert_eq!(listening.reason, None);
+
+        let settings = app.harness_settings.as_mut().unwrap();
+        settings.view.listener = ListenerState::Stopped;
+        settings.view.actual_port = None;
+        let stopped = app.home_gateway_observation();
+        assert_eq!(stopped.status, "stopped");
+        assert_eq!(stopped.port, None);
+
+        app.harness_settings.as_mut().unwrap().view.load_state =
+            provider_runtime::LoadState::Unavailable(provider_runtime::RuntimeError::Storage);
+        let unavailable = app.home_gateway_observation();
+        assert_eq!(unavailable.status, "unknown");
+        assert_eq!(unavailable.reason, Some("runtime-unavailable"));
+        assert_eq!(unavailable.observed_at, None);
+    }
 
     #[test]
     fn account_removal_requires_current_applied_bindings_and_defaults_to_cancel() {

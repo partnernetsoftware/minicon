@@ -4,6 +4,25 @@ pub(super) mod usage_report;
 use crate::harness_account_ui as pool;
 use provider_runtime::{ListenerState, LoadState, View};
 
+#[derive(Clone, Copy)]
+pub(super) struct HomeGatewayObservation {
+    pub status: &'static str,
+    pub observed_at: Option<SystemTime>,
+    pub port: Option<u16>,
+    pub reason: Option<&'static str>,
+}
+
+impl HomeGatewayObservation {
+    fn unknown(reason: &'static str) -> Self {
+        Self {
+            status: "unknown",
+            observed_at: None,
+            port: None,
+            reason: Some(reason),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum Section {
     #[default]
@@ -591,6 +610,36 @@ impl ConApp {
         self.harness_settings
             .as_ref()
             .map(|settings| settings.cached_workspace_view())
+    }
+    pub(super) fn home_gateway_observation(&self) -> HomeGatewayObservation {
+        let Some(view) = self.harness_cached_view() else {
+            return HomeGatewayObservation::unknown("not-loaded");
+        };
+        match view.load_state {
+            LoadState::Loading => return HomeGatewayObservation::unknown("loading"),
+            LoadState::Unavailable(_) => {
+                return HomeGatewayObservation::unknown("runtime-unavailable");
+            }
+            LoadState::Loaded => {}
+        }
+        let Some(observed_at) = self.harness_view_observed_at else {
+            return HomeGatewayObservation::unknown("not-observed");
+        };
+        let status = match view.listener {
+            ListenerState::Stopped => "stopped",
+            ListenerState::Starting => "starting",
+            ListenerState::Listening => "listening",
+            ListenerState::Draining => "stopping",
+            ListenerState::Error => "error",
+        };
+        HomeGatewayObservation {
+            status,
+            observed_at: Some(observed_at),
+            port: (view.listener == ListenerState::Listening)
+                .then_some(view.actual_port)
+                .flatten(),
+            reason: None,
+        }
     }
     pub(super) fn toggle_harness_workspace(
         &mut self,

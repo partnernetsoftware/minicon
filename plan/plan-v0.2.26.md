@@ -301,6 +301,11 @@ Unknown-on-read-failure projection test passed, with refresh-removal mutation
 proof. Its visible sample time is fixed UTC so an idle, unpainted card does
 not retain a false relative age. The exit-attention empty state names its child-only coverage in
 copy and public snapshot, and the native court covers removal to that state.
+The local API line now uses only PRD 36's cached Runtime View with a host
+reception time and an explicit Unknown before load; it opens Harness for
+inspection. The Windows unknown→loaded/stopped native court and state-mapping
+test passed, with a false-Stopped mutation failure. Real listener transitions
+and request attention still need source-backed courts.
 Mixed severity/source deduplication, actionable counts, provider/gateway
 routing and whole-machine or other-platform resource courts remain open.
 Remaining sort/group modes, 256-tab interaction modes, full native

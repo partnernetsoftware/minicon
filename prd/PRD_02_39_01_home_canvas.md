@@ -435,6 +435,21 @@ failure projection is covered by
 native courts, idle-cost measurement, whole-machine metrics and queue pressure
 remain open; this slice does not close HC-07.
 
+The local API line reads only PRD 36's cached Runtime View. Home entry does not
+load that runtime or start its listener. The host timestamps reception of each
+View change; the public Home projection names `harness-runtime-view`, status,
+receive time, an actual listening port only when known, and an explicit reason
+for Unknown. Never loaded, loading, unavailable and untimestamped views all
+stay Unknown rather than silently using the View's default Stopped value. The
+line opens Harness for inspection and prints its fixed UTC reception time when
+available. `native_home_gateway_is_unknown_until_cached_runtime_and_routes_to_harness`
+passed the unknown → loaded/stopped route and a 500×650 capture without
+starting the listener; the focused
+`home_gateway_projection_needs_loaded_timestamped_runtime_view` test covers
+unknown, listening/port, stopped and unavailable mappings, and a false-Stopped
+mutation made it fail. Real listener transitions, request attention, stale
+runtime observation and other-platform courts remain open.
+
 The Home adapter reads bounded projections from the owning workspace, PRD 36
 and any accepted telemetry seam. It must not copy credentials, proxy addresses,
 raw PTY lines, private task output, unrestricted model text or page URLs into

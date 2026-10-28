@@ -1186,6 +1186,56 @@ fn native_home_process_sample_names_scope_source_and_entry_time() {
 
 #[cfg(windows)]
 #[test]
+#[ignore = "requires a native desktop; run the explicit Home gateway projection court"]
+fn native_home_gateway_is_unknown_until_cached_runtime_and_routes_to_harness() {
+    let mut host = BrowserGui::spawn(false, None, None);
+    host.click_geometry("home");
+    let unknown = host.cli(&["ui-snapshot"]);
+    let gateway = &unknown["geometry"]["home_gateway"];
+    assert_eq!(gateway["source"], "harness-runtime-view");
+    assert_eq!(gateway["status"], "unknown");
+    assert_eq!(gateway["reason"], "not-loaded");
+    assert_eq!(gateway["observed_at_unix_ms"], Value::Null);
+    assert_eq!(gateway["port"], Value::Null);
+    assert_eq!(gateway["action"], "open-harness");
+    host.click_geometry("home_gateway_action");
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["harness_workspace"]["active"],
+        true
+    );
+    host.click_geometry("settings");
+    host.click_geometry("settings_harness_route");
+    let loaded = wait_harness(&host, |value| value["busy"] == false);
+    assert_eq!(loaded["listener"], "stopped");
+    host.click_geometry("settings");
+    host.click_geometry("harness_entry");
+    let observed = host.cli(&["ui-snapshot"]);
+    assert_eq!(observed["geometry"]["home_active"], true);
+    let gateway = &observed["geometry"]["home_gateway"];
+    assert_eq!(gateway["status"], "stopped");
+    assert_eq!(gateway["reason"], Value::Null);
+    assert_eq!(gateway["port"], Value::Null);
+    assert!(gateway["observed_at_unix_ms"].as_u64().unwrap() > 0);
+    host.cli(&["resize-window", "--width", "500", "--height", "650"]);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while host.cli(&["ui-snapshot"])["geometry"]["frame"]["width"] != 500 {
+        assert!(
+            Instant::now() < deadline,
+            "narrow gateway card did not settle"
+        );
+        thread::sleep(Duration::from_millis(25));
+    }
+    thread::sleep(Duration::from_millis(250));
+    println!(
+        "Home gateway narrow: {}",
+        host.capture_home_client("home-gateway-narrow.png")
+            .display()
+    );
+    host.close_and_wait();
+}
+
+#[cfg(windows)]
+#[test]
 #[ignore = "requires a native desktop; run the explicit Home keyboard court"]
 fn native_home_keyboard_navigation_reveals_exact_tab_ids() {
     let mut host = BrowserGui::spawn(false, None, None);

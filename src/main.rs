@@ -1045,6 +1045,7 @@ struct ConApp {
     home_selected_id: Option<workspace::TabId>,
     settings_section: ui::SettingsSection,
     harness_settings: Option<harness_settings_ui::HarnessSettings>,
+    harness_view_observed_at: Option<SystemTime>,
     harness_workspace: harness_workspace_ui::HarnessWorkspace,
     settings_proxy_input: composer::ComposerState,
     settings_proxy_focused: bool,
@@ -1823,6 +1824,7 @@ impl ConApp {
             home_selected_id: None,
             settings_section: ui::SettingsSection::default(),
             harness_settings: None,
+            harness_view_observed_at: None,
             harness_workspace: harness_workspace_ui::HarnessWorkspace::default(),
             settings_proxy_input: Default::default(),
             settings_proxy_focused: false,
@@ -5312,6 +5314,11 @@ impl PixelWindowApplication for ConApp {
                 {
                     self.home_mode = self.home_mode.toggle();
                     self.mark_host_ui_full_and_repaint(window);
+                } else if layout
+                    .home_gateway_action(metrics.physical_width, metrics.physical_height, scale)
+                    .contains(x, y)
+                {
+                    self.toggle_harness_workspace(window)?;
                 } else if layout
                     .home_system_card(metrics.physical_width, metrics.physical_height, scale)
                     .contains(x, y)

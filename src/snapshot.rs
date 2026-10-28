@@ -328,6 +328,38 @@ impl ConApp {
                                 ("home_list_start", home_start.into()),
                                 ("home_tab_count", self.workspace.nodes().len().into()),
                                 ("home_system", self.home_system_snapshot_json()),
+                                ("home_gateway", {
+                                    let gateway = self.home_gateway_observation();
+                                    json::object(vec![
+                                        ("source", "harness-runtime-view".into()),
+                                        ("status", gateway.status.into()),
+                                        (
+                                            "observed_at_unix_ms",
+                                            observed_unix_millis(gateway.observed_at),
+                                        ),
+                                        (
+                                            "port",
+                                            gateway.port.map_or(json::JsonValue::Null, |port| {
+                                                u64::from(port).into()
+                                            }),
+                                        ),
+                                        (
+                                            "reason",
+                                            gateway
+                                                .reason
+                                                .map_or(json::JsonValue::Null, Into::into),
+                                        ),
+                                        ("action", "open-harness".into()),
+                                    ])
+                                }),
+                                (
+                                    "home_gateway_action",
+                                    rect_obj(layout.home_gateway_action(
+                                        metrics.physical_width,
+                                        metrics.physical_height,
+                                        metrics.scale_factor,
+                                    )),
+                                ),
                                 (
                                     "home_system_refresh",
                                     rect_obj(layout.home_system_card(
