@@ -889,6 +889,38 @@ fn native_home_inspector_captures_wide_and_narrow_layouts() {
         selected
     );
     let wide = host.capture_home_client("home-inspector-wide.png");
+    host.cli(&["resize-window", "--width", "800", "--height", "600"]);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let four_three = loop {
+        let snapshot = host.cli(&["ui-snapshot"]);
+        if snapshot["geometry"]["frame"]["width"] == 800
+            && snapshot["geometry"]["frame"]["height"] == 600
+        {
+            break snapshot;
+        }
+        assert!(Instant::now() < deadline, "4:3 Home resize did not settle");
+        thread::sleep(Duration::from_millis(25));
+    };
+    assert_eq!(four_three["geometry"]["home_selected_id"], selected);
+    assert_eq!(four_three["geometry"]["home_inspector_action"], "focus");
+    let row = &four_three["geometry"]["home_list_row_rects"][1];
+    let inspector = &four_three["geometry"]["home_inspector"];
+    assert!(
+        row["x"].as_u64().unwrap() + row["width"].as_u64().unwrap()
+            <= inspector["x"].as_u64().unwrap()
+            || row["y"].as_u64().unwrap() + row["height"].as_u64().unwrap()
+                <= inspector["y"].as_u64().unwrap(),
+        "4:3 row and inspector must not overlap: row={row}, inspector={inspector}"
+    );
+    thread::sleep(Duration::from_millis(250));
+    let four_three_capture = host.capture_home_client("home-inspector-4-3.png");
+    host.click_geometry("home_focus_tab");
+    assert_eq!(host.cli(&["list-tabs"])["tabs"][1]["active"], true);
+    host.click_geometry("home");
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["home_selected_id"],
+        selected
+    );
     host.cli(&["resize-window", "--width", "500", "--height", "650"]);
     let deadline = Instant::now() + Duration::from_secs(5);
     while host.cli(&["ui-snapshot"])["geometry"]["frame"]["width"] != 500 {
@@ -901,10 +933,54 @@ fn native_home_inspector_captures_wide_and_narrow_layouts() {
     thread::sleep(Duration::from_millis(250));
     let narrow = host.capture_home_client("home-inspector-narrow.png");
     println!(
-        "Home visual captures: {} | {}",
+        "Home visual captures: {} | {} | {}",
         wide.display(),
+        four_three_capture.display(),
         narrow.display()
     );
+    host.close_and_wait();
+}
+
+#[cfg(windows)]
+#[test]
+#[ignore = "requires a native desktop; run the explicit Chinese 4:3 Home court"]
+fn native_home_chinese_4_3_keeps_exact_inspect_and_focus_routes() {
+    let config_root = minicon_binary()
+        .parent()
+        .unwrap()
+        .join("browser-court")
+        .join(unique_suffix())
+        .join("zh-config");
+    fs::create_dir_all(&config_root).unwrap();
+    fs::write(
+        config_root.join("minicon.json"),
+        br#"{"language":"zh-hans"}"#,
+    )
+    .unwrap();
+    let mut host = BrowserGui::spawn_with_config(false, None, None, Some(config_root));
+    let selected = host.cli(&["new-tab"])["id"].as_str().unwrap().to_owned();
+    host.cli(&["resize-window", "--width", "800", "--height", "600"]);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while host.cli(&["ui-snapshot"])["geometry"]["frame"]["width"] != 800 {
+        assert!(Instant::now() < deadline, "Chinese 4:3 Home did not settle");
+        thread::sleep(Duration::from_millis(25));
+    }
+    host.click_geometry("home");
+    let home = host.cli(&["ui-snapshot"]);
+    assert_eq!(home["ui_language"], "zh-hans");
+    assert_eq!(home["geometry"]["home_tab_count"], 2);
+    host.click_geometry_row("home_list_row_rects", 1);
+    let selected_home = host.cli(&["ui-snapshot"]);
+    assert_eq!(selected_home["geometry"]["home_selected_id"], selected);
+    assert_eq!(selected_home["geometry"]["home_inspector_action"], "focus");
+    thread::sleep(Duration::from_millis(250));
+    println!(
+        "Home Chinese 4:3 capture: {}",
+        host.capture_home_client("home-inspector-4-3-zh-hans.png")
+            .display()
+    );
+    host.click_geometry("home_focus_tab");
+    assert_eq!(host.cli(&["list-tabs"])["tabs"][1]["active"], true);
     host.close_and_wait();
 }
 

@@ -124,6 +124,36 @@ source/freshness projections are complete; grouping and 256-tab sorted
 interaction remain open. The 256-tab court also passed Name order's first Web
 @ID and tied Console @ID, then restored Tree order before its End-key journey.
 
+### 0.2.26 native scene review
+
+The Windows `native_home_inspector_captures_wide_and_narrow_layouts` court now
+captures English Home at 960×600, 800×600 (4:3) and 500×650. At 4:3 it
+checks row/inspector separation, retains the selected @ID, focuses that exact
+tab and returns to Home with the selection intact. Moving the inspector over
+the rows made the native court fail. The separate
+`native_home_chinese_4_3_keeps_exact_inspect_and_focus_routes` court uses an
+isolated `zh-hans` config, captures 800×600, and focuses its selected @ID;
+mapping `zh-hans` to English made it fail. These are native development
+captures and routes, not a user study or release-artifact court.
+
+| Scene reviewed | First readable fact and route | Design issue still open |
+| --- | --- | --- |
+| English 960×600, three live Console tabs | Count, each @ID and child/agent labels; selected @2 has Focus tab | No measured system card or task/run source |
+| English 800×600, same fleet | Rows and inspector sit side by side; @2 Focus remains clickable | Attention has no explicit empty/source state; inspector lacks freshness |
+| English 500×650, same fleet | New actions stack; list scroll and @2 Focus remain in the first viewport | Inspector sits below the list with weak visual grouping; only part of the fleet is visible |
+| 简体中文 800×600, two live Console tabs | “标签页 2/2”, @2, “活动中 · Agent 未知” and “打开标签页” are readable | Same source/freshness and system gaps; traditional Chinese still needs a native capture |
+
+Five-second desk review of the six planned situations (read from the named
+public/native courts, without inventing agent state): zero tabs shows the two
+creation routes; one live Console shows its @ID and **Agent unknown**; duplicate
+Console names remain distinguishable by @ID and exact inspector focus; a child
+exit is an informational, source-timed tab item; stale observer plus failed
+account has no joined observation yet; an uncorrelated gateway request cannot
+light up one tab. The last two remain `BLOCKED` as Home scene claims until
+PRD 36's source projection and HC-07's scoped attention/system card exist.
+The screenshots therefore support U26's layout and copy review only; they do
+not close U26's system/alert first-glance invariant or HC-02/07.
+
 ## Outcome tree DAG
 
 ```text

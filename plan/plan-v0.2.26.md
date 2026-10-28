@@ -40,7 +40,7 @@ Outcome: 0.2.26 @0 is a trustworthy default-list watch floor for tab-contained a
 │   evidence: cargo metadata --locked reports 0.2.26, release-policy.json matches, and prd/archive/v0.2.25-release-history.md records the public boundary
 │   safe failure: no version bump or publish inference from a design document
 │   dependency: exact 0.2.25 public Promotion; non-goal: overlapping release Candidates
-├── [_] U26 — review tab-fleet scenes and alert routes with native captures
+├── [-] U26 — review tab-fleet scenes and alert routes with native captures
 │   invariant: first glance identifies tab, concern, measured system scope and exact inspect route
 │   evidence: wide/4:3/narrow wireframes, English/Chinese copy and five-second multi-tab walkthrough notes
 │   safe failure: ambiguity remains an explicit design issue before coding a target
@@ -207,6 +207,13 @@ flowchart LR
    pre-authorization to publish the next version.
 
 ## Cut, deferrals and handoff
+
+U26 now has Windows native English wide/4:3/narrow and simplified-Chinese
+4:3 captures, exact @ID focus at 4:3, and a six-situation desk review in
+[PRD 39.01](../prd/PRD_02_39_01_home_canvas.md).
+The missing system card, typed agent source and mixed component alerts keep
+its first-glance acceptance partial; the captures do not stand in for those
+facts or for other-platform/scale evidence.
 
 T26 has a Windows native click court for three same-named Console tabs. A row
 selects an exact @ID on @0; its inspector's Focus tab button or Enter opens the
