@@ -35,7 +35,9 @@ passed on three same-named Console tabs; restoring direct row activation made
 it fail. `ui-snapshot` publishes visible row IDs, selection/staleness and hit
 rectangles. `native_home_inspector_captures_wide_and_narrow_layouts` produced
 native 960x600 and 500x650 Home captures; the latter exposed a resize repaint
-gap that was corrected. The geometry sweep proves list and inspector targets do
+gap that was corrected. The 210-pixel inspector also clipped its status copy;
+shorter child/agent labels are fully visible in the recaptured wide window.
+The geometry sweep proves list and inspector targets do
 not overlap at its sampled sizes. Search, grouping, attention, scoped system
 status, visual mode, 256 mixed-tab overflow and other-platform native captures
 remain open. `screenshot-pane` captures the underlying Console pane while @0

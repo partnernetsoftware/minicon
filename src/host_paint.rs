@@ -2077,13 +2077,13 @@ impl ConApp {
                 let (heading, detail, live) = if let Some((id, kind, name, child_gone)) = selected {
                     let detail = match (self.ui_language, kind, child_gone) {
                         (ui::UiLanguage::English, workspace::TabKind::Terminal, Some(true)) => {
-                            "Child exited · Agent unknown"
+                            "Exited · Agent unknown"
                         }
                         (ui::UiLanguage::English, workspace::TabKind::Terminal, Some(false)) => {
-                            "Child active · Agent unknown"
+                            "Active · Agent unknown"
                         }
                         (ui::UiLanguage::English, workspace::TabKind::Terminal, None) => {
-                            "Child unknown · Agent unknown"
+                            "Child ? · Agent unknown"
                         }
                         (ui::UiLanguage::English, workspace::TabKind::Browser, _) => {
                             "Web · Agent unavailable"
@@ -2092,14 +2092,14 @@ impl ConApp {
                             ui::UiLanguage::ChineseSimplified,
                             workspace::TabKind::Terminal,
                             Some(true),
-                        ) => "子进程已退出 · Agent 未知",
+                        ) => "已退出 · Agent 未知",
                         (
                             ui::UiLanguage::ChineseSimplified,
                             workspace::TabKind::Terminal,
                             Some(false),
-                        ) => "子进程活动中 · Agent 未知",
+                        ) => "活动中 · Agent 未知",
                         (ui::UiLanguage::ChineseSimplified, workspace::TabKind::Terminal, None) => {
-                            "子进程未知 · Agent 未知"
+                            "子进程? · Agent 未知"
                         }
                         (ui::UiLanguage::ChineseSimplified, workspace::TabKind::Browser, _) => {
                             "网页 · Agent 不可用"
@@ -2108,17 +2108,17 @@ impl ConApp {
                             ui::UiLanguage::ChineseTraditional,
                             workspace::TabKind::Terminal,
                             Some(true),
-                        ) => "子程序已結束 · Agent 未知",
+                        ) => "已結束 · Agent 未知",
                         (
                             ui::UiLanguage::ChineseTraditional,
                             workspace::TabKind::Terminal,
                             Some(false),
-                        ) => "子程序活動中 · Agent 未知",
+                        ) => "活動中 · Agent 未知",
                         (
                             ui::UiLanguage::ChineseTraditional,
                             workspace::TabKind::Terminal,
                             None,
-                        ) => "子程序未知 · Agent 未知",
+                        ) => "子程序? · Agent 未知",
                         (ui::UiLanguage::ChineseTraditional, workspace::TabKind::Browser, _) => {
                             "網頁 · Agent 不可用"
                         }
