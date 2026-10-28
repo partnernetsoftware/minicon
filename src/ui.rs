@@ -877,6 +877,25 @@ impl Layout {
         }
     }
 
+    pub fn home_search(self, width: u32, height: u32, scale: f64) -> Rect {
+        let fleet = self.home_fleet(width, height, scale);
+        let inspector = self.home_inspector(width, height, scale);
+        let list_right = if inspector.x > fleet.x {
+            inspector.x.saturating_sub(dip(8.0, scale))
+        } else {
+            fleet.x.saturating_add(fleet.width)
+        };
+        let margin = dip(12.0, scale);
+        Rect {
+            x: fleet.x.saturating_add(margin),
+            y: fleet.y.saturating_add(dip(51.0, scale)),
+            width: list_right
+                .saturating_sub(fleet.x)
+                .saturating_sub(margin * 2),
+            height: dip(24.0, scale).min(fleet.height.saturating_sub(dip(51.0, scale))),
+        }
+    }
+
     pub fn home_fleet_capacity(self, width: u32, height: u32, scale: f64) -> usize {
         let fleet = self.home_fleet(width, height, scale);
         let inspector = self.home_inspector(width, height, scale);
@@ -887,7 +906,7 @@ impl Layout {
         };
         fleet
             .height
-            .saturating_sub(dip(48.0, scale))
+            .saturating_sub(dip(80.0, scale))
             .saturating_sub(reserved)
             .checked_div(dip(48.0, scale).max(1))
             .unwrap_or(0) as usize
@@ -912,7 +931,7 @@ impl Layout {
         let fleet = self.home_fleet(width, height, scale);
         if fleet.width >= dip(520.0, scale) {
             let inspector_width = dip(210.0, scale).min(fleet.width / 3);
-            let top = fleet.y.saturating_add(dip(48.0, scale));
+            let top = fleet.y.saturating_add(dip(80.0, scale));
             return Rect {
                 x: fleet
                     .x
@@ -922,7 +941,7 @@ impl Layout {
                 height: fleet.y.saturating_add(fleet.height).saturating_sub(top),
             };
         }
-        let available = fleet.height.saturating_sub(dip(56.0, scale));
+        let available = fleet.height.saturating_sub(dip(88.0, scale));
         let inspector_height = dip(100.0, scale).min(available);
         Rect {
             x: fleet.x,
@@ -962,7 +981,7 @@ impl Layout {
         let row_height = dip(48.0, scale);
         let top = fleet
             .y
-            .saturating_add(row_height)
+            .saturating_add(dip(80.0, scale))
             .saturating_add(row_height.saturating_mul(visible as u32));
         Rect {
             x: fleet.x,
@@ -983,7 +1002,7 @@ impl Layout {
             fleet.x.saturating_add(fleet.width)
         };
         let capacity = self.home_fleet_capacity(width, height, scale);
-        let top = fleet.y.saturating_add(dip(48.0, scale));
+        let top = fleet.y.saturating_add(dip(80.0, scale));
         Rect {
             x: list_right.saturating_sub(dip(14.0, scale)),
             y: top,

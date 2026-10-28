@@ -79,8 +79,17 @@ The Windows `native_home_kind_filter_keeps_exact_rows_and_global_exit_attention`
 court passed mixed tab rows, hidden exit inspection, closing the last Web tab
 under Web filter, and wide/narrow native captures. Making Web include all
 tab kinds caused the court to fail. The 500×650 capture also verifies the
-short Home intro is legible. Name search, sorting, grouping, an explicit
-Reveal @ID control and 256-tab qualification remain open.
+short Home intro is legible. Home now has a bounded 128-byte search field over
+the rendered tab label (case-insensitive) or one exact numeric `@ID`. Search
+and kind compose through the same visible @ID sequence; a query change resets
+only the list scroll. Ctrl/Cmd+F focuses and selects the query, Enter blurs,
+Escape clears it, and IME commit uses the shared single-line editor. Public
+snapshots expose focus, query byte count and result IDs, never the query text.
+The Windows `native_home_search_name_and_exact_id_keep_global_attention` court
+passed mixed-tab name and exact-ID searches, kind composition, hidden-tab
+attention, Escape, and wide/narrow captures. Removing query filtering made the
+court fail. Sorting, grouping, an explicit Reveal @ID control and 256-tab
+qualification remain open.
 
 ## Outcome tree DAG
 

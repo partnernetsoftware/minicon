@@ -266,6 +266,19 @@ impl ConApp {
                                 ("home_visible_count", home_nodes.len().into()),
                                 ("home_kind_filter", self.home_kind_filter.key().into()),
                                 (
+                                    "home_search",
+                                    rect_obj(layout.home_search(
+                                        metrics.physical_width,
+                                        metrics.physical_height,
+                                        metrics.scale_factor,
+                                    )),
+                                ),
+                                ("home_search_focused", self.home_search.focused.into()),
+                                (
+                                    "home_search_query_bytes",
+                                    self.home_search.text.len().into(),
+                                ),
+                                (
                                     "home_filter_action",
                                     rect_obj(layout.home_filter_action(
                                         metrics.physical_width,
@@ -308,7 +321,7 @@ impl ConApp {
                                     self.home_selected_id
                                         .and_then(|id| self.workspace.node(id))
                                         .is_some_and(|node| {
-                                            !self.home_kind_filter.includes(node.kind)
+                                            !home_nodes.iter().any(|visible| visible.id == node.id)
                                         })
                                         .into(),
                                 ),

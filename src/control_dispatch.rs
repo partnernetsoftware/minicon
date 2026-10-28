@@ -398,6 +398,7 @@ impl ConApp {
                     && !self.harness_has_input_owner()
                     && self.rename.is_none()
                     && !self.composer.focused
+                    && !(self.home_active && self.home_search.focused)
                     && !self.browser_address_focused
                     && !self.browser_proxy_focused
                     && !self.settings_proxy_focused
@@ -428,6 +429,8 @@ impl ConApp {
                     owner
                 } else if self.rename.is_some() {
                     "rename"
+                } else if self.home_active && self.home_search.focused {
+                    "home_search"
                 } else if self.settings_proxy_focused {
                     "web_proxy_candidate"
                 } else if self.browser_proxy_focused {

@@ -306,8 +306,9 @@ remains the input baseline.
   guessing timing or inferring cleanup only from a later failure. Unknown native
   state keeps the same field types and uses `known=false` plus `IME: ?`.
 - [v] `ui-snapshot.geometry.pty_backend` reports the active opened master's
-  actual backend, or null before it opens. Geometry remains null with no
-  active session. The field is observation, not a backend-selection command;
+  actual backend, or null before it opens. The field is unavailable outside a
+  terminal session; the common `frame` geometry remains available on Home
+  even when the selected real tab is Web. The backend field is observation, not a backend-selection command;
   evidence: `gui_owned_console_native_window_queries_frames_seed_and_cleanup`
   and the handle-free seed guard in PRD 24.01.
 - [v] `send-ui-ime enabled|disabled|preedit|commit` injects one bounded
@@ -315,6 +316,10 @@ remains the input baseline.
   capped at 64 KiB, its optional character cursor is range-checked, and terminal
   commit success is returned only after the complete PTY write; direct protocol
   and CLI decoding reject malformed action, cursor and payload state.
+  A focused Home search field owns `send-ui-ime` even while the selected real
+  tab is Web; the reply reports `home_search` and no PTY preflight runs. The
+  Windows `native_home_search_name_and_exact_id_keep_global_attention` court
+  proved the Web-under-Home IME commit route.
 - [-] The active Harness settings panel also owns injected IME, including when
   the selected tab is a browser or no settings field is focused. It requires
   no PTY and reports the existing `harness_port`, `harness_model` or

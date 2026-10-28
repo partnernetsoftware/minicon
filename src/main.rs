@@ -1037,6 +1037,7 @@ struct ConApp {
     home_active: bool,
     home_list_start: usize,
     home_kind_filter: HomeKindFilter,
+    home_search: composer::ComposerState,
     home_scroll_drag: Option<ScrollbarThumbDrag>,
     home_selected_id: Option<workspace::TabId>,
     settings_section: ui::SettingsSection,
@@ -1540,11 +1541,68 @@ impl ConApp {
     }
 
     fn home_visible_nodes(&self) -> Vec<&workspace::TabNode> {
+        let query = self.home_search.text.trim().to_lowercase();
         self.workspace
             .nodes()
             .iter()
-            .filter(|node| self.home_kind_filter.includes(node.kind))
+            .filter(|node| {
+                if !self.home_kind_filter.includes(node.kind) {
+                    return false;
+                }
+                if query.is_empty() || query == "@" {
+                    return true;
+                }
+                if let Some(raw_id) = query.strip_prefix('@') {
+                    return raw_id.parse::<u64>().is_ok_and(|id| node.id.get() == id);
+                }
+                let session = self.session_for(node.id);
+                let label = host_paint::tree_row_name(
+                    node.custom_title.as_deref(),
+                    session.map(|terminal| terminal.program_label()),
+                    &node.title,
+                );
+                label.to_lowercase().contains(&query)
+            })
             .collect()
+    }
+
+    fn update_home_search_ime_anchor(&self, window: &PixelWindow) {
+        let Ok(metrics) = window.metrics() else {
+            return;
+        };
+        let scale = metrics.scale_factor.max(1.0);
+        let rect = self
+            .layout(metrics.physical_width, metrics.physical_height, scale)
+            .home_search(metrics.physical_width, metrics.physical_height, scale);
+        if rect.width == 0 || rect.height == 0 {
+            return;
+        }
+        let size = scaled_host_ui_font(12, self.session_seed.font_size_logical(), scale);
+        let cell = font::cell_metrics(size).width.max(1);
+        let text_width = rect.width.saturating_sub((16.0 * scale) as u32);
+        let visible = composer::visible_window(
+            &self.home_search.text,
+            &self.home_search.preedit,
+            self.home_search.caret,
+            1,
+            (text_width / cell).max(1) as usize,
+        );
+        let caret = self
+            .home_search
+            .caret
+            .clamp(visible.text, self.home_search.text.len());
+        let cells = composer::cells(&self.home_search.text[visible.text..caret])
+            + composer::cells(&self.home_search.preedit[visible.preedit..]);
+        let x = rect
+            .x
+            .saturating_add((8.0 * scale) as u32)
+            .saturating_add((cells as u32).saturating_mul(cell).min(text_width));
+        let _ = window.set_ime_cursor_area(minicon_platform::window_host::LogicalRect::new(
+            f64::from(x) / scale,
+            f64::from(rect.y) / scale,
+            2.0,
+            f64::from(rect.height) / scale,
+        ));
     }
 
     fn service_presentation_deadlines(&mut self, now: Instant) -> (bool, Option<Instant>) {
@@ -1635,6 +1693,7 @@ impl ConApp {
             home_active: false,
             home_list_start: 0,
             home_kind_filter: HomeKindFilter::All,
+            home_search: composer::ComposerState::default(),
             home_scroll_drag: None,
             home_selected_id: None,
             settings_section: ui::SettingsSection::default(),
@@ -1882,6 +1941,8 @@ impl ConApp {
             self.load_browser_runtime(id);
         }
         self.home_active = false;
+        self.home_search.focused = false;
+        self.home_search.preedit.clear();
         self.blur_browser_composition();
         self.browser_address_focused = false;
         self.browser_proxy_focused = false;
@@ -2649,6 +2710,8 @@ impl ConApp {
         }
         self.session_seed = seed;
         self.home_active = false;
+        self.home_search.focused = false;
+        self.home_search.preedit.clear();
         self.mark_host_ui_full();
         self.reveal_active_tree_row(window)?;
         self.refresh_title(window)
@@ -2674,6 +2737,8 @@ impl ConApp {
         }
         self.load_browser_runtime(id);
         self.home_active = false;
+        self.home_search.focused = false;
+        self.home_search.preedit.clear();
         #[cfg(any(target_os = "macos", windows))]
         self.ensure_native_page(window);
         self.sync_embedded_page(window);
@@ -4624,6 +4689,55 @@ impl PixelWindowApplication for ConApp {
         if self.home_active
             && let PixelWindowEvent::Keyboard(key) = &event
             && key.state == KeyPressState::Pressed
+            && (key.modifiers.control || key.modifiers.meta)
+            && !key.modifiers.alt
+            && matches!(&key.logical, LogicalKey::Character(text) if text.eq_ignore_ascii_case("f"))
+        {
+            self.home_search.focused = true;
+            composer::select_all(&mut self.home_search);
+            self.update_home_search_ime_anchor(window);
+            self.mark_host_ui_full_and_repaint(window);
+            return Ok(PixelWindowDirective::Continue);
+        }
+        if self.home_active
+            && self.home_search.focused
+            && matches!(
+                &event,
+                PixelWindowEvent::Keyboard(_) | PixelWindowEvent::Ime(_)
+            )
+        {
+            let before = self.home_search.text.clone();
+            if let Some(outcome) = browser_ui::edit_host_field(
+                &mut self.home_search,
+                &event,
+                minicon_core::field_editor::Limits {
+                    max_bytes: 128,
+                    preedit_chars: 64,
+                },
+            ) {
+                use minicon_core::field_editor::Intent;
+                match outcome.intent {
+                    Intent::Cancel => self.home_search = composer::ComposerState::default(),
+                    Intent::Submit => {
+                        self.home_search.focused = false;
+                        self.home_search.preedit.clear();
+                    }
+                    Intent::None => {}
+                }
+                self.home_search.submit_error = outcome
+                    .rejected
+                    .then(|| "Search is limited to 128 bytes".to_owned());
+                if self.home_search.text != before {
+                    self.home_list_start = 0;
+                }
+                self.update_home_search_ime_anchor(window);
+                self.mark_host_ui_full_and_repaint(window);
+                return Ok(PixelWindowDirective::Continue);
+            }
+        }
+        if self.home_active
+            && let PixelWindowEvent::Keyboard(key) = &event
+            && key.state == KeyPressState::Pressed
             && !key.modifiers.control
             && !key.modifiers.alt
             && !key.modifiers.meta
@@ -5048,10 +5162,31 @@ impl PixelWindowApplication for ConApp {
                 let y = (position.y * scale).max(0.0) as u32;
                 let [terminal, web] =
                     layout.home_actions(metrics.physical_width, metrics.physical_height, scale);
+                let search =
+                    layout.home_search(metrics.physical_width, metrics.physical_height, scale);
+                if self.home_search.focused && !search.contains(x, y) {
+                    self.home_search.focused = false;
+                    self.home_search.preedit.clear();
+                }
                 if terminal.contains(x, y) {
                     self.open_session_contained(window, false);
                 } else if web.contains(x, y) {
                     self.open_browser_tab_contained(window);
+                } else if search.contains(x, y) {
+                    let size =
+                        scaled_host_ui_font(12, self.session_seed.font_size_logical(), scale);
+                    self.home_search.caret = browser_ui::host_field_offset(
+                        &self.home_search,
+                        search,
+                        position,
+                        scale,
+                        size,
+                    );
+                    self.home_search.anchor = None;
+                    self.home_search.select_all = false;
+                    self.home_search.focused = true;
+                    self.update_home_search_ime_anchor(window);
+                    self.mark_host_ui_full_and_repaint(window);
                 } else if layout
                     .home_filter_action(metrics.physical_width, metrics.physical_height, scale)
                     .contains(x, y)

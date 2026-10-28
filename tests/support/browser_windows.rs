@@ -1192,6 +1192,88 @@ fn native_home_kind_filter_keeps_exact_rows_and_global_exit_attention() {
 
 #[cfg(windows)]
 #[test]
+#[ignore = "requires a native desktop; run the explicit Home search court"]
+fn native_home_search_name_and_exact_id_keep_global_attention() {
+    let mut host = BrowserGui::spawn(false, None, None);
+    let exited = host.cli(&["list-tabs"])["tabs"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let other = host.cli(&["new-tab"])["id"].as_str().unwrap().to_owned();
+    let web = host.open_browser_directly()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    host.cli(&["send-text", "--target", &exited, "exit 7\r"]);
+    host.cli(&["wait-tab-exit", "--target", &exited]);
+    host.click_geometry("home");
+    host.click_geometry("home_search");
+    assert_eq!(
+        host.cli(&["send-ui-ime", "commit", "BROWSER"])["route"],
+        "home_search"
+    );
+    let by_name = host.cli(&["ui-snapshot"]);
+    assert_eq!(by_name["geometry"]["home_search_focused"], true);
+    assert_eq!(by_name["geometry"]["home_visible_count"], 1);
+    assert_eq!(by_name["geometry"]["home_list_row_ids"][0], web);
+    assert_eq!(by_name["geometry"]["home_tab_count"], 3);
+    assert_eq!(
+        by_name["geometry"]["home_attention_items"][0]["tab_id"],
+        exited
+    );
+    println!(
+        "Home search capture: {}",
+        host.capture_home_client("home-search-name.png").display()
+    );
+    host.cli(&["resize-window", "--width", "500", "--height", "650"]);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while host.cli(&["ui-snapshot"])["geometry"]["frame"]["width"] != 500 {
+        assert!(
+            Instant::now() < deadline,
+            "narrow search Home did not settle"
+        );
+        thread::sleep(Duration::from_millis(25));
+    }
+    thread::sleep(Duration::from_millis(250));
+    println!(
+        "Home narrow search capture: {}",
+        host.capture_home_client("home-search-name-narrow.png")
+            .display()
+    );
+    host.click_geometry("home_attention_action");
+    let hidden = host.cli(&["ui-snapshot"]);
+    assert_eq!(hidden["geometry"]["home_selected_id"], exited);
+    assert_eq!(hidden["geometry"]["home_selected_hidden_by_filter"], true);
+    host.click_geometry("home_search");
+    host.cli(&["send-ui-keys", "Ctrl+a"]);
+    host.cli(&["send-ui-ime", "commit", &other]);
+    let by_id = host.cli(&["ui-snapshot"]);
+    assert_eq!(by_id["geometry"]["home_visible_count"], 1);
+    assert_eq!(by_id["geometry"]["home_list_row_ids"][0], other);
+    assert_eq!(by_id["geometry"]["home_selected_hidden_by_filter"], true);
+    host.click_geometry("home_filter_action");
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["home_visible_count"],
+        1
+    );
+    host.click_geometry("home_filter_action");
+    let no_match = host.cli(&["ui-snapshot"]);
+    assert_eq!(no_match["geometry"]["home_visible_count"], 0);
+    assert_eq!(
+        no_match["geometry"]["home_attention_items"][0]["tab_id"],
+        exited
+    );
+    host.cli(&["send-ui-keys", "Ctrl+f", "Escape"]);
+    let cleared = host.cli(&["ui-snapshot"]);
+    assert_eq!(cleared["geometry"]["home_search_focused"], false);
+    assert_eq!(cleared["geometry"]["home_search_query_bytes"], 0);
+    assert_eq!(cleared["geometry"]["home_kind_filter"], "web");
+    assert_eq!(cleared["geometry"]["home_list_row_ids"][0], web);
+    host.close_and_wait();
+}
+
+#[cfg(windows)]
+#[test]
 #[ignore = "requires a native desktop; run the explicit @0 fleet wheel court"]
 fn native_home_fleet_wheel_keeps_scrolled_row_target_exact() {
     use std::ffi::c_void;

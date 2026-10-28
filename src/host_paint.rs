@@ -2032,6 +2032,21 @@ impl ConApp {
                     action.width,
                 );
             }
+            let search_placeholder = match self.ui_language {
+                ui::UiLanguage::English => "Search name or @ID",
+                ui::UiLanguage::ChineseSimplified => "搜索名称或 @ID",
+                ui::UiLanguage::ChineseTraditional => "搜尋名稱或 @ID",
+            };
+            host_ui::paint_single_line_host_editor(
+                &mut surface,
+                layout.home_search(width, height, scale),
+                &self.home_search,
+                self.home_search.focused,
+                search_placeholder,
+                t,
+                scaled_host_ui_font(12, self.session_seed.font_size_logical(), scale),
+                scale,
+            );
             if nodes.is_empty() {
                 let empty = if total > 0 {
                     match self.ui_language {
@@ -2061,7 +2076,7 @@ impl ConApp {
                 paint_host_ui_text(
                     &mut surface,
                     card.x.saturating_add((12.0 * scale) as u32),
-                    card.y.saturating_add((56.0 * scale) as u32),
+                    card.y.saturating_add((84.0 * scale) as u32),
                     empty,
                     t.muted,
                     body_size,
