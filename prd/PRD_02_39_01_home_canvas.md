@@ -16,9 +16,12 @@ The current 0.2.26 development tree routes closing the last real tab to @0
 and paints **New Terminal / New Web** actions there, with shared geometry in
 public snapshots. The Windows native Home court passed the close and both
 creation actions. New Web must not be described as independent
-per-tab browsing until PRD 25/28.01's W26 host/context lifecycle replaces the
-current single-browser-tab/page/address/auth assumption and proves two
-separate Web tab IDs, navigation, authorization isolation and return state.
+per-tab browsing in a public release until [PRD 25's W26](PRD_02_25_con_workspace.md)
+host/context lifecycle has its remaining native authorization and platform
+evidence. The 0.2.26 development tree creates distinct Web IDs and has a
+Windows native two-page navigation/proxy court; its qualification scope and
+open gates are owned by PRD 25, with the context-release mechanism in
+[PRD 28.01](PRD_02_28_01_browser_context_lifecycle.md).
 The tab-office design below uses only observed Web facts in the accepted host.
 
 The development tree now has a first real List slice: @0 paints stable @ID
