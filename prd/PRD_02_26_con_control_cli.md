@@ -7,6 +7,9 @@ This module owns the standalone host's automation surface: the public
 contract, and the snapshot/screenshot evidence products. The workbench's
 `agenterm cli` is a separate contract owned by the AgenTerm repository; the two
 are deliberately not the same surface.
+The agent-facing normalization branch is owned by
+[PRD 26.01](PRD_02_26_01_agent_cli_contract.md), sequenced by
+[its plan](../plan/plan-agent-cli-contract.md).
 
 Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
 
@@ -18,7 +21,7 @@ minicon control protocol and public CLI
 ├── Self-description
 ├── Public command set
 │   ├── [v] Explicit @ID cross-tab text/key/capture/screenshot primitives
-│   └── [_] Inside-tab self identity and typed agent coordination → 0.2.26 B26
+│   └── [_] Agent-facing identity, target, result and I/O contract → PRD_02_26_01_agent_cli_contract.md
 ├── Transport and bounds (ATC1 frame; local pipe/socket; process-lifetime)
 │   └── [-] Bounded completion of active replies during shutdown
 ├── JSON contract
@@ -35,6 +38,7 @@ flowchart LR
     H --> V["visible GUI<br/>capture · screenshot · ui-snapshot · send-*"]
     V --> ID["Explicit stable @ID target<br/>PTY text / keys / wait"]
     ID -. no self @ID or agent envelope yet .-> GAP["0.2.26 B26 observer/coordination decision"]
+    GAP --> SPEC["PRD 26.01 agent CLI normalization contract"]
     V --> SH["Screenshot: implicit visible host or explicit tab pane"]
     SH --> RESTORE["Discard scratch frame; retain latest tab and Harness destination"]
     V -. development redacted settings observation .-> G["PRD 31.01 Harness route<br/>separate inference listener"]
@@ -242,8 +246,10 @@ remains the input baseline.
   the endpoint but no self tab ID; titles and row positions cannot identify it
   safely after rename/reorder. The control socket gives any connected local
   caller the existing full command surface, not per-agent authority. The
-  0.2.26 [B26 decision](../plan/plan-v0.2.26.md) owns how a tab-bound observer
-  and peer messaging can build on these primitives. The robot workspace is not
+  [PRD 26.01](PRD_02_26_01_agent_cli_contract.md) owns the normalized CLI
+  target/output contract; the 0.2.26
+  [B26 decision](../plan/plan-v0.2.26.md) owns how a tab-bound observer and
+  peer messaging can build on these primitives. The robot workspace is not
   a Harness TabId; its future tab membership is owned by
   [PRD 39.01](PRD_02_39_01_home_canvas.md).
 - [v] the two public observation surfaces agree where they overlap. The

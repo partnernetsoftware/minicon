@@ -8,6 +8,9 @@ cutover gates. The embedded `minicon harness` behavior and evidence below
 describe released sources and the parity baseline; they are not the future
 source owner. `mux` remains MiniCon-owned. A cutover is not accepted merely
 because code appears in the separate repository.
+The agent-facing normalization of executable/instance discovery, target and
+result semantics is owned by [PRD 26.01](PRD_02_26_01_agent_cli_contract.md);
+this module retains the shipped `mux` verb subset and its evidence.
 
 Owner decision, 2026-09-24: `AGENTS.md`'s product-boundary exclusion of "mux"
 and "script runtime, plugin host or Agent permission policy" is narrowed (not

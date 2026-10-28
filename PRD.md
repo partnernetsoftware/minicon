@@ -49,6 +49,7 @@ MiniCon — one-file local terminal
 │   │       └── [-] macOS owned-window half shortcuts → prd/PRD_02_25_04_window_shortcuts.md
 │   ├── local CLI, waits, structured snapshots and screenshots
 │   │   └── prd/PRD_02_26_con_control_cli.md
+│   │       └── [_] agent-facing CLI normalization → prd/PRD_02_26_01_agent_cli_contract.md
 │   ├── [-] Robot entry / visual Harness operation and monitoring → prd/PRD_02_36_harness_workspace.md
 │   ├── [-] Fixed @0 home / future observed agent office → prd/PRD_02_39_home_dashboard.md
 │   │   └── [_] 0.2.26 default-list tab-agent watch floor / later spatial mode → prd/PRD_02_39_01_home_canvas.md
@@ -106,6 +107,8 @@ there; they are not interchangeable with an arbitrary upstream resolution.
 ```mermaid
 flowchart LR
     U["local terminal user"] --> MC["MiniCon product composition<br/>PRD 24 / 25 / 26 / 31"]
+    MC --> CLI["PRD 26.01: same-instance command / exact tab / machine CLI"]
+    TABID["PRD 25: tab identity and lifecycle"] --> CLI
     MC --> C["minicon-core<br/>shared rules"]
     MC --> UI["minicon-ui-core<br/>UI mechanisms"]
     MC --> P["minicon-platform<br/>native capabilities"]
@@ -192,7 +195,7 @@ flowchart LR
 | Browser proxy preferences | [Preferences](prd/PRD_02_25_01_browser_preferences.md) | Active override, saved candidates and Console/Web settings routes |
 | Consistent browser controls | [Controls](prd/PRD_02_25_02_browser_controls.md) | Development shared editing, keyboard menus, compact geometry and scoped native focus; final qualification open |
 | Built-in browser surface (not tray) | [Workspace](prd/PRD_02_25_con_workspace.md) + [horizon / minicon-web](prd/PRD_02_31_v0_2_horizon.md) | Tab / content panel; open/load via minicon-web; wry isolated; proxy hook; staged OAuth/dashboard/preview/wasm |
-| Automate what the GUI presents | [Control](prd/PRD_02_26_con_control_cli.md) | catalog, wait, snapshot and PNG black boxes; bounded typed errors |
+| Automate what the GUI presents | [Control](prd/PRD_02_26_con_control_cli.md) / [agent CLI contract](prd/PRD_02_26_01_agent_cli_contract.md) | current bounded commands; planned exact self-target, result and I/O normalization |
 | Bounded mux/harness subcommands | [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md) | explicit provider/session contracts; no workbench authority inherited |
 | Connect model accounts to local harnesses | [Provider gateway](prd/PRD_02_31_01_provider_gateway.md), [connection experience](prd/PRD_02_31_01_01_harness_experience.md) | Development manual pool and model API; guided experience redesign specified after owner feedback, implementation and final qualification open; gateway cannot execute tools |
 | Operate and monitor local Harness work | [Harness workspace](prd/PRD_02_36_harness_workspace.md) | Development robot entry/cached overview and later bounded app-backed task operation; stages and native evidence open |

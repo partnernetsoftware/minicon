@@ -90,7 +90,7 @@ Outcome: 0.2.26 @0 is a trustworthy default-list watch floor for tab-contained a
 │   invariant: a registered agent run binds to window/session incarnation, stable @ID, source and ordered run identity
 │   evidence: self @ID export contract, one real CLI/TUI adapter trace, peer-message envelope/receipt decision and stale/closed-tab controls
 │   safe failure: unregistered agents remain visible as tabs with Unknown work state
-│   dependency: PRD 26 control boundary, PRD 25 lifecycle and PRD 36 run view; non-goal: shipping a general message broker or parsing PTY prose
+│   dependency: PRD 26.01 CLI contract, PRD 25 lifecycle and PRD 36 run view; non-goal: shipping a general message broker or parsing PTY prose
 ├── [_] R26 — qualify visual responsiveness, accessibility and idle cost
 │   invariant: essential meaning stays visible across scale/language/window states without continuous idle repaint
 │   evidence: 1x/1.5x/2x native visual courts, focus order, reduced-motion and idle repaint measurements
@@ -188,9 +188,12 @@ flowchart LR
    outside the Home painter. A real CLI/TUI agent adapter feasibility trace
    must bind the event source to window/session incarnation and @ID and prove
    stale/closed-tab refusal. Decide how a child learns its own @ID (today it
-   inherits only `MINICON_CONTROL`) and whether typed peer messages need a
+   inherits only `MINICON_CONTROL`), how its `minicon` command resolves the
+   same running build, and whether typed peer messages need a
    delivery receipt beyond `send-paste`/`capture-pane`. A generic process name
-   or PTY text is not enough.
+   or PTY text is not enough. [PRD 26.01](../prd/PRD_02_26_01_agent_cli_contract.md)
+   owns the contract; the [agent CLI plan](plan-agent-cli-contract.md) sequences
+   the compatible implementation slices.
    This decision is part of the 0.2.26 design handoff even if the adapter
    implementation lands later.
 8. **Gate real actors separately.** If the independent worker or a separately
