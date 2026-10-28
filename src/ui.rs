@@ -879,6 +879,21 @@ impl Layout {
             .unwrap_or(0) as usize
     }
 
+    pub fn home_attention_action(self, width: u32, height: u32, scale: f64) -> Rect {
+        let fleet = self.home_fleet(width, height, scale);
+        Rect {
+            x: fleet.x.saturating_add(dip(12.0, scale)),
+            y: fleet.y.saturating_add(dip(29.0, scale)),
+            width: fleet.width.saturating_sub(dip(24.0, scale)),
+            height: dip(18.0, scale).min(
+                fleet
+                    .y
+                    .saturating_add(fleet.height)
+                    .saturating_sub(fleet.y.saturating_add(dip(29.0, scale))),
+            ),
+        }
+    }
+
     pub fn home_inspector(self, width: u32, height: u32, scale: f64) -> Rect {
         let fleet = self.home_fleet(width, height, scale);
         if fleet.width >= dip(520.0, scale) {

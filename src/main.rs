@@ -112,7 +112,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use agent_interface::ScreenSnapshot;
 use minicon_platform::input::{
@@ -1419,6 +1419,22 @@ fn tab_exit_json(id: workspace::TabId, exit_code: Option<i32>) -> json::JsonValu
     ])
 }
 
+#[derive(Clone, Copy)]
+struct HomeExitAttention {
+    tab: workspace::TabId,
+    exit_code: Option<i32>,
+    observed_at: Option<SystemTime>,
+}
+
+fn observed_unix_millis(at: Option<SystemTime>) -> json::JsonValue {
+    at.and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map_or(json::JsonValue::Null, |elapsed| {
+            u64::try_from(elapsed.as_millis())
+                .unwrap_or(u64::MAX)
+                .into()
+        })
+}
+
 fn terminal_clipboard_target_is_current(
     target: workspace::TabId,
     active: Option<workspace::TabId>,
@@ -1464,6 +1480,30 @@ fn ime_status_json(status: Option<&minicon_platform::ime::ImeStatus>) -> json::J
 }
 
 impl ConApp {
+    fn home_exit_attention(&self) -> Vec<HomeExitAttention> {
+        let mut items: Vec<_> = self
+            .workspace
+            .nodes()
+            .iter()
+            .filter_map(|node| {
+                self.session_for(node.id)
+                    .filter(|session| session.child_gone)
+                    .map(|session| HomeExitAttention {
+                        tab: node.id,
+                        exit_code: session.child_exit_code,
+                        observed_at: session.child_exit_observed_at,
+                    })
+            })
+            .collect();
+        items.sort_by(|left, right| {
+            right
+                .observed_at
+                .cmp(&left.observed_at)
+                .then_with(|| left.tab.cmp(&right.tab))
+        });
+        items
+    }
+
     fn service_presentation_deadlines(&mut self, now: Instant) -> (bool, Option<Instant>) {
         let active = self.workspace.active();
         let mut redraw = false;
@@ -4422,7 +4462,11 @@ impl PixelWindowApplication for ConApp {
             if child_exited {
                 // A tab row changed appearance (the shell exited), and that is
                 // host UI the terminal redraw does not cover.
-                self.mark_tree_dirty();
+                if self.home_active {
+                    self.mark_host_ui_full_and_repaint(window);
+                } else {
+                    self.mark_tree_dirty();
+                }
             }
             if active_redraw {
                 if self.active_session()?.dirty.is_empty() {
@@ -4962,6 +5006,13 @@ impl PixelWindowApplication for ConApp {
                     self.open_session_contained(window, false);
                 } else if web.contains(x, y) {
                     self.open_browser_tab_contained(window);
+                } else if layout
+                    .home_attention_action(metrics.physical_width, metrics.physical_height, scale)
+                    .contains(x, y)
+                    && let Some(attention) = self.home_exit_attention().first()
+                {
+                    self.home_selected_id = Some(attention.tab);
+                    self.mark_host_ui_full_and_repaint(window);
                 } else if layout
                     .home_focus_action(metrics.physical_width, metrics.physical_height, scale)
                     .contains(x, y)

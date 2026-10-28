@@ -61,6 +61,12 @@ minicon cli --control unix:/tmp/minicon-build/control.sock screenshot-pane --out
 普通启动时，Console 标签内的程序也会继承所属 MiniCon 实例的本地控制端点。
 可直接运行 `minicon cli capture-pane --target self` 读取当前标签，或运行
 `minicon mux list-panes` 后用稳定的 `@ID` 指定其他终端标签。
+每个 Console 标签还会收到自身的 `MINICON_TAB_ID`、实例身份和
+`MINICON_BIN`（当前宿主程序的绝对路径）；子进程的 `PATH` 优先搜索该程序所在目录。
+因此多个 MiniCon 实例同时运行时，标准命名的 `minicon cli` / `minicon mux`
+分别指向各自的宿主。若登录 shell 重写了 `PATH` 或程序被改名，可用
+`MINICON_BIN` 指定的绝对路径。单独运行 `minicon` 是启动应用，不是控制当前标签；
+Web 标签没有命令环境。
 外部脚本需要已知端点时，仍可用 `--control` 指定。
 
 `ui-snapshot` 以 JSON 返回焦点、输入法状态、待处理工作与布局；`wait-text` 和

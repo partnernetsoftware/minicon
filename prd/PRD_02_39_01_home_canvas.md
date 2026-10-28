@@ -39,7 +39,7 @@ gap that was corrected. The 210-pixel inspector also clipped its status copy;
 shorter child/agent labels are fully visible in the recaptured wide window.
 The geometry sweep proves list and inspector targets do
 not overlap at its sampled sizes. Search, grouping, attention, scoped system
-status, visual mode, 256 mixed-tab overflow and other-platform native captures
+full attention/system projection, visual mode, 256 mixed-tab overflow and other-platform native captures
 remain open. `screenshot-pane` captures the underlying Console pane while @0
 is visible, so it is not Home visual evidence.
 The Windows `native_home_fleet_wheel_keeps_scrolled_row_target_exact` court
@@ -59,6 +59,17 @@ drag returns to the first row, and neither gesture selects a tab. The native
 Home capture shows the scrollbar beside four visible rows. Removing track
 paging made the court fail. Pointer capture is released on drag end or Home
 departure; other scales and 256 mixed tabs remain open.
+The first attention projection now observes Console child exits as
+**informational** items keyed by exact @ID. It carries the host observation
+time and exit code, shows the newest item in the Home list header and selects
+that @ID for inspection. It does not count a shell exit as agent failure. The
+Windows `native_home_child_exit_attention_inspects_exact_tab_and_resolves_on_close`
+court passed nonzero exit/time, exact click selection, and removal after tab
+close while a sibling survives; redirecting the click to the sibling made the
+court fail. This is one source-backed item class, not the mixed attention
+queue, actionable alert count or scoped system card required by HC-07.
+The recaptured 500×650 native Home image confirms the short fleet heading and
+row status keep the exit fact and `Agent unknown` visible in the narrow column.
 
 ## Outcome tree DAG
 
@@ -93,7 +104,7 @@ Outcome: @0 lets one person manage and watch tab-contained agents and local heal
 │   evidence: 0/1/many/256 tabs, duplicate names, filter/sort/group and exact focus/inspect journeys
 │   safe failure: hidden-by-filter alerts remain counted; closed/moved target never redirects to a row index
 │   dependency: PRD 25 tab tree and public stable IDs; non-goal: reading hidden tab text or controlling arbitrary child processes
-├── [_] HC-07 — attention queue and scoped system status
+├── [-] HC-07 — attention queue and scoped system status
 │   invariant: each item names its cause, affected @ID or component, observed time and one safe repair route
 │   evidence: mixed exited tab, stale observer, failed provider and host pressure; sorting/dedupe/recovery journeys
 │   safe failure: collector loss says Unknown, never healthy; a missing reading is not an alarm storm

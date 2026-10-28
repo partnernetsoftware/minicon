@@ -286,6 +286,46 @@ impl ConApp {
                                 }),
                                 ("home_selected_id", tab_id_json(self.home_selected_id)),
                                 (
+                                    "home_attention_action",
+                                    rect_obj(layout.home_attention_action(
+                                        metrics.physical_width,
+                                        metrics.physical_height,
+                                        metrics.scale_factor,
+                                    )),
+                                ),
+                                (
+                                    "home_attention_items",
+                                    json::JsonValue::Array(
+                                        self.home_exit_attention()
+                                            .into_iter()
+                                            .map(|item| {
+                                                json::object(vec![
+                                                    (
+                                                        "key",
+                                                        format!(
+                                                            "terminal-child-exit:@{}",
+                                                            item.tab.get()
+                                                        )
+                                                        .into(),
+                                                    ),
+                                                    ("source", "terminal-child".into()),
+                                                    ("severity", "info".into()),
+                                                    ("tab_id", tab_id_json(Some(item.tab))),
+                                                    (
+                                                        "child_exit_code",
+                                                        exit_code_json(item.exit_code),
+                                                    ),
+                                                    (
+                                                        "observed_at_unix_ms",
+                                                        observed_unix_millis(item.observed_at),
+                                                    ),
+                                                    ("action", "inspect-tab".into()),
+                                                ])
+                                            })
+                                            .collect(),
+                                    ),
+                                ),
+                                (
                                     "home_selected_stale",
                                     self.home_selected_id
                                         .is_some_and(|id| self.workspace.node(id).is_none())

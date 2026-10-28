@@ -1903,32 +1903,38 @@ impl ConApp {
             let capacity = layout.home_fleet_capacity(width, height, scale);
             let start = ui::clamp_tree_scroll(self.home_list_start, nodes.len(), capacity);
             let end = start.saturating_add(capacity).min(nodes.len());
-            let heading = match self.ui_language {
-                ui::UiLanguage::English => format!(
+            let compact_header = card.width < (360.0 * scale) as u32;
+            let heading = match (self.ui_language, compact_header) {
+                (ui::UiLanguage::English, true) => {
+                    format!("Tabs {} · Exited {}", nodes.len(), exited)
+                }
+                (ui::UiLanguage::ChineseSimplified, true) => {
+                    format!("标签 {} · 已退出 {}", nodes.len(), exited)
+                }
+                (ui::UiLanguage::ChineseTraditional, true) => {
+                    format!("分頁 {} · 已結束 {}", nodes.len(), exited)
+                }
+                (ui::UiLanguage::English, false) => format!(
                     "Tabs {} · Exited {} · Showing {}–{}",
                     nodes.len(),
                     exited,
                     start.saturating_add(1).min(nodes.len()),
                     end
                 ),
-                ui::UiLanguage::ChineseSimplified => {
-                    format!(
-                        "标签页 {} · 已退出 {} · 显示 {}–{}",
-                        nodes.len(),
-                        exited,
-                        start.saturating_add(1).min(nodes.len()),
-                        end
-                    )
-                }
-                ui::UiLanguage::ChineseTraditional => {
-                    format!(
-                        "分頁 {} · 已結束 {} · 顯示 {}–{}",
-                        nodes.len(),
-                        exited,
-                        start.saturating_add(1).min(nodes.len()),
-                        end
-                    )
-                }
+                (ui::UiLanguage::ChineseSimplified, false) => format!(
+                    "标签页 {} · 已退出 {} · 显示 {}–{}",
+                    nodes.len(),
+                    exited,
+                    start.saturating_add(1).min(nodes.len()),
+                    end
+                ),
+                (ui::UiLanguage::ChineseTraditional, false) => format!(
+                    "分頁 {} · 已結束 {} · 顯示 {}–{}",
+                    nodes.len(),
+                    exited,
+                    start.saturating_add(1).min(nodes.len()),
+                    end
+                ),
             };
             paint_host_ui_text(
                 &mut surface,
@@ -1939,6 +1945,45 @@ impl ConApp {
                 body_size,
                 card.width.saturating_sub((24.0 * scale) as u32),
             );
+            if let Some(attention) = self.home_exit_attention().first().copied() {
+                let age = attention.observed_at.and_then(|at| {
+                    SystemTime::now()
+                        .duration_since(at)
+                        .ok()
+                        .map(|elapsed| elapsed.as_secs())
+                });
+                let age = age.map_or_else(
+                    || "?".to_owned(),
+                    |seconds| {
+                        if seconds < 60 {
+                            format!("{seconds}s")
+                        } else {
+                            format!("{}m", seconds / 60)
+                        }
+                    },
+                );
+                let label = match self.ui_language {
+                    ui::UiLanguage::English => {
+                        format!("@{} exited · {age} ago · Inspect", attention.tab.get())
+                    }
+                    ui::UiLanguage::ChineseSimplified => {
+                        format!("@{} 已退出 · {age}前 · 检查", attention.tab.get())
+                    }
+                    ui::UiLanguage::ChineseTraditional => {
+                        format!("@{} 已結束 · {age}前 · 檢查", attention.tab.get())
+                    }
+                };
+                let action = layout.home_attention_action(width, height, scale);
+                paint_host_ui_text(
+                    &mut surface,
+                    action.x,
+                    action.y,
+                    &label,
+                    t.accent,
+                    scaled_host_ui_font(12, self.session_seed.font_size_logical(), scale),
+                    action.width,
+                );
+            }
             if nodes.is_empty() {
                 let empty = match self.ui_language {
                     ui::UiLanguage::English => "No tabs yet. Create a Terminal or Web tab above.",
@@ -1976,50 +2021,103 @@ impl ConApp {
                 );
                 let label = format!("@{}  {}", node.id.get(), name);
                 let exited = session.map(|terminal| terminal.child_gone);
-                let status = match (self.ui_language, node.kind, exited) {
-                    (ui::UiLanguage::English, workspace::TabKind::Terminal, Some(true)) => {
-                        "Console · exited · agent unknown"
+                let status = if row.width < (260.0 * scale) as u32 {
+                    match (self.ui_language, node.kind, exited) {
+                        (ui::UiLanguage::English, workspace::TabKind::Terminal, Some(true)) => {
+                            "Exited · Agent unknown"
+                        }
+                        (ui::UiLanguage::English, workspace::TabKind::Terminal, Some(false)) => {
+                            "Active · Agent unknown"
+                        }
+                        (ui::UiLanguage::English, workspace::TabKind::Terminal, None) => {
+                            "Child ? · Agent unknown"
+                        }
+                        (ui::UiLanguage::English, workspace::TabKind::Browser, _) => {
+                            "Web · Agent unavailable"
+                        }
+                        (
+                            ui::UiLanguage::ChineseSimplified,
+                            workspace::TabKind::Terminal,
+                            Some(true),
+                        ) => "已退出 · Agent 未知",
+                        (
+                            ui::UiLanguage::ChineseSimplified,
+                            workspace::TabKind::Terminal,
+                            Some(false),
+                        ) => "活动中 · Agent 未知",
+                        (ui::UiLanguage::ChineseSimplified, workspace::TabKind::Terminal, None) => {
+                            "子进程未知 · Agent 未知"
+                        }
+                        (ui::UiLanguage::ChineseSimplified, workspace::TabKind::Browser, _) => {
+                            "网页 · Agent 不可用"
+                        }
+                        (
+                            ui::UiLanguage::ChineseTraditional,
+                            workspace::TabKind::Terminal,
+                            Some(true),
+                        ) => "已結束 · Agent 未知",
+                        (
+                            ui::UiLanguage::ChineseTraditional,
+                            workspace::TabKind::Terminal,
+                            Some(false),
+                        ) => "活動中 · Agent 未知",
+                        (
+                            ui::UiLanguage::ChineseTraditional,
+                            workspace::TabKind::Terminal,
+                            None,
+                        ) => "子程序未知 · Agent 未知",
+                        (ui::UiLanguage::ChineseTraditional, workspace::TabKind::Browser, _) => {
+                            "網頁 · Agent 不可用"
+                        }
                     }
-                    (ui::UiLanguage::English, workspace::TabKind::Terminal, Some(false)) => {
-                        "Console · child active · agent unknown"
-                    }
-                    (ui::UiLanguage::English, workspace::TabKind::Terminal, None) => {
-                        "Console · status unknown"
-                    }
-                    (ui::UiLanguage::English, workspace::TabKind::Browser, _) => {
-                        "Web · agent status unavailable"
-                    }
-                    (
-                        ui::UiLanguage::ChineseSimplified,
-                        workspace::TabKind::Terminal,
-                        Some(true),
-                    ) => "终端 · 已退出 · Agent 状态未知",
-                    (
-                        ui::UiLanguage::ChineseSimplified,
-                        workspace::TabKind::Terminal,
-                        Some(false),
-                    ) => "终端 · 子进程活动中 · Agent 状态未知",
-                    (ui::UiLanguage::ChineseSimplified, workspace::TabKind::Terminal, None) => {
-                        "终端 · 状态未知"
-                    }
-                    (ui::UiLanguage::ChineseSimplified, workspace::TabKind::Browser, _) => {
-                        "网页 · Agent 状态不可用"
-                    }
-                    (
-                        ui::UiLanguage::ChineseTraditional,
-                        workspace::TabKind::Terminal,
-                        Some(true),
-                    ) => "終端 · 已結束 · Agent 狀態未知",
-                    (
-                        ui::UiLanguage::ChineseTraditional,
-                        workspace::TabKind::Terminal,
-                        Some(false),
-                    ) => "終端 · 子程序活動中 · Agent 狀態未知",
-                    (ui::UiLanguage::ChineseTraditional, workspace::TabKind::Terminal, None) => {
-                        "終端 · 狀態未知"
-                    }
-                    (ui::UiLanguage::ChineseTraditional, workspace::TabKind::Browser, _) => {
-                        "網頁 · Agent 狀態不可用"
+                } else {
+                    match (self.ui_language, node.kind, exited) {
+                        (ui::UiLanguage::English, workspace::TabKind::Terminal, Some(true)) => {
+                            "Console · exited · agent unknown"
+                        }
+                        (ui::UiLanguage::English, workspace::TabKind::Terminal, Some(false)) => {
+                            "Console · child active · agent unknown"
+                        }
+                        (ui::UiLanguage::English, workspace::TabKind::Terminal, None) => {
+                            "Console · status unknown"
+                        }
+                        (ui::UiLanguage::English, workspace::TabKind::Browser, _) => {
+                            "Web · agent status unavailable"
+                        }
+                        (
+                            ui::UiLanguage::ChineseSimplified,
+                            workspace::TabKind::Terminal,
+                            Some(true),
+                        ) => "终端 · 已退出 · Agent 状态未知",
+                        (
+                            ui::UiLanguage::ChineseSimplified,
+                            workspace::TabKind::Terminal,
+                            Some(false),
+                        ) => "终端 · 子进程活动中 · Agent 状态未知",
+                        (ui::UiLanguage::ChineseSimplified, workspace::TabKind::Terminal, None) => {
+                            "终端 · 状态未知"
+                        }
+                        (ui::UiLanguage::ChineseSimplified, workspace::TabKind::Browser, _) => {
+                            "网页 · Agent 状态不可用"
+                        }
+                        (
+                            ui::UiLanguage::ChineseTraditional,
+                            workspace::TabKind::Terminal,
+                            Some(true),
+                        ) => "終端 · 已結束 · Agent 狀態未知",
+                        (
+                            ui::UiLanguage::ChineseTraditional,
+                            workspace::TabKind::Terminal,
+                            Some(false),
+                        ) => "終端 · 子程序活動中 · Agent 狀態未知",
+                        (
+                            ui::UiLanguage::ChineseTraditional,
+                            workspace::TabKind::Terminal,
+                            None,
+                        ) => "終端 · 狀態未知",
+                        (ui::UiLanguage::ChineseTraditional, workspace::TabKind::Browser, _) => {
+                            "網頁 · Agent 狀態不可用"
+                        }
                     }
                 };
                 let inset = (12.0 * scale) as u32;

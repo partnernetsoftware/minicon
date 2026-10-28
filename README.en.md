@@ -70,6 +70,13 @@ endpoint, even on an ordinary launch. Run `minicon mux list-panes` there, then
 use `minicon cli capture-pane --target self` for the current tab or address
 another terminal by its stable `@ID`. `--control` remains available
 when an outside script needs a known endpoint.
+Each Console child also receives its own `MINICON_TAB_ID`, the host instance
+identity, and `MINICON_BIN` (the absolute host executable path); its `PATH`
+searches that executable's directory first. With multiple MiniCon instances,
+the normally named `minicon cli` and `minicon mux` in each tab address their
+own host. If a login shell resets `PATH` or the binary was renamed, invoke the
+absolute path in `MINICON_BIN`. Bare `minicon` launches the application. Web
+tabs have no command environment.
 
 `ui-snapshot` returns focus, input-method state, pending work and layout as JSON;
 `wait-text` and `wait-tab-exit` block until a condition holds or times out;

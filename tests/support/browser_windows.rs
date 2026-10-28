@@ -1026,6 +1026,67 @@ fn native_home_list_scrollbar_pages_and_drags_without_retargeting() {
 
 #[cfg(windows)]
 #[test]
+#[ignore = "requires a native desktop; run the explicit Home exit attention court"]
+fn native_home_child_exit_attention_inspects_exact_tab_and_resolves_on_close() {
+    let mut host = BrowserGui::spawn(false, None, None);
+    let exited = host.cli(&["list-tabs"])["tabs"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let survivor = host.cli(&["new-tab"])["id"].as_str().unwrap().to_owned();
+    host.cli(&["send-text", "--target", &exited, "exit 7\r"]);
+    let completed = host.cli(&["wait-tab-exit", "--target", &exited]);
+    assert_eq!(completed["child_exit_code"], 7);
+    host.click_geometry("home");
+    let before = host.cli(&["ui-snapshot"]);
+    let items = before["geometry"]["home_attention_items"]
+        .as_array()
+        .unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["key"], format!("terminal-child-exit:{exited}"));
+    assert_eq!(items[0]["source"], "terminal-child");
+    assert_eq!(items[0]["severity"], "info");
+    assert_eq!(items[0]["tab_id"], exited);
+    assert_eq!(items[0]["child_exit_code"], 7);
+    assert!(items[0]["observed_at_unix_ms"].as_u64().unwrap() > 0);
+    assert_eq!(items[0]["action"], "inspect-tab");
+    println!(
+        "Home exit attention capture: {}",
+        host.capture_home_client("home-exit-attention.png")
+            .display()
+    );
+    host.cli(&["resize-window", "--width", "500", "--height", "650"]);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while host.cli(&["ui-snapshot"])["geometry"]["frame"]["width"] != 500 {
+        assert!(Instant::now() < deadline, "narrow Home did not settle");
+        thread::sleep(Duration::from_millis(25));
+    }
+    thread::sleep(Duration::from_millis(250));
+    println!(
+        "Home narrow exit attention capture: {}",
+        host.capture_home_client("home-exit-attention-narrow.png")
+            .display()
+    );
+    host.click_geometry("home_attention_action");
+    let selected = host.cli(&["ui-snapshot"]);
+    assert_eq!(selected["geometry"]["home_active"], true);
+    assert_eq!(selected["geometry"]["home_selected_id"], exited);
+    host.cli(&["close-tab", "--target", &exited]);
+    let resolved = host.cli(&["ui-snapshot"]);
+    assert_eq!(resolved["geometry"]["home_active"], true);
+    assert!(
+        resolved["geometry"]["home_attention_items"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(resolved["geometry"]["home_selected_stale"], true);
+    assert_eq!(host.cli(&["list-tabs"])["tabs"][0]["id"], survivor);
+    host.close_and_wait();
+}
+
+#[cfg(windows)]
+#[test]
 #[ignore = "requires a native desktop; run the explicit @0 fleet wheel court"]
 fn native_home_fleet_wheel_keeps_scrolled_row_target_exact() {
     use std::ffi::c_void;

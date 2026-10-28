@@ -247,6 +247,12 @@ and other programmatic editing operations remain to be qualified.
   exit with a non-zero code while a sibling continues accepting input, the dead
   tab remains capturable but rejects further PTY input, parent promotion still
   holds, and closing the final retained tab ends the GUI cleanly.
+- [v] the host records wall-clock observation time when it drains a child's
+  exit notification, alongside that session's exit code. This is the host's
+  observation time, not the process's own exit timestamp or an agent-run result.
+  The Windows `native_home_child_exit_attention_inspects_exact_tab_and_resolves_on_close`
+  court proves a nonzero observed time for an exited child; the Home use of
+  this fact is owned by [PRD 39.01](PRD_02_39_01_home_canvas.md).
 
 ## PTY backend selection
 

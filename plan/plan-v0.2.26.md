@@ -60,7 +60,7 @@ Outcome: 0.2.26 @0 is a trustworthy default-list watch floor for tab-contained a
 │   evidence: V0 inspect-preview, V1 session-only card placement, V2 explicit tree-move contracts and native interaction prototype
 │   safe failure: an unqualified drag mode stays unavailable while the default list remains fully usable
 │   dependency: T26 identity and observer model, PRD 25.03 topology revision for V2; non-goal: cross-restart placement or a decorative fake drag target in 0.2.26
-├── [_] A26 — prioritize attention and measured system health
+├── [-] A26 — prioritize attention and measured system health
 │   invariant: every alert names exact tab/component, source, freshness, severity and one safe action
 │   evidence: exited/stale/failed/host-unavailable mixed journeys, dedupe/resolve and measurement provenance
 │   safe failure: collector outage becomes Unknown rather than false healthy/zero or an alarm storm
@@ -263,7 +263,12 @@ mutation failed. Typed adapter runs still need source and ordered stage;
 host-accepted PTY input never becomes an agent receipt. One real CLI/TUI
 adapter trace, two-instance/restart and other-platform controls remain open,
 so B26 remains partial.
-Search/filter/group, mixed 256-tab overflow, attention/system cards, full native
+The first A26 slice now publishes informational Console-child exit items with
+exact @ID, host observation time and exit code; the Home header selects the
+newest item for inspection. The Windows native court passed and a wrong-target
+mutation failed; closing the tab removes the item. Mixed severity/source
+deduplication, actionable counts, provider/gateway routing and measured system
+cards remain open. Search/filter/group, mixed 256-tab overflow, full native
 wide/narrow/scale visual qualification and other OS courts remain required before T26 or
 the default-list cut can be marked complete. `screenshot-pane` observes the
 underlying Console pane on @0 and is not a Home capture receipt.

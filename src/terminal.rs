@@ -89,6 +89,8 @@ pub(super) struct ConTerminal {
     /// `child_exit_pending` with release ordering.
     child_exit_code_encoded: Arc<AtomicU64>,
     pub(super) child_exit_code: Option<i32>,
+    /// Wall-clock instant at which this host observed the child exit event.
+    pub(super) child_exit_observed_at: Option<SystemTime>,
 
     /// Logical font size in DIPs. Adjusted by the tab column's zoom buttons.
     pub(super) font_size_logical: f64,
@@ -300,6 +302,7 @@ impl ConTerminal {
             child_exit_pending: Arc::new(AtomicBool::new(false)),
             child_exit_code_encoded: Arc::new(AtomicU64::new(0)),
             child_exit_code: None,
+            child_exit_observed_at: None,
             font_size_logical: DEFAULT_FONT_PX,
             font_size_baseline: DEFAULT_FONT_PX,
             cell_w: 8,
@@ -845,6 +848,7 @@ impl ConTerminal {
             self.child_gone = true;
             self.child_exit_code =
                 decode_child_exit_code(self.child_exit_code_encoded.load(Ordering::Acquire));
+            self.child_exit_observed_at = Some(SystemTime::now());
             outcome.redraw = true;
             outcome.child_exited = true;
         }
