@@ -1995,10 +1995,10 @@ impl ConApp {
         if self.active_is_browser() {
             let page_title = self
                 .workspace
-                .browser_tab()
+                .active_browser_tab()
                 .and_then(|id| self.browsers.get(&id))
                 .map(|tab| {
-                    if self.browser_auth.is_some()
+                    if self.loaded_browser_auth().is_some()
                         || tab
                             .panel()
                             .url
@@ -2671,7 +2671,7 @@ impl ConApp {
             let _ = waker.wake();
         };
         let native_creation_started = Instant::now();
-        let result = if let Some(auth) = &self.browser_auth {
+        let result = if let Some(auth) = self.loaded_browser_auth() {
             browser::NativePageHost::new_with_context(slot, &auth.context, wake)
                 .map_err(|error| error.to_string())
         } else {
@@ -2699,7 +2699,7 @@ impl ConApp {
         if self.defer_harness_auth_navigation(url) {
             return;
         }
-        if self.browser_auth.is_none()
+        if self.loaded_browser_auth().is_none()
             && let Err(reason) = self.effective_browser_proxy()
         {
             self.note_page_load(browser::PageLoad::Unavailable {
@@ -2746,7 +2746,7 @@ impl ConApp {
         if self.defer_harness_auth_navigation(url) {
             return;
         }
-        if self.browser_auth.is_none()
+        if self.loaded_browser_auth().is_none()
             && let Err(reason) = self.effective_browser_proxy()
         {
             self.note_page_load(browser::PageLoad::Unavailable {
@@ -2810,7 +2810,7 @@ impl ConApp {
             });
             return;
         };
-        let spawned = if let Some(auth) = &self.browser_auth {
+        let spawned = if let Some(auth) = self.loaded_browser_auth() {
             browser::spawn_page_host_in_context(
                 std::path::Path::new(&program),
                 url,

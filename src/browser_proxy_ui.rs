@@ -8,7 +8,7 @@ impl ConApp {
     }
 
     pub(super) fn apply_browser_proxy(&mut self, window: &PixelWindow) {
-        if self.browser_auth.is_some() {
+        if self.loaded_browser_auth().is_some() {
             return;
         }
         self.browser_proxy_applied = self.browser_proxy_input.text.trim().to_owned();
@@ -20,7 +20,7 @@ impl ConApp {
         self.browser_proxy_focused = false;
         let url = self
             .workspace
-            .browser_tab()
+            .active_browser_tab()
             .and_then(|id| self.browsers.get(&id))
             .and_then(|tab| tab.panel().url.clone())
             .unwrap_or_default();
@@ -29,7 +29,7 @@ impl ConApp {
         self.stop_page_host();
         if let Some(tab) = self
             .workspace
-            .browser_tab()
+            .active_browser_tab()
             .and_then(|id| self.browsers.get_mut(&id))
         {
             tab.note_title("");
@@ -53,7 +53,7 @@ impl ConApp {
     }
 
     pub(super) fn focus_browser_proxy(&mut self, window: &PixelWindow) {
-        if self.browser_auth.is_some() {
+        if self.loaded_browser_auth().is_some() {
             return;
         }
         self.browser_chrome_trigger = None;

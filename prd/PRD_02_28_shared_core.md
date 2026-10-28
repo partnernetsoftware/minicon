@@ -816,6 +816,11 @@ The product-side helper reader wakes on a valid ready frame even when an older
 URL/title snapshot is pending, allowing the parked-tab owner to apply checked
 process-owned hide after delayed initial mapping. Invalid PID/parent ready
 frames never arm that path. Native two-page visibility remains unqualified.
+The exact-source Linux x86_64 development run `40638359880` on `e227465`
+built the product/helper and passed the canonical single-Web native address,
+redirect, history and failure court. Its filtered suite did not execute the
+new `ready_frame_requires_the_spawned_pid_and_never_replaces_the_page_snapshot`
+unit; that targeted test and two-Web visibility remain pending native evidence.
 The product owns parking admission and retry meaning in PRD 31.01.02.
 The helper's older startup reparent operations still use Xlib inside the isolated
 child; the new parent selector does not certify those startup failure paths.

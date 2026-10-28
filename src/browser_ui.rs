@@ -226,7 +226,7 @@ impl ConApp {
             let mut editor = composer::ComposerState::default();
             editor.text = self
                 .workspace
-                .browser_tab()
+                .active_browser_tab()
                 .and_then(|id| self.browsers.get(&id))
                 .and_then(|tab| tab.panel().url.clone())
                 .unwrap_or_default();
@@ -486,7 +486,7 @@ impl ConApp {
         if control == 2
             && self
                 .workspace
-                .browser_tab()
+                .active_browser_tab()
                 .and_then(|id| self.browsers.get(&id))
                 .is_some_and(|tab| {
                     matches!(tab.panel().load, browser::PageLoad::Unavailable { .. })
@@ -521,7 +521,7 @@ impl ConApp {
             if missing {
                 let url = self
                     .workspace
-                    .browser_tab()
+                    .active_browser_tab()
                     .and_then(|id| self.browsers.get(&id))
                     .and_then(|tab| tab.panel().url.clone());
                 if let Some(url) = url {
@@ -540,7 +540,7 @@ impl ConApp {
             if let Err(reason) = result {
                 let url = self
                     .workspace
-                    .browser_tab()
+                    .active_browser_tab()
                     .and_then(|id| self.browsers.get(&id))
                     .and_then(|tab| tab.panel().url.clone())
                     .unwrap_or_default();
@@ -553,7 +553,7 @@ impl ConApp {
     fn prepare_browser_retry(&mut self) -> Option<String> {
         let tab = self
             .workspace
-            .browser_tab()
+            .active_browser_tab()
             .and_then(|id| self.browsers.get_mut(&id))?;
         let url = tab.panel().url.clone().filter(|url| !url.is_empty())?;
         tab.note_title("");
@@ -790,6 +790,43 @@ impl ConApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn address_and_retry_use_selected_web_when_two_tabs_exist() {
+        let mut app = ConApp::new(None, None);
+        let first = app.workspace.add_browser_root().unwrap();
+        let mut first_tab = browser::BrowserTab::shell();
+        assert!(first_tab.show_http("https://first.invalid/keep"));
+        app.browsers.insert(first, first_tab).unwrap();
+        let second = app.workspace.add_browser_root().unwrap();
+        let mut second_tab = browser::BrowserTab::shell();
+        second_tab.note_load(browser::PageLoad::Unavailable {
+            url: "https://second.invalid/retry".into(),
+            reason: "browser-navigation-timeout".into(),
+        });
+        app.browsers.insert(second, second_tab).unwrap();
+        app.load_browser_runtime(second);
+
+        app.begin_browser_address();
+        assert_eq!(
+            app.browser_address.as_ref().unwrap().text,
+            "https://second.invalid/retry"
+        );
+        assert_eq!(
+            app.prepare_browser_retry().as_deref(),
+            Some("https://second.invalid/retry")
+        );
+        assert_eq!(
+            app.browsers.get(&first).unwrap().panel().url.as_deref(),
+            Some("https://first.invalid/keep")
+        );
+        assert_eq!(
+            app.browsers.get(&second).unwrap().panel().load,
+            browser::PageLoad::Loading {
+                url: "https://second.invalid/retry".into()
+            }
+        );
+    }
 
     #[test]
     fn browser_observation_updates_only_its_loaded_web_id() {

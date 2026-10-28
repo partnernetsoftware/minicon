@@ -364,6 +364,17 @@ names above.
   hides a parked helper after its checked ready frame; the helper-readiness
   mechanism is owned in [PRD 28](PRD_02_28_shared_core.md#process-owned-linux-embedding-development-join).
   This is not a two-page native verdict.
+  Address initial text, retry, proxy rebuild/recovery and window title now
+  read the active Web @ID. `address_and_retry_use_selected_web_when_two_tabs_exist`
+  passed, and restoring first-browser retry selection made it fail. Browser
+  authorization context applies only while its recorded Web @ID is loaded;
+  `authorization_context_applies_only_while_its_web_id_is_loaded` passed and
+  failed when that ID guard was removed. A pending authorization navigation
+  temporarily targets its recorded @ID, then restores the user's selected
+  tab. The selected Windows
+  `native_browser_address_redirect_history_and_failure` single-Web court
+  passed after this routing change. Actual native two-Web proxy/context
+  evidence remains open.
   Native
   two-page host and authorization isolation evidence remains open; +W still
   focuses the existing Web tab.

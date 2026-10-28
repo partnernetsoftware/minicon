@@ -406,9 +406,9 @@ impl ConApp {
                                 |editor: Option<&composer::ComposerState>, focused: bool| {
                                     let empty = composer::ComposerState::default();
                                     let editor = editor.unwrap_or(&empty);
-                                    let redacted = self.browser_auth.is_some()
+                                    let redacted = self.loaded_browser_auth().is_some()
                                         || super::browser_ui::is_authorization_page(&editor.text);
-                                    let text = if self.browser_auth.is_some() {
+                                    let text = if self.loaded_browser_auth().is_some() {
                                         "authorization://private"
                                     } else {
                                         super::browser_ui::public_browser_url(&editor.text)

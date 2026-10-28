@@ -227,6 +227,10 @@ Native/helper page observations and loading deadlines are now attributed to
 the loaded Web @ID, with a two-Web stale-owner negative control. Linux parked
 helper visibility now has a ready-triggered hide path; its actual X11
 visibility court and live two-page native navigation remain open.
+Active-Web address/retry/proxy/title routing and auth-context admission now
+use the selected or loaded @ID. Focused two-Web model tests passed; live
+native proxy/context isolation and asynchronous auth return still require
+their named court before +W changes behavior.
 The GUI still exposes one Web tab and +W still focuses it. Per-tab native
 page and auth isolation plus the two-Web-tab native court remain required
 before W26 is delivered.

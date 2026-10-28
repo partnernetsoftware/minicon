@@ -239,6 +239,12 @@ impl AuthContextLifecycle {
 }
 
 impl ConApp {
+    pub(super) fn loaded_browser_auth(&self) -> Option<&AuthPresentation> {
+        self.browser_auth
+            .as_ref()
+            .filter(|auth| self.loaded_browser_id == Some(auth.tab_id))
+    }
+
     pub(super) fn open_harness_auth(
         &mut self,
         window: &PixelWindow,
@@ -337,7 +343,11 @@ impl ConApp {
     /// including address submission and reload while an old view is closing.
     #[cfg(any(windows, target_os = "linux"))]
     pub(super) fn defer_harness_auth_navigation(&mut self, url: &str) -> bool {
-        let Some(auth) = &self.browser_auth else {
+        let Some(auth) = self
+            .browser_auth
+            .as_ref()
+            .filter(|auth| self.loaded_browser_id == Some(auth.tab_id))
+        else {
             return false;
         };
         let release = self.auth_context_lifecycle.status(&auth.context.profile);
@@ -373,7 +383,7 @@ impl ConApp {
 
     #[cfg(windows)]
     pub(super) fn harness_auth_context_released(&self) -> bool {
-        self.browser_auth.as_ref().is_none_or(|auth| {
+        self.loaded_browser_auth().is_none_or(|auth| {
             self.auth_context_lifecycle.status(&auth.context.profile)
                 == minicon_web::NativePageReleaseStatus::Released
         })
@@ -385,7 +395,31 @@ impl ConApp {
         attempt: provider_runtime::AttemptId,
         url: &str,
     ) {
+        let Some(auth_tab) = self.browser_auth.as_ref().map(|auth| auth.tab_id) else {
+            return;
+        };
+        let previous_active = self.workspace.active();
+        let previous_loaded = self.loaded_browser_id;
+        self.workspace.set_active(auth_tab);
+        self.load_browser_runtime(auth_tab);
         self.present_http_link(window, url);
+        if previous_active != Some(auth_tab) {
+            if let Some(previous) = previous_active {
+                self.workspace.set_active(previous);
+            }
+            let previous_web = previous_loaded.or_else(|| {
+                previous_active.filter(|id| {
+                    self.workspace
+                        .node(*id)
+                        .is_some_and(|node| node.kind == workspace::TabKind::Browser)
+                })
+            });
+            if let Some(previous) = previous_web.filter(|id| *id != auth_tab) {
+                self.load_browser_runtime(previous);
+            }
+            self.sync_embedded_page(window);
+            let _ = self.refresh_title(window);
+        }
         let unavailable = self
             .browser_auth
             .as_ref()
@@ -912,6 +946,24 @@ mod tests {
             app.browsers.get(&auth_tab).unwrap().panel().url.as_deref(),
             Some("https://ordinary.invalid/live")
         );
+    }
+
+    #[test]
+    fn authorization_context_applies_only_while_its_web_id_is_loaded() {
+        let (mut app, _, auth_tab, _) = parked_browser();
+        assert!(app.loaded_browser_auth().is_some());
+        let other = app.workspace.add_browser_root().unwrap();
+        app.browsers
+            .insert(other, browser::BrowserTab::shell())
+            .unwrap();
+        app.load_browser_runtime(other);
+        assert!(app.loaded_browser_auth().is_none());
+        #[cfg(windows)]
+        assert!(app.harness_auth_context_released());
+        #[cfg(any(windows, target_os = "linux"))]
+        assert!(!app.defer_harness_auth_navigation("https://other.invalid/page"));
+        app.load_browser_runtime(auth_tab);
+        assert!(app.loaded_browser_auth().is_some());
     }
 
     #[test]

@@ -27,7 +27,7 @@ impl ConApp {
         }
         let failed = self
             .workspace
-            .browser_tab()
+            .active_browser_tab()
             .and_then(|id| self.browsers.get(&id))
             .is_some_and(|tab| matches!(tab.panel().load, browser::PageLoad::Unavailable { .. }));
         if !failed {
@@ -54,7 +54,7 @@ impl ConApp {
         if layout.browser_edit_address(scale).contains(x, y) {
             if self
                 .workspace
-                .browser_tab()
+                .active_browser_tab()
                 .and_then(|id| self.browsers.get(&id))
                 .is_some_and(|tab| browser_feedback::is_proxy_failure(&tab.panel().load))
             {
