@@ -617,18 +617,22 @@ impl ConApp {
 
     pub(super) fn consume_browser_observation(
         &mut self,
+        owner_id: workspace::TabId,
         state: BrowserObservation,
         mut shortcut: impl FnMut(&mut Self, char),
     ) -> bool {
+        if self.loaded_browser_id != Some(owner_id) {
+            return false;
+        }
         let owner = (
-            self.workspace.browser_tab(),
+            self.loaded_browser_id,
             self.browser_auth.as_ref().map(|auth| auth.attempt),
         );
         for key in state.shortcuts {
             shortcut(self, key);
             if owner
                 != (
-                    self.workspace.browser_tab(),
+                    self.loaded_browser_id,
                     self.browser_auth.as_ref().map(|auth| auth.attempt),
                 )
             {
@@ -649,9 +653,7 @@ impl ConApp {
                 None
             };
         }
-        if let Some(id) = self.workspace.browser_tab()
-            && let Some(tab) = self.browsers.get_mut(&id)
-        {
+        if let Some(tab) = self.browsers.get_mut(&owner_id) {
             if let Some(title) = state.title {
                 tab.note_title(&title);
             }
@@ -688,7 +690,10 @@ impl ConApp {
             can_forward: Some(state.can_forward),
             shortcuts: state.shortcuts,
         };
-        if !self.consume_browser_observation(observation, |app, key| {
+        let Some(owner_id) = self.loaded_browser_id else {
+            return;
+        };
+        if !self.consume_browser_observation(owner_id, observation, |app, key| {
             app.browser_host_shortcut(window, key)
         }) {
             return;
@@ -723,7 +728,10 @@ impl ConApp {
                     .filter_map(|key| key.as_str().and_then(|s| s.chars().next()))
                     .collect(),
             };
-            if !self.consume_browser_observation(observation, |app, key| {
+            let Some(owner_id) = self.loaded_browser_id else {
+                return;
+            };
+            if !self.consume_browser_observation(owner_id, observation, |app, key| {
                 app.browser_host_shortcut(window, key)
             }) {
                 return;
@@ -741,8 +749,7 @@ impl ConApp {
             && let Ok(Some(status)) = child.try_wait()
         {
             let url = self
-                .workspace
-                .browser_tab()
+                .loaded_browser_id
                 .and_then(|id| self.browsers.get(&id))
                 .and_then(|tab| tab.panel().url.clone())
                 .unwrap_or_default();
@@ -759,12 +766,11 @@ impl ConApp {
         {
             self.browser_load_deadline = None;
             let url = self
-                .workspace
-                .browser_tab()
+                .loaded_browser_id
                 .and_then(|id| self.browsers.get(&id))
                 .and_then(|tab| tab.panel().url.clone())
                 .unwrap_or_default();
-            if let Some(id) = self.workspace.browser_tab()
+            if let Some(id) = self.loaded_browser_id
                 && let Some(tab) = self.browsers.get_mut(&id)
             {
                 tab.note_load(browser::PageLoad::Unavailable {
@@ -781,6 +787,46 @@ impl ConApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn browser_observation_updates_only_its_loaded_web_id() {
+        let mut app = ConApp::new(None, None);
+        let first = app.workspace.add_browser_root().unwrap();
+        app.browsers
+            .insert(first, browser::BrowserTab::shell())
+            .unwrap();
+        app.load_browser_runtime(first);
+        let second = app.workspace.add_browser_root().unwrap();
+        app.browsers
+            .insert(second, browser::BrowserTab::shell())
+            .unwrap();
+        app.load_browser_runtime(second);
+
+        let observed = BrowserObservation {
+            title: Some("Second page".into()),
+            url: Some("https://second.invalid/page".into()),
+            loading: Some(false),
+            ..Default::default()
+        };
+        assert!(app.consume_browser_observation(second, observed, |_, _| {}));
+        assert_eq!(app.browsers.get(&first).unwrap().panel().url, None);
+        assert_eq!(app.browsers.get(&first).unwrap().panel().title, "browser");
+        assert_eq!(
+            app.browsers.get(&second).unwrap().panel().url.as_deref(),
+            Some("https://second.invalid/page")
+        );
+        assert_eq!(
+            app.browsers.get(&second).unwrap().panel().title,
+            "Second page"
+        );
+
+        let stale = BrowserObservation {
+            title: Some("Stale first page".into()),
+            ..Default::default()
+        };
+        assert!(!app.consume_browser_observation(first, stale, |_, _| {}));
+        assert_eq!(app.browsers.get(&first).unwrap().panel().title, "browser");
+    }
 
     #[test]
     fn retry_keeps_the_failed_url_and_clears_the_previous_page_title_and_error() {

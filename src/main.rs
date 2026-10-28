@@ -2862,7 +2862,7 @@ impl ConApp {
         } else {
             None
         };
-        let Some(id) = self.workspace.active() else {
+        let Some(id) = self.loaded_browser_id else {
             return;
         };
         if let Some(tab) = self.browsers.get_mut(&id) {

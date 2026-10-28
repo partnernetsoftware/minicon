@@ -357,7 +357,10 @@ names above.
   completion after switching to another Web now temporarily loads the auth
   page by @ID, restores its ordinary page, then resumes the user's loaded Web.
   `auth_completion_after_switch_keeps_other_web_runtime_loaded` passed; removing
-  that resume made it fail. Native
+  that resume made it fail. Native/helper observations, page load notes and
+  timeouts now target the loaded Web @ID; stale-owner observations are refused.
+  `browser_observation_updates_only_its_loaded_web_id` passed, and restoring
+  first-browser observation routing made it fail. Native
   two-page host and authorization isolation evidence remains open; +W still
   focuses the existing Web tab.
 - [v] **`minicon-web` module (adopted 2026-10-23).** Browser content-panel

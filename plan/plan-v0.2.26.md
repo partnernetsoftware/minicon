@@ -223,6 +223,9 @@ mutations prove those exact decisions.
 Authorization completion after a Web switch also preserves the other loaded
 runtime in a focused two-Web state court; native page/context behavior is
 still unqualified.
+Native/helper page observations and loading deadlines are now attributed to
+the loaded Web @ID, with a two-Web stale-owner negative control. Linux parked
+helper visibility and live two-page native navigation remain open.
 The GUI still exposes one Web tab and +W still focuses it. Per-tab native
 page and auth isolation plus the two-Web-tab native court remain required
 before W26 is delivered.

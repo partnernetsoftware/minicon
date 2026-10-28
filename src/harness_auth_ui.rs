@@ -779,6 +779,7 @@ mod tests {
                 .is_ok()
         );
         app.workspace.set_active(browser);
+        app.loaded_browser_id = Some(browser);
         let mut address = composer::ComposerState::default();
         address.text = "unfinished address draft".into();
         address.caret = 5;
@@ -902,6 +903,7 @@ mod tests {
         let (mut app, _, browser, _) = parked_browser();
         let mut keys = Vec::new();
         let applied = app.consume_browser_observation(
+            browser,
             browser_ui::BrowserObservation {
                 title: Some("synthetic SSO private title".into()),
                 url: Some("https://accounts.google.com/synthetic?code=private-value".into()),
