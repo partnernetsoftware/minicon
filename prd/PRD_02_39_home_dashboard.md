@@ -3,12 +3,13 @@
 Parent: [MiniCon product index](../PRD.md). Window and tab interaction:
 [workspace](PRD_02_25_con_workspace.md). Harness operation and monitoring:
 [PRD 36](PRD_02_36_harness_workspace.md). Selected sequence:
-[archived 0.2.25 plan](../plan/archive/plan-v0.2.25.md). The next visual canvas is owned by
+[archived 0.2.25 plan](../plan/archive/plan-v0.2.25.md). The watch-floor canvas is owned by
 [PRD 39.01](PRD_02_39_01_home_canvas.md) and sequenced by the
-[0.2.26 design plan](../plan/plan-v0.2.26.md).
+[archived 0.2.26 plan](../plan/archive/plan-v0.2.26.md).
 
-Status: `[-]` owner-selected 2026-10-27 direction. The @0 shell is the next
-visible slice; agent-office behavior depends on real task lifecycle evidence.
+Status: `[-]` after [public v0.2.26](archive/v0.2.26-release-history.md).
+The fixed @0 shell and default-list watch floor are visible; agent-office
+characters still depend on real task lifecycle evidence.
 
 ## Outcome tree DAG
 
@@ -76,7 +77,7 @@ The old zero-tab greeting with its separate New Terminal and Quit buttons is
 retired; Home owns the empty-workspace explanation and New Terminal/New Web
 routes. Quit remains available through the window close action. This avoids
 two different start screens for the same zero-tab workspace state.
-The 0.2.26 development native court
+The 0.2.26 source's Windows native court
 `native_home_is_a_fixed_destination_and_restores_real_tabs` passed the
 last-tab close, empty `list-tabs`, Home New Terminal and Home New Web pointer
 journey on Windows. It proves this navigation slice, not the later watch-floor
@@ -112,17 +113,17 @@ artifact chain and downloaded-asset scope are recorded in the
 does not close the larger BRAND, ROUTES or OFFICE visual/interaction acceptance
 above.
 
-0.2.25 selects the @0 navigation and honest static shell after the current
-connection slice's shared host prerequisites are stable. Native pointer,
+0.2.25 selected the @0 navigation and honest static shell after its
+connection slice's shared host prerequisites were stable. Native pointer,
 keyboard/focus, narrow/large layout, page parking and public snapshot tests
 must agree; a painted-only mock is not acceptance. The animated office and
 new task authority remain `[_]` until PRD 36 H2's real lifecycle seam passes.
 
-## Next visual slice
+## Watch-floor slice
 
-The 0.2.26 design request places particular weight on the @0 screen's visual
+The public 0.2.26 cut places particular weight on the @0 screen's visual
 hierarchy and daily-use experience. [PRD 39.01](PRD_02_39_01_home_canvas.md)
 owns its canvas, states, interaction and evidence. This module continues to own
 the fixed @0 identity, tab boundary and navigation invariants above. The
-separate [plan](../plan/plan-v0.2.26.md) sequences the next version without
+separate [archived plan](../plan/archive/plan-v0.2.26.md) records the release cut without
 turning an unobserved worker into a displayed agent.

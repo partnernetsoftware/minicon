@@ -320,7 +320,7 @@ names above.
   provider-login UI are outside this delivery.
 - [v] **one exposed browser root, and separate page/composer geometry (0.2.21).**
   The released 0.2.21–0.2.25 GUI creates or focuses its one browser root. In
-  0.2.26 development, `Workspace::add_browser_root` accepts distinct root IDs;
+  public 0.2.26, `Workspace::add_browser_root` accepts distinct root IDs;
   `browser_tabs_keep_distinct_root_identities_and_close_independently` failed
   under the singleton guard and passed after its removal. New Web now creates
   another root and parks each inactive page host by stable ID; native
@@ -345,7 +345,7 @@ names above.
   them independently, switch/close either, then verify the survivor's state
   through public GUI and control snapshots. Non-goal: split-screen pages or
   sharing one mutable page host between tab IDs.
-  The 0.2.26 internal runtime parking slice now keys inactive page state by
+  The public 0.2.26 runtime parking slice keys inactive page state by
   stable Web @ID: address draft, selected proxy, navigation flags and host
   handles are moved on switch and released on close. The focused
   `web_runtime_parks_address_proxy_and_navigation_by_stable_tab_id` and
@@ -406,9 +406,11 @@ names above.
   was the cause; the script now checks two distinct @IDs, independent navigation
   and switch preservation, then selects the exact existing Web tab when returning
   from Console. The full revised public script passed locally against the
-  Windows 0.2.26 release build. This local result does not replace the failed
-  six-cell run or qualify the other platforms; the corrected exact-source CI
-  run remains required.
+  Windows 0.2.26 release build. The corrected exact-source six-cell run
+  [40665620748](https://github.com/partnernetsoftware/minicon/actions/runs/40665620748)
+  passed all six native cells; the earlier failed run remains failed history.
+  Other-platform two-page visibility and live authorization return still need
+  their named acceptance rather than an inference from the script.
 - [v] **`minicon-web` module (adopted 2026-10-23).** Browser content-panel
   API. Product face remains **Tab / content panel** (now 1:1, future 1:N);
   **no tray**. Chrome panels stay chrome. Path: `crates/minicon-web/` (lib +

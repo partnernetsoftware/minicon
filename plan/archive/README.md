@@ -131,6 +131,9 @@ Never reuse an archived run as evidence for newer source bytes.
 
 ## 2026-10-24 release closeout
 
+- [0.2.26 watch-floor cut](plan-v0.2.26.md): public release evidence is owned
+  by [its history](../../prd/archive/v0.2.26-release-history.md); unfinished
+  native and observer acceptance stays with PRD 39.01, PRD 25 and PRD 26.01.
 - [0.2.22 implementation and parallel trial](plan-v0.2.22.md): public result is
   owned by its release history; local timing, failed controls and earlier scope
   markers remain as observed.

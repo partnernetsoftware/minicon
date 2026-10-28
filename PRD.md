@@ -52,7 +52,7 @@ MiniCon — one-file local terminal
 │   │       └── [_] agent-facing CLI normalization → prd/PRD_02_26_01_agent_cli_contract.md
 │   ├── [-] Robot entry / visual Harness operation and monitoring → prd/PRD_02_36_harness_workspace.md
 │   ├── [-] Fixed @0 home / future observed agent office → prd/PRD_02_39_home_dashboard.md
-│   │   └── [-] 0.2.26 default-list tab-agent watch floor / later spatial mode → prd/PRD_02_39_01_home_canvas.md
+│   │   └── [-] public 0.2.26 default-list watch floor / later spatial mode → prd/PRD_02_39_01_home_canvas.md
 │   ├── [-] Optional Plugins and Apps layer / minicon-harness extraction → prd/PRD_02_40_plugins_apps.md
 │   ├── [_] Future cluster / cross-machine coordination → prd/PRD_02_37_cluster_horizon.md
 │   ├── [_] Future selected-window computer use → prd/PRD_02_38_computer_use.md
@@ -91,7 +91,7 @@ MiniCon — one-file local terminal
     ├── [v] public v0.2.23 → prd/archive/v0.2.23-release-history.md
     ├── [v] public v0.2.24 tree interactions and clipboard status → prd/archive/v0.2.24-release-history.md
     ├── [v] public v0.2.25 fixed @0 / direct creation / scrollbars / route clarity → prd/archive/v0.2.25-release-history.md
-    ├── [-] 0.2.26 @0 watch floor / zero-tab convergence → plan/plan-v0.2.26.md
+    ├── [v] public v0.2.26 @0 watch floor / zero-tab convergence → prd/archive/v0.2.26-release-history.md
     ├── current independent tracks → plan/plan-v0.2.x-product-roadmap.md
     └── historical outcomes and receipts → prd/archive/README.md
 ```
@@ -131,7 +131,7 @@ flowchart LR
     APPS -. typed run events .-> ROB
     APPS -->|model-only client| GW
     REL25["Public 0.2.25: @0 shell / direct actions / route clarity"] --> HX & ROB
-    NEXT26["0.2.26: default-list tab-agent watch floor and zero-tab @0"] --> HOME
+    NEXT26["Public 0.2.26: default-list tab-agent watch floor and zero-tab @0"] --> HOME
     POOL & MON --> ROB
     BV["PRD 31.01.02.01.01: quoted profile checks / explicit commit cutoff"] --> POOL
     ROB -. later explicit task operation .-> HC
@@ -222,13 +222,14 @@ flowchart LR
   [dashboard](prd/PRD_02_36_harness_workspace.md),
   [Home](prd/PRD_02_39_home_dashboard.md) and
   [Web preferences](prd/PRD_02_25_01_browser_preferences.md).
-- [-] **v0.2.26 is the active tab-agent watch-floor frontier.**
-  [The plan](plan/plan-v0.2.26.md) and
-  [@0 visual canvas owner](prd/PRD_02_39_01_home_canvas.md) prioritize a
-  default tab list, exact attention routes and scoped system status. Zero-tab
-  navigation is implemented and natively exercised; the fleet, observer seam
-  and independent multi-Web host remain open. Task characters wait for typed
-  tab-bound run evidence.
+- [v] **Public v0.2.26: default-list @0 watch floor and independent Web tab
+  creation.** [Release history](prd/archive/v0.2.26-release-history.md) owns
+  the exact source, signed Candidate, Defender court, reputation and public
+  Promotion. The [archived plan](plan/archive/plan-v0.2.26.md) records the cut.
+  [Home canvas](prd/PRD_02_39_01_home_canvas.md) retains wider native
+  presentation and observer acceptance; [workspace](prd/PRD_02_25_con_workspace.md)
+  retains multi-Web authorization and other-platform acceptance. Task
+  characters wait for typed tab-bound run evidence.
 
 - [_] **Computer use is a future product track.** [PRD 38](prd/PRD_02_38_computer_use.md)
   owns target-bound observation/action and the same-repo crate decision;
@@ -283,9 +284,10 @@ flowchart LR
   Hosted, local, translated-userspace and optional VM courts retain separate
   evidence in [native development](prd/PRD_02_32_dev_loop_crosscheck.md) and
   [delivery](prd/PRD_02_27_con_delivery.md).
-- [-] **Browser horizon and host readability.** One Browser root is the current
-  product; broader keyboard/IME/DPI, provider OAuth, dashboard/preview/wasm and
-  1:N content panels are independently scoped in
+- [-] **Browser horizon and host readability.** Public v0.2.26 creates distinct
+  Web tab IDs and has a Windows native two-page navigation/proxy court; broader
+  auth detours, other-platform visibility, keyboard/IME/DPI, provider OAuth,
+  dashboard/preview/wasm and content-panel lifecycle are independently scoped in
   [workspace](prd/PRD_02_25_con_workspace.md),
   [browser horizon](plan/plan-browser-tabs.md), and
   [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md).

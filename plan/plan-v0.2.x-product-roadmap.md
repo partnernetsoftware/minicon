@@ -34,7 +34,7 @@ Outcome: improve daily use without losing open product obligations
 ├── [v] Public 0.2.25 connection clarity and fixed @0 shell → archive/plan-v0.2.25.md
 │   ├── route clarity shipped; full real account-to-client path remains open → PRD 31.01.01/02
 │   └── cached read-only operation shipped; live request/task acceptance remains open → PRD 36
-├── [_] Selected 0.2.26 @0 visual canvas → plan-v0.2.26.md / PRD 39.01
+├── [v] Public 0.2.26 @0 watch floor → archive/plan-v0.2.26.md / PRD 39.01
 ├── [-] Modern-agent / Windows provider / terminal-library qualification → PRD 24.01/34/35
 ├── [-] Test inventory, selection, composition and measured feedback → PRD 33
 ├── [-] RSS, artifact size and exact-source delivery costs → PRD 27
@@ -64,7 +64,7 @@ flowchart LR
     TREE --> Q
     NEXT --> V25[Public 0.2.25 connection clarity and @0 shell]
     V25 --> Q
-    V25 --> V26[Selected 0.2.26 scene-first @0]
+    V25 --> V26[Public 0.2.26 default-list @0]
     T[Modern-agent and provider tracks] --> Q
     O[Test orchestration and delivery owners] --> Q
     H[Archived roadmap and release histories] -. decisions and experience .-> P
@@ -83,8 +83,8 @@ tab-tree and clipboard sequence, with remaining acceptance in
 [PRD 25.03](../prd/PRD_02_25_03_tab_tree_interactions.md) and
 [PRD 25](../prd/PRD_02_25_con_workspace.md). Qualification is source-specific.
 The [archived 0.2.25 plan](archive/plan-v0.2.25.md) records the public release
-cut and its retained acceptance. The [selected 0.2.26 plan](plan-v0.2.26.md)
-sequences the @0 visual canvas; behavior belongs to the linked PRD modules.
+cut and its retained acceptance. The [archived 0.2.26 plan](archive/plan-v0.2.26.md)
+records the @0 watch-floor cut; behavior and open acceptance belong to the linked PRD modules.
 The owner's 2026-10-25 direction makes the
 [visual Harness workspace](../prd/PRD_02_36_harness_workspace.md) a continuing
 core product track; [its plan](plan-harness-workspace.md) stages the robot

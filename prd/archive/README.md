@@ -20,6 +20,9 @@ explicit disposition and current capability-owner pointers.
 
 Entries:
 
+- [v0.2.26 release history](v0.2.26-release-history.md) — default-list @0
+  watch floor, Visual preview, independent Web tab creation and exact public
+  Candidate/Promotion evidence; retains broader native and observer acceptance.
 - [v0.2.25 release history](v0.2.25-release-history.md) — fixed @0 shell,
   direct creation, scrollbars and account route clarity; exact public bytes
   and retained real-provider acceptance.
@@ -69,7 +72,7 @@ Entries:
   includes the owner's dated `minicon.com` ceiling raise (11 → 11.75 MiB) and
   the second recorded macOS `stapler`/CloudKit flake.
 
-File index (updated 2026-10-27). Individual histories own the facts:
+File index (updated 2026-10-28). Individual histories own the facts:
 
 - [v0.1.3](v0.1.3-release-history.md) · [v0.1.4](v0.1.4-release-history.md) · [v0.1.5](v0.1.5-release-history.md) · [v0.1.6](v0.1.6-release-history.md)
 - [v0.1.7](v0.1.7-release-history.md) · [v0.1.9](v0.1.9-release-history.md) · [v0.1.10](v0.1.10-release-history.md) · [v0.1.11](v0.1.11-release-history.md)
@@ -81,7 +84,7 @@ File index (updated 2026-10-27). Individual histories own the facts:
 - [v0.2.8](v0.2.8-release-history.md) · [v0.2.9](v0.2.9-release-history.md) · [v0.2.10](v0.2.10-release-history.md) · [v0.2.11](v0.2.11-release-history.md)
 - [v0.2.12](v0.2.12-release-history.md) · [v0.2.13](v0.2.13-release-history.md) · [v0.2.14](v0.2.14-release-history.md) · [v0.2.15](v0.2.15-release-history.md)
 - [v0.2.18](v0.2.18-release-history.md) · [v0.2.19](v0.2.19-release-history.md) · [v0.2.20](v0.2.20-release-history.md) · [v0.2.21](v0.2.21-release-history.md)
-- [v0.2.22](v0.2.22-release-history.md) · [v0.2.23](v0.2.23-release-history.md) · [v0.2.24](v0.2.24-release-history.md) · [v0.2.25](v0.2.25-release-history.md)
+- [v0.2.22](v0.2.22-release-history.md) · [v0.2.23](v0.2.23-release-history.md) · [v0.2.24](v0.2.24-release-history.md) · [v0.2.25](v0.2.25-release-history.md) · [v0.2.26](v0.2.26-release-history.md)
 
 Also preserved: `v0.1.7-mac-handoff.md` and
 `azure-work-tenant-signing-enroll.md`. No release ledger exists for v0.1.8,

@@ -281,7 +281,7 @@ remains the input baseline.
   caller the existing full command surface, not per-agent authority. The
   [PRD 26.01](PRD_02_26_01_agent_cli_contract.md) owns the normalized CLI
   target/output contract; the 0.2.26
-  [B26 decision](../plan/plan-v0.2.26.md) owns how a tab-bound observer and
+  [B26 decision](../plan/archive/plan-v0.2.26.md) owns how a tab-bound observer and
   peer messaging can build on these primitives. The robot workspace is not
   a Harness TabId; its future tab membership is owned by
   [PRD 39.01](PRD_02_39_01_home_canvas.md).

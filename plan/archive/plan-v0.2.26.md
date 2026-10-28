@@ -1,11 +1,12 @@
 # v0.2.26 — default list watch floor and staged visual mode
 
-Status: `[-]` active development after public 0.2.25. Zero-tab convergence
-has Windows native evidence; the default list, visual mode and release remain
-open. The owning behavior is in
-[PRD 39.01](../prd/PRD_02_39_01_home_canvas.md), with @0 identity in
-[PRD 39](../prd/PRD_02_39_home_dashboard.md) and operation facts in
-[PRD 36](../prd/PRD_02_36_harness_workspace.md).
+Status: archived after [public v0.2.26](../../prd/archive/v0.2.26-release-history.md).
+This plan records the selected cut and partial evidence. Unfinished native,
+observer and interaction acceptance remains open in the owning PRDs.
+The owning behavior is in
+[PRD 39.01](../../prd/PRD_02_39_01_home_canvas.md), with @0 identity in
+[PRD 39](../../prd/PRD_02_39_home_dashboard.md) and operation facts in
+[PRD 36](../../prd/PRD_02_36_harness_workspace.md).
 
 ## Product decision
 
@@ -101,9 +102,9 @@ Outcome: 0.2.26 @0 is a trustworthy default-list watch floor for tab-contained a
 │   evidence: contract review and, only if available, one real run/cancel/final native journey
 │   safe failure: release still shows truthful tab stations with Unknown agent state
 │   dependency: PRD 36/40 app seam or separately accepted tab-bound observer; non-goal: inferring arbitrary CLI agent state
-└── [_] Q26 — qualify and decide exact-source release
+└── [v] Q26 — qualify and decide exact-source release
     invariant: every claim matches the source, platform and observation that proved it
-    evidence: selected smoke/scoped suites, fmt/clippy, six-cell, native visual/behavior courts and release receipts
+    evidence: exact-source six-cell 40665620748, Candidate 40669500994, reputation 40671365594 and public Promotion 40702916507; release history owns the rest
     safe failure: missing evidence blocks only the corresponding claim or Promotion gate
     dependency: PRD 27/33 release chain and explicit owner authority; non-goal: treating a mock as a public artifact
 ```
@@ -191,8 +192,8 @@ flowchart LR
    incarnation for native CLI targeting; decide how a real adapter uses that
    context, and whether typed peer messages need a
    delivery receipt beyond `send-paste`/`capture-pane`. A generic process name
-   or PTY text is not enough. [PRD 26.01](../prd/PRD_02_26_01_agent_cli_contract.md)
-   owns the contract; the [agent CLI plan](plan-agent-cli-contract.md) sequences
+   or PTY text is not enough. [PRD 26.01](../../prd/PRD_02_26_01_agent_cli_contract.md)
+   owns the contract; the [agent CLI plan](../plan-agent-cli-contract.md) sequences
    the compatible implementation slices.
    This decision is part of the 0.2.26 design handoff even if the adapter
    implementation lands later.
@@ -210,7 +211,7 @@ flowchart LR
 
 U26 now has Windows native English wide/4:3/narrow and simplified-Chinese
 4:3 captures, exact @ID focus at 4:3, and a six-situation desk review in
-[PRD 39.01](../prd/PRD_02_39_01_home_canvas.md).
+[PRD 39.01](../../prd/PRD_02_39_01_home_canvas.md).
 The newer scoped process card has a separate Windows native court (see the
 same PRD). Typed agent source, mixed component alerts, whole-machine state and
 other-platform/scale evidence keep first-glance acceptance partial; the older
@@ -233,7 +234,7 @@ scrollbar court passed track paging and thumb dragging with no row retarget;
 its native capture shows the list-only track. Removing paging made the court
 fail. Other scales remain open. The 256-tab Windows keyboard/search, capacity
 and stale-target court passed for 255 exited Console tabs plus one Web tab;
-[PRD 39.01](../prd/PRD_02_39_01_home_canvas.md) owns its exact receipt and
+[PRD 39.01](../../prd/PRD_02_39_01_home_canvas.md) owns its exact receipt and
 remaining coverage limits.
 The native mixed Console/Web kind-filter court passed the shared visible-row
 projection, click and snapshot identity, hidden-tab exit attention, zero-match
@@ -245,7 +246,7 @@ selection now offers Show filtered tab: the Windows kind-filter court passed
 pointer reveal without leaving @0, and the search court passed Enter reveal;
 closed targets remain disabled. Tree/Name sorting now has a Windows mixed-tab
 pointer/focus court and a 500×650 native capture; the behavior receipt is owned
-by [PRD 39.01](../prd/PRD_02_39_01_home_canvas.md). Attention/Last observed
+by [PRD 39.01](../../prd/PRD_02_39_01_home_canvas.md). Attention/Last observed
 sorts, grouping and other 256-tab interaction modes remain open; T26 stays partial.
 W26 has its Workspace identity prerequisite: distinct browser roots can
 now be allocated and closed independently in the product model. Internal
@@ -275,7 +276,7 @@ two-page visibility remain open; W26 is partial and
 release qualification cannot infer those results from Windows navigation.
 The Windows 256-tab Home court now covers the capacity-specific allocation
 failure and recovery through +W and Home New Web; the exact receipt and
-remaining allocation scope are in [PRD 25](../prd/PRD_02_25_con_workspace.md).
+remaining allocation scope are in [PRD 25](../../prd/PRD_02_25_con_workspace.md).
 Public `list-tabs` now uses each Web @ID's loaded/parked navigation flags and
 redacts only the auth-owning @ID or a recognized auth URL. The focused
 `list_tabs_keeps_parked_web_flags_and_other_web_public_during_auth` test
@@ -285,9 +286,10 @@ The first 0.2.26 six-cell run `40662566301` failed all six native browser
 workspace cells at the old single-Web-root assertion in the public smoke
 script. The revised script tests distinct Web @IDs and two-page navigation,
 then uses exact tab selection for return; its full Windows release-build
-journey passed locally. A new exact-source six-cell run is still required.
+journey passed locally. The corrected exact-source six-cell run `40665620748`
+passed all six native cells; the earlier failed run remains failed history.
 B26 now has a selected tab-bound observer and peer-receipt boundary in
-[PRD 26.01](../prd/PRD_02_26_01_agent_cli_contract.md#b26-tab-bound-observer-and-peer-message-decision):
+[PRD 26.01](../../prd/PRD_02_26_01_agent_cli_contract.md#b26-tab-bound-observer-and-peer-message-decision):
 Native `--target self` now carries host incarnation and @ID in one request;
 the Windows child/wrong-instance/closed-tab court passed and the instance-check
 mutation failed. The Windows two-live-instance court passed separate child
@@ -327,7 +329,7 @@ wide/narrow/scale visual qualification and other OS courts remain required befor
 the default-list cut can be marked complete. `screenshot-pane` observes the
 underlying Console pane on @0 and is not a Home capture receipt.
 
-The intended 0.2.26 cut is the default list from HC-01 through HC-04 plus HC-06/07
+The selected 0.2.26 cut is the default list from HC-01 through HC-04 plus HC-06/07
 and HC-08 Visual V0: @0 tab fleet, exact drill-down, prioritized attention,
 scoped system status, responsive native UX and an inspectable spatial preview
 of the same @IDs and facts, plus the B26 observer-seam decision. Visual V0 is

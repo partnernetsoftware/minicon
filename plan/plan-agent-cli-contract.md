@@ -141,7 +141,7 @@ courts remain open, so A2 is partial. Web has no shell; a future
 Harness child receives its own tab identity under the same instance-binding
 rule only after Harness tab lifecycle exists.
 
-The 0.2.26 [B26 leaf](plan-v0.2.26.md) decides the identity/observer/message
+The 0.2.26 [B26 leaf](archive/plan-v0.2.26.md) decides the identity/observer/message
 contract and can deliver small compatible discovery improvements if their
 black-box evidence is ready. A3/A4/A5 are independently selectable later
 0.2.x slices; they are not hidden gates on the default-list @0 delivery.

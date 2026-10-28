@@ -3,24 +3,24 @@
 Parent: [@0 destination and tab boundary](PRD_02_39_home_dashboard.md).
 Operational facts and exact Settings links: [PRD 36](PRD_02_36_harness_workspace.md).
 Optional worker/event authority: [PRD 40](PRD_02_40_plugins_apps.md).
-Delivery sequence: [0.2.26 design plan](../plan/plan-v0.2.26.md).
+Delivery sequence: [archived 0.2.26 plan](../plan/archive/plan-v0.2.26.md).
 
-Status: `[-]` 0.2.26 design and partial development, refined for the owner's 2026-10-28
+Status: `[-]` partial after [public v0.2.26](archive/v0.2.26-release-history.md),
+refined for the owner's 2026-10-28
 direction: @0 manages agents working **inside MiniCon tabs** and local system
 health through two modes. **List is the default management view**; a separate
 visual drag/drop view grows in explicit stages. The public 0.2.25
 @0 implementation is a static brand/office card with host-chrome navigation;
 it supplies a truthful starting point, not this canvas's acceptance.
 
-The current 0.2.26 development tree routes closing the last real tab to @0
+The public 0.2.26 source routes closing the last real tab to @0
 and paints **New Terminal / New Web** actions there, with shared geometry in
 public snapshots. The Windows native Home court passed the close and both
-creation actions. New Web must not be described as independent
-per-tab browsing in a public release until [PRD 25's W26](PRD_02_25_con_workspace.md)
-host/context lifecycle has its remaining native authorization and platform
-evidence. The 0.2.26 development tree creates distinct Web IDs and has a
-Windows native two-page navigation/proxy court; its qualification scope and
-open gates are owned by PRD 25, with the context-release mechanism in
+creation actions. New Web creates distinct Web IDs and the Windows native
+two-page navigation/proxy court passed. Authorization detours and other
+platforms still need their own native evidence before broader independent
+per-tab browsing claims. The qualification scope and open gates are owned by
+[PRD 25](PRD_02_25_con_workspace.md), with the context-release mechanism in
 [PRD 28.01](PRD_02_28_01_browser_context_lifecycle.md).
 The tab-office design below uses only observed Web facts in the accepted host.
 
