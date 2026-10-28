@@ -2516,25 +2516,10 @@ impl ConApp {
         self.refresh_title(window)
     }
 
-    /// Focus the one browser tab, or open it. A second root would share the
-    /// single page host and leave the new tab's page unmapped.
+    /// Create an independent Web root. Its page host and chrome are parked by
+    /// stable tab ID whenever another Web root becomes active.
     fn open_browser_tab(&mut self, window: &PixelWindow) -> Result<(), PixelWindowError> {
         self.cancel_pointer_gestures_for_activation(window);
-        if let Some(id) = self
-            .workspace
-            .active_browser_tab()
-            .or_else(|| self.workspace.browser_tab())
-        {
-            self.select_tab(id);
-            #[cfg(any(target_os = "macos", windows))]
-            self.ensure_native_page(window);
-            self.sync_embedded_page(window);
-            self.mark_host_ui_full();
-            self.reveal_active_tree_row(window)?;
-            self.refresh_title(window)?;
-            window.request_redraw();
-            return Ok(());
-        }
         let id = self.workspace.add_browser_root().ok_or_else(|| {
             PixelWindowError::failed("con_tab_create", "browser tab limit reached")
         })?;

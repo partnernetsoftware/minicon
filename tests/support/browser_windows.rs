@@ -89,8 +89,18 @@ impl BrowserGui {
             .as_array()
             .unwrap()
             .iter()
-            .find(|tab| tab["kind"] == "browser")
-            .expect("browser tab must exist")
+            .find(|tab| tab["kind"] == "browser" && tab["active"] == true)
+            .expect("active browser tab must exist")
+            .clone()
+    }
+
+    fn browser_by_id(&self, id: &str) -> Value {
+        self.cli(&["list-tabs"])["tabs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tab| tab["id"] == id && tab["kind"] == "browser")
+            .expect("browser ID must exist")
             .clone()
     }
 
@@ -154,6 +164,12 @@ impl BrowserGui {
     }
 
     fn open_browser_directly(&self) -> Value {
+        let before = self.cli(&["list-tabs"])["tabs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|tab| tab["kind"] == "browser")
+            .count();
         self.click_geometry("new_web");
         let browser = self.browser();
         assert_eq!(
@@ -167,8 +183,8 @@ impl BrowserGui {
                 .iter()
                 .filter(|tab| tab["kind"] == "browser")
                 .count(),
-            1,
-            "the visible Web action must reuse one Browser root"
+            before + 1,
+            "the visible Web action must create an independent Browser root"
         );
         assert_eq!(
             self.cli(&["ui-snapshot"])["geometry"]["new_tab_menu_open"],
@@ -437,7 +453,9 @@ fn native_browser_visible_entry_retry_and_terminal_draft() {
     host.cli(&["send-ui-ime", "commit", draft]);
     assert_eq!(host.cli(&["ui-snapshot"])["composer_text"], draft);
     let browser_id = host.open_browser_directly()["id"].clone();
-    assert_eq!(host.open_browser_directly()["id"], browser_id);
+    let second_browser_id = host.open_browser_directly()["id"].clone();
+    assert_ne!(second_browser_id, browser_id);
+    host.cli(&["select-tab", "--target", tab_id(&browser_id)]);
 
     let refused = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let address = refused.local_addr().unwrap();
@@ -489,8 +507,86 @@ fn native_browser_visible_entry_retry_and_terminal_draft() {
         terminal["composer_text"], draft,
         "preview and recovery must preserve the terminal draft"
     );
-    assert_eq!(host.open_browser_directly()["id"], browser_id);
+    host.cli(&["select-tab", "--target", tab_id(&browser_id)]);
+    assert_eq!(host.browser()["id"], browser_id);
     assert_eq!(host.browser()["browser"]["url"], next_url);
+}
+
+#[test]
+#[ignore = "requires a native desktop/WebView runtime; run the explicit two-Web court"]
+fn native_two_web_tabs_keep_independent_pages_when_switched_and_closed() {
+    let mut host = BrowserGui::spawn(false, None, None);
+    let service = LocalPreviewServer::start("127.0.0.1:0".parse().unwrap());
+    let first_url = format!("http://{}/first", service.address);
+    let second_url = format!("http://{}/next", service.address);
+    let navigate = |url: &str| {
+        host.cli(&["send-ui-keys", "Ctrl+l"]);
+        host.cli(&["send-ui-ime", "commit", url]);
+        host.cli(&["send-ui-keys", "Enter"]);
+    };
+
+    let first_id = host.open_browser_directly()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    navigate(&first_url);
+    host.wait_browser(&first_url, "ready", Some("Local preview ready"));
+    navigate(&second_url);
+    let first_history = host.wait_browser(&second_url, "ready", Some("Next preview"));
+    assert_eq!(first_history["browser"]["can_back"], true);
+    host.click_browser_back();
+    host.wait_browser(&first_url, "ready", Some("Local preview ready"));
+    let second_id = host.open_browser_directly()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_ne!(first_id, second_id);
+    navigate(&second_url);
+    host.wait_browser(&second_url, "ready", Some("Next preview"));
+    assert_eq!(host.browser_by_id(&first_id)["browser"]["url"], first_url);
+    assert_eq!(
+        host.browser_by_id(&first_id)["browser"]["title"],
+        "Local preview ready"
+    );
+
+    host.cli(&["select-tab", "--target", &first_id]);
+    assert_eq!(host.browser()["browser"]["url"], first_url);
+    assert_eq!(host.browser()["browser"]["title"], "Local preview ready");
+    host.cli(&["select-tab", "--target", &second_id]);
+    assert_eq!(host.browser()["browser"]["url"], second_url);
+    assert_eq!(host.browser()["browser"]["title"], "Next preview");
+
+    host.apply_proxy("http://127.0.0.1:not-a-port");
+    let rejected = host.wait_browser(&second_url, "unavailable", None);
+    assert_eq!(rejected["browser"]["reason"], "browser-proxy-invalid");
+    host.cli(&["select-tab", "--target", &first_id]);
+    assert_eq!(host.browser()["browser"]["url"], first_url);
+    assert_eq!(host.browser()["browser"]["load"], "ready");
+    let before_reload = service.requests.load(Ordering::Relaxed);
+    navigate(&first_url);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while service.requests.load(Ordering::Relaxed) <= before_reload {
+        assert!(Instant::now() < deadline, "first Web lost its direct route");
+        thread::sleep(Duration::from_millis(20));
+    }
+    host.cli(&["select-tab", "--target", &second_id]);
+    assert_eq!(host.browser()["browser"]["reason"], "browser-proxy-invalid");
+    host.apply_proxy("");
+    host.wait_browser(&second_url, "ready", Some("Next preview"));
+
+    host.cli(&["close-tab", "--target", &first_id]);
+    assert_eq!(host.browser()["id"], second_id);
+    assert_eq!(host.browser()["browser"]["url"], second_url);
+    let third_id = host.open_browser_directly()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_ne!(third_id, first_id);
+    assert_ne!(third_id, second_id);
+    navigate(&first_url);
+    host.wait_browser(&first_url, "ready", Some("Local preview ready"));
+    assert_eq!(host.browser_by_id(&second_id)["browser"]["url"], second_url);
+    host.close_and_wait();
 }
 
 #[test]
@@ -622,7 +718,13 @@ fn native_home_is_a_fixed_destination_and_restores_real_tabs() {
     let browser_id = browser["id"].as_str().unwrap().to_owned();
     host.click_geometry("home");
     assert_eq!(host.cli(&["ui-snapshot"])["geometry"]["home_active"], true);
-    assert_eq!(host.browser()["id"], browser_id);
+    assert!(
+        host.cli(&["list-tabs"])["tabs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|tab| tab["id"] == browser_id)
+    );
     host.cli(&["select-tab", "--target", &browser_id]);
     assert_eq!(host.cli(&["ui-snapshot"])["geometry"]["home_active"], false);
     assert_eq!(host.browser()["id"], browser_id);
@@ -802,7 +904,7 @@ fn native_header_buttons_create_terminal_web_and_open_harness_directly() {
     host.click_geometry("new_web");
     assert_eq!(
         host.cli(&["list-tabs"])["tabs"].as_array().unwrap().len(),
-        original + 3
+        original + 4
     );
     assert_eq!(
         host.cli(&["ui-snapshot"])["geometry"]["new_tab_menu_open"],
@@ -816,7 +918,7 @@ fn native_header_buttons_create_terminal_web_and_open_harness_directly() {
     );
     assert_eq!(
         host.cli(&["list-tabs"])["tabs"].as_array().unwrap().len(),
-        original + 3
+        original + 4
     );
     host.close_and_wait();
 }

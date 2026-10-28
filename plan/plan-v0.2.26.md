@@ -228,12 +228,17 @@ the loaded Web @ID, with a two-Web stale-owner negative control. Linux parked
 helper visibility now has a ready-triggered hide path; its actual X11
 visibility court and live two-page native navigation remain open.
 Active-Web address/retry/proxy/title routing and auth-context admission now
-use the selected or loaded @ID. Focused two-Web model tests passed; live
-native proxy/context isolation and asynchronous auth return still require
-their named court before +W changes behavior.
-The GUI still exposes one Web tab and +W still focuses it. Per-tab native
-page and auth isolation plus the two-Web-tab native court remain required
-before W26 is delivered.
+use the selected or loaded @ID. Focused two-Web model tests passed. +W,
+Home New Web and the shared shortcut now create distinct Web @IDs; the
+authorization entry keeps its existing reuse behavior. The Windows native
+`native_two_web_tabs_keep_independent_pages_when_switched_and_closed` court
+passed separate page navigation/title/history, second-Web invalid-proxy
+refusal, first-Web direct network request, switch/close/reopen. Reinstating
+singleton reuse made the new court fail at the second Web creation. Windows native
+local-preview/retry, Home and header-entry courts also passed after this
+change. Live authorization detour/return, allocation failure and macOS/Linux
+two-page visibility remain open; W26 is partial and
+release qualification cannot infer those results from Windows navigation.
 Search/filter/group, mixed 256-tab overflow, attention/system cards, native
 wide/narrow visual captures and other OS courts remain required before T26 or
 the default-list cut can be marked complete. `screenshot-pane` observes the

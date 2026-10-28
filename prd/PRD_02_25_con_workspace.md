@@ -319,11 +319,12 @@ names above.
   panels, persistent workspaces, downloads, dashboard/wasm, installation and
   provider-login UI are outside this delivery.
 - [v] **one exposed browser root, and separate page/composer geometry (0.2.21).**
-  The released GUI creates or focuses its one browser root. In 0.2.26
-  development, `Workspace::add_browser_root` now accepts distinct root IDs;
+  The released 0.2.21–0.2.25 GUI creates or focuses its one browser root. In
+  0.2.26 development, `Workspace::add_browser_root` accepts distinct root IDs;
   `browser_tabs_keep_distinct_root_identities_and_close_independently` failed
-  under the singleton guard and passed after its removal. The GUI still keeps
-  one page host and does not expose a second Web tab yet. `Layout::content_column`
+  under the singleton guard and passed after its removal. New Web now creates
+  another root and parks each inactive page host by stable ID; native
+  cross-platform qualification remains open. `Layout::content_column`
   retains terminal geometry above its composer. A browser instead uses
   `Layout::browser_page`: below its responsive navigation toolbar, extending to the
   bottom, inset by sidebar/history chrome. It has no terminal composer. A
@@ -363,7 +364,7 @@ names above.
   first-browser observation routing made it fail. On Linux, the product now
   hides a parked helper after its checked ready frame; the helper-readiness
   mechanism is owned in [PRD 28](PRD_02_28_shared_core.md#process-owned-linux-embedding-development-join).
-  This is not a two-page native verdict.
+  The Linux two-page visibility court remains open.
   Address initial text, retry, proxy rebuild/recovery and window title now
   read the active Web @ID. `address_and_retry_use_selected_web_when_two_tabs_exist`
   passed, and restoring first-browser retry selection made it fail. Browser
@@ -373,11 +374,18 @@ names above.
   temporarily targets its recorded @ID, then restores the user's selected
   tab. The selected Windows
   `native_browser_address_redirect_history_and_failure` single-Web court
-  passed after this routing change. Actual native two-Web proxy/context
-  evidence remains open.
-  Native
-  two-page host and authorization isolation evidence remains open; +W still
-  focuses the existing Web tab.
+  passed after this routing change. New Web now allocates a fresh @ID on each
+  click while authorization entry still reuses its selected Web. Windows native
+  `native_two_web_tabs_keep_independent_pages_when_switched_and_closed`
+  passed separate navigation/title/history, second-Web invalid-proxy refusal,
+  first-Web direct network traffic, switch, close and reopen. Reinstating
+  singleton reuse made that court fail at the second Web creation. The Windows
+  `native_browser_visible_entry_retry_and_terminal_draft`,
+  `native_home_is_a_fixed_destination_and_restores_real_tabs` and
+  `native_header_buttons_create_terminal_web_and_open_harness_directly`
+  courts passed after the behavior change. Native authorization return and
+  macOS/Linux two-page courts remain open; W26 stays
+  partial until those journeys and failure recovery are qualified.
 - [v] **`minicon-web` module (adopted 2026-10-23).** Browser content-panel
   API. Product face remains **Tab / content panel** (now 1:1, future 1:N);
   **no tray**. Chrome panels stay chrome. Path: `crates/minicon-web/` (lib +

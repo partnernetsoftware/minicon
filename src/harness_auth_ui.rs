@@ -281,7 +281,14 @@ impl ConApp {
             }
         }
         if self.browser_auth.is_none() {
-            if self.open_browser_tab(window).is_err() {
+            if let Some(id) = self
+                .workspace
+                .active_browser_tab()
+                .or_else(|| self.workspace.browser_tab())
+            {
+                self.select_tab(id);
+                self.sync_embedded_page(window);
+            } else if self.open_browser_tab(window).is_err() {
                 self.fail_harness_auth("Could not open the authorization view.");
                 return;
             }
