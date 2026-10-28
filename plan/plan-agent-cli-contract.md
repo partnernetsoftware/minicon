@@ -77,14 +77,17 @@ flowchart LR
    `capture-pane -p` from history-range flags and `send-keys` from an agent
    delivery receipt. The current command evidence remains in PRD 26/31;
    PRD 26.01 owns the normalization decision.
-2. **Implement discovery without new authority.** Make `minicon` inside a
+2. **Implement discovery without new authority.** Bind a unique local,
+   process-lifetime control endpoint for ordinary GUI launches before the
+   first Console child starts; keep explicit `--control` as an override. Do
+   not publish a machine-wide default endpoint or choose the last-open GUI.
+   Make `minicon` inside a
    Console child resolve the host's own executable: prepend its directory to
    the child `PATH`, export an absolute `MINICON_BIN` fallback, and provide an
    owned launcher if packaging changes the basename. Inject a stable self-tab
    hint and process-incarnation marker, expose endpoint fallback to native
    `cli`, and add per-command help/capability reporting. Define `--control`
-   precedence over `MINICON_CONTROL`; do not modify global `PATH` or discover
-   a last-open instance. Cover two simultaneous instances, a login shell that
+   precedence over `MINICON_CONTROL`; do not modify global `PATH`. Cover two simultaneous instances, a login shell that
    rewrites `PATH`, a missing endpoint and a renamed executable. Redact
    endpoint/path values from public snapshots. Resolve `self` against the live
    host on each call. A copied environment block does not grant permission or
@@ -120,7 +123,10 @@ evidence in `console_child_minicon_command_uses_its_own_control_endpoint`:
 an inherited endpoint works, explicit `--control` wins, and a shadow
 `minicon` earlier in the inherited `PATH` is bypassed. Removing the child
 `PATH` override made this black box fail. Self @ID, process incarnation,
-renamed-binary packaging and other native hosts remain open, so A2 is partial.
+automatic process-lifetime endpoint binding, renamed-binary packaging and
+other native hosts remain open, so A2 is partial. Web has no shell; a future
+Harness child receives its own tab identity under the same instance-binding
+rule only after Harness tab lifecycle exists.
 
 The 0.2.26 [B26 leaf](plan-v0.2.26.md) decides the identity/observer/message
 contract and can deliver small compatible discovery improvements if their

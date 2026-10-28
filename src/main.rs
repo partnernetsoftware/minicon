@@ -910,6 +910,10 @@ struct ConApp {
     /// Browser tabs have no PTY. Keyed by the same [`workspace::TabId`] as
     /// terminal sessions, and only present when the node kind is Browser.
     browsers: SessionStore<browser::BrowserTab>,
+    /// Runtime bytes for non-active Web tabs. The public BrowserTab models
+    /// stay in `browsers` so Home/tree observations never depend on a WebView.
+    parked_browsers: SessionStore<harness_auth_ui::OrdinaryBrowser>,
+    loaded_browser_id: Option<workspace::TabId>,
     browser_auth: Option<harness_auth_ui::AuthPresentation>,
     #[cfg(all(windows, feature = "native-auth-court"))]
     native_auth_cookie_probe: Option<harness_auth_court::PreNavigationCookieProbe>,
@@ -1467,6 +1471,8 @@ impl ConApp {
             workspace,
             sessions,
             browsers: SessionStore::default(),
+            parked_browsers: SessionStore::default(),
+            loaded_browser_id: None,
             browser_auth: None,
             #[cfg(all(windows, feature = "native-auth-court"))]
             native_auth_cookie_probe: None,
@@ -1668,8 +1674,18 @@ impl ConApp {
             self.session_seed = SessionSeed::from_session(&session);
             drop(session);
         }
+        let closing_loaded_browser = self.loaded_browser_id == Some(id);
         self.browsers.remove(&id);
         self.workspace.close(id);
+        self.parked_browsers.remove(&id);
+        if closing_loaded_browser {
+            let runtime = harness_auth_ui::OrdinaryBrowser::take_current(self);
+            drop(runtime);
+            self.loaded_browser_id = None;
+            if let Some(next) = self.workspace.active_browser_tab() {
+                self.load_browser_runtime(next);
+            }
+        }
         if !self
             .workspace
             .nodes()
@@ -1677,6 +1693,7 @@ impl ConApp {
             .any(|node| node.kind == workspace::TabKind::Browser)
         {
             self.stop_page_host();
+            self.loaded_browser_id = None;
         }
         let empty = self.workspace.active().is_none();
         if empty {
@@ -1742,6 +1759,9 @@ impl ConApp {
         if !self.workspace.set_active(id) {
             return false;
         }
+        if self.workspace.active_browser_tab() == Some(id) {
+            self.load_browser_runtime(id);
+        }
         self.home_active = false;
         self.blur_browser_composition();
         self.browser_address_focused = false;
@@ -1751,6 +1771,32 @@ impl ConApp {
         self.new_tab_menu_open = false;
         self.menu_return_focus = None;
         true
+    }
+
+    /// Keep the existing browser UI fields as the currently loaded page, and
+    /// park every other Web tab by stable ID. A terminal/Home selection only
+    /// hides the loaded page; it need not tear down its history or context.
+    fn load_browser_runtime(&mut self, id: workspace::TabId) {
+        if self.loaded_browser_id == Some(id) {
+            return;
+        }
+        if let Some(previous) = self.loaded_browser_id.take() {
+            #[cfg(any(target_os = "macos", windows))]
+            if let Some(page) = self.native_browser_page.as_ref() {
+                let _ = page.set_visible(false);
+            }
+            let runtime = harness_auth_ui::OrdinaryBrowser::take_current(self);
+            if let Err(mut runtime) = self.parked_browsers.insert(previous, runtime) {
+                runtime.restore_current(self);
+                self.loaded_browser_id = Some(previous);
+                return;
+            }
+        }
+        if let Some(mut runtime) = self.parked_browsers.remove(&id) {
+            runtime.restore_current(self);
+        }
+        self.loaded_browser_id = Some(id);
+        self.browser_visible = None;
     }
 
     fn activate_session(&mut self, window: &PixelWindow, id: workspace::TabId) {
@@ -2483,6 +2529,7 @@ impl ConApp {
                 "stable tab id is already in use",
             ));
         }
+        self.load_browser_runtime(id);
         self.home_active = false;
         #[cfg(any(target_os = "macos", windows))]
         self.ensure_native_page(window);
@@ -2542,6 +2589,9 @@ impl ConApp {
     fn present_http_link(&mut self, window: &PixelWindow, url: &str) -> bool {
         if !Self::handoff_http_link(&mut self.workspace, &mut self.browsers, url) {
             return false;
+        }
+        if let Some(id) = self.workspace.active_browser_tab() {
+            self.load_browser_runtime(id);
         }
         self.launch_page_host(window, url);
         self.mark_host_ui_full();

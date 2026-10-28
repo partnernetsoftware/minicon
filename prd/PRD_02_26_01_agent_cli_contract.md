@@ -70,7 +70,7 @@ flowchart LR
 
 | Concern | Current source behavior | Contract decision |
 | --- | --- | --- |
-| Binary and endpoint | Console children receive `MINICON_CONTROL` only if the host starts with `--control`; `cli` and `mux` read it; the child receives `MINICON_BIN` and a `PATH` prefixed with this host's executable directory | Qualify the same-build mapping on other native hosts and handle a renamed binary; fail closed when the endpoint is unavailable |
+| Binary and endpoint | Console children receive `MINICON_CONTROL` only if the host starts with `--control`; `cli` and `mux` read it; the child receives `MINICON_BIN` and a `PATH` prefixed with this host's executable directory | Make ordinary GUI launches bind a unique local process-lifetime endpoint and export it to their Console children; qualify same-build resolution on other native hosts and renamed binaries; fail closed when unavailable |
 | Identity | `list-tabs` gives stable `@ID`; children receive no self ID; omitted native targets use the active terminal | Export a self ID and instance incarnation as convenience, validate both against the live host, and never silently guess from title/order |
 | Read/write | `capture-pane` reads visible rows; `send-text` and `send-paste` accept UTF-8 `--file`; `send-keys` targets PTY keys | Name the mode and bounds in results; distinguish accepted bytes from observed response and agent receipt |
 | Paths | capture `--output` writes on the CLI client; screenshot `--output` is currently interpreted by the GUI process | Make v2 path ownership explicit and consistent without reinterpreting a legacy relative path silently |
@@ -94,7 +94,11 @@ bounded to 1 MiB. These are current limits, not a promise of scrollback.
    event/message adapter owns run identity and acknowledgement; it is not
    inferred from PTY text. Each surface reports its own compatibility level.
 2. **Resolution before mutation.** `--control` overrides `MINICON_CONTROL`;
-   no default socket/port is guessed. `--target @N` is canonical. Planned
+   no global socket/port is guessed. An ordinary GUI launch should create a
+   unique local endpoint before its first tab starts, without requiring the
+   user to supply `--control`; an explicit `--control` keeps precedence.
+   Endpoint creation failure must be visible and leave CLI control unavailable,
+   never fall back to another running instance. `--target @N` is canonical. Planned
    `--target self` resolves from host-provided `MINICON_TAB_ID` plus an opaque
    process-incarnation marker, then checks the live target. Those environment
    values are context hints, not secrets or authority. Commands that omit a
@@ -112,7 +116,10 @@ bounded to 1 MiB. These are current limits, not a promise of scrollback.
    `MINICON_BIN`; a missing or stale endpoint must fail rather than start a
    second instance. `MINICON_BIN` is only a launch hint and does not authorize
    control. Bare `minicon` keeps its documented application behavior; the
-   instance binding applies to `minicon cli` and `minicon mux`.
+   instance binding applies to `minicon cli` and `minicon mux`. Web tabs have
+   no command environment. A future Harness tab that owns a child process
+   inherits this instance binding when that lifecycle exists; it does not
+   borrow the Console tab's self ID.
 3. **Additive machine output.** A global, opt-in `--format json` yields one
    JSON object per invocation. It contains `schema_version`, `command`,
    `ok`, resolved `target` when applicable, and exactly one of `data` or

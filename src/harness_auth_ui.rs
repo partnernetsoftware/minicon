@@ -18,6 +18,47 @@ pub(super) struct OrdinaryBrowser {
     native: Option<browser::NativePageHost>,
 }
 
+impl OrdinaryBrowser {
+    pub(super) fn take_current(app: &mut ConApp) -> Self {
+        Self {
+            model: None,
+            address: app.browser_address.take(),
+            proxy_input: std::mem::take(&mut app.browser_proxy_input),
+            proxy_applied: std::mem::take(&mut app.browser_proxy_applied),
+            can_back: std::mem::take(&mut app.browser_can_back),
+            can_forward: std::mem::take(&mut app.browser_can_forward),
+            deadline: app.browser_load_deadline.take(),
+            page: app.browser_page.take(),
+            #[cfg(target_os = "linux")]
+            process: app.browser_process.take(),
+            #[cfg(target_os = "linux")]
+            program: app.browser_embedded_program.take(),
+            #[cfg(any(target_os = "macos", windows))]
+            native: app.native_browser_page.take(),
+        }
+    }
+
+    pub(super) fn restore_current(&mut self, app: &mut ConApp) {
+        app.browser_address = self.address.take();
+        app.browser_proxy_input = std::mem::take(&mut self.proxy_input);
+        app.browser_proxy_applied = std::mem::take(&mut self.proxy_applied);
+        app.browser_can_back = self.can_back;
+        app.browser_can_forward = self.can_forward;
+        app.browser_load_deadline = self.deadline.take();
+        app.browser_page = self.page.take();
+        #[cfg(target_os = "linux")]
+        {
+            app.browser_process = self.process.take();
+            app.browser_embedded_program = self.program.take();
+        }
+        #[cfg(any(target_os = "macos", windows))]
+        {
+            app.native_browser_page = self.native.take();
+        }
+        app.browser_visible = None;
+    }
+}
+
 impl Drop for OrdinaryBrowser {
     fn drop(&mut self) {
         if let Some(mut child) = self.page.take() {
@@ -255,22 +296,8 @@ impl ConApp {
                 .browsers
                 .get_mut(&id)
                 .map(|model| std::mem::replace(model, browser::BrowserTab::shell()));
-            let ordinary = OrdinaryBrowser {
-                model,
-                address: self.browser_address.take(),
-                proxy_input: std::mem::take(&mut self.browser_proxy_input),
-                proxy_applied: std::mem::take(&mut self.browser_proxy_applied),
-                can_back: self.browser_can_back,
-                can_forward: self.browser_can_forward,
-                deadline: self.browser_load_deadline.take(),
-                page: self.browser_page.take(),
-                #[cfg(target_os = "linux")]
-                process: self.browser_process.take(),
-                #[cfg(target_os = "linux")]
-                program: self.browser_embedded_program.take(),
-                #[cfg(any(target_os = "macos", windows))]
-                native: self.native_browser_page.take(),
-            };
+            let mut ordinary = OrdinaryBrowser::take_current(self);
+            ordinary.model = model;
             self.browser_auth = Some(AuthPresentation {
                 attempt,
                 context,
@@ -512,22 +539,7 @@ impl ConApp {
             {
                 *target = model;
             }
-            self.browser_address = auth.ordinary.address.take();
-            self.browser_proxy_input = std::mem::take(&mut auth.ordinary.proxy_input);
-            self.browser_proxy_applied = std::mem::take(&mut auth.ordinary.proxy_applied);
-            self.browser_can_back = auth.ordinary.can_back;
-            self.browser_can_forward = auth.ordinary.can_forward;
-            self.browser_load_deadline = auth.ordinary.deadline;
-            self.browser_page = auth.ordinary.page.take();
-            #[cfg(target_os = "linux")]
-            {
-                self.browser_process = auth.ordinary.process.take();
-                self.browser_embedded_program = auth.ordinary.program.take();
-            }
-            #[cfg(any(target_os = "macos", windows))]
-            {
-                self.native_browser_page = auth.ordinary.native.take();
-            }
+            auth.ordinary.restore_current(self);
             if return_to_settings {
                 self.settings_open = true;
                 self.settings_section = ui::SettingsSection::Harness;
@@ -542,6 +554,79 @@ impl ConApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn web_runtime_parks_address_proxy_and_navigation_by_stable_tab_id() {
+        let mut app = ConApp::new(None, None);
+        let first = app.workspace.add_browser_root().unwrap();
+        app.browsers
+            .insert(first, browser::BrowserTab::shell())
+            .unwrap();
+        app.load_browser_runtime(first);
+        let mut first_address = composer::ComposerState::default();
+        first_address.text = "https://first.example/".into();
+        app.browser_address = Some(first_address);
+        app.browser_proxy_applied = "proxy-first".into();
+        app.browser_can_back = true;
+
+        let second = app.workspace.add_browser_root().unwrap();
+        app.browsers
+            .insert(second, browser::BrowserTab::shell())
+            .unwrap();
+        app.load_browser_runtime(second);
+        assert_eq!(app.loaded_browser_id, Some(second));
+        assert!(app.browser_address.is_none());
+        assert_eq!(app.browser_proxy_applied, "");
+        assert!(!app.browser_can_back);
+        let mut second_address = composer::ComposerState::default();
+        second_address.text = "https://second.example/".into();
+        app.browser_address = Some(second_address);
+        app.browser_proxy_applied = "proxy-second".into();
+        app.browser_can_forward = true;
+
+        app.workspace.set_active(first);
+        app.load_browser_runtime(first);
+        assert_eq!(app.loaded_browser_id, Some(first));
+        assert_eq!(
+            app.browser_address.as_ref().unwrap().text,
+            "https://first.example/"
+        );
+        assert_eq!(app.browser_proxy_applied, "proxy-first");
+        assert!(app.browser_can_back);
+        assert!(!app.browser_can_forward);
+        assert!(app.parked_browsers.contains_key(&second));
+
+        app.detach_session(second);
+        assert!(!app.parked_browsers.contains_key(&second));
+        assert_eq!(
+            app.browser_address.as_ref().unwrap().text,
+            "https://first.example/"
+        );
+    }
+
+    #[test]
+    fn closing_loaded_web_restores_surviving_web_runtime() {
+        let mut app = ConApp::new(None, None);
+        let first = app.workspace.add_browser_root().unwrap();
+        app.browsers
+            .insert(first, browser::BrowserTab::shell())
+            .unwrap();
+        app.load_browser_runtime(first);
+        app.browser_proxy_applied = "proxy-first".into();
+
+        let second = app.workspace.add_browser_root().unwrap();
+        app.browsers
+            .insert(second, browser::BrowserTab::shell())
+            .unwrap();
+        app.load_browser_runtime(second);
+        app.browser_proxy_applied = "proxy-second".into();
+
+        app.detach_session(second);
+        assert_eq!(app.workspace.active_browser_tab(), Some(first));
+        assert_eq!(app.loaded_browser_id, Some(first));
+        assert_eq!(app.browser_proxy_applied, "proxy-first");
+        assert!(!app.parked_browsers.contains_key(&first));
+    }
 
     #[cfg(windows)]
     #[test]

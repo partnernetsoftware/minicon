@@ -213,11 +213,13 @@ with exact @ID row snapshots and a test mutation that removes activation and
 fails. The list now paints real tab/child facts and scrolls independently.
 The Windows native wheel court also passed with 17 Console tabs and an exact
 scrolled-row click; removing the Home wheel route made it fail.
-W26 has only its Workspace identity prerequisite: distinct browser roots can
-now be allocated and closed independently in the product model. The GUI still
-owns one page host and its +W action still focuses the existing Web tab.
-Per-tab native page, address/history, proxy and auth lifetime plus the
-two-Web-tab native court remain required before W26 is delivered.
+W26 has its Workspace identity prerequisite: distinct browser roots can
+now be allocated and closed independently in the product model. Internal
+runtime parking also preserves each Web @ID's address, proxy, navigation
+flags and page handles across switches and closes; focused state tests pass.
+The GUI still exposes one Web tab and +W still focuses it. Per-tab native
+page and auth isolation plus the two-Web-tab native court remain required
+before W26 is delivered.
 Search/filter/group, mixed 256-tab overflow, attention/system cards, native
 wide/narrow visual captures and other OS courts remain required before T26 or
 the default-list cut can be marked complete. `screenshot-pane` observes the

@@ -344,6 +344,13 @@ names above.
   them independently, switch/close either, then verify the survivor's state
   through public GUI and control snapshots. Non-goal: split-screen pages or
   sharing one mutable page host between tab IDs.
+  The 0.2.26 internal runtime parking slice now keys inactive page state by
+  stable Web @ID: address draft, selected proxy, navigation flags and host
+  handles are moved on switch and released on close. The focused
+  `web_runtime_parks_address_proxy_and_navigation_by_stable_tab_id` and
+  `closing_loaded_web_restores_surviving_web_runtime` tests cover state
+  separation and close restoration. Native two-page host and authorization
+  isolation evidence remains open; +W still focuses the existing Web tab.
 - [v] **`minicon-web` module (adopted 2026-10-23).** Browser content-panel
   API. Product face remains **Tab / content panel** (now 1:1, future 1:N);
   **no tray**. Chrome panels stay chrome. Path: `crates/minicon-web/` (lib +
