@@ -211,9 +211,10 @@ flowchart LR
 U26 now has Windows native English wide/4:3/narrow and simplified-Chinese
 4:3 captures, exact @ID focus at 4:3, and a six-situation desk review in
 [PRD 39.01](../prd/PRD_02_39_01_home_canvas.md).
-The missing system card, typed agent source and mixed component alerts keep
-its first-glance acceptance partial; the captures do not stand in for those
-facts or for other-platform/scale evidence.
+The newer scoped process card has a separate Windows native court (see the
+same PRD). Typed agent source, mixed component alerts, whole-machine state and
+other-platform/scale evidence keep first-glance acceptance partial; the older
+captures do not stand in for those facts.
 
 T26 has a Windows native click court for three same-named Console tabs. A row
 selects an exact @ID on @0; its inspector's Focus tab button or Enter opens the
@@ -293,9 +294,13 @@ receipt. One real CLI/TUI adapter trace remains open, so B26 remains partial.
 The first A26 slice now publishes informational Console-child exit items with
 exact @ID, host observation time and exit code; the Home header selects the
 newest item for inspection. The Windows native court passed and a wrong-target
-mutation failed; closing the tab removes the item. Mixed severity/source
-deduplication, actionable counts, provider/gateway routing and measured system
-cards remain open. Remaining sort/group modes, 256-tab interaction modes, full native
+mutation failed; closing the tab removes the item. A measured MiniCon-process
+card now samples on Home entry or explicit refresh and names scope, OS source,
+sample time, RSS and cumulative CPU time; its Windows native court and the
+Unknown-on-read-failure projection test passed, with refresh-removal mutation
+proof. Mixed severity/source deduplication, actionable counts, provider/gateway
+routing and whole-machine or other-platform resource courts remain open.
+Remaining sort/group modes, 256-tab interaction modes, full native
 wide/narrow/scale visual qualification and other OS courts remain required before T26 or
 the default-list cut can be marked complete. `screenshot-pane` observes the
 underlying Console pane on @0 and is not a Home capture receipt.

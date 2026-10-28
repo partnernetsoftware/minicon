@@ -10,6 +10,57 @@
 use super::*;
 
 impl ConApp {
+    fn home_system_snapshot_json(&self) -> json::JsonValue {
+        let (status, observed_at, cpu_time_ms, resident_bytes, reason) = match self
+            .home_system_sample
+        {
+            Some(HomeSystemSample {
+                observed_at,
+                process: Ok(metrics),
+            }) => (
+                "measured",
+                observed_unix_millis(Some(observed_at)),
+                u64::try_from(metrics.cpu_time.as_millis())
+                    .unwrap_or(u64::MAX)
+                    .into(),
+                metrics.resident_bytes.into(),
+                json::JsonValue::Null,
+            ),
+            Some(HomeSystemSample {
+                observed_at,
+                process: Err(kind),
+            }) => (
+                "unknown",
+                observed_unix_millis(Some(observed_at)),
+                json::JsonValue::Null,
+                json::JsonValue::Null,
+                (if kind == minicon_platform::process_metrics::ProcessMetricsErrorKind::Unsupported
+                {
+                    "unsupported"
+                } else {
+                    "read-failed"
+                })
+                .into(),
+            ),
+            None => (
+                "unknown",
+                json::JsonValue::Null,
+                json::JsonValue::Null,
+                json::JsonValue::Null,
+                "not-sampled".into(),
+            ),
+        };
+        json::object(vec![
+            ("scope", "minicon-host-process".into()),
+            ("source", "os-process-metrics".into()),
+            ("status", status.into()),
+            ("observed_at_unix_ms", observed_at),
+            ("cpu_time_ms", cpu_time_ms),
+            ("resident_bytes", resident_bytes),
+            ("reason", reason),
+        ])
+    }
+
     pub(super) fn ui_snapshot_json(&self, window: &PixelWindow) -> Result<json::JsonValue, String> {
         let a11y = self.a11y_inbox.stats();
         window
@@ -267,6 +318,15 @@ impl ConApp {
                                 ),
                                 ("home_list_start", home_start.into()),
                                 ("home_tab_count", self.workspace.nodes().len().into()),
+                                ("home_system", self.home_system_snapshot_json()),
+                                (
+                                    "home_system_refresh",
+                                    rect_obj(layout.home_system_card(
+                                        metrics.physical_width,
+                                        metrics.physical_height,
+                                        metrics.scale_factor,
+                                    )),
+                                ),
                                 ("home_visible_count", home_nodes.len().into()),
                                 ("home_kind_filter", self.home_kind_filter.key().into()),
                                 ("home_sort", self.home_sort.key().into()),
@@ -1011,5 +1071,35 @@ impl ConApp {
                     ),
                 ])
             })
+    }
+}
+
+#[cfg(test)]
+mod home_system_snapshot_tests {
+    use super::*;
+
+    #[test]
+    fn failed_process_metric_read_is_unknown_with_no_synthetic_zero() {
+        let mut app = ConApp::new(None, None);
+        app.home_system_sample = Some(HomeSystemSample {
+            observed_at: UNIX_EPOCH + Duration::from_secs(1),
+            process: Err(minicon_platform::process_metrics::ProcessMetricsErrorKind::Read),
+        });
+        let json::JsonValue::Object(fields) = app.home_system_snapshot_json() else {
+            panic!("Home system projection must be an object");
+        };
+        let field = |name| {
+            fields
+                .iter()
+                .find(|(key, _)| *key == name)
+                .unwrap()
+                .1
+                .clone()
+        };
+        assert_eq!(field("status"), "unknown".into());
+        assert_eq!(field("reason"), "read-failed".into());
+        assert_eq!(field("observed_at_unix_ms"), 1000_u64.into());
+        assert_eq!(field("cpu_time_ms"), json::JsonValue::Null);
+        assert_eq!(field("resident_bytes"), json::JsonValue::Null);
     }
 }

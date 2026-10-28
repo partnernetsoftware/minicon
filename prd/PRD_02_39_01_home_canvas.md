@@ -138,10 +138,10 @@ captures and routes, not a user study or release-artifact court.
 
 | Scene reviewed | First readable fact and route | Design issue still open |
 | --- | --- | --- |
-| English 960×600, three live Console tabs | Count, each @ID and child/agent labels; selected @2 has Focus tab | No measured system card or task/run source |
+| English 960×600, three live Console tabs | Count, each @ID and child/agent labels; selected @2 has Focus tab | The original capture predates the process card; task/run source remains open |
 | English 800×600, same fleet | Rows and inspector sit side by side; @2 Focus remains clickable | Attention has no explicit empty/source state; inspector lacks freshness |
 | English 500×650, same fleet | New actions stack; list scroll and @2 Focus remain in the first viewport | Inspector sits below the list with weak visual grouping; only part of the fleet is visible |
-| 简体中文 800×600, two live Console tabs | “标签页 2/2”, @2, “活动中 · Agent 未知” and “打开标签页” are readable | Same source/freshness and system gaps; traditional Chinese still needs a native capture |
+| 简体中文 800×600, two live Console tabs | “标签页 2/2”, @2, “活动中 · Agent 未知” and “打开标签页” are readable | This capture predates the process card; traditional Chinese still needs a native capture |
 
 Five-second desk review of the six planned situations (read from the named
 public/native courts, without inventing agent state): zero tabs shows the two
@@ -150,9 +150,10 @@ Console names remain distinguishable by @ID and exact inspector focus; a child
 exit is an informational, source-timed tab item; stale observer plus failed
 account has no joined observation yet; an uncorrelated gateway request cannot
 light up one tab. The last two remain `BLOCKED` as Home scene claims until
-PRD 36's source projection and HC-07's scoped attention/system card exist.
-The screenshots therefore support U26's layout and copy review only; they do
-not close U26's system/alert first-glance invariant or HC-02/07.
+PRD 36's source projection and HC-07's mixed attention route exist. These
+earlier screenshots support U26's layout and copy review only; the separate
+process-card court below checks its current scoped resource state. Neither
+closes U26's complete system/alert first-glance invariant or HC-02/07.
 
 ## Outcome tree DAG
 
@@ -394,6 +395,20 @@ time. MiniCon-process memory is never labelled as total-machine memory.
 Sampler work must stop or lower frequency while @0 is hidden and stay within
 an observed idle cost; the canvas alone does not justify continuous polling.
 Public snapshots omit hostnames, addresses and raw process command lines.
+
+The first native resource slice samples this MiniCon host process on entry to
+@0 and on explicit card refresh. It shows resident memory in MiB and cumulative
+process CPU time, not a CPU utilization rate. Its snapshot names the process
+scope, OS metric source, raw byte/millisecond values and observation time;
+failed reads are Unknown with a reason and null values, never zero. The card
+marks whole-computer metrics unavailable until a separate sampler is qualified.
+`native_home_process_sample_names_scope_source_and_entry_time` proves Windows
+entry, refresh, stable repeated snapshots, narrow-card/list separation and a
+return-to-Home sample; removing refresh sampling made the court fail. The
+failure projection is covered by
+`failed_process_metric_read_is_unknown_with_no_synthetic_zero`. macOS/Linux
+native courts, idle-cost measurement, whole-machine metrics and queue pressure
+remain open; this slice does not close HC-07.
 
 The Home adapter reads bounded projections from the owning workspace, PRD 36
 and any accepted telemetry seam. It must not copy credentials, proxy addresses,

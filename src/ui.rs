@@ -812,9 +812,13 @@ impl Layout {
         let button_width =
             dip(148.0, scale).min(content_width.saturating_sub(pad.saturating_mul(2)));
         let button_height = dip(40.0, scale);
-        let y = (height / 7)
-            .max(dip(24.0, scale))
-            .saturating_add(dip(116.0, scale));
+        let y = (height / 7).max(dip(24.0, scale)).saturating_add(
+            if content_width < dip(520.0, scale) {
+                dip(68.0, scale)
+            } else {
+                dip(116.0, scale)
+            },
+        );
         let first = Rect {
             x: self.sidebar.width.saturating_add(pad),
             y,
@@ -854,12 +858,51 @@ impl Layout {
             .map(|rect| rect.y.saturating_add(rect.height))
             .max()
             .unwrap_or(0)
-            .saturating_add(pad);
+            .saturating_add(pad)
+            .saturating_add(if content_width < dip(520.0, scale) {
+                dip(52.0, scale)
+            } else {
+                0
+            });
         Rect {
             x: self.sidebar.width.saturating_add(pad),
             y: top,
             width: content_width.saturating_sub(pad.saturating_mul(2)),
             height: height.saturating_sub(top.saturating_add(pad)),
+        }
+    }
+
+    pub fn home_system_card(self, width: u32, height: u32, scale: f64) -> Rect {
+        let content_width = width.saturating_sub(self.sidebar.width);
+        let pad = dip(28.0, scale).min(content_width / 4);
+        let actions = self.home_actions(width, height, scale);
+        if content_width < dip(520.0, scale) {
+            let y = actions
+                .iter()
+                .map(|rect| rect.y.saturating_add(rect.height))
+                .max()
+                .unwrap_or(0)
+                .saturating_add(pad);
+            Rect {
+                x: self.sidebar.width.saturating_add(pad),
+                y,
+                width: content_width.saturating_sub(pad.saturating_mul(2)),
+                height: dip(46.0, scale).min(height.saturating_sub(y)),
+            }
+        } else {
+            let right = width.saturating_sub(pad);
+            let left = actions[1]
+                .x
+                .saturating_add(actions[1].width)
+                .saturating_add(dip(16.0, scale));
+            let card_width = dip(280.0, scale).min(right.saturating_sub(left));
+            let y = actions[0].y.saturating_sub(dip(112.0, scale));
+            Rect {
+                x: right.saturating_sub(card_width),
+                y,
+                width: card_width,
+                height: dip(100.0, scale).min(actions[0].y.saturating_sub(y)),
+            }
         }
     }
 

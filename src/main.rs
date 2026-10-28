@@ -1039,6 +1039,7 @@ struct ConApp {
     home_kind_filter: HomeKindFilter,
     home_sort: HomeSort,
     home_search: composer::ComposerState,
+    home_system_sample: Option<HomeSystemSample>,
     home_scroll_drag: Option<ScrollbarThumbDrag>,
     home_selected_id: Option<workspace::TabId>,
     settings_section: ui::SettingsSection,
@@ -1429,6 +1430,26 @@ struct HomeExitAttention {
     observed_at: Option<SystemTime>,
 }
 
+#[derive(Clone, Copy)]
+struct HomeSystemSample {
+    observed_at: SystemTime,
+    process: Result<
+        minicon_platform::process_metrics::ProcessMetrics,
+        minicon_platform::process_metrics::ProcessMetricsErrorKind,
+    >,
+}
+
+impl HomeSystemSample {
+    fn capture() -> Self {
+        let process = minicon_platform::process_metrics::metrics(std::process::id())
+            .map_err(|error| error.kind());
+        Self {
+            observed_at: SystemTime::now(),
+            process,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Default, Eq, PartialEq)]
 enum HomeKindFilter {
     #[default]
@@ -1772,6 +1793,7 @@ impl ConApp {
             home_kind_filter: HomeKindFilter::All,
             home_sort: HomeSort::Tree,
             home_search: composer::ComposerState::default(),
+            home_system_sample: None,
             home_scroll_drag: None,
             home_selected_id: None,
             settings_section: ui::SettingsSection::default(),
@@ -1922,6 +1944,7 @@ impl ConApp {
             let empty = self.workspace.active().is_none();
             if empty {
                 self.home_active = true;
+                self.home_system_sample = Some(HomeSystemSample::capture());
                 self.settings_open = false;
             }
             return empty;
@@ -1954,6 +1977,7 @@ impl ConApp {
         let empty = self.workspace.active().is_none();
         if empty {
             self.home_active = true;
+            self.home_system_sample = Some(HomeSystemSample::capture());
             self.settings_open = false;
         }
         empty
@@ -2094,6 +2118,7 @@ impl ConApp {
         self.browser_proxy_focused = false;
         self.settings_open = false;
         self.home_active = true;
+        self.home_system_sample = Some(HomeSystemSample::capture());
         self.sync_embedded_page(window);
         let _ = self.refresh_title(window);
         self.mark_host_ui_full_and_repaint(window);
@@ -5256,6 +5281,12 @@ impl PixelWindowApplication for ConApp {
                     self.open_session_contained(window, false);
                 } else if web.contains(x, y) {
                     self.open_browser_tab_contained(window);
+                } else if layout
+                    .home_system_card(metrics.physical_width, metrics.physical_height, scale)
+                    .contains(x, y)
+                {
+                    self.home_system_sample = Some(HomeSystemSample::capture());
+                    self.mark_host_ui_full_and_repaint(window);
                 } else if search.contains(x, y) {
                     let size =
                         scaled_host_ui_font(12, self.session_seed.font_size_logical(), scale);

@@ -1817,7 +1817,14 @@ impl ConApp {
         surface.fill_rect(left, 0, content_width, height, t.canvas_bg.to_xrgb());
         let pad = (28.0 * scale).max(12.0) as u32;
         let text_x = left.saturating_add(pad);
-        let text_width = content_width.saturating_sub(pad.saturating_mul(2));
+        let system_card = layout.home_system_card(width, height, scale);
+        let text_width = if system_card.x > text_x
+            && system_card.y < layout.home_actions(width, height, scale)[0].y
+        {
+            system_card.x.saturating_sub(text_x.saturating_add(pad / 2))
+        } else {
+            content_width.saturating_sub(pad.saturating_mul(2))
+        };
         let title_size = scaled_host_ui_font(28, self.session_seed.font_size_logical(), scale);
         let body_size = scaled_host_ui_font(15, self.session_seed.font_size_logical(), scale);
         let top = (height / 7).max((24.0 * scale) as u32);
@@ -1850,7 +1857,7 @@ impl ConApp {
                 "新網頁",
             ),
         };
-        let intro = if text_width < (300.0 * scale) as u32 {
+        let intro = if text_width < (360.0 * scale) as u32 {
             match self.ui_language {
                 ui::UiLanguage::English => "Your tabs, in one place.",
                 ui::UiLanguage::ChineseSimplified => "终端与智能体，一目了然。",
@@ -1862,24 +1869,31 @@ impl ConApp {
         let line = font::cell_metrics(body_size)
             .height
             .saturating_add((10.0 * scale) as u32);
+        let compact_hero = content_width < (520.0 * scale) as u32;
         paint_host_ui_text(
             &mut surface,
             text_x,
-            top.saturating_add(line.saturating_mul(2)),
+            top.saturating_add(if compact_hero {
+                line.saturating_add((4.0 * scale) as u32)
+            } else {
+                line.saturating_mul(2)
+            }),
             slogan,
             t.text,
             body_size,
             text_width,
         );
-        paint_host_ui_text(
-            &mut surface,
-            text_x,
-            top.saturating_add(line.saturating_mul(3)),
-            intro,
-            t.muted,
-            body_size,
-            text_width,
-        );
+        if !compact_hero {
+            paint_host_ui_text(
+                &mut surface,
+                text_x,
+                top.saturating_add(line.saturating_mul(3)),
+                intro,
+                t.muted,
+                body_size,
+                text_width,
+            );
+        }
         let actions = layout.home_actions(width, height, scale);
         for (rect, label) in actions.into_iter().zip([new_terminal, new_web]) {
             if rect.width == 0 || rect.height == 0 {
@@ -1896,6 +1910,129 @@ impl ConApp {
                 body_size,
                 rect.width.saturating_sub((24.0 * scale) as u32),
             );
+        }
+        if system_card.width > 0 && system_card.height > 0 {
+            surface.fill_rect(
+                system_card.x,
+                system_card.y,
+                system_card.width,
+                system_card.height,
+                t.surface.to_xrgb(),
+            );
+            stroke_rect(&mut surface, system_card, 1, t.border);
+            let age = self.home_system_sample.and_then(|sample| {
+                SystemTime::now()
+                    .duration_since(sample.observed_at)
+                    .ok()
+                    .map(|elapsed| elapsed.as_secs())
+            });
+            let (heading, computer) = match self.ui_language {
+                ui::UiLanguage::English => ("This MiniCon · Refresh", "Computer: unavailable"),
+                ui::UiLanguage::ChineseSimplified => ("本 MiniCon · 刷新", "整机：不可用"),
+                ui::UiLanguage::ChineseTraditional => ("本 MiniCon · 重新整理", "整機：不可用"),
+            };
+            let compact = system_card.height < (70.0 * scale) as u32;
+            let resources = match self
+                .home_system_sample
+                .and_then(|sample| sample.process.ok())
+            {
+                Some(metrics) => {
+                    let cpu = if metrics.cpu_time.as_millis() < 1000 {
+                        format!("{}ms", metrics.cpu_time.as_millis())
+                    } else {
+                        format!("{:.1}s", metrics.cpu_time.as_secs_f64())
+                    };
+                    let rss = metrics.resident_bytes / (1024 * 1024);
+                    match (self.ui_language, compact) {
+                        (ui::UiLanguage::English, true) => {
+                            format!("RSS {rss}MiB · CPU total {cpu}")
+                        }
+                        (ui::UiLanguage::English, false) => {
+                            format!("RSS {rss} MiB · CPU {cpu} total")
+                        }
+                        (ui::UiLanguage::ChineseSimplified, _) => {
+                            format!("内存 {rss} MiB · CPU 累计 {cpu}")
+                        }
+                        (ui::UiLanguage::ChineseTraditional, _) => {
+                            format!("記憶體 {rss} MiB · CPU 累計 {cpu}")
+                        }
+                    }
+                }
+                None => match self.ui_language {
+                    ui::UiLanguage::English => "Process metrics: Unknown".to_owned(),
+                    ui::UiLanguage::ChineseSimplified => "进程指标：未知".to_owned(),
+                    ui::UiLanguage::ChineseTraditional => "程序指標：未知".to_owned(),
+                },
+            };
+            let source = match (self.ui_language, age) {
+                (ui::UiLanguage::English, Some(seconds)) => {
+                    format!("OS process · {seconds}s ago")
+                }
+                (ui::UiLanguage::ChineseSimplified, Some(seconds)) => {
+                    format!("系统进程 · {seconds}秒前")
+                }
+                (ui::UiLanguage::ChineseTraditional, Some(seconds)) => {
+                    format!("系統程序 · {seconds}秒前")
+                }
+                (ui::UiLanguage::English, None) => "OS process · time unknown".to_owned(),
+                (ui::UiLanguage::ChineseSimplified, None) => "系统进程 · 时间未知".to_owned(),
+                (ui::UiLanguage::ChineseTraditional, None) => "系統程序 · 時間未知".to_owned(),
+            };
+            let source = if compact {
+                match (self.ui_language, age) {
+                    (ui::UiLanguage::English, Some(seconds)) => {
+                        format!("OS {seconds}s · Computer unavailable")
+                    }
+                    (ui::UiLanguage::ChineseSimplified, Some(seconds)) => {
+                        format!("系统{seconds}秒前 · 整机不可用")
+                    }
+                    (ui::UiLanguage::ChineseTraditional, Some(seconds)) => {
+                        format!("系統{seconds}秒前 · 整機不可用")
+                    }
+                    (ui::UiLanguage::English, None) => {
+                        "OS time ? · Computer unavailable".to_owned()
+                    }
+                    (ui::UiLanguage::ChineseSimplified, None) => {
+                        "系统时间未知 · 整机不可用".to_owned()
+                    }
+                    (ui::UiLanguage::ChineseTraditional, None) => {
+                        "系統時間未知 · 整機不可用".to_owned()
+                    }
+                }
+            } else {
+                source
+            };
+            let line_size = scaled_host_ui_font(11, self.session_seed.font_size_logical(), scale);
+            let pitch = if compact {
+                (14.0 * scale) as u32
+            } else {
+                (21.0 * scale) as u32
+            };
+            let inset = if compact {
+                (4.0 * scale) as u32
+            } else {
+                (8.0 * scale) as u32
+            };
+            for (index, line) in [heading, &resources, &source, computer]
+                .into_iter()
+                .enumerate()
+            {
+                if index == 3 && compact {
+                    break;
+                }
+                paint_host_ui_text(
+                    &mut surface,
+                    system_card.x.saturating_add(inset),
+                    system_card
+                        .y
+                        .saturating_add(inset)
+                        .saturating_add(pitch * index as u32),
+                    line,
+                    if index == 0 { t.text } else { t.muted },
+                    line_size,
+                    system_card.width.saturating_sub(inset.saturating_mul(2)),
+                );
+            }
         }
         let card = layout.home_fleet(width, height, scale);
         if card.width > 0 && card.height > 0 {

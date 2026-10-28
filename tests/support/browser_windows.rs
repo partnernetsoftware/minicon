@@ -986,6 +986,90 @@ fn native_home_chinese_4_3_keeps_exact_inspect_and_focus_routes() {
 
 #[cfg(windows)]
 #[test]
+#[ignore = "requires a native desktop; run the explicit Home process metrics court"]
+fn native_home_process_sample_names_scope_source_and_entry_time() {
+    let mut host = BrowserGui::spawn(false, None, None);
+    let before = host.cli(&["ui-snapshot"]);
+    assert_eq!(before["geometry"]["home_system"]["status"], "unknown");
+    assert_eq!(before["geometry"]["home_system"]["reason"], "not-sampled");
+    host.click_geometry("home");
+    let home = host.cli(&["ui-snapshot"]);
+    let sample = &home["geometry"]["home_system"];
+    assert_eq!(sample["scope"], "minicon-host-process");
+    assert_eq!(sample["source"], "os-process-metrics");
+    assert_eq!(sample["status"], "measured");
+    assert!(sample["observed_at_unix_ms"].as_u64().unwrap() > 0);
+    assert!(sample["cpu_time_ms"].as_u64().is_some());
+    assert!(sample["resident_bytes"].as_u64().unwrap() > 0);
+    assert_eq!(sample["reason"], Value::Null);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["home_system"],
+        *sample
+    );
+    thread::sleep(Duration::from_millis(30));
+    host.click_geometry("home_system_refresh");
+    let refreshed = host.cli(&["ui-snapshot"]);
+    assert_eq!(refreshed["geometry"]["home_active"], true);
+    assert!(
+        refreshed["geometry"]["home_system"]["observed_at_unix_ms"]
+            .as_u64()
+            .unwrap()
+            > sample["observed_at_unix_ms"].as_u64().unwrap()
+    );
+    println!(
+        "Home process card capture: {}",
+        host.capture_home_client("home-process-card-wide.png")
+            .display()
+    );
+    host.click_geometry_row("home_list_row_rects", 0);
+    host.click_geometry("home_focus_tab");
+    thread::sleep(Duration::from_millis(30));
+    host.click_geometry("home");
+    let next = host.cli(&["ui-snapshot"]);
+    assert!(
+        next["geometry"]["home_system"]["observed_at_unix_ms"]
+            .as_u64()
+            .unwrap()
+            > refreshed["geometry"]["home_system"]["observed_at_unix_ms"]
+                .as_u64()
+                .unwrap()
+    );
+    host.cli(&["resize-window", "--width", "500", "--height", "650"]);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let narrow = loop {
+        let snapshot = host.cli(&["ui-snapshot"]);
+        if snapshot["geometry"]["frame"]["width"] == 500 {
+            break snapshot;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "narrow Home process card did not settle"
+        );
+        thread::sleep(Duration::from_millis(25));
+    };
+    let system = &narrow["geometry"]["home_system_refresh"];
+    let fleet = &narrow["geometry"]["home_fleet"];
+    assert!(
+        system["y"].as_u64().unwrap() + system["height"].as_u64().unwrap()
+            <= fleet["y"].as_u64().unwrap()
+    );
+    assert!(
+        !narrow["geometry"]["home_list_row_ids"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    thread::sleep(Duration::from_millis(250));
+    println!(
+        "Home process card narrow capture: {}",
+        host.capture_home_client("home-process-card-narrow.png")
+            .display()
+    );
+    host.close_and_wait();
+}
+
+#[cfg(windows)]
+#[test]
 #[ignore = "requires a native desktop; run the explicit Home keyboard court"]
 fn native_home_keyboard_navigation_reveals_exact_tab_ids() {
     let mut host = BrowserGui::spawn(false, None, None);
