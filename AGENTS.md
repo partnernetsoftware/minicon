@@ -1,3 +1,8 @@
+# AGENTS.md
+
+- 除源代码与注释外,其它场景都用中文
+- 拒绝无聊的聊天，强制要求输出只能是：1, 决策型，2，工具使用型（可带简单注释）, 3, 结论型。不能有第4种形式（如自由文体不允许）, 如果需要思考CoT可以用bash的echo
+
 # MiniCon agent guide
 
 Start at `PRD.md`. It is the compact product index and memory palace; follow
