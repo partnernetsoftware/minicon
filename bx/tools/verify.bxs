@@ -1,12 +1,10 @@
-// End-to-end verification of a bx binary or packed `.com`, written in bx itself
-// so it runs on every OS the product ships for.
+// End-to-end verification of a bx binary or packed `.com`, written as bx tests
+// so `bx test` owns the reporting and the exit code.
 //
-//   bx run tools/verify.bxs -- path/to/bx
-//   ./minicon-bx-linux-x86_64.com run tools/verify.bxs minicon-bx-linux-x86_64.com
-//
-// Exit code 0 means every check passed.
+//   bx test tools/verify.bxs path/to/bx
+//   ./minicon-bx-linux-x86_64.com test tools/verify.bxs minicon-bx-linux-x86_64.com
 if (len(argv) < 1) {
-  eprint("usage: verify.bxs <bx-binary-or-com>\n")
+  eprint("usage: bx test tools/verify.bxs <bx-binary-or-com>\n")
   exit(2)
 }
 let bin = argv[0]
@@ -16,81 +14,100 @@ if (tmp == "" || tmp == null) { tmp = cwd() }
 let dir = tmp + "/bx-verify-" + str(now())
 mkdir(dir)
 
-let checks = 0
-let failures = []
-fn expect(name, ok) {
-  checks += 1
-  if (!ok) { failures.push(name) }
-}
-
 // A launcher answers --com-info; a native binary does not. Detect by behaviour,
 // not by the file name, because launchers get renamed to .exe on Windows.
-let info = exec([bin, "--com-info"])
-if (info.code == 0 && info.out.contains("\"product\"")) {
-  expect("--com-info names the product", info.out.contains("\"version\""))
-} else {
-  expect("native binary has no container metadata", info.code != 0)
-}
+test("container metadata or a native binary", fn() {
+  let info = exec([bin, "--com-info"])
+  if (info.code == 0 && info.out.contains("\"product\"")) {
+    assert(info.out.contains("\"version\""), "com-info is missing version: " + info.out)
+  } else {
+    assert(info.code != 0, "native binary unexpectedly answered --com-info")
+  }
+})
 
-let version = exec([bin, "version"])
-expect("version prints bx", version.code == 0 && starts_with(version.out.trim(), "bx "))
+test("version prints bx", fn() {
+  let out = exec([bin, "version"])
+  assert(out.code == 0 && starts_with(out.out.trim(), "bx "), "got " + out.out)
+})
 
-expect("eval computes", exec([bin, "eval", "6 * 7"]).out.trim() == "42")
-expect("exit codes pass through", exec([bin, "eval", "exit(3)"]).code == 3)
+test("eval computes", fn() {
+  let out = exec([bin, "eval", "6 * 7"])
+  assert(out.code == 0 && out.out.trim() == "42", "got " + out.out + " " + out.err)
+})
+
+test("exit codes pass through", fn() {
+  assert(exec([bin, "eval", "exit(3)"]).code == 3)
+})
 
 write(dir + "/ok.bxs", 'print(1)\n')
-expect("check compiles without running", exec([bin, "check", dir + "/ok.bxs"]).code == 0)
-expect("dis reads source", exec([bin, "dis", dir + "/ok.bxs"]).code == 0)
+test("check compiles without running", fn() {
+  let out = exec([bin, "check", dir + "/ok.bxs"])
+  assert(out.code == 0 && out.out.contains("ok "), "got " + out.out + " " + out.err)
+})
+
+test("dis reads a script", fn() {
+  let out = exec([bin, "dis", dir + "/ok.bxs"])
+  assert(out.code == 0 && out.out.contains("chunk"), "got " + out.err)
+})
 
 write(dir + "/spin.bxs", 'while (true) { }\n')
-let capped = exec([bin, "run", "--max-steps", "200000", dir + "/spin.bxs"])
-expect("--max-steps stops a runaway script", capped.code == 1 && capped.err.contains("step limit"))
+test("--max-steps stops a runaway script", fn() {
+  let out = exec([bin, "run", "--max-steps", "200000", dir + "/spin.bxs"])
+  assert(out.code == 1 && out.err.contains("step limit"), "got " + out.err)
+})
+
+test("--timeout leaves normal runs alone", fn() {
+  assert(exec([bin, "run", "--timeout", "5000", dir + "/ok.bxs"]).code == 0)
+})
 
 write(dir + "/filter.bxs", 'print(read("-").trim().upper())\n')
-let piped = exec([bin, "run", dir + "/filter.bxs"], {stdin: "hi"})
-expect("read(-) drains stdin", piped.code == 0 && piped.out.trim() == "HI")
+test("read(-) drains stdin", fn() {
+  let out = exec([bin, "run", dir + "/filter.bxs"], {stdin: "hi"})
+  assert(out.code == 0 && out.out.trim() == "HI", "got " + out.out)
+})
 
 write(dir + "/apply.bxs", 'print(json(patch(argv[0], read(argv[1]))))\n')
 write(dir + "/target.txt", "a\nb\n")
 write(dir + "/fix.diff", "--- a/target.txt\n+++ b/target.txt\n@@ -1,2 +1,2 @@\n a\n-b\n+B\n")
-let patched = exec([bin, "run", dir + "/apply.bxs", dir + "/target.txt", dir + "/fix.diff"])
-expect("patch applies a unified diff", patched.code == 0 && read(dir + "/target.txt") == "a\nB\n")
+test("patch applies a unified diff", fn() {
+  let out = exec([bin, "run", dir + "/apply.bxs", dir + "/target.txt", dir + "/fix.diff"])
+  assert(out.code == 0 && read(dir + "/target.txt") == "a\nB\n", "file is " + json(read(dir + "/target.txt")))
+})
 
-let spawned = exec([bin, "eval", 'let h = spawn("echo hi", {shell: true}); let r = spawn_wait(h.id); r.out.trim()'])
-expect("spawn/wait works", spawned.code == 0 && spawned.out.trim() == "hi")
-// bytecode round-trip: compile once, run the artifact later
+test("spawn/wait works", fn() {
+  let out = exec([bin, "eval", 'let h = spawn("echo hi", {shell: true}); let r = spawn_wait(h.id); r.out.trim()'])
+  assert(out.code == 0 && out.out.trim() == "hi", "got " + out.out + " " + out.err)
+})
+
 write(dir + "/round.bxs", 'let f = fn(n) { return n * 2 }\nprint(f(21))\n')
-let built = exec([bin, "build", dir + "/round.bxs", "-o", dir + "/round.bxb"])
-expect("build writes .bxb", built.code == 0 && exists(dir + "/round.bxb"))
-expect(".bxb runs", exec([bin, "run", dir + "/round.bxb"]).out.trim() == "42")
+test("build writes .bxb", fn() {
+  let out = exec([bin, "build", dir + "/round.bxs", "-o", dir + "/round.bxb"])
+  assert(out.code == 0 && exists(dir + "/round.bxb"), "got " + out.err)
+})
 
-// include attribution: runtime and compile errors name the include file
+test(".bxb runs", fn() {
+  let out = exec([bin, "run", dir + "/round.bxb"])
+  assert(out.code == 0 && out.out.trim() == "42", "got " + out.out + " " + out.err)
+})
+
 write(dir + "/lib.bxs", 'fn boom() {\n  return missing_name\n}\n')
 write(dir + "/main.bxs", 'use "lib.bxs"\nboom()\n')
-let failed = exec([bin, "run", dir + "/main.bxs"])
-expect(
-  "runtime errors name the include",
-  failed.code == 1 && failed.err.contains("lib.bxs") && failed.err.contains("boom")
-)
+test("runtime errors name the include", fn() {
+  let out = exec([bin, "run", dir + "/main.bxs"])
+  assert(
+    out.code == 1 && out.err.contains("lib.bxs") && out.err.contains("boom"),
+    "got " + out.err
+  )
+})
+
 write(dir + "/broken.bxs", 'break\n')
 write(dir + "/main-broken.bxs", 'use "broken.bxs"\n')
-let compileFailed = exec([bin, "check", dir + "/main-broken.bxs"])
-expect(
-  "include compile errors name the file",
-  compileFailed.code == 1 && compileFailed.err.contains("broken.bxs")
-)
+test("include compile errors name the file", fn() {
+  let out = exec([bin, "check", dir + "/main-broken.bxs"])
+  assert(out.code == 1 && out.err.contains("broken.bxs"), "got " + out.err)
+})
 
-// language smoke: shared closures, key/value iteration, interpolation
-let lang = exec([bin, "eval", 'fn make() { let n = 0; return fn() { n = n + 1; return n } } let c = make(); c(); c(); let out = ""; for k, v in {a: 1} { out = k + str(v) }; out + " " + str(c())'])
-expect("language smoke (closures, pairs, interpolation)", lang.code == 0 && lang.out.trim() == "a1 3")
-
-let budgeted = exec([bin, "run", "--timeout", "5000", dir + "/ok.bxs"])
-expect("--timeout leaves normal runs alone", budgeted.code == 0)
-
-if (len(failures) == 0) {
-  print("PASS " + checks + " checks against " + bin)
-  exit(0)
-}
-for name in failures { eprint("FAIL " + name + "\n") }
-print("FAIL " + len(failures) + " of " + checks)
-exit(1)
+test("language smoke (closures, pairs, interpolation)", fn() {
+  let out = exec([bin, "eval", 'fn make() { let n = 0; return fn() { n = n + 1; return n } } let c = make(); c(); c(); let s = ""; for k, v in {a: 1} { s = k + str(v) }; s + " " + str(c())'])
+  assert(out.code == 0 && out.out.trim() == "a1 3", "got " + out.out + " " + out.err)
+})

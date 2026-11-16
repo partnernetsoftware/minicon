@@ -165,6 +165,9 @@ flowchart LR
   round-trip, include error attribution (compile and runtime), and a language
   smoke for closures/pair iteration/interpolation; it passes against the native
   binary, the packed `.com`, and a renamed launcher.
+- 2026-11-16 round 24: `bx/tools/verify.bxs` is written as `test()` blocks, so
+  `bx test tools/verify.bxs <artifact>` owns reporting and exit code; the CI bx
+  lane and the suite both call it that way (16 tests on every runner).
 - Open: execution on Linux x86_64/aarch64 and Windows ARM64 belongs to the
   six-runner matrix (`minicon-com.yml`, `bx_lane`), not the Windows host.
 

@@ -63,8 +63,8 @@ cargo build --release --target x86_64-unknown-linux-musl   # 需 RUSTFLAGS=-C li
 `bx/tools/verify.bxs` 用 bx 自己跑端到端检查（CLI、`check`/`dis`、预算、stdin、`patch`、`spawn`、`--com-info`、`.bxb` 往返、include 归属、闭包/键值迭代冒烟），任何 OS 都能跑，产物还能自检自己：
 
 ```bash
-bx run tools/verify.bxs <bx 或 minicon-bx-*.com>
-minicon-bx-linux-x86_64.com run tools/verify.bxs minicon-bx-linux-x86_64.com
+bx test tools/verify.bxs <bx 或 minicon-bx-*.com>
+minicon-bx-linux-x86_64.com test tools/verify.bxs minicon-bx-linux-x86_64.com
 ```
 ## `--com-info`
 
