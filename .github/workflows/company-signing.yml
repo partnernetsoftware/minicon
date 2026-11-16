@@ -405,7 +405,7 @@ jobs:
           if [[ "$FAMILY" == "windows" ]]; then
             if [[ "$CELL" == "win-x86_64" ]]; then expected="$EXPECTED_COM_SHA256"; else expected="$EXPECTED_COM_ARM64_SHA256"; fi
           else
-            expected=$(python3 -c 'import json,os; print(json.load(open("bundle/rust-manifest.json"))["artifacts"][f"minicon-{os.environ[\"CELL\"]}.com"]["sha256"])')
+            expected=$(python3 -c "import json,os; print(json.load(open('bundle/rust-manifest.json'))['artifacts']['minicon-' + os.environ['CELL'] + '.com']['sha256'])")
           fi
           actual=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$com")
           test "$actual" = "$expected"
