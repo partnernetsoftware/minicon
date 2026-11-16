@@ -238,6 +238,30 @@ if (timed.code == 1 && timed.err.contains("timeout")) {
 }
 check("flags after the script stay in argv", '["--max-steps","5"]', ["run", __dir__ + "/cases/argv.bxs", "--max-steps", "5"])
 
+// `read("-")` drains stdin, so a script can be a pipe filter
+let piped = exec([BX, "eval", 'read("-")'], {stdin: "abc"})
+if (piped.code == 0 && piped.out.trim() == "abc") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("read drains stdin\n    out=" + json(piped.out) + " err=" + json(piped.err.trim()))
+}
+write(artDir + "/filter.bxs", 'print(read("-").trim().upper())\n')
+let filtered = exec([BX, "run", artDir + "/filter.bxs"], {stdin: "hello pipe"})
+if (filtered.code == 0 && filtered.out.trim() == "HELLO PIPE") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("a script filters stdin\n    out=" + json(filtered.out) + " err=" + json(filtered.err.trim()))
+}
+let drained = exec([BX, "eval", 'read("-") + "|" + read("-")'], {stdin: "x"})
+if (drained.code == 0 && drained.out.trim() == "x|") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("a drained stdin reads as empty\n    out=" + json(drained.out))
+}
+
 // closures capture the enclosing function's visible locals by value
 check("closure factory", "15", ["eval", "fn adder(n) { return fn(x) { return x + n } } let f = adder(10); f(5)"])
 mkdir(artDir)

@@ -925,6 +925,15 @@ fn find_on_path(name: &str) -> Option<PathBuf> {
 
 fn b_read(_vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
     let p = s_arg(args, 0)?;
+    // `read("-")` drains stdin, so a script can be a pipe filter:
+    //   git log | bx run summarize.bxs
+    if p == "-" {
+        let mut buf = Vec::new();
+        std::io::stdin()
+            .read_to_end(&mut buf)
+            .map_err(|e| format!("cannot read stdin: {}", e))?;
+        return Ok(str_val(String::from_utf8_lossy(&buf).to_string()));
+    }
     let bytes = fs::read(&p).map_err(|e| format!("cannot read '{}': {}", p, e))?;
     Ok(str_val(String::from_utf8_lossy(&bytes).to_string()))
 }
@@ -1372,7 +1381,7 @@ pub static BUILTINS: &[Builtin] = &[
     Builtin {
         name: "read",
         sig: "read(path)",
-        doc: "read a file as text",
+        doc: "read a file as text; read(\"-\") drains stdin to EOF",
         f: b_read,
     },
     Builtin {

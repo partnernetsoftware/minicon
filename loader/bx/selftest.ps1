@@ -64,6 +64,24 @@ $version = (& $com version 2>&1 | Out-String).Trim()
 Check "runs and reports bx" ($version -match '^bx \d+\.\d+\.\d+') "got <$version>"
 $eval = (& $com eval "6*7" 2>&1 | Out-String).Trim()
 Check "evaluates" ($eval -eq "42") "got <$eval>"
+# CLI surface for agents: compile gate, execution budgets, stdin filter
+$checkScript = Join-Path $env:TEMP "minicon-bx-check.bxs"
+Set-Content -Path $checkScript -Value 'print("ran")' -Encoding ascii
+$checkOut = (& $com check $checkScript 2>&1 | Out-String).Trim()
+Check "check compiles without running" ($checkOut -match '^ok ' -and $checkOut -notmatch 'ran') "out=<$checkOut>"
+Remove-Item $checkScript -Force -ErrorAction SilentlyContinue
+
+$spin = Join-Path $env:TEMP "minicon-bx-spin.bxs"
+Set-Content -Path $spin -Value 'while (true) { }' -Encoding ascii
+& $com run --max-steps 200000 $spin 2>&1 | Out-Null
+Check "run --max-steps stops a runaway script" ($LASTEXITCODE -eq 1) "exit=$LASTEXITCODE"
+Remove-Item $spin -Force -ErrorAction SilentlyContinue
+
+$pipedOut = ("abc" | & $com eval 'read("-")' 2>&1 | Out-String).Trim()
+Check "read drains stdin through the packed file" ($pipedOut -eq "abc") "got <$pipedOut>"
+
+$helpOut = (& $com help 2>&1 | Out-String)
+Check "help lists the check command" ($helpOut -match 'bx check') "help is missing check"
 
 foreach ($expected in @(0, 1, 3, 42)) {
     & $com eval "exit($expected)" 2>$null | Out-Null

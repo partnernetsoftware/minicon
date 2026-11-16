@@ -41,6 +41,7 @@ bx build examples\hello.bxs -o hello.bxb   # 编译成字节码
 bx run hello.bxb                            # 直接执行二进制
 bx dis hello.bxb                            # 反汇编
 bx check script.bxs                        # 只编译不执行，给 agent 当闸门
+git log | bx run filter.bxs               # read("-") 读 stdin，脚本可当管道过滤器
 bx run --timeout 5000 script.bxs           # 墙钟超时（毫秒），超时退出 1
 bx run --max-steps 1000000 script.bxs      # 指令步数上限，防止死循环
 bx help exec                                # 单个内建的契约
