@@ -29,7 +29,7 @@ pub fn call(vm: &mut Vm, name: &str, args: &[Value]) -> Result<Value, String> {
 // helpers
 // ---------------------------------------------------------------------------
 
-fn arg<'a>(args: &'a [Value], i: usize) -> Result<&'a Value, String> {
+fn arg(args: &[Value], i: usize) -> Result<&Value, String> {
     args.get(i)
         .ok_or_else(|| format!("missing argument #{}", i + 1))
 }
@@ -60,7 +60,11 @@ fn i_arg(args: &[Value], i: usize) -> Result<i64, String> {
 fn as_array(v: &Value, what: &str) -> Result<std::rc::Rc<std::cell::RefCell<Vec<Value>>>, String> {
     match v {
         Value::Array(a) => Ok(a.clone()),
-        other => Err(format!("{} must be an array, got {}", what, other.type_name())),
+        other => Err(format!(
+            "{} must be an array, got {}",
+            what,
+            other.type_name()
+        )),
     }
 }
 
@@ -368,7 +372,10 @@ fn b_contains(_vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
             let k = needle.display();
             Ok(Value::Bool(o.borrow().contains_key(&k)))
         }
-        other => Err(format!("contains() does not apply to {}", other.type_name())),
+        other => Err(format!(
+            "contains() does not apply to {}",
+            other.type_name()
+        )),
     }
 }
 
@@ -387,7 +394,10 @@ fn b_index_of(_vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
             let pos = a.borrow().iter().position(|v| v == needle);
             Ok(Value::Int(pos.map(|p| p as i64).unwrap_or(-1)))
         }
-        other => Err(format!("index_of() does not apply to {}", other.type_name())),
+        other => Err(format!(
+            "index_of() does not apply to {}",
+            other.type_name()
+        )),
     }
 }
 
@@ -525,7 +535,7 @@ fn b_range(_vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
     } else {
         (0, i_arg(args, 0)?)
     };
-    let n = (end - start).max(0).min(10_000_000);
+    let n = (end - start).clamp(0, 10_000_000);
     Ok(array_val((0..n).map(|i| Value::Int(start + i)).collect()))
 }
 
@@ -587,7 +597,10 @@ fn b_min(_vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
         best = Some(match best {
             None => v,
             Some(b) => {
-                if compare(&v, &b).map(|o| o == std::cmp::Ordering::Less).unwrap_or(false) {
+                if compare(&v, &b)
+                    .map(|o| o == std::cmp::Ordering::Less)
+                    .unwrap_or(false)
+                {
                     v
                 } else {
                     b
@@ -747,12 +760,14 @@ fn run_process(program: &str, argv: &[String], opts: &ExecOpts) -> Result<Value,
         .map_err(|e| format!("cannot run '{}': {}", program, e))?;
 
     let cap = opts.max_bytes;
-    let h_out = child.stdout.take().map(|s| {
-        std::thread::spawn(move || drain(s, cap))
-    });
-    let h_err = child.stderr.take().map(|s| {
-        std::thread::spawn(move || drain(s, cap))
-    });
+    let h_out = child
+        .stdout
+        .take()
+        .map(|s| std::thread::spawn(move || drain(s, cap)));
+    let h_err = child
+        .stderr
+        .take()
+        .map(|s| std::thread::spawn(move || drain(s, cap)));
     if let Some(data) = opts.stdin.clone() {
         if let Some(mut si) = child.stdin.take() {
             std::thread::spawn(move || {
@@ -787,14 +802,14 @@ fn run_process(program: &str, argv: &[String], opts: &ExecOpts) -> Result<Value,
         std::thread::sleep(Duration::from_millis(2));
     }
 
-    let out = h_out
-        .and_then(|h| h.join().ok())
-        .unwrap_or_default();
-    let err = h_err
-        .and_then(|h| h.join().ok())
-        .unwrap_or_default();
+    let out = h_out.and_then(|h| h.join().ok()).unwrap_or_default();
+    let err = h_err.and_then(|h| h.join().ok()).unwrap_or_default();
     let ms = start.elapsed().as_millis() as i64;
-    let code = if timed_out { -1 } else { status_code.unwrap_or(-1) };
+    let code = if timed_out {
+        -1
+    } else {
+        status_code.unwrap_or(-1)
+    };
 
     let mut res = BTreeMap::new();
     res.insert("code".to_string(), Value::Int(code as i64));
@@ -817,7 +832,7 @@ fn b_exec(_vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
     match arg(args, 0)? {
         Value::Str(s) => {
             if opts.shell {
-                run_process(&s, &[], &opts)
+                run_process(s.as_str(), &[], &opts)
             } else {
                 let mut parts = split_cmdline(s);
                 if parts.is_empty() {
@@ -874,7 +889,11 @@ fn b_which(_vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
 fn find_on_path(name: &str) -> Option<PathBuf> {
     let p = Path::new(name);
     if p.components().count() > 1 || p.is_absolute() {
-        return if p.is_file() { Some(p.to_path_buf()) } else { None };
+        return if p.is_file() {
+            Some(p.to_path_buf())
+        } else {
+            None
+        };
     }
     let path = std::env::var_os("PATH")?;
     let exts: Vec<String> = if cfg!(windows) {
@@ -889,10 +908,8 @@ fn find_on_path(name: &str) -> Option<PathBuf> {
     for dir in std::env::split_paths(&path) {
         for ext in &exts {
             let mut cand = dir.join(name);
-            if !ext.is_empty() {
-                if !name.to_lowercase().ends_with(ext.as_str()) {
-                    cand = dir.join(format!("{}{}", name, ext));
-                }
+            if !ext.is_empty() && !name.to_lowercase().ends_with(ext.as_str()) {
+                cand = dir.join(format!("{}{}", name, ext));
             }
             if cand.is_file() {
                 return Some(cand);
@@ -1076,67 +1093,382 @@ fn b_dirname(_vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
 }
 
 pub static BUILTINS: &[Builtin] = &[
-    Builtin { name: "print", sig: "print(...values)", doc: "write a line to stdout", f: b_print },
-    Builtin { name: "eprint", sig: "eprint(...values)", doc: "write a line to stderr", f: b_eprint },
-    Builtin { name: "len", sig: "len(x)", doc: "length of string, array or object", f: b_len },
-    Builtin { name: "type", sig: "type(x)", doc: "value type name", f: b_type },
-    Builtin { name: "str", sig: "str(x)", doc: "convert to string", f: b_str },
-    Builtin { name: "int", sig: "int(x)", doc: "convert to integer", f: b_int },
-    Builtin { name: "float", sig: "float(x)", doc: "convert to float", f: b_float },
-    Builtin { name: "json", sig: "json(x)", doc: "serialize a value to compact JSON", f: b_json },
-    Builtin { name: "parse", sig: "parse(s)", doc: "parse JSON text into a value", f: b_parse },
-    Builtin { name: "keys", sig: "keys(o)", doc: "object keys as an array", f: b_keys },
-    Builtin { name: "values", sig: "values(o)", doc: "object values as an array", f: b_values },
-    Builtin { name: "has", sig: "has(x, key)", doc: "membership test for object/array/string", f: b_has },
-    Builtin { name: "get", sig: "get(x, key, default?)", doc: "safe index lookup", f: b_get },
-    Builtin { name: "push", sig: "push(a, ...values)", doc: "append to an array in place", f: b_push },
-    Builtin { name: "pop", sig: "pop(a)", doc: "remove and return the last array element", f: b_pop },
-    Builtin { name: "slice", sig: "slice(x, start, end?)", doc: "sub array or substring (negative ok)", f: b_slice },
-    Builtin { name: "join", sig: "join(a, sep?)", doc: "join array elements into a string", f: b_join },
-    Builtin { name: "split", sig: "split(s, sep?)", doc: "split a string; no sep means whitespace", f: b_split },
-    Builtin { name: "trim", sig: "trim(s)", doc: "strip leading and trailing whitespace", f: b_trim },
-    Builtin { name: "upper", sig: "upper(s)", doc: "uppercase", f: b_upper },
-    Builtin { name: "lower", sig: "lower(s)", doc: "lowercase", f: b_lower },
-    Builtin { name: "replace", sig: "replace(s, from, to)", doc: "replace all occurrences", f: b_replace },
-    Builtin { name: "contains", sig: "contains(x, needle)", doc: "substring / element / key test", f: b_contains },
-    Builtin { name: "index_of", sig: "index_of(x, needle)", doc: "position of a substring or element, -1 if absent", f: b_index_of },
-    Builtin { name: "starts_with", sig: "starts_with(s, prefix)", doc: "prefix test", f: b_starts_with },
-    Builtin { name: "ends_with", sig: "ends_with(s, suffix)", doc: "suffix test", f: b_ends_with },
-    Builtin { name: "repeat", sig: "repeat(s, n)", doc: "repeat a string", f: b_repeat },
-    Builtin { name: "merge", sig: "merge(...objects)", doc: "merge objects into a new object", f: b_merge },
-    Builtin { name: "map", sig: "map(a, f)", doc: "transform every element", f: b_map },
-    Builtin { name: "filter", sig: "filter(a, f)", doc: "keep elements where f is truthy", f: b_filter },
-    Builtin { name: "each", sig: "each(a, f)", doc: "call f for every element", f: b_each },
-    Builtin { name: "reduce", sig: "reduce(a, f, init?)", doc: "fold an array into one value", f: b_reduce },
-    Builtin { name: "sort", sig: "sort(a, cmp?)", doc: "sort an array in place", f: b_sort },
-    Builtin { name: "reverse", sig: "reverse(a)", doc: "reverse an array in place", f: b_reverse },
-    Builtin { name: "range", sig: "range(n) | range(start, end)", doc: "array of integers", f: b_range },
-    Builtin { name: "sum", sig: "sum(a)", doc: "sum an array of numbers", f: b_sum },
-    Builtin { name: "abs", sig: "abs(n)", doc: "absolute value", f: b_abs },
-    Builtin { name: "floor", sig: "floor(n)", doc: "round down", f: b_floor },
-    Builtin { name: "ceil", sig: "ceil(n)", doc: "round up", f: b_ceil },
-    Builtin { name: "round", sig: "round(n)", doc: "round to nearest", f: b_round },
-    Builtin { name: "sqrt", sig: "sqrt(n)", doc: "square root", f: b_sqrt },
-    Builtin { name: "min", sig: "min(a)", doc: "smallest element", f: b_min },
-    Builtin { name: "max", sig: "max(a)", doc: "largest element", f: b_max },
-    Builtin { name: "exec", sig: "exec(cmd, opts?)", doc: "run a binary; returns {code,ok,out,err,ms,timeout}", f: b_exec },
-    Builtin { name: "sh", sig: "sh(cmd, opts?)", doc: "run a command through the system shell", f: b_sh },
-    Builtin { name: "which", sig: "which(name)", doc: "resolve a program on PATH", f: b_which },
-    Builtin { name: "read", sig: "read(path)", doc: "read a file as text", f: b_read },
-    Builtin { name: "write", sig: "write(path, data)", doc: "write text to a file, creating parent dirs", f: b_write },
-    Builtin { name: "append", sig: "append(path, data)", doc: "append text to a file", f: b_append },
-    Builtin { name: "exists", sig: "exists(path)", doc: "path existence test", f: b_exists },
-    Builtin { name: "list", sig: "list(dir)", doc: "sorted entry names of a directory", f: b_list },
-    Builtin { name: "mkdir", sig: "mkdir(path)", doc: "create a directory and parents", f: b_mkdir },
-    Builtin { name: "remove", sig: "remove(path)", doc: "delete a file or directory tree", f: b_remove },
-    Builtin { name: "cwd", sig: "cwd()", doc: "current working directory", f: b_cwd },
-    Builtin { name: "env", sig: "env(name, default?) | env()", doc: "read an environment variable or all of them", f: b_env },
-    Builtin { name: "now", sig: "now()", doc: "unix epoch milliseconds", f: b_now },
-    Builtin { name: "sleep", sig: "sleep(ms)", doc: "block for a number of milliseconds", f: b_sleep },
-    Builtin { name: "exit", sig: "exit(code?)", doc: "exit the process immediately", f: b_exit },
-    Builtin { name: "error", sig: "error(message)", doc: "raise a runtime error", f: b_error },
-    Builtin { name: "attempt", sig: "attempt(f)", doc: "run f(); return {ok, value, error} instead of failing the script", f: b_attempt },
-    Builtin { name: "assert", sig: "assert(cond, message?)", doc: "raise unless cond is truthy", f: b_assert },
-    Builtin { name: "basename", sig: "basename(path)", doc: "final path component", f: b_basename },
-    Builtin { name: "dirname", sig: "dirname(path)", doc: "parent directory of a path", f: b_dirname },
+    Builtin {
+        name: "print",
+        sig: "print(...values)",
+        doc: "write a line to stdout",
+        f: b_print,
+    },
+    Builtin {
+        name: "eprint",
+        sig: "eprint(...values)",
+        doc: "write a line to stderr",
+        f: b_eprint,
+    },
+    Builtin {
+        name: "len",
+        sig: "len(x)",
+        doc: "length of string, array or object",
+        f: b_len,
+    },
+    Builtin {
+        name: "type",
+        sig: "type(x)",
+        doc: "value type name",
+        f: b_type,
+    },
+    Builtin {
+        name: "str",
+        sig: "str(x)",
+        doc: "convert to string",
+        f: b_str,
+    },
+    Builtin {
+        name: "int",
+        sig: "int(x)",
+        doc: "convert to integer",
+        f: b_int,
+    },
+    Builtin {
+        name: "float",
+        sig: "float(x)",
+        doc: "convert to float",
+        f: b_float,
+    },
+    Builtin {
+        name: "json",
+        sig: "json(x)",
+        doc: "serialize a value to compact JSON",
+        f: b_json,
+    },
+    Builtin {
+        name: "parse",
+        sig: "parse(s)",
+        doc: "parse JSON text into a value",
+        f: b_parse,
+    },
+    Builtin {
+        name: "keys",
+        sig: "keys(o)",
+        doc: "object keys as an array",
+        f: b_keys,
+    },
+    Builtin {
+        name: "values",
+        sig: "values(o)",
+        doc: "object values as an array",
+        f: b_values,
+    },
+    Builtin {
+        name: "has",
+        sig: "has(x, key)",
+        doc: "membership test for object/array/string",
+        f: b_has,
+    },
+    Builtin {
+        name: "get",
+        sig: "get(x, key, default?)",
+        doc: "safe index lookup",
+        f: b_get,
+    },
+    Builtin {
+        name: "push",
+        sig: "push(a, ...values)",
+        doc: "append to an array in place",
+        f: b_push,
+    },
+    Builtin {
+        name: "pop",
+        sig: "pop(a)",
+        doc: "remove and return the last array element",
+        f: b_pop,
+    },
+    Builtin {
+        name: "slice",
+        sig: "slice(x, start, end?)",
+        doc: "sub array or substring (negative ok)",
+        f: b_slice,
+    },
+    Builtin {
+        name: "join",
+        sig: "join(a, sep?)",
+        doc: "join array elements into a string",
+        f: b_join,
+    },
+    Builtin {
+        name: "split",
+        sig: "split(s, sep?)",
+        doc: "split a string; no sep means whitespace",
+        f: b_split,
+    },
+    Builtin {
+        name: "trim",
+        sig: "trim(s)",
+        doc: "strip leading and trailing whitespace",
+        f: b_trim,
+    },
+    Builtin {
+        name: "upper",
+        sig: "upper(s)",
+        doc: "uppercase",
+        f: b_upper,
+    },
+    Builtin {
+        name: "lower",
+        sig: "lower(s)",
+        doc: "lowercase",
+        f: b_lower,
+    },
+    Builtin {
+        name: "replace",
+        sig: "replace(s, from, to)",
+        doc: "replace all occurrences",
+        f: b_replace,
+    },
+    Builtin {
+        name: "contains",
+        sig: "contains(x, needle)",
+        doc: "substring / element / key test",
+        f: b_contains,
+    },
+    Builtin {
+        name: "index_of",
+        sig: "index_of(x, needle)",
+        doc: "position of a substring or element, -1 if absent",
+        f: b_index_of,
+    },
+    Builtin {
+        name: "starts_with",
+        sig: "starts_with(s, prefix)",
+        doc: "prefix test",
+        f: b_starts_with,
+    },
+    Builtin {
+        name: "ends_with",
+        sig: "ends_with(s, suffix)",
+        doc: "suffix test",
+        f: b_ends_with,
+    },
+    Builtin {
+        name: "repeat",
+        sig: "repeat(s, n)",
+        doc: "repeat a string",
+        f: b_repeat,
+    },
+    Builtin {
+        name: "merge",
+        sig: "merge(...objects)",
+        doc: "merge objects into a new object",
+        f: b_merge,
+    },
+    Builtin {
+        name: "map",
+        sig: "map(a, f)",
+        doc: "transform every element",
+        f: b_map,
+    },
+    Builtin {
+        name: "filter",
+        sig: "filter(a, f)",
+        doc: "keep elements where f is truthy",
+        f: b_filter,
+    },
+    Builtin {
+        name: "each",
+        sig: "each(a, f)",
+        doc: "call f for every element",
+        f: b_each,
+    },
+    Builtin {
+        name: "reduce",
+        sig: "reduce(a, f, init?)",
+        doc: "fold an array into one value",
+        f: b_reduce,
+    },
+    Builtin {
+        name: "sort",
+        sig: "sort(a, cmp?)",
+        doc: "sort an array in place",
+        f: b_sort,
+    },
+    Builtin {
+        name: "reverse",
+        sig: "reverse(a)",
+        doc: "reverse an array in place",
+        f: b_reverse,
+    },
+    Builtin {
+        name: "range",
+        sig: "range(n) | range(start, end)",
+        doc: "array of integers",
+        f: b_range,
+    },
+    Builtin {
+        name: "sum",
+        sig: "sum(a)",
+        doc: "sum an array of numbers",
+        f: b_sum,
+    },
+    Builtin {
+        name: "abs",
+        sig: "abs(n)",
+        doc: "absolute value",
+        f: b_abs,
+    },
+    Builtin {
+        name: "floor",
+        sig: "floor(n)",
+        doc: "round down",
+        f: b_floor,
+    },
+    Builtin {
+        name: "ceil",
+        sig: "ceil(n)",
+        doc: "round up",
+        f: b_ceil,
+    },
+    Builtin {
+        name: "round",
+        sig: "round(n)",
+        doc: "round to nearest",
+        f: b_round,
+    },
+    Builtin {
+        name: "sqrt",
+        sig: "sqrt(n)",
+        doc: "square root",
+        f: b_sqrt,
+    },
+    Builtin {
+        name: "min",
+        sig: "min(a)",
+        doc: "smallest element",
+        f: b_min,
+    },
+    Builtin {
+        name: "max",
+        sig: "max(a)",
+        doc: "largest element",
+        f: b_max,
+    },
+    Builtin {
+        name: "exec",
+        sig: "exec(cmd, opts?)",
+        doc: "run a binary; returns {code,ok,out,err,ms,timeout}",
+        f: b_exec,
+    },
+    Builtin {
+        name: "sh",
+        sig: "sh(cmd, opts?)",
+        doc: "run a command through the system shell",
+        f: b_sh,
+    },
+    Builtin {
+        name: "which",
+        sig: "which(name)",
+        doc: "resolve a program on PATH",
+        f: b_which,
+    },
+    Builtin {
+        name: "read",
+        sig: "read(path)",
+        doc: "read a file as text",
+        f: b_read,
+    },
+    Builtin {
+        name: "write",
+        sig: "write(path, data)",
+        doc: "write text to a file, creating parent dirs",
+        f: b_write,
+    },
+    Builtin {
+        name: "append",
+        sig: "append(path, data)",
+        doc: "append text to a file",
+        f: b_append,
+    },
+    Builtin {
+        name: "exists",
+        sig: "exists(path)",
+        doc: "path existence test",
+        f: b_exists,
+    },
+    Builtin {
+        name: "list",
+        sig: "list(dir)",
+        doc: "sorted entry names of a directory",
+        f: b_list,
+    },
+    Builtin {
+        name: "mkdir",
+        sig: "mkdir(path)",
+        doc: "create a directory and parents",
+        f: b_mkdir,
+    },
+    Builtin {
+        name: "remove",
+        sig: "remove(path)",
+        doc: "delete a file or directory tree",
+        f: b_remove,
+    },
+    Builtin {
+        name: "cwd",
+        sig: "cwd()",
+        doc: "current working directory",
+        f: b_cwd,
+    },
+    Builtin {
+        name: "env",
+        sig: "env(name, default?) | env()",
+        doc: "read an environment variable or all of them",
+        f: b_env,
+    },
+    Builtin {
+        name: "now",
+        sig: "now()",
+        doc: "unix epoch milliseconds",
+        f: b_now,
+    },
+    Builtin {
+        name: "sleep",
+        sig: "sleep(ms)",
+        doc: "block for a number of milliseconds",
+        f: b_sleep,
+    },
+    Builtin {
+        name: "exit",
+        sig: "exit(code?)",
+        doc: "exit the process immediately",
+        f: b_exit,
+    },
+    Builtin {
+        name: "error",
+        sig: "error(message)",
+        doc: "raise a runtime error",
+        f: b_error,
+    },
+    Builtin {
+        name: "attempt",
+        sig: "attempt(f)",
+        doc: "run f(); return {ok, value, error} instead of failing the script",
+        f: b_attempt,
+    },
+    Builtin {
+        name: "assert",
+        sig: "assert(cond, message?)",
+        doc: "raise unless cond is truthy",
+        f: b_assert,
+    },
+    Builtin {
+        name: "basename",
+        sig: "basename(path)",
+        doc: "final path component",
+        f: b_basename,
+    },
+    Builtin {
+        name: "dirname",
+        sig: "dirname(path)",
+        doc: "parent directory of a path",
+        f: b_dirname,
+    },
 ];

@@ -87,6 +87,16 @@ check("higher order", "[0,4,16]", ["eval", "map(filter(range(6), fn(x) { return 
 check("sort comparator", "[5,3,1]", ["eval", "let a = [1,5,3]; sort(a, fn(x, y) { return y - x }); a"])
 check("type names", '["int","str","array","object","fn","null"]', ["eval", 'json([type(1), type("s"), type([]), type({}), type(print), type(null)])'])
 check("len", "3", ["eval", 'len({"a":1,"b":2,"c":3})'])
+// conditional expression and string interpolation
+check("ternary", "yes", ["eval", '1 ? "yes" : "no"'])
+check("ternary false branch", "2", ["eval", "0 ? 1 : 2"])
+check("ternary nested is right-associative", "3", ["eval", "0 ? 1 : 0 ? 2 : 3"])
+check("ternary binds looser than ||", "t", ["eval", '0 || 1 ? "t" : "f"'])
+check("interpolation", "n=42", ["eval", 'let n = 42; "n=\${n}"'])
+check("interpolation expression", "a3b", ["eval", '"a\${1 + 2}b"'])
+check("interpolation method", "hello X", ["eval", 'let s = "x".upper(); "hello \${s}"'])
+checkFail("interpolation unterminated", "unterminated string interpolation", 1, ["eval", '"open \${1"'])
+checkFail("interpolation empty", "empty string interpolation", 1, ["eval", '"empty \${}"'])
 
 // iteration: arrays, strings and objects share one protocol
 check("iterate object keys", "ab", ["eval", 'let o = {b:2, a:1}; let s = ""; for k in o { s += k } s'])

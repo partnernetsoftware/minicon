@@ -127,10 +127,7 @@ fn cmd_run(args: Vec<String>) -> i32 {
         return 2;
     }
     let path = &args[0];
-    let script_args: Vec<Value> = args[1..]
-        .iter()
-        .map(|s| str_val(s.clone()))
-        .collect();
+    let script_args: Vec<Value> = args[1..].iter().map(|s| str_val(s.clone())).collect();
 
     let (chunks, source_name) = match load_program(Path::new(path), false) {
         Ok(v) => v,
@@ -140,7 +137,12 @@ fn cmd_run(args: Vec<String>) -> i32 {
         }
     };
 
-    let mut machine = Vm::new(chunks, source_name, script_args, script_dir(Path::new(path)));
+    let mut machine = Vm::new(
+        chunks,
+        source_name,
+        script_args,
+        script_dir(Path::new(path)),
+    );
     match machine.run() {
         Ok(_) => 0,
         Err(e) => {
@@ -310,14 +312,14 @@ fn load_program(path: &Path, keep_last: bool) -> Result<(Vec<Chunk>, String), St
     }
 
     if is_bxb {
-        let bytes = fs::read(path)
-            .map_err(|e| format!("cannot read '{}': {}", path.display(), e))?;
+        let bytes =
+            fs::read(path).map_err(|e| format!("cannot read '{}': {}", path.display(), e))?;
         let (chunks, _want) = chunk::decode(&bytes)?;
         return Ok((chunks, display_name(path)));
     }
 
-    let src = fs::read_to_string(path)
-        .map_err(|e| format!("cannot read '{}': {}", path.display(), e))?;
+    let src =
+        fs::read_to_string(path).map_err(|e| format!("cannot read '{}': {}", path.display(), e))?;
     let name = display_name(path);
 
     if let Some(dir) = cache_dir_for(path) {
@@ -363,7 +365,8 @@ fn script_dir(path: &Path) -> String {
         .unwrap_or_else(cwd_string)
 }
 
-fn display_name(path: &Path) -> String {    path.file_name()
+fn display_name(path: &Path) -> String {
+    path.file_name()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| path.display().to_string())
 }

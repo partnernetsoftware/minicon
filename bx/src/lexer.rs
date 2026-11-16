@@ -36,6 +36,7 @@ pub enum Tok {
     Semi,
     Colon,
     Dot,
+    Question,
     Newline,
     Eof,
 }
@@ -128,6 +129,8 @@ pub fn lex(src: &str) -> Result<Tokens, String> {
                             'r' => s.push('\r'),
                             '0' => s.push('\0'),
                             'e' => s.push('\u{1b}'),
+                            // \$ marks a literal dollar that must not start ${...}.
+                            '$' => s.push('\u{1}'),
                             '\\' => s.push('\\'),
                             '"' => s.push('"'),
                             '\'' => s.push('\''),
@@ -349,6 +352,10 @@ pub fn lex(src: &str) -> Result<Tokens, String> {
             }
             ':' => {
                 push!(Tok::Colon);
+                i += 1;
+            }
+            '?' => {
+                push!(Tok::Question);
                 i += 1;
             }
             '.' => {

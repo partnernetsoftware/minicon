@@ -228,8 +228,8 @@ impl<'a> JsonParser<'a> {
                 self.i += 1;
             }
         }
-        let text = std::str::from_utf8(&self.b[start..self.i])
-            .map_err(|_| "bad number".to_string())?;
+        let text =
+            std::str::from_utf8(&self.b[start..self.i]).map_err(|_| "bad number".to_string())?;
         if is_float {
             text.parse::<f64>()
                 .map(Value::Float)

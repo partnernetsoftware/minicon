@@ -10,7 +10,8 @@ Exact public outcomes are in the [release-history index](../prd/archive/README.m
 | Entry | Role |
 | --- | --- |
 | [Product roadmap](plan-v0.2.x-product-roadmap.md) | Current track and version index |
-| [0.2.27 proposal](plan-v0.2.27.md) | Parked; no implementation started by this plan |
+| [0.2.27 plan](plan-v0.2.27.md) | Selected: cosmocc-free Rust single-file delivery |
+| [Addressable agent workspace](plan-addressable-agent-workspace.md) | Parked proposal; version slot re-selected, no version binding |
 | [Repository hygiene](plan-repo-hygiene.md) | Current documentation and ownership cleanup |
 
 ## Open capability sequences

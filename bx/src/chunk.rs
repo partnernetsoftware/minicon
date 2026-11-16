@@ -387,7 +387,13 @@ pub fn disasm(chunks: &[Chunk]) -> String {
                     c.code[ip + 4],
                 ]);
                 let hint = match o {
-                    op::CONST => format!("  ; {}", c.consts.get(a as usize).map(|v| v.to_json()).unwrap_or_default()),
+                    op::CONST => format!(
+                        "  ; {}",
+                        c.consts
+                            .get(a as usize)
+                            .map(|v| v.to_json())
+                            .unwrap_or_default()
+                    ),
                     op::GET_GLOBAL | op::SET_GLOBAL => format!(
                         "  ; {}",
                         c.consts
@@ -793,8 +799,8 @@ impl<'a> Compiler<'a> {
                 let src = fs::read_to_string(&canon).map_err(|e| {
                     format!("line {}: cannot read '{}': {}", line, full.display(), e)
                 })?;
-                let stmts = crate::parser::parse(&src)
-                    .map_err(|e| format!("{}: {}", full.display(), e))?;
+                let stmts =
+                    crate::parser::parse(&src).map_err(|e| format!("{}: {}", full.display(), e))?;
                 let saved_dir = self.base_dir.clone();
                 if let Some(parent) = canon.parent() {
                     self.base_dir = parent.to_path_buf();
@@ -913,6 +919,17 @@ impl<'a> Compiler<'a> {
                 };
                 self.emit(o, 0, self.line);
             }
+            Expr::Ternary(cond, then_branch, else_branch, line) => {
+                self.compile_expr(cond)?;
+                let jf = self.emit(op::JUMP_IF_FALSE, 0, *line);
+                self.compile_expr(then_branch)?;
+                let jend = self.emit(op::JUMP, 0, *line);
+                let else_pos = self.here();
+                self.patch(jf, else_pos);
+                self.compile_expr(else_branch)?;
+                let end = self.here();
+                self.patch(jend, end);
+            }
             Expr::And(a, b) => {
                 self.compile_expr(a)?;
                 let j = self.emit(op::JUMP_IF_FALSE_OR_POP, 0, self.line);
@@ -954,34 +971,32 @@ impl<'a> Compiler<'a> {
                 self.emit(op::CONST, k as i32, *line);
                 self.emit(op::INDEX_GET, 0, *line);
             }
-            Expr::Assign(target, value, line) => {
-                match &**target {
-                    Expr::Ident(name) => {
-                        self.compile_expr(value)?;
-                        self.emit(op::DUP, 0, *line);
-                        if let Some(slot) = self.resolve_local(name) {
-                            self.emit(op::SET_LOCAL, slot as i32, *line);
-                        } else {
-                            let k = self.name_idx(name);
-                            self.emit(op::SET_GLOBAL, k as i32, *line);
-                        }
+            Expr::Assign(target, value, line) => match &**target {
+                Expr::Ident(name) => {
+                    self.compile_expr(value)?;
+                    self.emit(op::DUP, 0, *line);
+                    if let Some(slot) = self.resolve_local(name) {
+                        self.emit(op::SET_LOCAL, slot as i32, *line);
+                    } else {
+                        let k = self.name_idx(name);
+                        self.emit(op::SET_GLOBAL, k as i32, *line);
                     }
-                    Expr::Member(obj, name, _) => {
-                        self.compile_expr(obj)?;
-                        let k = self.const_idx(str_val(name.clone()));
-                        self.emit(op::CONST, k as i32, *line);
-                        self.compile_expr(value)?;
-                        self.emit(op::INDEX_SET_KEEP, 0, *line);
-                    }
-                    Expr::Index(obj, idx, _) => {
-                        self.compile_expr(obj)?;
-                        self.compile_expr(idx)?;
-                        self.compile_expr(value)?;
-                        self.emit(op::INDEX_SET_KEEP, 0, *line);
-                    }
-                    _ => return Err(format!("line {}: invalid assignment target", line)),
                 }
-            }
+                Expr::Member(obj, name, _) => {
+                    self.compile_expr(obj)?;
+                    let k = self.const_idx(str_val(name.clone()));
+                    self.emit(op::CONST, k as i32, *line);
+                    self.compile_expr(value)?;
+                    self.emit(op::INDEX_SET_KEEP, 0, *line);
+                }
+                Expr::Index(obj, idx, _) => {
+                    self.compile_expr(obj)?;
+                    self.compile_expr(idx)?;
+                    self.compile_expr(value)?;
+                    self.emit(op::INDEX_SET_KEEP, 0, *line);
+                }
+                _ => return Err(format!("line {}: invalid assignment target", line)),
+            },
             Expr::Compound(target, binop, value, line) => {
                 let o = match binop {
                     BinOp::Add => op::ADD,
@@ -1028,9 +1043,7 @@ impl<'a> Compiler<'a> {
                         self.emit(o, 0, *line);
                         self.emit(op::INDEX_SET_KEEP, 0, *line);
                     }
-                    _ => {
-                        return Err(format!("line {}: invalid compound assignment target", line))
-                    }
+                    _ => return Err(format!("line {}: invalid compound assignment target", line)),
                 }
             }
             Expr::Func(params, body, line) => {
@@ -1065,13 +1078,11 @@ fn stmt_line(s: &Stmt) -> u32 {
 
 /// Parse a source file into a compiled program.
 pub fn compile_file(path: &Path, keep_last: bool) -> Result<Vec<Chunk>, String> {
-    let src = fs::read_to_string(path)
-        .map_err(|e| format!("cannot read '{}': {}", path.display(), e))?;
+    let src =
+        fs::read_to_string(path).map_err(|e| format!("cannot read '{}': {}", path.display(), e))?;
     let base = path
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
     compile(&src, base, keep_last)
 }
-
-

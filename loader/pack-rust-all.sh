@@ -27,6 +27,8 @@ NAME="${MINICON_RUST_NAME:-minicon}"
 LEAF_WIN="${MINICON_RUST_LEAF_WIN:-minicon.exe}"
 LEAF_UNIX="${MINICON_RUST_LEAF_UNIX:-minicon}"
 TARGET_ROOT="${MINICON_RUST_TARGET_DIR:-}"
+VERSION="${MINICON_RUST_VERSION:-}"
+SOURCE_SHA="${MINICON_RUST_SOURCE_SHA:-}"
 
 [[ -d "$CELLS" ]] || { echo "missing cells dir: $CELLS (run loader/pack.sh first)" >&2; exit 2; }
 mkdir -p "$OUT"
@@ -135,8 +137,11 @@ build_launcher() {
         if [[ -f "$candidate" ]]; then launcher="$candidate"; break; fi
     done
     [[ -n "$launcher" ]] || { echo "launcher missing under $dir/$target/release" >&2; return 3; }
+    meta=(--meta "product=$NAME" --meta "cell=$cell")
+    [[ -n "$VERSION" ]] && meta+=(--meta "version=$VERSION")
+    [[ -n "$SOURCE_SHA" ]] && meta+=(--meta "source_sha=$SOURCE_SHA")
     "$PACK" pack --trampoline "$launcher" --out "$OUT/$NAME-$cell.com" \
-        "$cell=$CELLS/$cell/$(leaf_for "$cell")"
+        "${meta[@]}" "$cell=$CELLS/$cell/$(leaf_for "$cell")"
 }
 
 IFS=',' read -r -a wanted <<<"$ONLY"

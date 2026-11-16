@@ -329,8 +329,7 @@ impl Vm {
                     if self.stack.len() < argc + 1 {
                         fail!("internal stack underflow at call");
                     }
-                    let call_args: Vec<Value> =
-                        self.stack.split_off(self.stack.len() - argc);
+                    let call_args: Vec<Value> = self.stack.split_off(self.stack.len() - argc);
                     let callee = popv!();
                     match self.call_value(callee, call_args, line) {
                         Ok(v) => self.stack.push(v),
@@ -442,7 +441,8 @@ pub fn iterable(v: Value) -> Result<Value, String> {
     }
 }
 
-pub fn len_of(v: &Value) -> Result<usize, String> {    match v {
+pub fn len_of(v: &Value) -> Result<usize, String> {
+    match v {
         Value::Str(s) => Ok(s.chars().count()),
         Value::Array(a) => Ok(a.borrow().len()),
         Value::Object(o) => Ok(o.borrow().len()),

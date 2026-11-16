@@ -16,6 +16,10 @@ const POSTFIX_BP: u8 = 15;
 const UNARY_BP: u8 = 13;
 
 impl Parser {
+    fn new(toks: Tokens) -> Parser {
+        Parser { toks, pos: 0 }
+    }
+
     fn peek(&self) -> &Tok {
         &self.toks[self.pos].0
     }
@@ -132,7 +136,10 @@ impl Parser {
                 break;
             }
             if self.at_eof() {
-                return Err(format!("line {}: unexpected end of input, missing '}}'", self.line()));
+                return Err(format!(
+                    "line {}: unexpected end of input, missing '}}'",
+                    self.line()
+                ));
             }
             stmts.push(self.parse_stmt()?);
         }
@@ -197,7 +204,10 @@ impl Parser {
         }
         if self.is_kw("return") {
             self.advance();
-            if matches!(self.peek(), Tok::Newline | Tok::Semi | Tok::RBrace | Tok::Eof) {
+            if matches!(
+                self.peek(),
+                Tok::Newline | Tok::Semi | Tok::RBrace | Tok::Eof
+            ) {
                 self.end_simple()?;
                 return Ok(Stmt::Return(None, line));
             }
@@ -299,10 +309,7 @@ impl Parser {
         }
 
         if !paren {
-            return Err(format!(
-                "line {}: expected 'in' or '(' in for header",
-                line
-            ));
+            return Err(format!("line {}: expected 'in' or '(' in for header", line));
         }
 
         let init: Option<Box<Stmt>> = if self.is_kw("let") || self.is_kw("const") {
@@ -450,6 +457,25 @@ impl Parser {
                 }
             }
 
+            // `cond ? then : else`, right-associative, looser than `||` and
+            // tighter than assignment (which is handled above at min_bp == 0).
+            if matches!(self.peek(), Tok::Question) && 2 >= min_bp {
+                self.advance();
+                self.skip_newlines();
+                let then_branch = self.parse_bp(0)?;
+                self.skip_newlines();
+                self.expect(&Tok::Colon, "':' in a conditional expression")?;
+                self.skip_newlines();
+                let else_branch = self.parse_bp(1)?;
+                lhs = Expr::Ternary(
+                    Box::new(lhs),
+                    Box::new(then_branch),
+                    Box::new(else_branch),
+                    line,
+                );
+                continue;
+            }
+
             let (lbp, rbp) = match binding(self.peek()) {
                 Some(v) => v,
                 None => break,
@@ -488,7 +514,7 @@ impl Parser {
         let e = match t {
             Tok::Int(i) => Expr::Int(i),
             Tok::Float(f) => Expr::Float(f),
-            Tok::Str(s) => Expr::Str(s),
+            Tok::Str(s) => interpolate(s, line)?,
             Tok::Minus => {
                 let operand = self.parse_bp(UNARY_BP)?;
                 // fold negative literals so `-3` is a constant
@@ -590,13 +616,7 @@ impl Parser {
                 }
                 _ => Expr::Ident(name),
             },
-            other => {
-                return Err(format!(
-                    "line {}: unexpected {}",
-                    line,
-                    describe(&other)
-                ))
-            }
+            other => return Err(format!("line {}: unexpected {}", line, describe(&other))),
         };
         Ok(e)
     }
@@ -662,4 +682,85 @@ fn token_text(t: &Tok) -> &'static str {
         Tok::Dot => ".",
         _ => "?",
     }
+}
+
+/// Expand `"a ${expr} b"` into a `+` chain. The inner source is parsed as a
+/// full expression, so method calls and nested strings work; braces inside
+/// quotes do not close the interpolation.
+fn interpolate(text: String, line: u32) -> Result<Expr, String> {
+    if !text.contains("${") {
+        return Ok(Expr::Str(text.replace('\u{1}', "$")));
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let mut parts: Vec<Expr> = Vec::new();
+    let mut literal = String::new();
+    let mut i = 0usize;
+    while i < chars.len() {
+        if chars[i] == '\u{1}' {
+            literal.push('$');
+            i += 1;
+        } else if chars[i] == '$' && i + 1 < chars.len() && chars[i + 1] == '{' {
+            if !literal.is_empty() {
+                parts.push(Expr::Str(std::mem::take(&mut literal)));
+            }
+            let mut depth = 1usize;
+            let mut j = i + 2;
+            let mut quote: Option<char> = None;
+            while j < chars.len() {
+                let c = chars[j];
+                if let Some(q) = quote {
+                    if c == '\\' {
+                        j += 2;
+                        continue;
+                    }
+                    if c == q {
+                        quote = None;
+                    }
+                } else if c == '"' || c == '\'' {
+                    quote = Some(c);
+                } else if c == '{' {
+                    depth += 1;
+                } else if c == '}' {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                j += 1;
+            }
+            if j >= chars.len() {
+                return Err(format!("line {line}: unterminated string interpolation"));
+            }
+            let inner: String = chars[i + 2..j].iter().collect();
+            if inner.trim().is_empty() {
+                return Err(format!("line {line}: empty string interpolation"));
+            }
+            let inner_toks = lex(&inner).map_err(|e| format!("line {line}: {e}"))?;
+            let mut sub = Parser::new(inner_toks);
+            sub.skip_newlines();
+            let expr = sub.parse_expr()?;
+            sub.skip_newlines();
+            if !sub.at_eof() {
+                return Err(format!(
+                    "line {line}: unexpected text after the interpolated expression"
+                ));
+            }
+            parts.push(expr);
+            i = j + 1;
+        } else {
+            literal.push(chars[i]);
+            i += 1;
+        }
+    }
+    if !literal.is_empty() {
+        parts.push(Expr::Str(literal));
+    }
+    let mut iter = parts.into_iter();
+    let mut acc = iter
+        .next()
+        .ok_or_else(|| format!("line {line}: empty string"))?;
+    for part in iter {
+        acc = Expr::Bin(BinOp::Add, Box::new(acc), Box::new(part));
+    }
+    Ok(acc)
 }

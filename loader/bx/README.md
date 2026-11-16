@@ -42,50 +42,61 @@ bx 自己的构建：
 cargo build --release --target x86_64-unknown-linux-musl   # 需 RUSTFLAGS=-C linker=rust-lld -C link-self-contained=yes
 ```
 
+## 本轮评审改进
+
+| 发现 | 处理 |
+|---|---|
+| 打包非原子，中途失败留下半成品 | 写 `.tmp` 后 `rename` 发布 |
+| 容器无法自证来源 | 新增 `__meta__` 表项 + `com-pack info`：`product` / `cell` / `version` / `source_sha` |
+| Unix 上 payload 落在共享临时目录，同机其他用户可替换 | 改为私有 `minicon-com-<pid>/` 目录（0700），payload 在其中 |
+| spawn 失败会遗留 payload | 失败路径同样清理文件与目录 |
+| 打包器不校验 launcher | 校验 PE / ELF / Mach-O 魔数，不可执行直接拒绝 |
+| GUI 产品会闪一个控制台窗口 | 新增 `--subsystem gui|console`（仅 PE）；默认不改，因为 `--version` 的输出捕获依赖控制台句柄 |
+| 额外进程开销此前未量化 | 见下方「开销」 |
+| 读表不校验越界，损坏文件会读越界而不是报错 | `read_table` 校验表尾/条目边界，截断文件直接拒绝 |
+| 被 kill 的 launcher 会留下解包文件 | 启动时清扫 24h 前的 `minicon-com-*`；按小时节流，避免每次扫 `%TEMP%` 反而更慢 |
+| 排障只能靠二进制内容 | 新增 `com-pack inspect`：launcher 格式/子系统、cell、metadata 一次看完 |
+
 ## 产物与覆盖矩阵
 
-每格一份，Rust 壳 + 同格 cell，`com-pack verify` 全部通过（8/8）：
-
-| 产物 | 壳 | cell 字节 | 总字节 | 本机实跑 |
+| 产物 | 壳 | cell 字节 | 总字节 | 实跑 |
 |---|---|---:|---:|---|
-| `minicon-win-x86_64.com` | win-x86_64 | 5,299,200 | 5,510,216 | `--version`/`--status` exit 0 |
-| `minicon-win-aarch64.com` | win-aarch64 | 4,992,512 | 5,185,608 | 否（需 ARM64 主机） |
-| `minicon-lnx-x86_64.com` | lnx-x86_64 | 7,326,688 | 7,756,264 | 否（CI ubuntu runner） |
-| `minicon-lnx-aarch64.com` | lnx-aarch64 | 6,438,816 | 6,821,480 | 否（CI ubuntu-arm runner） |
-| `minicon-bx-win-x86_64.com` | win-x86_64 | 825,344 | 1,036,360 | bx 0.1.0 / 42 / exit 3 |
-| `minicon-bx-win-aarch64.com` | win-aarch64 | 717,824 | 910,920 | 否（需 ARM64 主机） |
-| `minicon-bx-lnx-x86_64.com` | lnx-x86_64 | 935,600 | 1,365,176 | 否（CI ubuntu runner） |
-| `minicon-bx-lnx-aarch64.com` | lnx-aarch64 | 811,296 | 1,193,960 | 否（CI ubuntu-arm runner） |
+| `minicon-bx-win-x86_64.com` | win-x86_64 | 825,344 | 1,050,350 | bx 0.1.0 / 42 / exit 3 / 套件 51 项 |
+| `minicon-bx-win-aarch64.com` | win-aarch64 | 717,824 | 922,863 | 需 ARM64 主机 |
+| `minicon-bx-lnx-x86_64.com` | lnx-x86_64 | 935,600 | 1,380,510 | 需 Linux（CI） |
+| `minicon-bx-lnx-aarch64.com` | lnx-aarch64 | 811,296 | 1,207,815 | 需 Linux ARM（CI） |
+| `minicon-win-x86_64.com` | win-x86_64 | 5,299,200 | 5,511,404 | `--version`/`--status` exit 0 |
+| `minicon-win-aarch64.com` | win-aarch64 | 4,992,512 | 5,185,773 | 需 ARM64 主机 |
+| `minicon-lnx-x86_64.com` | lnx-x86_64 | 7,326,688 | 7,761,004 | 需 Linux（CI） |
+| `minicon-lnx-aarch64.com` | lnx-aarch64 | 6,438,816 | 6,825,293 | 需 Linux ARM（CI） |
 
-macOS 两格本机无法出壳（无 Apple SDK），由 CI 的 macos-15 builder 出。
+`com-pack verify` 逐 cell 校验可执行头与 key 一致，`__meta__` 只校验可读；
+`pack` 结束前自动跑一次，不匹配直接失败。
 
-本机（Windows x86_64）出 ARM64 的具体路径，供复现：
+## 开销（Windows x86_64，20 次交错测量）
 
-- Windows ARM64：`cargo xwin` 的 CRT + 把 `rust-lld.exe` 复制成 `lld-link.exe`，
-  `RUSTFLAGS=-C linker=<...>/lld-link.exe`，并把 `CARGO_TARGET_DIR` 放到 C: 盘
-  （D: 上该输出路径曾被拒写）。
-- Linux 两格：`RUSTFLAGS="-C linker=rust-lld -C link-self-contained=yes"` +
-  `--target {x86_64,aarch64}-unknown-linux-musl`，不需要 WSL/zig。
+| 路径 | min | p50 | p90 |
+|---|---:|---:|---:|
+| 原生 cell（`bx.exe`） | 17.4 ms | 20.0 ms | 28.3 ms |
+| 打包产物（`minicon-bx-…com`） | 43.8 ms | 48.3 ms | 57.4 ms |
+
+实测拆解：launcher 自身（打包一个非本机 cell，因找不到 host cell 而直接报错）约
+**21 ms**，与原生 cell 同量级；余下约 27 ms 是**第二次进程创建 + 825 KB 落盘**。
+这是 trampoline 模型的固定成本，不是实现缺陷：`.com` 用于分发；同一台机器上反复
+调用的 agent 应直接调用原生 cell。Linux 上 `execv` 可以省掉这次 fork，但那样进程
+被替换、临时文件无法自清理，故未采用；解包缓存只省落盘那几毫秒，却留下文件，也
+不做。
+
 ## 验证（本机实测）
 
 ```
-selftest.ps1                                  -> PASS（15 项：结构/表/架构/执行/退出码/捕获/无残留）
-minicon-bx.com version                        -> bx 0.1.0
-exit(0|1|3|42)                                -> 0 | 1 | 3 | 42      （精确，无 <<8 偏移）
-bx exec(["./minicon-bx.com","eval","6*7"])     -> {"code":0,"out":"42\n"}（管道可捕获）
-BX_BIN=minicon-bx.com + tests/suite.bxs       -> PASS 51 checks（5.9 s）
-拷贝到别处 + 换 cwd 运行                       -> 42（路径无关）
-4 个并发实例                                   -> 全部 42（按 pid 命名，无碰撞）
-MINICON_COM_EXTRACT=... MINICON_COM_VERBOSE=1 -> 报告实际落盘路径，跑完无残留
+selftest.ps1                                   -> PASS 22 项
+com-pack info …\minicon-bx-win-x86_64.com      -> {"product":"minicon-bx","cell":"win-x86_64","version":"0.1.0","source_sha":…}
+BX_BIN=minicon-bx-win-x86_64.com bx run bx/tests/suite.bxs -> PASS 51 checks
+exit(0|1|3|42)                                 -> 0 | 1 | 3 | 42（精确透传）
+bx exec(["./minicon-bx-win-x86_64.com", …])    -> {"code":0,"out":"42\n"}
+拷贝到别处 + 换 cwd / 4 并发 / MINICON_COM_EXTRACT + VERBOSE -> 均通过，无残留
 ```
-
-同一机制打包真实 MiniCon（`win-x86_64` cell，5,299,200 B）：
-
-```
-minicon-win-x86_64.com --version -> minicon 0.2.23          exit 0
-minicon-win-x86_64.com --status  -> pty backend rust-console exit 0
-```
-
 ## 与 cosmocc trampoline 的差别
 
 | | cosmocc trampoline | Rust launcher |

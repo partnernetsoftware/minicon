@@ -75,7 +75,13 @@ pub fn read_table(path: &Path) -> Result<Vec<Entry>, String> {
     }
     let table_off = u64::from_le_bytes(footer[8..16].try_into().unwrap());
     let table_len = u64::from_le_bytes(footer[16..24].try_into().unwrap());
-    if table_len % ENTRY_LEN != 0 || table_off.saturating_add(table_len) > size {
+    if table_len % ENTRY_LEN != 0
+        || table_off < FOOTER_LEN
+        || table_off
+            .saturating_add(table_len)
+            .saturating_add(FOOTER_LEN)
+            != size
+    {
         return Err("container table is malformed".into());
     }
     f.seek(SeekFrom::Start(table_off))
@@ -92,6 +98,17 @@ pub fn read_table(path: &Path) -> Result<Vec<Entry>, String> {
         let key = String::from_utf8_lossy(&chunk[..key_end]).into_owned();
         let offset = u64::from_le_bytes(chunk[KEY_LEN..KEY_LEN + 8].try_into().unwrap());
         let len = u64::from_le_bytes(chunk[KEY_LEN + 8..KEY_LEN + 16].try_into().unwrap());
+        // A cell must live before the table and carry at least one byte; a
+        // corrupt file must fail here, not with an out-of-range read later.
+        if key.is_empty()
+            || len == 0
+            || offset
+                .checked_add(len)
+                .map(|e| e > table_off)
+                .unwrap_or(true)
+        {
+            return Err(format!("container entry '{key}' is out of bounds"));
+        }
         out.push(Entry { key, offset, len });
     }
     Ok(out)

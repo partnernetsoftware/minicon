@@ -68,6 +68,19 @@ flowchart LR
   `[0,"42\n"]`.
 - `BX_BIN=minicon-bx-win-x86_64.com bx run bx/tests/suite.bxs` → **PASS 51
   checks**.
+- 2026-11-16 review pass: the container now carries `__meta__` metadata
+  (`com-pack info` → product/cell/version/source_sha), publishes atomically,
+  extracts into a private 0700 directory on Unix, cleans up on spawn failure,
+  and validates the launcher's executable magic before appending. Measured cost
+  of the model on Windows x86_64: native cell 18.6 ms min / 20.3 ms median vs
+  packed artifact 44.3 / 54.9 — one extra process creation, so a packed `.com`
+  is the distribution form and a native cell is the hot-path form.
+- 2026-11-16 round 1: container reads now validate every entry against the table
+  and footer bounds (a truncated file is refused, not read out of range), a
+  killed launcher's extract is swept at most hourly, and `com-pack inspect`
+  reports launcher format/subsystem, cells and metadata. Re-measured with 20
+  interleaved runs: native cell p50 20.0 ms, packed p50 48.3 ms, launcher-only
+  about 21 ms — the rest is the second process creation plus the 825 KB write.
 - Open: execution on Linux x86_64/aarch64 and Windows ARM64 belongs to the
   six-runner matrix (`minicon-com.yml`, `bx_lane`), not the Windows host.
 

@@ -115,10 +115,15 @@ for cell in "${wanted[@]}"; do
 done
 [[ "$fail" -eq 0 ]] || exit 1
 
+BX_VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$BX/Cargo.toml" | head -n1)"
+BX_SHA="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)"
+
 MINICON_RUST_CELLS="$CELLS" \
 MINICON_RUST_NAME="minicon-bx" \
 MINICON_RUST_LEAF_WIN="bx.exe" \
 MINICON_RUST_LEAF_UNIX="bx" \
 MINICON_RUST_ONLY="$ONLY" \
+MINICON_RUST_VERSION="$BX_VERSION" \
+MINICON_RUST_SOURCE_SHA="$BX_SHA" \
 MINICON_RUST_COM_OUT="$OUT" \
     bash "$ROOT/loader/pack-rust-all.sh"
