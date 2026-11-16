@@ -65,7 +65,7 @@ flowchart LR
   `minicon-bx-{win-x86_64,win-aarch64,lnx-x86_64,lnx-aarch64}.com` packed from
   the vendored source; `com-pack verify` matches PE `0x8664`/`0xaa64` and ELF
   `0x3e`/`0xb7` for all four.
-- `minicon-bx-win-x86_64.com`: `version` → `bx 0.1.0`; `eval "6*7"` → `42`;
+- `minicon-bx-win-x86_64.com`: `version` → `bx 0.2.0`; `eval "6*7"` → `42`;
   `exit(3)` → `3` (verbatim, not `(128+3)<<8`); a parent `exec` captures
   `[0,"42\n"]`.
 - `BX_BIN=minicon-bx-win-x86_64.com bx run bx/tests/suite.bxs` → **PASS 108

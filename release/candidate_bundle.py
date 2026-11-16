@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Seal six-cell MiniCon release coverage plus the exact APE."""
+"""Seal six-cell MiniCon release coverage plus the per-cell Rust .com set.
+
+v0.2.27: the single-file assets are the Rust-launcher `minicon-<cell>.com`
+artifacts (two Windows cells published; policy `rust_coms`). The former
+six-OS polyglot `minicon.com` (policy `minicon_com`) ended with 0.2.26.
+"""
 from __future__ import annotations
 
 import argparse
@@ -14,6 +19,7 @@ from pathlib import Path
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 SOURCE_RE = re.compile(r"^[0-9a-f]{40}$")
 CANDIDATE_CEILING_BYTES = 20_000_000  # 20 MB (decimal), owner 2026-10-24; see PRD_02_27 "Artifact budget"
+RUST_COM_CELLS = ("minicon-win-x86_64.com", "minicon-win-aarch64.com")
 
 
 def sha256(path: Path) -> str:
@@ -33,7 +39,7 @@ def asset_names(version: str, include_com: bool, macos_signed: bool = False) -> 
         f"minicon-{version}-macos-universal.tar.gz",
     ]
     if include_com:
-        names.append("minicon.com")
+        names.extend(RUST_COM_CELLS)
     # A stapled .dmg ships alongside the tar.gz only when macOS is signed; the
     # tar.gz always carries the (signed, when required) universal binary.
     if macos_signed:
@@ -63,12 +69,12 @@ def require_policy(policy: dict, version: str) -> tuple[bool, str]:
     reputation = policy.get("reputation")
     if not isinstance(assets, dict) or assets.get("native_archives") is not True:
         raise ValueError("release policy must include native archives")
-    include_com = assets.get("minicon_com")
+    include_com = assets.get("rust_coms")
     mode = signing.get("mode") if isinstance(signing, dict) else None
     if not isinstance(include_com, bool) or mode not in {"off", "required"}:
         raise ValueError("invalid release asset/signing policy")
     if mode == "required" and not include_com:
-        raise ValueError("required signing without minicon.com is not a supported release shape")
+        raise ValueError("required signing without the Rust .com set is not a supported release shape")
     # macOS Developer ID signing is an independent switch from the Windows
     # Authenticode one; either, both, or neither may be required.
     macos = signing.get("macos") if isinstance(signing, dict) else None
@@ -77,7 +83,7 @@ def require_policy(policy: dict, version: str) -> tuple[bool, str]:
         raise ValueError("invalid macOS signing policy")
     expected_reputation = ["windows-x86_64", "windows-arm64"]
     if include_com:
-        expected_reputation.insert(0, "minicon.com")
+        expected_reputation = [*RUST_COM_CELLS, "windows-x86_64", "windows-arm64"]
     if not isinstance(reputation, dict) or reputation.get("mode") != "defender" or reputation.get("assets") != expected_reputation:
         raise ValueError("release reputation policy does not match its asset shape")
     return include_com, mode, macos_mode
@@ -112,17 +118,25 @@ def require_identity(build: dict, aggregate: dict, signing: dict | None, source:
         if int(signing_run.get("id", -1)) != int(aggregate.get("run_id", -2)) or \
                 int(signing_run.get("attempt", -1)) != int(aggregate.get("run_attempt", -2)):
             raise ValueError("signed aggregate/signing run identity mismatch")
-        com_signing = signing.get("assets", {}).get("minicon.com", {})
-        if com_signing.get("before_sha256") != build.get("minicon_com_sha256"):
-            raise ValueError("signing receipt does not consume the unsigned build APE")
-        if aggregate.get("minicon_com_sha256") != com_signing.get("after_sha256"):
+        com_signing = signing.get("assets", {})
+        for com_name in RUST_COM_CELLS:
+            entry = com_signing.get(com_name, {})
+            if entry.get("before_sha256") != (build.get("rust_coms", {}).get(com_name, {}) or {}).get("sha256"):
+                raise ValueError(f"signing receipt does not consume the unsigned build artifact: {com_name}")
+        if aggregate.get("rust_coms", {}).get("minicon-win-x86_64.com", {}).get("sha256") != \
+                com_signing.get("minicon-win-x86_64.com", {}).get("after_sha256"):
             raise ValueError("signed aggregate/after-SHA mismatch")
         expected_kind = "minicon-signed-six-cell-aggregate"
     else:
         if signing is not None:
             raise ValueError("signing receipt supplied while signing policy is off")
-        if aggregate.get("minicon_com_sha256") != build.get("minicon_com_sha256"):
-            raise ValueError("unsigned aggregate/build APE mismatch")
+        unsigned_ok = all(
+            aggregate.get("rust_coms", {}).get(name, {}).get("sha256")
+            == build.get("rust_coms", {}).get(name, {}).get("sha256")
+            for name in RUST_COM_CELLS
+        )
+        if not unsigned_ok:
+            raise ValueError("unsigned aggregate/build .com mismatch")
         expected_kind = "minicon-six-cell-aggregate"
     cells = aggregate.get("cells")
     wanted = sorted(
@@ -216,15 +230,17 @@ def seal(args: argparse.Namespace) -> None:
         )
 
     if include_com:
-        com = next(item for item in assets if item["name"] == "minicon.com")
-        if com["bytes"] > CANDIDATE_CEILING_BYTES:
-            raise ValueError(f"minicon.com exceeds the stamped Candidate ceiling ({CANDIDATE_CEILING_BYTES} bytes)")
-        if signing_mode == "required":
-            signed_com = signing["assets"]["minicon.com"]
-            if com["sha256"] != signed_com.get("after_sha256") or com["bytes"] != signed_com.get("after_bytes"):
-                raise ValueError("minicon.com asset does not match signed after-SHA receipt")
-        elif com["sha256"] != build.get("minicon_com_sha256") or com["bytes"] != build.get("minicon_com_bytes"):
-            raise ValueError("unsigned minicon.com asset does not match the one-build receipt")
+        for com_name in RUST_COM_CELLS:
+            com = next(item for item in assets if item["name"] == com_name)
+            if com["bytes"] > CANDIDATE_CEILING_BYTES:
+                raise ValueError(f"{com_name} exceeds the stamped Candidate ceiling ({CANDIDATE_CEILING_BYTES} bytes)")
+            if signing_mode == "required":
+                signed_com = signing["assets"][com_name]
+                if com["sha256"] != signed_com.get("after_sha256") or com["bytes"] != signed_com.get("after_bytes"):
+                    raise ValueError(f"{com_name} asset does not match signed after-SHA receipt")
+            elif com["sha256"] != build.get("rust_coms", {}).get(com_name, {}).get("sha256") or \
+                    com["bytes"] != build.get("rust_coms", {}).get(com_name, {}).get("bytes"):
+                raise ValueError(f"unsigned {com_name} asset does not match the one-build receipt")
 
     if macos_mode == "required":
         tar_name = f"minicon-{args.version}-macos-universal.tar.gz"
@@ -266,9 +282,9 @@ def seal(args: argparse.Namespace) -> None:
     }
     reputation_assets = {}
     for key in policy["reputation"]["assets"]:
-        if key == "minicon.com":
-            row = next(item for item in assets if item["name"] == "minicon.com")
-            reputation_assets[key] = {"container": "minicon.com", "sha256": row["sha256"]}
+        if key in RUST_COM_CELLS:
+            row = next(item for item in assets if item["name"] == key)
+            reputation_assets[key] = {"container": key, "sha256": row["sha256"], "bytes": row["bytes"]}
             continue
         platform = {"windows-x86_64": "windows-x86_64", "windows-arm64": "windows-arm64"}[key]
         archive_name = f"minicon-{args.version}-{platform}.zip"
@@ -288,7 +304,7 @@ def seal(args: argparse.Namespace) -> None:
             "publisher_organization": signing.get("publisher_organization"),
             "signed_after_sha256": {
                 key: signing["assets"][key]["after_sha256"]
-                for key in ("minicon.com", "win-x86_64", "win-aarch64")
+                for key in (*RUST_COM_CELLS, "win-x86_64", "win-aarch64")
             },
         })
     if macos_mode == "required":
@@ -341,8 +357,8 @@ def verify_manifest(manifest: dict, payload: Path, policy_path: Path | None = No
     if not isinstance(reputation_assets, dict) or list(reputation_assets) != wanted_reputation:
         raise ValueError("Candidate reputation asset set/order mismatch")
     for key, row in reputation_assets.items():
-        if key == "minicon.com":
-            raw = (payload / "minicon.com").read_bytes()
+        if key in RUST_COM_CELLS:
+            raw = (payload / key).read_bytes()
         else:
             container, member = row.get("container"), row.get("member")
             with zipfile.ZipFile(payload / str(container)) as zipped:
@@ -363,12 +379,13 @@ def verify_manifest(manifest: dict, payload: Path, policy_path: Path | None = No
         if signing.get("mode") != "required" or allowed_publishers.get(signing.get("provider")) != signing.get("publisher_organization"):
             raise ValueError("missing or mismatched trusted signing identity")
         after = signing.get("signed_after_sha256")
-        if not isinstance(after, dict) or set(after) != {"minicon.com", "win-x86_64", "win-aarch64"}:
+        if not isinstance(after, dict) or set(after) != {*RUST_COM_CELLS, "win-x86_64", "win-aarch64"}:
             raise ValueError("missing signed after-SHA set")
-        if sha256(payload / "minicon.com") != after["minicon.com"]:
-            raise ValueError("sealed minicon.com is not the signed after-SHA")
-        if (payload / "minicon.com").stat().st_size > CANDIDATE_CEILING_BYTES:
-            raise ValueError(f"sealed minicon.com exceeds the stamped Candidate ceiling ({CANDIDATE_CEILING_BYTES} bytes)")
+        for com_name in RUST_COM_CELLS:
+            if sha256(payload / com_name) != after[com_name]:
+                raise ValueError(f"sealed {com_name} is not the signed after-SHA")
+            if (payload / com_name).stat().st_size > CANDIDATE_CEILING_BYTES:
+                raise ValueError(f"sealed {com_name} exceeds the stamped Candidate ceiling ({CANDIDATE_CEILING_BYTES} bytes)")
         for cell, platform in (("win-x86_64", "windows-x86_64"), ("win-aarch64", "windows-arm64")):
             archive = payload / f"minicon-{version}-{platform}.zip"
             member = f"minicon-{version}-{platform}/minicon.exe"
@@ -425,10 +442,10 @@ def self_test() -> None:
         }
         policy_path = root / "release-policy.json"
         policy = {"schema": 1, "version": version,
-                  "assets": {"native_archives": True, "minicon_com": True},
+                  "assets": {"native_archives": True, "rust_coms": True},
                   "signing": {"mode": "required"},
                   "reputation": {"mode": "defender", "assets": [
-                      "minicon.com", "windows-x86_64", "windows-arm64"]}}
+                      *RUST_COM_CELLS, "windows-x86_64", "windows-arm64"]}}
         policy_path.write_text(json.dumps(policy))
         for index, name in enumerate(asset_names(version, True)):
             path = payload / name
@@ -436,12 +453,14 @@ def self_test() -> None:
                 platform = name.removeprefix(f"minicon-{version}-").removesuffix(".zip")
                 with zipfile.ZipFile(path, "w") as zipped:
                     zipped.writestr(f"minicon-{version}-{platform}/minicon.exe", signed_windows[name])
+            elif name in RUST_COM_CELLS:
+                path.write_bytes(f"unsigned-{name}".encode())
             else:
                 path.write_bytes(f"asset-{index}".encode())
             (payload / f"{name}.sha256").write_text(f"{sha256(path)}  {name}\n")
         source = "a" * 40
         tree = "b" * 64
-        com = payload / "minicon.com"
+        primary_com = payload / RUST_COM_CELLS[0]
         build_path = root / "build-receipt.json"
         aggregate_path = root / "aggregate-receipt.json"
         signing_path = root / "signing-receipt.json"
@@ -454,11 +473,18 @@ def self_test() -> None:
                 "cosmocc_swap": "PASS rc=2 rollback",
             },
         }))
-        unsigned_com_sha = hashlib.sha256(b"unsigned-com").hexdigest()
+        unsigned_com_shas = {
+            name: hashlib.sha256(f"unsigned-{name}".encode()).hexdigest()
+            for name in RUST_COM_CELLS
+        }
         build_path.write_text(json.dumps({
             "source_sha": source, "source_dirty": False, "source_tree_digest": tree,
             "product_version": version, "loader_source_sha256": "c" * 64,
-            "minicon_com_sha256": unsigned_com_sha, "minicon_com_bytes": 12,
+            "rust_coms": {
+                name: {"sha256": unsigned_com_shas[name],
+                        "bytes": len(f"unsigned-{name}")}
+                for name in RUST_COM_CELLS
+            },
             "g3": {"sha256": sha256(g3_path), "courts": {
                 "reaper": "5 passed, 0 failed", "lifecycle": "3 passed, 0 failed",
                 "cosmocc_swap": "PASS rc=2 rollback",
@@ -468,8 +494,12 @@ def self_test() -> None:
             "kind": "minicon-trusted-signing", "source_sha": source,
             "product_version": version, "signing_provider": "azure-artifact-signing",
             "publisher_organization": "PARTNERNET SOFTWARE PTY LTD", "assets": {
-                "minicon.com": {"before_sha256": unsigned_com_sha, "after_sha256": sha256(com),
-                                 "after_bytes": com.stat().st_size},
+                **{
+                    name: {"before_sha256": unsigned_com_shas[name],
+                            "after_sha256": sha256(payload / name),
+                            "after_bytes": (payload / name).stat().st_size}
+                    for name in RUST_COM_CELLS
+                },
                 "win-x86_64": {"after_sha256": hashlib.sha256(b"win-x86").hexdigest()},
                 "win-aarch64": {"after_sha256": hashlib.sha256(b"win-arm").hexdigest()},
             },
@@ -480,7 +510,8 @@ def self_test() -> None:
         aggregate_path.write_text(json.dumps({
             "kind": "minicon-signed-six-cell-aggregate", "source_sha": source,
             "source_tree_digest": tree,
-            "minicon_com_sha256": sha256(com), "run_id": "7", "run_attempt": 1,
+            "rust_coms": {name: {"sha256": sha256(payload / name)} for name in RUST_COM_CELLS},
+            "run_id": "7", "run_attempt": 1,
             "artifact_id": "9", "cells": sorted([
                 "lnx-aarch64", "lnx-x86_64", "osx-aarch64", "osx-x86_64",
                 "win-aarch64", "win-x86_64",
@@ -495,23 +526,24 @@ def self_test() -> None:
         ))
         # Exercise the real seal and verify paths with coherent signed
         # identities: the exact byte budget passes, one more byte fails.
+        primary_name = RUST_COM_CELLS[0]
         original = {path: path.read_bytes() for path in (
-            com, payload / "minicon.com.sha256", signing_path, aggregate_path, output,
+            primary_com, payload / f"{primary_name}.sha256", signing_path, aggregate_path, output,
         )}
         try:
             boundary_manifest = None
             boundary_digest = None
             for size in (CANDIDATE_CEILING_BYTES, CANDIDATE_CEILING_BYTES + 1):
-                with com.open("wb") as stream:
+                with primary_com.open("wb") as stream:
                     stream.truncate(size)
-                digest = sha256(com)
-                sidecar = payload / "minicon.com.sha256"
-                sidecar.write_text(f"{digest}  minicon.com\n")
+                digest = sha256(primary_com)
+                sidecar = payload / f"{primary_name}.sha256"
+                sidecar.write_text(f"{digest}  {primary_name}\n")
                 receipt = read_json(signing_path)
-                receipt["assets"]["minicon.com"].update(after_sha256=digest, after_bytes=size)
+                receipt["assets"][primary_name].update(after_sha256=digest, after_bytes=size)
                 signing_path.write_text(json.dumps(receipt))
                 aggregate = read_json(aggregate_path)
-                aggregate["minicon_com_sha256"] = digest
+                aggregate["rust_coms"][primary_name]["sha256"] = digest
                 aggregate_path.write_text(json.dumps(aggregate))
                 args = argparse.Namespace(
                     payload=payload, build_receipt=build_path,
@@ -529,7 +561,7 @@ def self_test() -> None:
                 try:
                     seal(args)
                 except ValueError as exc:
-                    assert str(exc).startswith("minicon.com exceeds the stamped"), (
+                    assert str(exc).startswith(f"{primary_name} exceeds the stamped"), (
                         f"seal did not enforce its own byte ceiling: {exc}"
                     )
                 else:
@@ -537,13 +569,16 @@ def self_test() -> None:
                 # Keep hashes and sidecars coherent so only the independent
                 # verify budget guard can reject this otherwise valid bundle.
                 oversized = json.loads(json.dumps(boundary_manifest).replace(boundary_digest, digest))
-                row = next(item for item in oversized["assets"] if item["name"] == "minicon.com")
+                row = next(item for item in oversized["assets"] if item["name"] == primary_name)
                 row["bytes"] = size
                 row["sidecar"]["sha256"] = sha256(sidecar)
+                rep = oversized["reputation_assets"].get(primary_name)
+                if rep is not None:
+                    rep["bytes"] = size
                 try:
                     verify_manifest(oversized, payload, policy_path)
                 except ValueError as exc:
-                    assert str(exc).startswith("sealed minicon.com exceeds the stamped"), str(exc)
+                    assert str(exc).startswith(f"sealed {primary_name} exceeds the stamped"), str(exc)
                 else:
                     raise AssertionError("Candidate verify accepted ceiling+1 bytes")
             print(f"PASS Candidate byte ceiling {CANDIDATE_CEILING_BYTES}: exact accepted, +1 rejected by seal and verify")
@@ -569,15 +604,15 @@ def self_test() -> None:
         signing_fixture["release_eligible"] = True
         signing_path.write_text(json.dumps(signing_fixture))
         manifest = read_json(output)
-        original_com = (payload / "minicon.com").read_bytes()
-        (payload / "minicon.com").write_bytes(b"tampered")
+        original_com = primary_com.read_bytes()
+        primary_com.write_bytes(b"tampered")
         try:
             verify_manifest(manifest, payload)
         except ValueError:
             print("PASS candidate bundle seal/tamper court")
         else:
-            raise SystemExit("APE tamper court did not fail")
-        (payload / "minicon.com").write_bytes(original_com)
+            raise SystemExit(".com tamper court did not fail")
+        primary_com.write_bytes(original_com)
         win = payload / f"minicon-{version}-windows-x86_64.zip"
         with zipfile.ZipFile(win, "w") as zipped:
             zipped.writestr(f"minicon-{version}-windows-x86_64/minicon.exe", b"tampered")
@@ -602,19 +637,18 @@ def self_test() -> None:
         unsigned.mkdir()
         unsigned_policy_path = root / "unsigned-policy.json"
         unsigned_policy = {"schema": 1, "version": version,
-                           "assets": {"native_archives": True, "minicon_com": True},
+                           "assets": {"native_archives": True, "rust_coms": True},
                            "signing": {"mode": "off"},
                            "reputation": {"mode": "defender", "assets": [
-                               "minicon.com", "windows-x86_64", "windows-arm64"]}}
+                               *RUST_COM_CELLS, "windows-x86_64", "windows-arm64"]}}
         unsigned_policy_path.write_text(json.dumps(unsigned_policy))
         for name in asset_names(version, True):
             source_path = payload / name
             target = unsigned / name
-            target.write_bytes(b"unsigned-com" if name == "minicon.com" else source_path.read_bytes())
+            target.write_bytes(source_path.read_bytes())
             (unsigned / f"{name}.sha256").write_text(f"{sha256(target)}  {name}\n")
         unsigned_aggregate = dict(read_json(aggregate_path))
         unsigned_aggregate["kind"] = "minicon-six-cell-aggregate"
-        unsigned_aggregate["minicon_com_sha256"] = unsigned_com_sha
         aggregate_path.write_text(json.dumps(unsigned_aggregate))
         seal(argparse.Namespace(
             payload=unsigned, build_receipt=build_path, aggregate_receipt=aggregate_path,
@@ -624,25 +658,25 @@ def self_test() -> None:
         ))
         unsigned_manifest = read_json(output)
         assert unsigned_manifest["signing"] == {"mode": "off"}
-        assert len(unsigned_manifest["assets"]) == 6
+        assert len(unsigned_manifest["assets"]) == 7
         verify_manifest(unsigned_manifest, unsigned, unsigned_policy_path)
-        print("PASS unsigned APE plus five-archive Candidate policy court")
+        print("PASS unsigned .com pair plus five-archive Candidate policy court")
 
         # --- macOS signing court (independent switch: Windows off, macOS required) ---
         mac = root / "mac"
         mac.mkdir()
         mac_policy_path = root / "mac-policy.json"
         mac_policy = {"schema": 1, "version": version,
-                      "assets": {"native_archives": True, "minicon_com": True},
+                      "assets": {"native_archives": True, "rust_coms": True},
                       "signing": {"mode": "off", "macos": {"mode": "required"}},
                       "reputation": {"mode": "defender", "assets": [
-                          "minicon.com", "windows-x86_64", "windows-arm64"]}}
+                          *RUST_COM_CELLS, "windows-x86_64", "windows-arm64"]}}
         mac_policy_path.write_text(json.dumps(mac_policy))
         signed_mac_binary = b"signed-universal-macho"
         for name in asset_names(version, True, macos_signed=True):
             target = mac / name
-            if name == "minicon.com":
-                target.write_bytes(b"unsigned-com")
+            if name in RUST_COM_CELLS:
+                target.write_bytes((payload / name).read_bytes())
             elif name == f"minicon-{version}-macos-universal.tar.gz":
                 import io
                 with tarfile.open(target, "w:gz") as tf:
@@ -682,7 +716,7 @@ def self_test() -> None:
         ))
         mac_manifest = read_json(output)
         assert mac_manifest["signing"]["macos"]["mode"] == "required"
-        assert len(mac_manifest["assets"]) == 7
+        assert len(mac_manifest["assets"]) == 8
         verify_manifest(mac_manifest, mac, mac_policy_path)
         print("PASS macOS-signed Candidate seal + verify court")
         # qualification-only macОS receipt must not enter a Candidate

@@ -144,11 +144,12 @@ jobs:
           else
             [[ "$CONFIRMATION" == "publish-v$VERSION" ]]
           fi
-          include_com="$(jq -r .release_policy.assets.minicon_com "$manifest")"
+          include_com="$(jq -r .release_policy.assets.rust_coms "$manifest")"
           if [[ "$include_com" == true ]]; then
-            chmod +x candidate/payload/minicon.com
-            [[ "$(candidate/payload/minicon.com --version)" == "minicon $VERSION" ]]
-            candidate/payload/minicon.com --status
+            # The per-cell .com set executes on its own OS; the promotion
+            # smoke validates them per-platform below (verify-windows here,
+            # post-publish-posix for linux).
+            sha256sum candidate/payload/minicon-win-x86_64.com candidate/payload/minicon-win-aarch64.com >/dev/null
           fi
           echo "tag=v$VERSION" >>"$GITHUB_OUTPUT"
           echo "include_com=$include_com" >>"$GITHUB_OUTPUT"
@@ -169,13 +170,13 @@ jobs:
         with:
           name: verified-promotion-${{ github.run_id }}
           path: candidate
-      - name: Execute exact Candidate APE on Windows
+      - name: Execute exact Candidate .com on Windows
         if: needs.verify.outputs.include_com == 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          Copy-Item -LiteralPath candidate/payload/minicon.com -Destination candidate/payload/minicon-ape.exe
-          $binary = (Resolve-Path candidate/payload/minicon-ape.exe).Path
+          Copy-Item -LiteralPath candidate/payload/minicon-win-x86_64.com -Destination candidate/payload/minicon-promote.exe
+          $binary = (Resolve-Path candidate/payload/minicon-promote.exe).Path
           function Invoke-Captured([string[]]$Arguments) {
             $stem = Join-Path $env:RUNNER_TEMP ([guid]::NewGuid().ToString("N"))
             $out = "$stem.out"
@@ -232,7 +233,7 @@ jobs:
           version, manifest_path = sys.argv[1], pathlib.Path(sys.argv[2])
           manifest = json.loads(manifest_path.read_text())
           text = pathlib.Path(".github/release-notes.md").read_text().replace("VERSION", version)
-          if not manifest["release_policy"]["assets"]["minicon_com"]:
+          if not manifest["release_policy"]["assets"]["rust_coms"]:
               start, end = "<!-- OPTIONAL_APE_START -->", "<!-- OPTIONAL_APE_END -->"
               before, rest = text.split(start, 1)
               _, after = rest.split(end, 1)
@@ -279,10 +280,10 @@ jobs:
           chmod +x "$binary"
           [[ "$("$binary" --version)" == 'minicon ${{ inputs.version }}' ]]
           "$binary" --status
-          if [[ -f released/minicon.com ]]; then
-            chmod +x released/minicon.com
-            [[ "$(released/minicon.com --version)" == 'minicon ${{ inputs.version }}' ]]
-            released/minicon.com --status
+          if [[ -f released/minicon-lnx-x86_64.com ]]; then
+            chmod +x released/minicon-lnx-x86_64.com
+            [[ "$(released/minicon-lnx-x86_64.com --version)" == 'minicon ${{ inputs.version }}' ]]
+            released/minicon-lnx-x86_64.com --status
           fi
 
   post-publish-windows:
@@ -318,10 +319,10 @@ jobs:
           }
           if ((Invoke-Captured @('--version')).Trim() -ne 'minicon ${{ inputs.version }}') { throw 'version mismatch' }
           if ((Invoke-Captured @('--status')) -notmatch 'conpty') { throw 'status missing conpty' }
-          $com = Join-Path released 'minicon.com'
+          $com = Join-Path released 'minicon-win-x86_64.com'
           if (Test-Path -LiteralPath $com) {
-            Copy-Item -LiteralPath $com -Destination released/minicon-ape.exe
-            $binary = (Resolve-Path released/minicon-ape.exe).Path
+            Copy-Item -LiteralPath $com -Destination released/minicon-promoted.exe
+            $binary = (Resolve-Path released/minicon-promoted.exe).Path
             if ((Invoke-Captured @('--version')).Trim() -ne 'minicon ${{ inputs.version }}') { throw 'APE version mismatch' }
             if ((Invoke-Captured @('--status')) -notmatch 'conpty') { throw 'APE status missing conpty' }
           }

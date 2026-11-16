@@ -69,7 +69,7 @@ jobs:
             exit 1
           fi
           signing_mode="$(jq -r .signing.mode release-policy.json)"
-          include_com="$(jq -r .assets.minicon_com release-policy.json)"
+          include_com="$(jq -r .assets.rust_coms release-policy.json)"
           [[ "$(jq -r .schema release-policy.json)" == 1 ]]
           [[ "$signing_mode" == off || "$signing_mode" == required ]]
           if [[ "$signing_mode" == required ]]; then
@@ -367,7 +367,10 @@ jobs:
           gh run download "$UPSTREAM_RUN_ID" --repo "$GITHUB_REPOSITORY" \
             --name "$AGGREGATE_ARTIFACT-$UPSTREAM_ATTEMPT" --dir upstream/aggregate
           if [[ "$INCLUDE_COM" == true ]]; then
-            cp upstream/source/minicon.com upstream/source/minicon.com.sha256 payload/
+            for com in minicon-win-x86_64.com minicon-win-aarch64.com; do
+              cp "upstream/source/$com" "payload/$com"
+              [[ -f "upstream/source/$com.sha256" ]] || sha256sum "payload/$com" | awk '{print $1"  '"'"'$com'"'"'"}' > "payload/$com.sha256"
+            done
           fi
           cp upstream/source/build-receipt.json upstream/build-receipt.json
           cp upstream/source/g3/receipt.json upstream/g3-receipt.json

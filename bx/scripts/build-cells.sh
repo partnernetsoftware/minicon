@@ -46,6 +46,8 @@ cell_target() {
         macos:osx-aarch64) echo "aarch64-apple-darwin:native" ;;
         macos:lnx-x86_64) echo "x86_64-unknown-linux-gnu:zig" ;;
         macos:lnx-aarch64) echo "aarch64-unknown-linux-gnu:zig" ;;
+        macos:win-x86_64) echo "x86_64-pc-windows-msvc:xwin" ;;
+        macos:win-aarch64) echo "aarch64-pc-windows-msvc:xwin" ;;
         linux:lnx-x86_64) echo "x86_64-unknown-linux-gnu:native" ;;
         linux:lnx-aarch64) echo "aarch64-unknown-linux-gnu:native" ;;
         *) : ;;

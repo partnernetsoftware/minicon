@@ -14,7 +14,8 @@ from typing import Any
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 SOURCE_RE = re.compile(r"^[0-9a-f]{40}$")
 SIGNED_ASSETS = {
-    "minicon.com": "minicon.com",
+    "minicon-win-x86_64.com": "minicon-win-x86_64.com",
+    "minicon-win-aarch64.com": "minicon-win-aarch64.com",
     "win-x86_64": "cells/win-x86_64/minicon.exe",
     "win-aarch64": "cells/win-aarch64/minicon.exe",
 }
@@ -109,7 +110,7 @@ def verify_receipt(receipt: dict, root: Path) -> None:
 
     assets = receipt.get("assets")
     if not isinstance(assets, dict) or set(assets) != set(SIGNED_ASSETS):
-        raise ValueError("signing receipt must contain exactly three signed assets")
+        raise ValueError("signing receipt must contain exactly four signed assets")
     for key, relative in SIGNED_ASSETS.items():
         row = assets[key]
         if not isinstance(row, dict) or row.get("path") != relative:
@@ -142,7 +143,7 @@ def verify_receipt(receipt: dict, root: Path) -> None:
 
 def verify(args: argparse.Namespace) -> None:
     verify_receipt(load(args.receipt), args.root.resolve())
-    print("PASS trusted signature + timestamp bound to exact three artifacts")
+    print("PASS trusted signature + timestamp bound to exact four artifacts")
 
 
 def self_test() -> None:
@@ -203,7 +204,7 @@ def self_test() -> None:
         else:
             raise AssertionError("protected provider coordinates unexpectedly passed")
         receipt.pop("provider_resource")
-        assets["minicon.com"]["signer_subject"] = "CN=MiniCon, O=OTHER FOUNDATION"
+        assets["minicon-win-x86_64.com"]["signer_subject"] = "CN=MiniCon, O=OTHER FOUNDATION"
         try:
             verify_receipt(receipt, root)
         except ValueError as exc:

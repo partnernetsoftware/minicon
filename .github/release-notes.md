@@ -45,7 +45,8 @@ Pick your platform and run the file — there is no installer.
 | Linux x64 | `minicon-VERSION-linux-x86_64.tar.gz` |
 | Linux ARM64 | `minicon-VERSION-linux-arm64.tar.gz` |
 <!-- OPTIONAL_APE_START -->
-| Advanced: one signed launcher, all platforms | `minicon.com` |
+| Advanced: single-file launcher (Windows x64) | `minicon-win-x86_64.com` |
+| Advanced: single-file launcher (Windows ARM64) | `minicon-win-aarch64.com` |
 <!-- OPTIONAL_APE_END -->
 
 The macOS `.dmg` contains a signed, notarized, stapled **`MiniCon.app`**
@@ -57,7 +58,8 @@ Linux archives use the distribution runtime libraries `libxkbcommon0` and
 X11 bridge `libxkbcommon-x11.so.0`, so slim X11 systems start MiniCon without
 extra packages.
 
-Windows executables and `minicon.com` are Authenticode-signed, and the macOS
+Windows executables and the `minicon-win-x86_64.com` / `minicon-win-aarch64.com`
+single-file launchers are Authenticode-signed, and the macOS
 build is Developer ID-signed and Apple-notarized, as PARTNERNET SOFTWARE PTY LTD
 with an RFC 3161 timestamp. The policy, the publisher facts and the verification
 commands are in

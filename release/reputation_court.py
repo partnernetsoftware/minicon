@@ -138,22 +138,26 @@ def selftest() -> None:
         sha = "a" * 64
         x86, arm = "e" * 64, "f" * 64
         manifest = {"kind": "minicon-release-candidate", "version": "0.1.4", "source_sha": "b" * 40,
-                    "candidate_run": run, "assets": [{"name": "minicon.com", "sha256": sha}],
+                    "candidate_run": run, "assets": [{"name": "minicon-win-x86_64.com", "sha256": sha}],
                     "reputation_assets": {
-                        "minicon.com": {"sha256": sha},
+                        "minicon-win-x86_64.com": {"sha256": sha},
+                        "minicon-win-aarch64.com": {"sha256": sha},
                         "windows-x86_64": {"sha256": x86},
                         "windows-arm64": {"sha256": arm},
                     },
                     "release_policy": {"reputation": {"mode": "defender", "assets": [
-                        "minicon.com", "windows-x86_64", "windows-arm64"]}},
+                        "minicon-win-x86_64.com", "minicon-win-aarch64.com",
+                        "windows-x86_64", "windows-arm64"]}},
                     "signing": {"mode": "required", "provider": "azure-artifact-signing",
                                 "publisher_organization": "PARTNERNET SOFTWARE PTY LTD",
                                 "signed_after_sha256": {
-                                    "minicon.com": sha, "win-x86_64": x86, "win-aarch64": arm}},
+                                    "minicon-win-x86_64.com": sha, "minicon-win-aarch64.com": sha,
+                                    "win-x86_64": x86, "win-aarch64": arm}},
                     "receipts": {"signing": {"sha256": "d" * 64}}}
         common = {"verdict": "clean", "candidate_run": run,
                   "assets": {
-                      "minicon.com": {"sha256": sha, "post_scan_sha256": sha},
+                      "minicon-win-x86_64.com": {"sha256": sha, "post_scan_sha256": sha},
+                      "minicon-win-aarch64.com": {"sha256": sha, "post_scan_sha256": sha},
                       "windows-x86_64": {"sha256": x86, "post_scan_sha256": x86},
                       "windows-arm64": {"sha256": arm, "post_scan_sha256": arm},
                   },
@@ -169,7 +173,7 @@ def selftest() -> None:
         qualify(args)
         assert load(output)["verdict"] == "clean"
         verify_qualification(argparse.Namespace(manifest=paths["manifest"], qualification=output))
-        defender["assets"]["minicon.com"]["sha256"] = "c" * 64
+        defender["assets"]["minicon-win-x86_64.com"]["sha256"] = "c" * 64
         paths["defender"].write_text(json.dumps(defender), encoding="utf-8")
         try:
             qualify(args)

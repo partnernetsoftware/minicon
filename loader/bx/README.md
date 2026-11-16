@@ -61,7 +61,7 @@ cargo build --release --target x86_64-unknown-linux-musl   # 需 RUSTFLAGS=-C li
 
 | 产物 | 壳 | cell 字节 | 总字节 | 实跑 |
 |---|---|---:|---:|---|
-| `minicon-bx-win-x86_64.com` | win-x86_64 | 825,344 | 1,050,350 | bx 0.1.0 / 42 / exit 3 / 套件 51 项 |
+| `minicon-bx-win-x86_64.com` | win-x86_64 | 825,344 | 1,050,350 | bx 0.2.0 / 42 / exit 3 / 套件 108 项 |
 | `minicon-bx-win-aarch64.com` | win-aarch64 | 717,824 | 922,863 | 需 ARM64 主机 |
 | `minicon-bx-lnx-x86_64.com` | lnx-x86_64 | 935,600 | 1,380,510 | 需 Linux（CI） |
 | `minicon-bx-lnx-aarch64.com` | lnx-aarch64 | 811,296 | 1,207,815 | 需 Linux ARM（CI） |
@@ -91,7 +91,7 @@ cargo build --release --target x86_64-unknown-linux-musl   # 需 RUSTFLAGS=-C li
 
 ```
 selftest.ps1                                   -> PASS 22 项
-com-pack info …\minicon-bx-win-x86_64.com      -> {"product":"minicon-bx","cell":"win-x86_64","version":"0.1.0","source_sha":…}
+com-pack info …\minicon-bx-win-x86_64.com      -> {"product":"minicon-bx","cell":"win-x86_64","version":"0.2.0","source_sha":…}
 BX_BIN=minicon-bx-win-x86_64.com bx run bx/tests/suite.bxs -> PASS 51 checks
 exit(0|1|3|42)                                 -> 0 | 1 | 3 | 42（精确透传）
 bx exec(["./minicon-bx-win-x86_64.com", …])    -> {"code":0,"out":"42\n"}

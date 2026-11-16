@@ -66,7 +66,7 @@ jobs:
           version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
           [[ "$(jq -r .schema release-policy.json)" == 1 ]] || { echo "release-policy.json schema is not 1" >&2; exit 1; }
           [[ "$(jq -r .version release-policy.json)" == "$version" ]] || { echo "release-policy.json version does not match Cargo.toml" >&2; exit 1; }
-          [[ "$(jq -r .assets.minicon_com release-policy.json)" == true ]] || { echo "release-policy.json assets.minicon_com is not true" >&2; exit 1; }
+          [[ "$(jq -r .assets.rust_coms release-policy.json)" == true ]] || { echo "release-policy.json assets.rust_coms is not true" >&2; exit 1; }
           signing_mode="$(jq -r .signing.mode release-policy.json)"
           [[ "$signing_mode" == off || "$signing_mode" == required ]] || { echo "release-policy.json signing.mode is neither off nor required: $signing_mode" >&2; exit 1; }
           if [[ "$QUALIFICATION_ONLY" == true ]]; then
@@ -96,6 +96,7 @@ jobs:
       id-token: write
     outputs:
       signed_com_sha256: ${{ steps.receipt.outputs.signed_com_sha256 }}
+      signed_com_arm64_sha256: ${{ steps.receipt.outputs.signed_com_arm64_sha256 }}
       source_tree_digest: ${{ steps.receipt.outputs.source_tree_digest }}
       artifact_id: ${{ steps.upload.outputs.artifact-id }}
     steps:
@@ -132,22 +133,42 @@ jobs:
           $aggregate = Get-Content upstream/aggregate/aggregate-receipt.json -Raw | ConvertFrom-Json
           if ($build.source_sha -ne $env:SOURCE_SHA -or $build.source_dirty -ne $false) { throw 'unsigned build identity mismatch' }
           if ($build.product_version -ne $env:EXPECTED_VERSION) { throw 'unsigned build version mismatch' }
-          if ($build.authenticode.ready -ne $true -or $build.authenticode.optional_header_bytes -ne 240 -or
-              $build.authenticode.data_directory_count -ne 16 -or $build.authenticode.security_file_offset -ne 0 -or
-              $build.authenticode.security_bytes -ne 0 -or $build.authenticode.resource_rva -le 0 -or
-              $build.authenticode.resource_bytes -le 0 -or $build.authenticode.product_name -ne 'MiniCon' -or
-              $build.authenticode.product_version -ne $env:EXPECTED_VERSION) {
-            throw 'APE lacks required VERSIONINFO or empty signable Authenticode state'
+          # v0.2.27: the signable single-file artifacts are the per-cell Rust
+          # .com launchers (win-x86_64 + win-aarch64), each an MSVC-linked PE
+          # with its own VERSIONINFO; the cosmocc polyglot pad numbers are gone.
+          $rustComs = $build.rust_coms
+          if ($null -eq $rustComs -or $null -eq $rustComs.'minicon-win-x86_64.com' -or $null -eq $rustComs.'minicon-win-aarch64.com') {
+            throw 'build receipt lacks the per-cell rust_coms digests'
           }
-          if ($aggregate.source_sha -ne $env:SOURCE_SHA -or $aggregate.minicon_com_sha256 -ne $build.minicon_com_sha256 -or
+          $rustManifest = Get-Content upstream/com/rust/manifest.json -Raw | ConvertFrom-Json
+          foreach ($comName in @('minicon-win-x86_64.com', 'minicon-win-aarch64.com')) {
+            $entry = $rustManifest.artifacts.$comName
+            $comPath = "upstream/com/rust/$comName"
+            if ($null -eq $entry) { throw "rust manifest lacks $comName" }
+            $digest = (Get-FileHash -LiteralPath $comPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($digest -ne $entry.sha256 -or (Get-Item -LiteralPath $comPath).Length -ne $entry.bytes) { throw "rust manifest mismatch for $comName" }
+            if ($digest -ne $rustComs.$comName.sha256) { throw "build receipt rust_coms mismatch for $comName" }
+            $raw = [IO.File]::ReadAllBytes((Resolve-Path $comPath))
+            if ($raw[0] -ne 0x4D -or $raw[1] -ne 0x5A) { throw "$comName is not a PE" }
+          }
+          if ($aggregate.source_sha -ne $env:SOURCE_SHA -or
               "$($aggregate.run_id)" -ne $env:UPSTREAM_RUN_ID -or "$($aggregate.run_attempt)" -ne $env:UPSTREAM_ATTEMPT) {
             throw 'unsigned aggregate identity mismatch'
           }
           New-Item -ItemType Directory -Force signed/cells | Out-Null
           New-Item -ItemType Directory -Force signing-input/cells/win-x86_64 | Out-Null
           New-Item -ItemType Directory -Force signing-input/cells/win-aarch64 | Out-Null
-          Copy-Item upstream/com/minicon.com signed/minicon.com
+          Copy-Item upstream/com/rust/minicon-win-x86_64.com signed/minicon-win-x86_64.com
+          Copy-Item upstream/com/rust/minicon-win-aarch64.com signed/minicon-win-aarch64.com
+          # The four non-Windows cells court-execute their own unsigned .com
+          # artifacts; carry them so the six-runner test matrix needs no
+          # second download and proves the one-build manifest end to end.
+          Copy-Item upstream/com/rust/minicon-osx-x86_64.com signed/minicon-osx-x86_64.com
+          Copy-Item upstream/com/rust/minicon-osx-aarch64.com signed/minicon-osx-aarch64.com
+          Copy-Item upstream/com/rust/minicon-lnx-x86_64.com signed/minicon-lnx-x86_64.com
+          Copy-Item upstream/com/rust/minicon-lnx-aarch64.com signed/minicon-lnx-aarch64.com
           Copy-Item upstream/com/build-receipt.json signed/build-receipt.json
+          Copy-Item upstream/com/rust/manifest.json signed/rust-manifest.json
           Copy-Item upstream/com/g3 signed/g3 -Recurse
           Copy-Item upstream/aggregate/aggregate-receipt.json signed/unsigned-aggregate-receipt.json
           Copy-Item upstream/native/cells/* signed/cells -Recurse
@@ -166,7 +187,8 @@ jobs:
             [IO.File]::WriteAllText($script.FullName, $text, $utf8NoBom)
           }
           $paths = [ordered]@{
-            'minicon.com' = 'signed/minicon.com'
+            'minicon-win-x86_64.com' = 'signed/minicon-win-x86_64.com'
+            'minicon-win-aarch64.com' = 'signed/minicon-win-aarch64.com'
             'win-x86_64' = 'signed/cells/win-x86_64/minicon.exe'
             'win-aarch64' = 'signed/cells/win-aarch64/minicon.exe'
           }
@@ -174,17 +196,19 @@ jobs:
           foreach ($entry in $paths.GetEnumerator()) {
             $before[$entry.Key] = (Get-FileHash -LiteralPath $entry.Value -Algorithm SHA256).Hash.ToLowerInvariant()
           }
-          if ($before['minicon.com'] -ne $build.minicon_com_sha256) { throw 'unsigned APE digest mismatch' }
+          if ($before['minicon-win-x86_64.com'] -ne $rustComs.'minicon-win-x86_64.com'.sha256 -or
+              $before['minicon-win-aarch64.com'] -ne $rustComs.'minicon-win-aarch64.com'.sha256) { throw 'unsigned .com digest mismatch' }
           if ($before['win-x86_64'] -ne $build.payloads.'win-x86_64'.sha256 -or
               $before['win-aarch64'] -ne $build.payloads.'win-aarch64'.sha256) { throw 'unsigned Windows payload digest mismatch' }
           $before | ConvertTo-Json | Set-Content -LiteralPath unsigned-hashes.json -Encoding utf8NoBOM
-          Copy-Item signed/minicon.com signing-input/minicon.com
+          Copy-Item signed/minicon-win-x86_64.com signing-input/minicon-win-x86_64.com
+          Copy-Item signed/minicon-win-aarch64.com signing-input/minicon-win-aarch64.com
           Copy-Item signed/cells/win-x86_64/minicon.exe signing-input/cells/win-x86_64/minicon.exe
           Copy-Item signed/cells/win-aarch64/minicon.exe signing-input/cells/win-aarch64/minicon.exe
-          @('minicon.com', 'cells\win-x86_64\minicon.exe', 'cells\win-aarch64\minicon.exe') |
+          @('minicon-win-x86_64.com', 'minicon-win-aarch64.com', 'cells\win-x86_64\minicon.exe', 'cells\win-aarch64\minicon.exe') |
             Set-Content -LiteralPath signing-input/signing-catalog.txt -Encoding ascii
 
-      - name: Upload immutable three-file signing input
+      - name: Upload immutable four-file signing input
         id: upload_unsigned
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -227,7 +251,7 @@ jobs:
           exclude-interactive-browser-credential: true
           correlation-id: minicon-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
-      - name: Require exactly the three signed paths
+      - name: Require exactly the four signed paths
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -238,12 +262,14 @@ jobs:
           $expected = @(
             'cells/win-aarch64/minicon.exe',
             'cells/win-x86_64/minicon.exe',
-            'minicon.com'
+            'minicon-win-aarch64.com',
+            'minicon-win-x86_64.com'
           )
           if (($actual -join "`n") -ne ($expected -join "`n")) {
             throw "signing output path set mismatch: $($actual -join ', ')"
           }
-          Copy-Item signing-input/minicon.com signed/minicon.com -Force
+          Copy-Item signing-input/minicon-win-x86_64.com signed/minicon-win-x86_64.com -Force
+          Copy-Item signing-input/minicon-win-aarch64.com signed/minicon-win-aarch64.com -Force
           Copy-Item signing-input/cells/win-x86_64/minicon.exe signed/cells/win-x86_64/minicon.exe -Force
           Copy-Item signing-input/cells/win-aarch64/minicon.exe signed/cells/win-aarch64/minicon.exe -Force
 
@@ -261,7 +287,8 @@ jobs:
           $before = Get-Content unsigned-hashes.json -Raw | ConvertFrom-Json -AsHashtable
           $build = Get-Content signed/build-receipt.json -Raw | ConvertFrom-Json
           $paths = [ordered]@{
-            'minicon.com' = 'minicon.com'
+            'minicon-win-x86_64.com' = 'minicon-win-x86_64.com'
+            'minicon-win-aarch64.com' = 'minicon-win-aarch64.com'
             'win-x86_64' = 'cells/win-x86_64/minicon.exe'
             'win-aarch64' = 'cells/win-aarch64/minicon.exe'
           }
@@ -321,7 +348,8 @@ jobs:
             $digest = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
             "$digest  $([IO.Path]::GetFileName($path))" | Set-Content -LiteralPath "$path.sha256" -Encoding ascii
           }
-          "signed_com_sha256=$($assets['minicon.com'].after_sha256)" | Out-File $env:GITHUB_OUTPUT -Append
+          "signed_com_sha256=$($assets['minicon-win-x86_64.com'].after_sha256)" | Out-File $env:GITHUB_OUTPUT -Append
+          "signed_com_arm64_sha256=$($assets['minicon-win-aarch64.com'].after_sha256)" | Out-File $env:GITHUB_OUTPUT -Append
           "source_tree_digest=$($build.source_tree_digest)" | Out-File $env:GITHUB_OUTPUT -Append
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -353,6 +381,7 @@ jobs:
       EXPECTED_RUNNER_OS: ${{ matrix.expected_os }}
       EXPECTED_RUNNER_ARCH: ${{ matrix.expected_arch }}
       EXPECTED_COM_SHA256: ${{ needs.sign.outputs.signed_com_sha256 }}
+      EXPECTED_COM_ARM64_SHA256: ${{ needs.sign.outputs.signed_com_arm64_sha256 }}
       EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
       EXPECTED_SOURCE_TREE_DIGEST: ${{ needs.sign.outputs.source_tree_digest }}
       EXPECTED_VERSION: ${{ needs.preflight.outputs.version }}
@@ -367,32 +396,44 @@ jobs:
           set -euo pipefail
           test "$RUNNER_OS" = "$EXPECTED_RUNNER_OS"
           test "$RUNNER_ARCH" = "$EXPECTED_RUNNER_ARCH"
-          actual=$(python3 -c 'import hashlib; print(hashlib.sha256(open("bundle/minicon.com","rb").read()).hexdigest())')
-          test "$actual" = "$EXPECTED_COM_SHA256"
+          # v0.2.27: only the two Windows cells execute a SIGNED .com; the
+          # other four cells run their own unsigned per-cell artifact from the
+          # one-build rust manifest (their court evidence, never a Release
+          # asset for signing purposes).
+          com="bundle/minicon-$CELL.com"
+          test -f "$com"
+          if [[ "$FAMILY" == "windows" ]]; then
+            if [[ "$CELL" == "win-x86_64" ]]; then expected="$EXPECTED_COM_SHA256"; else expected="$EXPECTED_COM_ARM64_SHA256"; fi
+          else
+            expected=$(python3 -c 'import json,os; print(json.load(open("bundle/rust-manifest.json"))["artifacts"][f"minicon-{os.environ[\"CELL\"]}.com"]["sha256"])')
+          fi
+          actual=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$com")
+          test "$actual" = "$expected"
           python3 bundle/signing_receipt.py --receipt bundle/signing-receipt.json --root bundle
       - name: version+status+GUI/control (unix)
         if: matrix.family != 'windows'
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x bundle/ci-status.sh bundle/ci-control.sh bundle/minicon.com
-          bundle/ci-status.sh "$FAMILY" bundle/minicon.com bundle/build-receipt.json | tee runtime-body.log
+          chmod +x bundle/ci-status.sh bundle/ci-control.sh "bundle/minicon-$CELL.com"
+          bundle/ci-status.sh "$FAMILY" "bundle/minicon-$CELL.com" bundle/build-receipt.json | tee runtime-body.log
           if [[ "$FAMILY" == linux ]]; then
             sudo apt-get update -qq
             sudo apt-get install -y xvfb libxkbcommon-x11-0
-            xvfb-run -a bash bundle/ci-control.sh bundle/minicon.com | tee -a runtime-body.log
+            xvfb-run -a bash bundle/ci-control.sh "bundle/minicon-$CELL.com" | tee -a runtime-body.log
           else
-            bash bundle/ci-control.sh bundle/minicon.com | tee -a runtime-body.log
+            bash bundle/ci-control.sh "bundle/minicon-$CELL.com" | tee -a runtime-body.log
           fi
       - name: version+status+GUI/control (windows)
         if: matrix.family == 'windows'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          Copy-Item bundle/minicon.com bundle/minicon-ape.exe
-          & bundle/ci-status.ps1 -Binary (Join-Path $PWD 'bundle/minicon-ape.exe') `
+          $com = "bundle/minicon-$env:CELL.com"
+          Copy-Item $com bundle/minicon-signed.exe
+          & bundle/ci-status.ps1 -Binary (Join-Path $PWD 'bundle/minicon-signed.exe') `
             -Receipt (Join-Path $PWD 'bundle/build-receipt.json') *>&1 | Tee-Object runtime-body.log
-          & bundle/ci-control.ps1 -Binary (Join-Path $PWD 'bundle/minicon-ape.exe') *>&1 | Tee-Object runtime-body.log -Append
+          & bundle/ci-control.ps1 -Binary (Join-Path $PWD 'bundle/minicon-signed.exe') *>&1 | Tee-Object runtime-body.log -Append
       - name: Provision native WebView2 Runtime on the Windows court
         if: matrix.family == 'windows'
         shell: pwsh
@@ -432,6 +473,8 @@ jobs:
           import hashlib, json, os
           from pathlib import Path
           log = Path("runtime-body.log")
+          com = Path(f"bundle/minicon-{os.environ['CELL']}.com")
+          actual_digest = hashlib.sha256(com.read_bytes()).hexdigest() if com.is_file() else None
           data = {
               "schema": 1, "kind": "minicon-signed-runtime", "cell": os.environ["CELL"],
               "job_status": os.environ["JOB_STATUS"], "runner_os": os.environ["RUNNER_OS"],
@@ -439,7 +482,7 @@ jobs:
               "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
               "source_sha": os.environ["EXPECTED_SOURCE_SHA"],
               "source_tree_digest": os.environ["EXPECTED_SOURCE_TREE_DIGEST"],
-              "minicon_com_sha256": os.environ["EXPECTED_COM_SHA256"], "product_version": os.environ["EXPECTED_VERSION"],
+              "rust_com_sha256": actual_digest, "product_version": os.environ["EXPECTED_VERSION"],
           }
           if log.is_file():
               raw = log.read_bytes(); data.update(log_sha256=hashlib.sha256(raw).hexdigest(), log_bytes=len(raw))
@@ -478,6 +521,7 @@ jobs:
       - name: Seal signed six-cell aggregate
         env:
           EXPECTED_COM_SHA256: ${{ needs.sign.outputs.signed_com_sha256 }}
+          EXPECTED_COM_ARM64_SHA256: ${{ needs.sign.outputs.signed_com_arm64_sha256 }}
           EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
           EXPECTED_SOURCE_TREE_DIGEST: ${{ needs.sign.outputs.source_tree_digest }}
           EXPECTED_ARTIFACT_ID: ${{ needs.sign.outputs.artifact_id }}
@@ -495,14 +539,23 @@ jobs:
           if any(r.get("job_status") != "success" for r in rows): raise SystemExit("one or more signed runtime courts failed")
           if any(r.get('native_browser_status') != 'passed' for r in rows if r['cell'].startswith('win-')):
               raise SystemExit('signed native Windows browser court missing or failed')
-          for field, expected in (("minicon_com_sha256", os.environ["EXPECTED_COM_SHA256"]),
-                                  ("source_sha", os.environ["EXPECTED_SOURCE_SHA"]),
+          for field, expected in (("source_sha", os.environ["EXPECTED_SOURCE_SHA"]),
                                   ("source_tree_digest", os.environ["EXPECTED_SOURCE_TREE_DIGEST"])):
               if {r.get(field) for r in rows} != {expected}: raise SystemExit(f"{field} mismatch")
+          # Windows rows must have executed the SIGNED bytes; the four other
+          # cells their own manifest-bound artifacts.
+          for row in rows:
+              if not row.get("rust_com_sha256"): raise SystemExit("missing rust_com_sha256")
+          win64 = next(r for r in rows if r["cell"] == "win-x86_64")
+          winarm = next(r for r in rows if r["cell"] == "win-aarch64")
+          if win64["rust_com_sha256"] != os.environ["EXPECTED_COM_SHA256"]: raise SystemExit("signed win-x86_64 .com digest mismatch")
+          if winarm["rust_com_sha256"] != os.environ["EXPECTED_COM_ARM64_SHA256"]: raise SystemExit("signed win-aarch64 .com digest mismatch")
           out = {"schema": 1, "kind": "minicon-signed-six-cell-aggregate", "run_id": int(run_id),
                  "run_attempt": attempt, "source_sha": os.environ["EXPECTED_SOURCE_SHA"],
                  "source_tree_digest": os.environ["EXPECTED_SOURCE_TREE_DIGEST"],
                  "minicon_com_sha256": os.environ["EXPECTED_COM_SHA256"],
+                 "rust_coms": {"minicon-win-x86_64.com": {"sha256": os.environ["EXPECTED_COM_SHA256"]},
+                                "minicon-win-aarch64.com": {"sha256": os.environ["EXPECTED_COM_ARM64_SHA256"]}},
                  "artifact_id": os.environ["EXPECTED_ARTIFACT_ID"], "cells": sorted(cells),
                  "release_eligible": os.environ["RELEASE_ELIGIBLE"] == "true",
                  "strategy": "current-attempt-only-full-six"}

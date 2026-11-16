@@ -1,9 +1,9 @@
 {
   "schema": 1,
-  "version": "0.2.26",
+  "version": "0.2.27",
   "assets": {
     "native_archives": true,
-    "minicon_com": true
+    "rust_coms": true
   },
   "signing": {
     "mode": "required",
@@ -14,7 +14,8 @@
   "reputation": {
     "mode": "defender",
     "assets": [
-      "minicon.com",
+      "minicon-win-x86_64.com",
+      "minicon-win-aarch64.com",
       "windows-x86_64",
       "windows-arm64"
     ]

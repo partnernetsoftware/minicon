@@ -15,7 +15,9 @@ use chunk::Chunk;
 use value::{str_val, Value};
 use vm::Vm;
 
-const VERSION: &str = "0.1.0";
+/// Taken from Cargo.toml so the CLI, the cache key and the packed metadata
+/// cannot drift apart.
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
