@@ -135,6 +135,9 @@ flowchart LR
 - 2026-11-16 round 16: frame slot buffers are recycled through a pool capped at
   256 (max depth 220), removing the per-call `vec!` allocation; `fib(24)` is now
   ~71 ms vs ~137 ms at round 21 start. Suite: 108 checks.
+- 2026-11-16 round 17: the CALL fast path drains arguments straight from the
+  operand stack into the new frame instead of `split_off`-ing a Vec; `fib(24)` is
+  now ~56 ms (from ~137 ms before the allocation work began). Suite: 108 checks.
 - Open: execution on Linux x86_64/aarch64 and Windows ARM64 belongs to the
   six-runner matrix (`minicon-com.yml`, `bx_lane`), not the Windows host.
 

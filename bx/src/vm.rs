@@ -8,6 +8,13 @@ use std::rc::Rc;
 
 const MAX_DEPTH: usize = 220;
 
+/// Where a frame takes its arguments from: an explicit vector (builtins, top
+/// frame) or values already sitting on the operand stack (the CALL fast path).
+enum FrameArgs {
+    Vec(Vec<Value>),
+    Stack(usize),
+}
+
 pub struct Vm {
     pub chunks: Vec<Chunk>,
     pub globals: BTreeMap<String, Value>,
@@ -63,7 +70,7 @@ impl Vm {
     }
 
     pub fn run(&mut self) -> Result<Value, String> {
-        self.run_frame(0, Vec::new(), Vec::new())
+        self.run_frame(0, Vec::new(), FrameArgs::Vec(Vec::new()))
     }
 
     pub fn call_value(
@@ -73,7 +80,7 @@ impl Vm {
         _line: u32,
     ) -> Result<Value, String> {
         match callee {
-            Value::Func(f) => self.run_frame(f.chunk, f.upvalues.clone(), args),
+            Value::Func(f) => self.run_frame(f.chunk, f.upvalues.clone(), FrameArgs::Vec(args)),
             Value::Builtin(name) => builtins::call(self, name, &args),
             other => Err(format!("{} value is not callable", other.type_name())),
         }
@@ -88,7 +95,7 @@ impl Vm {
         &mut self,
         ci: usize,
         mut upvalues: Vec<Value>,
-        args: Vec<Value>,
+        args: FrameArgs,
     ) -> Result<Value, String> {
         if ci >= self.chunks.len() {
             return Err("bytecode references a missing function chunk".to_string());
@@ -105,9 +112,21 @@ impl Vm {
         let mut slots = self.frame_pool.pop().unwrap_or_default();
         slots.clear();
         slots.resize(nslots, Value::Null);
-        for (i, a) in args.into_iter().enumerate() {
-            if i < slots.len() {
-                slots[i] = a;
+        match args {
+            FrameArgs::Vec(values) => {
+                for (i, value) in values.into_iter().enumerate() {
+                    if i < slots.len() {
+                        slots[i] = value;
+                    }
+                }
+            }
+            FrameArgs::Stack(count) => {
+                let start = self.stack.len().saturating_sub(count);
+                for (i, value) in self.stack.drain(start..).enumerate() {
+                    if i < slots.len() {
+                        slots[i] = value;
+                    }
+                }
             }
         }
         let base = self.stack.len();
@@ -385,9 +404,20 @@ impl Vm {
                     if self.stack.len() < argc + 1 {
                         fail!("internal stack underflow at call");
                     }
-                    let call_args: Vec<Value> = self.stack.split_off(self.stack.len() - argc);
-                    let callee = popv!();
-                    match self.call_value(callee, call_args, line) {
+                    let arg_start = self.stack.len() - argc;
+                    let callee = self.stack.remove(arg_start - 1);
+                    let result = match callee {
+                        Value::Func(f) => {
+                            // Arguments stay on the operand stack and are drained
+                            // straight into the new frame's slots.
+                            self.run_frame(f.chunk, f.upvalues.clone(), FrameArgs::Stack(argc))
+                        }
+                        other => {
+                            let call_args: Vec<Value> = self.stack.split_off(arg_start - 1);
+                            self.call_value(other, call_args, line)
+                        }
+                    };
+                    match result {
                         Ok(v) => self.stack.push(v),
                         Err(e) => {
                             // The callee already reports its own location and
