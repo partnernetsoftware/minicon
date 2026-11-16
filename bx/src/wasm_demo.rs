@@ -151,7 +151,48 @@ const imports = {
       }
       return 0;
     },
-    str_split: (ptr, len, sepPtr, sepLen) => {
+    arr_range: (start, stop, step) => {
+      const values = [];
+      if (step > 0n) {
+        for (let value = start; value < stop; value += step) values.push(value);
+      }
+      const base = nextStr;
+      const size = 4 + 8 * values.length;
+      nextStr = (base + size + 7) & ~7;
+      const view = new DataView(instance.exports.memory.buffer);
+      view.setUint32(base, values.length, true);
+      values.forEach((value, index) => view.setBigInt64(base + 4 + index * 8, value, true));
+      return base;
+    },
+    arr_sum: (ptr) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const count = view.getUint32(ptr, true);
+      let total = 0n;
+      for (let i = 0; i < count; i++) total += view.getBigInt64(ptr + 4 + i * 8, true);
+      return total;
+    },
+    arr_reverse: (ptr) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const count = view.getUint32(ptr, true);
+      for (let i = 0; i < Math.floor(count / 2); i++) {
+        const left = ptr + 4 + i * 8;
+        const right = ptr + 4 + (count - 1 - i) * 8;
+        const a = view.getBigInt64(left, true);
+        const b = view.getBigInt64(right, true);
+        view.setBigInt64(left, b, true);
+        view.setBigInt64(right, a, true);
+      }
+      return ptr;
+    },
+    arr_sort: (ptr) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const count = view.getUint32(ptr, true);
+      const values = [];
+      for (let i = 0; i < count; i++) values.push(view.getBigInt64(ptr + 4 + i * 8, true));
+      values.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+      values.forEach((value, index) => view.setBigInt64(ptr + 4 + index * 8, value, true));
+      return ptr;
+    },    str_split: (ptr, len, sepPtr, sepLen) => {
       const decode = (p, l) => new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, p, l));
       const text = decode(ptr, len);
       const sep = decode(sepPtr, sepLen);

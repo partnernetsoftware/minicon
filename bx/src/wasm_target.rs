@@ -764,6 +764,26 @@ impl Checker {
                             other => Err(format!("wasm target cannot slice {}", ty_name(other))),
                         };
                     }
+                    if name == "range" && (args.len() == 1 || args.len() == 2 || args.len() == 3) {
+                        for arg in args {
+                            if self.infer(arg)? != Ty::Int {
+                                return Err("wasm target range() takes ints".to_string());
+                            }
+                        }
+                        return Ok(Ty::Arr);
+                    }
+                    if name == "sum" && args.len() == 1 {
+                        if self.infer(&args[0])? != Ty::Arr {
+                            return Err("wasm target sum() takes an int array".to_string());
+                        }
+                        return Ok(Ty::Int);
+                    }
+                    if matches!(name.as_str(), "reverse" | "sort") && args.len() == 1 {
+                        if self.infer(&args[0])? != Ty::Arr {
+                            return Err(format!("wasm target {}() takes an int array", name));
+                        }
+                        return Ok(Ty::Arr);
+                    }
                     if name == "str" && args.len() == 1 {
                         let ty = self.infer(&args[0])?;
                         if !is_number(ty) && ty != Ty::Bool {
@@ -1316,7 +1336,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 50;
+const IMPORT_COUNT: u32 = 54;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -1357,6 +1377,10 @@ const STR_SPLIT: u32 = 46;
 const STR_JOIN: u32 = 47;
 const STR_SLICE: u32 = 48;
 const ARR_SLICE: u32 = 49;
+const ARR_RANGE: u32 = 50;
+const ARR_SUM: u32 = 51;
+const ARR_REVERSE: u32 = 52;
+const ARR_SORT: u32 = 53;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -3601,6 +3625,35 @@ impl<'a> Emitter<'a> {
                             }
                         };
                     }
+                    if name == "range" && (args.len() == 1 || args.len() == 2 || args.len() == 3) {
+                        if args.len() == 1 {
+                            self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                            self.emit_expr(&args[0])?;
+                            self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+                        } else {
+                            self.emit_expr(&args[0])?;
+                            self.emit_expr(&args[1])?;
+                            // The VM ignores range()'s third argument; always step by 1.
+                            self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+                        }
+                        self.builder.push(Instr::Call(ARR_RANGE));
+                        return Ok(Ty::Arr);
+                    }
+                    if name == "sum" && args.len() == 1 {
+                        self.emit_expr(&args[0])?;
+                        self.builder.push(Instr::Call(ARR_SUM));
+                        return Ok(Ty::Int);
+                    }
+                    if matches!(name.as_str(), "reverse" | "sort") && args.len() == 1 {
+                        let import = if name == "reverse" {
+                            ARR_REVERSE
+                        } else {
+                            ARR_SORT
+                        };
+                        self.emit_expr(&args[0])?;
+                        self.builder.push(Instr::Call(import));
+                        return Ok(Ty::Arr);
+                    }
                     if name == "str" && args.len() == 1 {
                         let ty = self.type_of(&args[0])?;
                         if ty == Ty::Bool {
@@ -4763,6 +4816,12 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
         vec![ValType::I32, ValType::I64, ValType::I64],
         vec![ValType::I32],
     );
+    let arr_range_ty = builder.add_type(
+        vec![ValType::I64, ValType::I64, ValType::I64],
+        vec![ValType::I32],
+    );
+    let arr_sum_ty = builder.add_type(vec![ValType::I32], vec![ValType::I64]);
+    let arr_unary_ty = builder.add_type(vec![ValType::I32], vec![ValType::I32]);
     let str_test_ty = builder.add_type(
         vec![
             ValType::I32,
@@ -4855,6 +4914,10 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "str_join", str_join_ty);
     builder.import_func("env", "str_slice", str_slice_ty);
     builder.import_func("env", "arr_slice", arr_slice_ty);
+    builder.import_func("env", "arr_range", arr_range_ty);
+    builder.import_func("env", "arr_sum", arr_sum_ty);
+    builder.import_func("env", "arr_reverse", arr_unary_ty);
+    builder.import_func("env", "arr_sort", arr_unary_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -5261,6 +5324,16 @@ mod tests {
         let (numbers, _) = run_with_argv(&source, &[]);
         let _ = std::fs::remove_file(&blocker);
         assert_eq!(numbers, vec![-1]);
+    }
+
+    #[test]
+    fn int_array_builtins() {
+        let (numbers, strings) = run_with_argv(
+            "let a = range(2, 6)\nprint(sum(a))\nprint(len(a))\nfor v in reverse(a) {\n  print(v)\n}\nlet b = sort([3, 1, 2])\nprint(b[0])\nprint(b[2])\nprint(slice(a, 0, 2)[1])",
+            &[],
+        );
+        assert!(strings.is_empty());
+        assert_eq!(numbers, vec![14, 4, 5, 4, 3, 2, 1, 3, 4]);
     }
 
     #[test]

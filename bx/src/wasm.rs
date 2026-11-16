@@ -1975,6 +1975,107 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 (self.on_str)(&text);
                 Ok(Vec::new())
             }
+            ("env", "arr_range") => {
+                let (start, stop, step) = match (args.first(), args.get(1), args.get(2)) {
+                    (Some(WVal::I64(start)), Some(WVal::I64(stop)), Some(WVal::I64(step))) => {
+                        (*start, *stop, *step)
+                    }
+                    _ => {
+                        return Err(
+                            "env.arr_range expects (i64 start, i64 stop, i64 step)".to_string()
+                        )
+                    }
+                };
+                let mut values: Vec<i64> = Vec::new();
+                if step > 0 {
+                    let mut value = start;
+                    while value < stop {
+                        values.push(value);
+                        value += step;
+                    }
+                }
+                let size = 4 + 8 * values.len();
+                let at = self.next_file as usize;
+                if at + size > memory.len() {
+                    return Err("range result does not fit the memory region".to_string());
+                }
+                memory[at..at + 4].copy_from_slice(&(values.len() as u32).to_le_bytes());
+                for (index, value) in values.iter().enumerate() {
+                    let offset = at + 4 + index * 8;
+                    memory[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+                }
+                self.next_file = (at + size + 7) as u32 & !7;
+                Ok(vec![WVal::I32(at as i32)])
+            }
+            ("env", "arr_sum") => {
+                let ptr = match args.first() {
+                    Some(WVal::I32(ptr)) => *ptr as usize,
+                    _ => return Err("env.arr_sum expects one i32".to_string()),
+                };
+                if ptr + 4 > memory.len() {
+                    return Err("env.arr_sum array is outside memory".to_string());
+                }
+                let count = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+                let mut total: i64 = 0;
+                for index in 0..count {
+                    let offset = ptr + 4 + index * 8;
+                    if offset + 8 > memory.len() {
+                        break;
+                    }
+                    total += i64::from_le_bytes(memory[offset..offset + 8].try_into().unwrap());
+                }
+                Ok(vec![WVal::I64(total)])
+            }
+            ("env", "arr_reverse") => {
+                let ptr = match args.first() {
+                    Some(WVal::I32(ptr)) => *ptr as usize,
+                    _ => return Err("env.arr_reverse expects one i32".to_string()),
+                };
+                if ptr + 4 > memory.len() {
+                    return Err("env.arr_reverse array is outside memory".to_string());
+                }
+                let count = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+                // The VM reverses in place, so keep the same array identity.
+                for index in 0..count / 2 {
+                    let left = ptr + 4 + index * 8;
+                    let right = ptr + 4 + (count - 1 - index) * 8;
+                    if right + 8 > memory.len() {
+                        break;
+                    }
+                    let a = memory[left..left + 8].to_vec();
+                    let b = memory[right..right + 8].to_vec();
+                    memory[left..left + 8].copy_from_slice(&b);
+                    memory[right..right + 8].copy_from_slice(&a);
+                }
+                Ok(vec![WVal::I32(ptr as i32)])
+            }
+            ("env", "arr_sort") => {
+                let ptr = match args.first() {
+                    Some(WVal::I32(ptr)) => *ptr as usize,
+                    _ => return Err("env.arr_sort expects one i32".to_string()),
+                };
+                if ptr + 4 > memory.len() {
+                    return Err("env.arr_sort array is outside memory".to_string());
+                }
+                let count = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+                let mut values: Vec<i64> = Vec::with_capacity(count);
+                for index in 0..count {
+                    let offset = ptr + 4 + index * 8;
+                    if offset + 8 > memory.len() {
+                        break;
+                    }
+                    values.push(i64::from_le_bytes(
+                        memory[offset..offset + 8].try_into().unwrap(),
+                    ));
+                }
+                values.sort_unstable();
+                // The VM sorts in place, so keep the same array identity.
+                for (index, value) in values.iter().enumerate() {
+                    let offset = ptr + 4 + index * 8;
+                    memory[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+                }
+                Ok(vec![WVal::I32(ptr as i32)])
+            }
             ("env", "str_split") => {
                 let read = |value: Option<&WVal>| match value {
                     Some(WVal::I32(ptr)) => Some(*ptr as usize),

@@ -910,6 +910,16 @@ if (wasmStrarr.code == 0 && wasmStrarrRun.out == wasmStrarrVm.out && wasmStrarrR
   casesFail += 1
   failures.push("wasm string arrays and slices\n    wasm=" + json(wasmStrarrRun.out) + " vm=" + json(wasmStrarrVm.out) + " err=" + json(wasmStrarrRun.err))
 }
+write(artDir + "/wasm-arrb.bxs", 'let a = range(2, 7)\nfor v in a { print(v * 2) }\nprint(sum(a))\nfor v in reverse(a) { print(v) }\nprint(a[0])\nfor v in sort([7, 1, 4]) { print(v) }\nprint(slice(a, 0, 2)[1])\n')
+let wasmArrb = exec([BX, "build", "--wasm", artDir + "/wasm-arrb.bxs", "-o", artDir + "/wasm-arrb.wasm"])
+let wasmArrbRun = exec([BX, "run", artDir + "/wasm-arrb.wasm"])
+let wasmArrbVm = exec([BX, "run", artDir + "/wasm-arrb.bxs"])
+if (wasmArrb.code == 0 && wasmArrbRun.out == wasmArrbVm.out && wasmArrbRun.out.trim() == "4\n6\n8\n10\n12\n20\n6\n5\n4\n3\n2\n6\n1\n4\n7\n5") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm array builtins\n    wasm=" + json(wasmArrbRun.out) + " vm=" + json(wasmArrbVm.out) + " err=" + json(wasmArrbRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'fn outer() {\n  let n = 5\n  let f = fn(x) { return x + n }\n  return f(1)\n}\nprint(outer())\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1 && wasmBad.err.contains("cannot capture outer variables")) {
