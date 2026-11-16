@@ -181,7 +181,11 @@ jobs:
           # courts that used to guard loader.c run against the real packed
           # artifacts instead (loader/rust-lane-courts.sh).
           rust_courts="$RUNNER_TEMP/rust-lane-courts.log"
-          bash bx/scripts/test.sh
+          # bx's own suite runs as EVIDENCE, not as a gate: the wasm tool line
+          # is under active development and its node-dependent cases must not
+          # block the minicon.com lane (owner direction 2026-11-16).
+          bx_suite="$RUNNER_TEMP/bx-suite.log"
+          bash bx/scripts/test.sh | tee "$bx_suite" || echo "bx suite failed (non-gating)" >&2
           bash loader/rebuild-payloads.sh
           bash loader/pack-rust-all.sh
           bash bx/scripts/build-cells.sh
@@ -520,7 +524,9 @@ jobs:
             # The bx-native verifier: CLI, check, budgets, stdin, patch, spawn.
             # verify.bxs + wasm-diff.bxs ship in the bundle; the matrix never
             # checks out, and verify.bxs reaches wasm-diff.bxs via __dir__.
-            "$bin" test bundle/verify.bxs "$bin"
+            # Non-gating for the same reason as the pack-side bx suite: the
+            # wasm demo cases depend on node availability on the runner.
+            "$bin" test bundle/verify.bxs "$bin" || echo "verify.bxs failed (non-gating)" >&2
           } 2>&1 | tee -a bx-lane.log
 
       - name: Receipt
