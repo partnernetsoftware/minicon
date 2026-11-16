@@ -32,7 +32,8 @@ impl std::hash::Hasher for FnvHasher {
     }
 }
 
-pub type GlobalMap = std::collections::HashMap<String, Value, std::hash::BuildHasherDefault<FnvHasher>>;
+pub type GlobalMap =
+    std::collections::HashMap<String, Value, std::hash::BuildHasherDefault<FnvHasher>>;
 
 pub struct Vm {
     pub chunks: Vec<Chunk>,
@@ -293,22 +294,33 @@ impl Vm {
                     }
                 }
                 op::GET_GLOBAL => {
-                    let name = match const_at!(arg) {
-                        Value::Str(s) => (*s).clone(),
+                    // Borrow the name from the constant pool: cloning it cost one
+                    // allocation on every global read.
+                    let holder = const_at!(arg);
+                    let name = match &holder {
+                        Value::Str(s) => s.as_str(),
                         _ => fail!("bad global name constant"),
                     };
-                    match self.globals.get(&name) {
+                    match self.globals.get(name) {
                         Some(v) => self.stack.push(v.clone()),
                         None => fail!("undefined variable '{}'", name),
                     }
                 }
                 op::SET_GLOBAL => {
-                    let name = match const_at!(arg) {
-                        Value::Str(s) => (*s).clone(),
+                    let holder = const_at!(arg);
+                    let name = match &holder {
+                        Value::Str(s) => s.as_str(),
                         _ => fail!("bad global name constant"),
                     };
                     let v = popv!();
-                    self.globals.insert(name, v);
+                    // Update in place when the name exists; only a new binding
+                    // needs to own the name.
+                    match self.globals.get_mut(name) {
+                        Some(slot) => *slot = v,
+                        None => {
+                            self.globals.insert(name.to_string(), v);
+                        }
+                    }
                 }
                 op::ADD => {
                     let b = popv!();

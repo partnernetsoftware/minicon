@@ -146,6 +146,10 @@ flowchart LR
   `BTreeMap`; top-level `let` is a global, so hot loops pay this lookup. `loop`
   1e6 from ~1.14 s to ~0.85 s, 200k calls from ~205 ms to ~173 ms. Suite: 108
   checks.
+- 2026-11-16 round 20: `GET_GLOBAL`/`SET_GLOBAL` borrow the name from the
+  constant pool instead of cloning a `String` (and `SET_GLOBAL` updates in place
+  for existing bindings). `loop` 1e6 from ~0.85 s to ~0.29 s, 200k calls from
+  ~173 ms to ~72 ms, `fib(24)` from ~52 ms to ~39 ms. Suite: 108 checks.
 - Open: execution on Linux x86_64/aarch64 and Windows ARM64 belongs to the
   six-runner matrix (`minicon-com.yml`, `bx_lane`), not the Windows host.
 
