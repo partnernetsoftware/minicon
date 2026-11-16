@@ -73,14 +73,14 @@ minicon-bx-linux-x86_64.com test tools/verify.bxs minicon-bx-linux-x86_64.com
 
 | 产物 | 壳 | cell 字节 | 总字节 | 实跑 |
 |---|---|---:|---:|---|
-| `minicon-bx-win-x86_64.com` | win-x86_64 | 825,344 | 1,050,350 | bx 0.2.0 / 42 / exit 3 / 套件 108 项 |
-| `minicon-bx-win-aarch64.com` | win-aarch64 | 717,824 | 922,863 | 需 ARM64 主机 |
-| `minicon-bx-lnx-x86_64.com` | lnx-x86_64 | 935,600 | 1,380,510 | 需 Linux（CI） |
-| `minicon-bx-lnx-aarch64.com` | lnx-aarch64 | 811,296 | 1,207,815 | 需 Linux ARM（CI） |
-| `minicon-win-x86_64.com` | win-x86_64 | 5,299,200 | 5,511,404 | `--version`/`--status` exit 0 |
-| `minicon-win-aarch64.com` | win-aarch64 | 4,992,512 | 5,185,773 | 需 ARM64 主机 |
-| `minicon-lnx-x86_64.com` | lnx-x86_64 | 7,326,688 | 7,761,004 | 需 Linux（CI） |
-| `minicon-lnx-aarch64.com` | lnx-aarch64 | 6,438,816 | 6,825,293 | 需 Linux ARM（CI） |
+| `minicon-bx-win-x86_64.com` | win-x86_64 | 1,116,672 | 1,356,526 | bx 0.2.0 / 42 / exit 3 / 套件 119 项 |
+| `minicon-bx-win-aarch64.com` | win-aarch64 | 948,224 | 1,167,599 | 需 ARM64 主机（CI `bx_lane` 跑 16 项 verifier） |
+| `minicon-bx-lnx-x86_64.com` | lnx-x86_64 | 1,122,960 | 1,574,014 | 需 Linux（CI） |
+| `minicon-bx-lnx-aarch64.com` | lnx-aarch64 | 965,144 | 1,367,415 | 需 Linux ARM（CI） |
+| `minicon-win-x86_64.com` | win-x86_64 | 5,299,200 | 5,524,204 | `--version`/`--status` exit 0 |
+| `minicon-win-aarch64.com` | win-aarch64 | 4,992,512 | 5,197,549 | 需 ARM64 主机 |
+| `minicon-lnx-x86_64.com` | lnx-x86_64 | 7,326,688 | 7,771,596 | 需 Linux（CI） |
+| `minicon-lnx-aarch64.com` | lnx-aarch64 | 6,438,816 | 6,835,333 | 需 Linux ARM（CI） |
 
 `com-pack verify` 逐 cell 校验可执行头与 key 一致，`__meta__` 只校验可读；
 `pack` 结束前自动跑一次，不匹配直接失败。
@@ -93,7 +93,7 @@ minicon-bx-linux-x86_64.com test tools/verify.bxs minicon-bx-linux-x86_64.com
 | 打包产物（`minicon-bx-…com`） | 43.8 ms | 48.3 ms | 57.4 ms |
 
 实测拆解：launcher 自身（打包一个非本机 cell，因找不到 host cell 而直接报错）约
-**21 ms**，与原生 cell 同量级；余下约 27 ms 是**第二次进程创建 + 825 KB 落盘**。
+**21 ms**，与原生 cell 同量级；余下约 27 ms 是**第二次进程创建 + ~1.1 MB 落盘**。
 这是 trampoline 模型的固定成本，不是实现缺陷：`.com` 用于分发；同一台机器上反复
 调用的 agent 应直接调用原生 cell。Linux 上 `execv` 可以省掉这次 fork，但那样进程
 被替换、临时文件无法自清理，故未采用；解包缓存只省落盘那几毫秒，却留下文件，也
@@ -102,9 +102,10 @@ minicon-bx-linux-x86_64.com test tools/verify.bxs minicon-bx-linux-x86_64.com
 ## 验证（本机实测）
 
 ```
-selftest.ps1                                   -> PASS 22 项
+selftest.ps1                                   -> PASS 31 项
+bx test tools/verify.bxs minicon-bx-win-x86_64.com -> PASS 16 tests
 com-pack info …\minicon-bx-win-x86_64.com      -> {"product":"minicon-bx","cell":"win-x86_64","version":"0.2.0","source_sha":…}
-BX_BIN=minicon-bx-win-x86_64.com bx run bx/tests/suite.bxs -> PASS 51 checks
+BX_BIN=minicon-bx-win-x86_64.com bx run bx/tests/suite.bxs -> PASS 119 checks
 exit(0|1|3|42)                                 -> 0 | 1 | 3 | 42（精确透传）
 bx exec(["./minicon-bx-win-x86_64.com", …])    -> {"code":0,"out":"42\n"}
 拷贝到别处 + 换 cwd / 4 并发 / MINICON_COM_EXTRACT + VERBOSE -> 均通过，无残留
@@ -117,7 +118,7 @@ bx exec(["./minicon-bx-win-x86_64.com", …])    -> {"code":0,"out":"42\n"}
 | 一份文件跑六平台 | 是（polyglot） | 否：每个平台一份 |
 | 非零退出码 | `(128+c)<<8`（缺陷） | 原样透传 |
 | 父进程管道捕获 | 丢失（Windows） | 正常（stdio 继承） |
-| 体积 | 714 KB 壳 + cells | ~211 KB 壳 + cells |
+| 体积 | 714 KB 壳 + cells | ~240 KB 壳 + cells |
 
 要“一个文件六个系统”，壳必须是 polyglot：要么继续用 cosmocc 编，要么走
 `systems/ape` 的 `APE!` loader。Rust 路线的定位是**每平台一个单文件**，但可

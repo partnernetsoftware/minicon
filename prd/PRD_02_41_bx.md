@@ -23,14 +23,17 @@ bx — binary scripting surface
 │   ├── [v] `attempt(fn)` error capture
 │   ├── [v] closures share mutable locals at any nesting depth (per-call cells; per-iteration loop captures)
 │   ├── [v] `c ? a : b` and `"${expr}"` interpolation (`\$` escapes a literal dollar)
-│   └── [no] closures, try/catch, regex (roadmap, not claimed)
+│   ├── [v] `test(name, fn)` blocks and the `bx test` runner
+│   └── [no] try/catch, regex, module exports (roadmap, not claimed)
 ├── delivery → ../loader/bx/README.md
 │   ├── [v] `MINICOM1` launcher lane (Rust; no cosmocc, no C)
 │   ├── [v] `--com-info`: launcher answers the container metadata itself (no unpack, no payload run)
 │   ├── [v] four cells packed locally: {win,lnx} × {x86_64,aarch64}
+│   ├── [v] native processes: `exec`/`exec_all`/`spawn` (+ output redirection)
 │   └── [-] six-cell execution evidence (CI `bx_lane`)
 └── qualification
     ├── [v] 119-check suite passes through the packed win-x86_64 artifact
+    ├── [v] `bx/tools/verify.bxs`: 16 bx tests, run by CI on every runner
     │   process cases pick cmd/sh by host OS, so the same suite runs on the
     │   macos-15 CI pack host (2026-11-16; six cmd-only cases failed there first)
     └── [-] the same suite on the five remaining runners
@@ -46,7 +49,7 @@ flowchart LR
     B["bx cells: win/lnx × x86_64/aarch64"] --> L["Rust launcher (MINICOM1)"]
     L --> D["minicon-bx-<cell>.com"]
     D -->|"extract + spawn, stdio inherited"| B
-    Q["bx 51-check suite"] --> D
+    Q["bx 119-check suite"] --> D
     CI["six-cell matrix"] -.->|"bx_lane evidence"| Q
 ```
 
@@ -86,7 +89,7 @@ flowchart LR
   killed launcher's extract is swept at most hourly, and `com-pack inspect`
   reports launcher format/subsystem, cells and metadata. Re-measured with 20
   interleaved runs: native cell p50 20.0 ms, packed p50 48.3 ms, launcher-only
-  about 21 ms — the rest is the second process creation plus the 825 KB write.
+  about 21 ms — the rest is the second process creation plus the ~1.1 MB write.
 - 2026-11-16 round 2: the `.bxcache` key now covers every recursively included
   file, so editing a `use` dependency rebuilds the program (a stale-cache bug:
   the key used to hash only the main script). The suite grew to 65 checks and

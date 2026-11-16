@@ -21,12 +21,20 @@
 - `--max-steps` / `--timeout` 执行预算；脚本之后的参数仍进 `argv`。
 - `read("-")` 读 stdin 到 EOF，脚本可当管道过滤器。
 - `exec_all`：最多 8 个并发，结果按输入顺序，单个失败隔离。
+- `exec(..., {stdout, stderr})`：大输出直接落文件，绕开 8 MB 捕获上限。
+- `spawn` 家族：后台进程 + `spawn_poll`/`spawn_wait`/`spawn_write`/`spawn_close`/`spawn_kill`。
+- `test(name, fn)` + `bx test <file>`：语言原生测试运行器（汇总与退出码）。
 - `patch(path, diff)`：原子应用 unified diff，上下文不匹配时不写文件。
 
 **打包与测试**
 
 - 容器升级到 `BXB\x02`（每个 chunk 记录来源文件，v1 仍可读）。
-- 自托管套件 108 项；`.com` 产物级 selftest 29 项。
+- `bx/tools/verify.bxs`：16 项跨平台端到端验证，CI 每个 runner 用自己的产物跑。
+- 自托管套件 119 项；`.com` 产物级 selftest 31 项。
+
+**性能**
+
+- 调用帧与全局访问去分配：`fib(24)` ~137 → ~36 ms，1e6 循环 ~1.14 → ~0.22 s。
 
 ## 0.1.0
 
