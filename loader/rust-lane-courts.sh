@@ -27,7 +27,7 @@ fi
 [[ -n "$COM" && -f "$COM" ]] || { echo "no packed .com found (set MINICON_RUST_COURT_COM)" >&2; exit 2; }
 case "$(uname -s)" in
     MINGW*|MSYS*|CYGWIN*) WIN=1 ;;
-    *) WIN=0 ;;
+    *) WIN=0; chmod +x "$COM" || true ;;  # artifact transport strips the exec bit
 esac
 
 fail=0
@@ -95,6 +95,7 @@ else
 fi
 probe_com="$HERE/dist/rust/minicon-bx-$cell.com"
 if [[ -n "$probe_com" && -f "$probe_com" ]]; then
+    chmod +x "$probe_com" 2>/dev/null || true
     for expected in 0 1 3 42; do
         set +e
         out="$("$probe_com" eval "6*7" 2>/dev/null)"
@@ -126,15 +127,22 @@ import struct, sys
 from pathlib import Path
 p = Path(sys.argv[1])
 raw = bytearray(p.read_bytes())
-# Corrupt the FIRST CELL's executable header, not the table: com-pack verify
-# checks each cell's machine type against its key, and an unknown table key
-# would be skipped as "any". A broken MZ must fail the machine check.
+# Corrupt a CELL's executable header, not the table and not __meta__: verify
+# checks each cell's machine type against its key (an unknown/meta entry is
+# skipped), so a broken MZ in the first real cell must fail the machine check.
 i = raw.rfind(b"MINICOM1")
 assert i > 0, "no footer"
 off, ln = struct.unpack("<QQ", raw[i + 8 : i + 24])
 assert off + ln == i, "dangling footer"
-co, _cl = struct.unpack("<QQ", raw[off + 32 : off + 48])  # first entry payload
-raw[co] ^= 1  # break the MZ/ELF magic byte
+cell_off = None
+for e in range(ln // 48):
+    key = raw[off + e * 48 : off + e * 48 + 32].rstrip(b"\0")
+    if key.startswith(b"__meta__"):
+        continue  # plain data, no machine type to break
+    cell_off = struct.unpack("<Q", raw[off + e * 48 + 32 : off + e * 48 + 40])[0]
+    break
+assert cell_off is not None, "no cell entry"
+raw[cell_off] ^= 1  # break the MZ/ELF magic byte
 p.write_bytes(raw)
 PY
     pack_bin="$(ls "$HERE/com-rs/target/release/com-pack" "$HERE/com-rs/target/release/com-pack.exe" 2>/dev/null | head -1 || true)"
