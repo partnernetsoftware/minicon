@@ -1,0 +1,4 @@
+fn fib(n) { if (n < 2) { return n } return fib(n - 1) + fib(n - 2) }
+let t = now()
+let r = fib(24)
+print(now() - t)

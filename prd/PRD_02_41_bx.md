@@ -111,6 +111,10 @@ flowchart LR
   (`captured_names` analysis), so ordinary function calls no longer allocate
   cells; suite covers three-level writes and a local captured only by a
   grandchild. Suite: 84 checks.
+- 2026-11-16 round 9: a reproducible baseline lives in `bx/scripts/bench.sh`
+  (internal timing, packed-artifact mode); bytecode for `fib`/`loop`/`calls` is
+  identical to the pre-closure build, and the remaining call-path cost
+  (8-15%) is VM-implementation level, documented in the bx README.
 - Open: execution on Linux x86_64/aarch64 and Windows ARM64 belongs to the
   six-runner matrix (`minicon-com.yml`, `bx_lane`), not the Windows host.
 

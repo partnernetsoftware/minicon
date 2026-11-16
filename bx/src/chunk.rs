@@ -58,29 +58,30 @@ pub mod op {
     pub const GET_UPVALUE_RAW: u8 = 46;
 }
 
+/// One bit per opcode, set when the instruction carries a 4-byte operand.
+/// A 64-bit test replaces the growing match that ran on every instruction.
+const OPERAND_BITS: u64 = (1 << op::CONST)
+    | (1 << op::GET_LOCAL)
+    | (1 << op::SET_LOCAL)
+    | (1 << op::GET_GLOBAL)
+    | (1 << op::SET_GLOBAL)
+    | (1 << op::JUMP)
+    | (1 << op::JUMP_IF_FALSE)
+    | (1 << op::JUMP_IF_TRUE)
+    | (1 << op::JUMP_IF_FALSE_OR_POP)
+    | (1 << op::JUMP_IF_TRUE_OR_POP)
+    | (1 << op::CALL)
+    | (1 << op::MAKE_ARRAY)
+    | (1 << op::MAKE_OBJECT)
+    | (1 << op::GET_UPVALUE)
+    | (1 << op::MAKE_CLOSURE)
+    | (1 << op::GET_CELL)
+    | (1 << op::SET_CELL)
+    | (1 << op::SET_UPVALUE)
+    | (1 << op::GET_UPVALUE_RAW);
+
 pub fn has_operand(o: u8) -> bool {
-    matches!(
-        o,
-        op::CONST
-            | op::GET_LOCAL
-            | op::SET_LOCAL
-            | op::GET_GLOBAL
-            | op::SET_GLOBAL
-            | op::JUMP
-            | op::JUMP_IF_FALSE
-            | op::JUMP_IF_TRUE
-            | op::JUMP_IF_FALSE_OR_POP
-            | op::JUMP_IF_TRUE_OR_POP
-            | op::CALL
-            | op::MAKE_ARRAY
-            | op::MAKE_OBJECT
-            | op::GET_UPVALUE
-            | op::MAKE_CLOSURE
-            | op::GET_CELL
-            | op::SET_CELL
-            | op::SET_UPVALUE
-            | op::GET_UPVALUE_RAW
-    )
+    o < 64 && (OPERAND_BITS >> o) & 1 == 1
 }
 
 pub fn op_name(o: u8) -> &'static str {

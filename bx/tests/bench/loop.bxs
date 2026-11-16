@@ -1,0 +1,5 @@
+let i = 0
+let s = 0
+let t = now()
+while (i < 1000000) { s += i; i += 1 }
+print(now() - t)
