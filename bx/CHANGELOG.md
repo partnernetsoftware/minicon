@@ -28,6 +28,7 @@
 
 **实验性 wasm 目标**
 
+- G1 目标选择：`bx build --target wasm|bxb` 与 `BX_TARGET=wasm|bxb`（默认仍为 bxb）；非法值退出 2，`BX_TARGET=wasm bx run 脚本` 走 wasm 且失败时提示回退。`
 - `exists(path)` 返回 bool（与 VM 一致）；`file_exists(path)` 保留为 int 扩展。`
 - bool 类型：`true`/`false`、比较作为表达式、`&&`/`||`/`!`（短路）、三元、`str(bool)`/`print(bool)`；条件接受 bool 变量。`
 - 非捕获函数字面量：`let f = fn(x) { .. }`、直接调用、作为实参传给函数；捕获外层局部变量明确报错。`

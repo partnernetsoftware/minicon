@@ -22,7 +22,7 @@ flip, never as the long-term default.
 | Gate | Meaning | Evidence required | Status |
 | --- | --- | --- | --- |
 | G0 | Core scripting parity is green | parity matrix "core" rows `[v]`, unit tests + self-hosted suite + verifier + differential all green on four native cells | `[-]` |
-| G1 | Opt-in default | `BX_TARGET=wasm` (and `--target wasm`) accepted by `bx build`/`bx run`; one release of soak with the env override | `[_]` |
+| G1 | Opt-in default | `BX_TARGET=wasm` (and `--target wasm`) accepted by `bx build`/`bx run`; one release of soak with the env override | `[-]` |
 | G2 | Default flip | no env set builds `.wasm`; `.bxb` reachable only via `--target bxb`; docs/CHANGELOG announce the flip | `[_]` |
 | G3 | `.bxb` retirement | chunk container/emitter/cache-key code deleted; `--target bxb` rejected with a migration message | `[_]` |
 
@@ -46,7 +46,7 @@ bx .wasm migration (M6)
 │   └── [-] remaining core gaps: capturing closures, arrays of strings/records,
 │       `attempt`, method surface beyond push/pop/len, dynamic-object syntax
 ├── G1 opt-in default
-│   └── [_] --target flag + BX_TARGET env; cache key includes target
+│   └── [-] --target flag + BX_TARGET env accepted by build/run (soak pending)
 ├── G2 default flip
 │   ├── [_] docs/CHANGELOG announce; `.bxb` behind --target bxb
 │   └── [_] rollback: one release with BX_TARGET=bxb accepted
@@ -110,9 +110,14 @@ updated in the same change as the capability that moves a row.
 
 - Today: `bx build --wasm source.bxs -o out.wasm` (explicit) and `bx run
   file.wasm` (auto-detected). `.bxb` remains the default for plain `bx build`.
-- G1: add `--target wasm|bxb` to `bx build` (default unchanged) and `BX_TARGET`
-  for `bx run`/cache selection; cache keys gain the target discriminator so a
-  stale `.bxb` cache never serves a `.wasm` request.
+- G1 (implemented, soak pending): `bx build --target wasm|bxb` selects the
+  emitter (`--wasm` stays as the legacy alias and conflicts with an explicit
+  `--target bxb`); `BX_TARGET=wasm|bxb` is honoured by both `bx build` (when no
+  flag is given) and `bx run` for source scripts. Invalid values exit 2 with a
+  clear message. `bx run` under `BX_TARGET=wasm` compiles the source through the
+  wasm emitter without touching the `.bxb` cache, and a script that uses a
+  VM-only feature fails with a hint to rerun with `BX_TARGET=bxb`. The
+  `.bxb` cache is untouched because wasm runs do not write it.
 - G2: flip the default; `--target bxb` and `BX_TARGET=bxb` keep working for one
   release and print a deprecation note.
 - G3: delete the `.bxb` emitter/container/cache path; a request for `bxb`

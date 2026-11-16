@@ -164,6 +164,16 @@ write(dir + "/wasm-capture.bxs", 'fn outer() {\n  let n = 5\n  let f = fn(x) { r
 write(dir + "/wasm-closure.bxs", 'let double = fn(x) { return x * 2 }\nprint(double(21))\n')
 write(dir + "/wasm-bool.bxs", 'let ok = 2 > 1\nif (ok) { print(str(ok)) }\nprint(ok ? 1 : 0)\n')
 write(dir + "/wasm-exists.bxs", 'print(exists("."))\nprint(exists("C:/definitely-missing-bx"))\n')
+write(dir + "/g1.bxs", 'let a = [3, 4]\nlet total = 0\nfor v in a { total = total + v }\nprint(total)\n')
+test("G1 target selection", fn() {
+  let wasm = exec([bin, "build", "--target", "wasm", dir + "/g1.bxs", "-o", dir + "/g1-target.wasm"])
+  assert(wasm.code == 0, "build failed: " + wasm.err)
+  let env = exec([bin, "run", dir + "/g1.bxs"], { env: { BX_TARGET: "wasm" } })
+  let vm = exec([bin, "run", dir + "/g1.bxs"])
+  assert(env.code == 0 && env.out == vm.out && env.out.trim() == "7", "env=" + json(env.out) + " vm=" + json(vm.out))
+  let bad = exec([bin, "build", "--target", "nope", dir + "/g1.bxs"])
+  assert(bad.code == 2 && bad.err.contains("unknown target"), "invalid target: " + json(bad.err))
+})
 test("wasm exists()", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-exists.bxs", "-o", dir + "/wasm-exists.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

@@ -88,7 +88,8 @@ fn print_help() {
 
 usage
   bx run [--max-steps N] [--timeout MS] <script.bxs|.bxb|.wasm> [args...]
-  bx build --wasm <script.bxs> [-o out.wasm]      compile to WebAssembly
+  bx build [--target wasm|bxb] <script> [-o out]  compile (default target: bxb)
+bx build --wasm <script.bxs> [-o out.wasm]      alias for --target wasm
   bx build --wasm --html <script> [-o demo.html]  self-contained browser demo (module base64 + glue)
   bx eval [--max-steps N] [--timeout MS] "<source>"          evaluate and print
   bx build <script.bxs> [-o out.bxb]         compile source to bytecode
@@ -237,6 +238,46 @@ fn cmd_run(args: Vec<String>) -> i32 {
             }
         };
     }
+    let target = match std::env::var("BX_TARGET").as_deref() {
+        Ok("wasm") => "wasm",
+        Ok("bxb") | Err(_) => "bxb",
+        Ok(other) => {
+            eprintln!("bx: unknown BX_TARGET '{}' (expected wasm or bxb)", other);
+            return 2;
+        }
+    };
+    if target == "wasm" {
+        let src = match fs::read_to_string(path) {
+            Ok(src) => src,
+            Err(e) => {
+                eprintln!("bx: cannot read '{}': {}", path, e);
+                return 1;
+            }
+        };
+        let wasm_argv: Vec<String> = args[1..].to_vec();
+        return match wasm_target::compile_to_wasm(&src) {
+            Ok(bytes) => match wasm_target::execute(
+                &bytes,
+                &wasm_argv,
+                budget.max_steps.unwrap_or(0),
+                budget.timeout_ms.unwrap_or(0),
+                |value| println!("{}", value),
+                |text| println!("{}", text),
+            ) {
+                Ok(()) => 0,
+                Err(e) => {
+                    eprintln!("bx: {}", e);
+                    1
+                }
+            },
+            Err(e) => {
+                eprintln!("bx: {}", e);
+                eprintln!("bx: this script uses a feature the wasm target does not cover yet; run with BX_TARGET=bxb to use the legacy path");
+                1
+            }
+        };
+    }
+
     let script_args: Vec<Value> = args[1..].iter().map(|s| str_val(s.clone())).collect();
 
     let (chunks, source_name) = match load_program(Path::new(path), false) {
@@ -314,10 +355,59 @@ fn cmd_eval(args: Vec<String>) -> i32 {
     }
 }
 
+/// Resolve the execution target from `--target`, `--wasm` and `BX_TARGET`.
+/// `--target` wins over the environment; `--wasm` is the legacy alias for
+/// `--target wasm` and conflicts with an explicit `--target bxb`.
+fn resolve_target(
+    flag: Option<String>,
+    wasm_flag: bool,
+    env_target: Option<String>,
+) -> Result<String, String> {
+    let mut target = flag.or(env_target);
+    if wasm_flag {
+        match target.as_deref() {
+            Some("bxb") => {
+                return Err("bx: --wasm conflicts with --target bxb (BX_TARGET=bxb)".to_string())
+            }
+            _ => target = Some("wasm".to_string()),
+        }
+    }
+    let target = target.unwrap_or_else(|| "bxb".to_string());
+    match target.as_str() {
+        "wasm" | "bxb" => Ok(target),
+        other => Err(format!(
+            "bx: unknown target '{}' (expected wasm or bxb)",
+            other
+        )),
+    }
+}
+
+#[cfg(test)]
+mod target_tests {
+    use super::resolve_target;
+
+    #[test]
+    fn target_resolution_prefers_flags_and_validates() {
+        assert_eq!(resolve_target(None, false, None).unwrap(), "bxb");
+        assert_eq!(
+            resolve_target(None, false, Some("wasm".to_string())).unwrap(),
+            "wasm"
+        );
+        assert_eq!(
+            resolve_target(Some("wasm".to_string()), false, Some("bxb".to_string())).unwrap(),
+            "wasm"
+        );
+        assert_eq!(resolve_target(None, true, None).unwrap(), "wasm");
+        assert!(resolve_target(Some("bxb".to_string()), true, None).is_err());
+        assert!(resolve_target(None, false, Some("nope".to_string())).is_err());
+    }
+}
+
 fn cmd_build(args: Vec<String>) -> i32 {
     let mut input: Option<String> = None;
     let mut output: Option<String> = None;
     let mut wasm = false;
+    let mut target_flag: Option<String> = None;
     let mut html = false;
     let mut i = 0;
     while i < args.len() {
@@ -325,6 +415,14 @@ fn cmd_build(args: Vec<String>) -> i32 {
             "--wasm" => {
                 wasm = true;
                 i += 1;
+            }
+            "--target" => {
+                if i + 1 >= args.len() {
+                    eprintln!("bx build: --target needs wasm or bxb");
+                    return 2;
+                }
+                target_flag = Some(args[i + 1].clone());
+                i += 2;
             }
             "--html" => {
                 html = true;
@@ -347,6 +445,18 @@ fn cmd_build(args: Vec<String>) -> i32 {
                 return 2;
             }
         }
+    }
+    let target = match resolve_target(target_flag, wasm, std::env::var("BX_TARGET").ok()) {
+        Ok(target) => target,
+        Err(e) => {
+            eprintln!("{}", e);
+            return 2;
+        }
+    };
+    let wasm = target == "wasm";
+    if html && !wasm {
+        eprintln!("bx build: --html needs the wasm target");
+        return 2;
     }
     let input = match input {
         Some(v) => v,
