@@ -758,7 +758,7 @@ fn decode_code_body(r: &mut Reader) -> Result<(Vec<ValType>, Vec<Instr>), String
 }
 
 fn is_supported_numeric_opcode(opcode: u8) -> bool {
-    matches!(opcode, 0x45..=0x8a | 0xa0..=0xa3 | 0xa7 | 0xad | 0xb0 | 0xb9)
+    matches!(opcode, 0x45..=0x8a | 0xa0..=0xa3 | 0xa7 | 0xac | 0xad | 0xb0 | 0xb9)
 }
 
 pub fn decode(bytes: &[u8]) -> Result<Module, String> {
@@ -1578,6 +1578,10 @@ impl<'m, H: Host> Exec<'m, H> {
                 let value = pop_i64(stack)?;
                 stack.push(WVal::F64(value as f64));
             }
+            0xac => {
+                let value = pop_i32(stack)?;
+                stack.push(WVal::I64(value as i64));
+            }
             0xad => {
                 let value = pop_i32(stack)?;
                 stack.push(WVal::I64(value as u32 as i64));
@@ -2084,7 +2088,7 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 let start = self.next_map as usize;
                 let size = 8 + MAP_CAPACITY as usize * 16;
                 if start + size > memory.len() {
-                    return Ok(vec![WVal::I32(0)]);
+                    return Err("map allocation failed (module heap exhausted)".to_string());
                 }
                 memory[start..start + 4].copy_from_slice(&0u32.to_le_bytes());
                 memory[start + 4..start + 8].copy_from_slice(&MAP_CAPACITY.to_le_bytes());
@@ -2116,8 +2120,11 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     Some(WVal::I64(value)) => *value,
                     _ => return Err("env.map_set expects one i64 value".to_string()),
                 };
+                if ptr == 0 {
+                    return Err("map is not initialized".to_string());
+                }
                 if ptr + 8 + MAP_CAPACITY as usize * 16 > memory.len() {
-                    return Ok(vec![WVal::I32(0)]);
+                    return Err("map is not initialized".to_string());
                 }
                 let key = memory
                     .get(key_ptr..key_ptr.saturating_add(key_len))
@@ -2141,7 +2148,7 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     }
                 }
                 if count >= MAP_CAPACITY as usize {
-                    return Ok(vec![WVal::I32(0)]);
+                    return Err("map is full (64 entries)".to_string());
                 }
                 let at = ptr + 8 + count * 16;
                 memory[at..at + 4].copy_from_slice(&(key_ptr as u32).to_le_bytes());
@@ -2169,6 +2176,9 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     Some(len) => len,
                     None => return Err("env.map_get expects a key length".to_string()),
                 };
+                if ptr == 0 {
+                    return Err("map is not initialized".to_string());
+                }
                 let key = memory
                     .get(key_ptr..key_ptr.saturating_add(key_len))
                     .ok_or_else(|| "env.map_get key is outside memory".to_string())?
@@ -2176,7 +2186,7 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 let count = if ptr + 4 <= memory.len() {
                     u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize
                 } else {
-                    return Ok(vec![WVal::I64(0)]);
+                    return Err("map is not initialized".to_string());
                 };
                 for entry in 0..count.min(64) {
                     let at = ptr + 8 + entry * 16;
@@ -2212,6 +2222,9 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     (Some(ptr), Some(key_ptr), Some(key_len)) => (ptr, key_ptr, key_len),
                     _ => return Err("env.map_has expects (i32 map, i32 ptr, i32 len)".to_string()),
                 };
+                if ptr == 0 {
+                    return Err("map is not initialized".to_string());
+                }
                 let key = memory
                     .get(key_ptr..key_ptr.saturating_add(key_len))
                     .ok_or_else(|| "env.map_has key is outside memory".to_string())?
@@ -2219,7 +2232,7 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 let count = if ptr + 4 <= memory.len() {
                     u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize
                 } else {
-                    return Ok(vec![WVal::I32(0)]);
+                    return Err("map is not initialized".to_string());
                 };
                 for entry in 0..count.min(64) {
                     let at = ptr + 8 + entry * 16;
@@ -2246,10 +2259,13 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     Some(WVal::I32(ptr)) => *ptr as usize,
                     _ => return Err("env.map_len expects one i32 map".to_string()),
                 };
+                if ptr == 0 {
+                    return Err("map is not initialized".to_string());
+                }
                 let count = if ptr + 4 <= memory.len() {
                     u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap())
                 } else {
-                    0
+                    return Err("map is not initialized".to_string());
                 };
                 Ok(vec![WVal::I32(count as i32)])
             }
@@ -2571,8 +2587,9 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     .get(ptr..ptr.saturating_add(len))
                     .ok_or_else(|| "bx.read_file path is outside memory".to_string())?;
                 let path = String::from_utf8_lossy(path_bytes);
-                let Ok(bytes) = std::fs::read(path.as_ref()) else {
-                    return Ok(vec![WVal::I32(0)]);
+                let bytes = match std::fs::read(path.as_ref()) {
+                    Ok(bytes) => bytes,
+                    Err(error) => return Err(format!("cannot read '{}': {}", path, error)),
                 };
                 let size = 4 + bytes.len();
                 let start = self.next_file as usize;

@@ -2722,7 +2722,7 @@ impl<'a> Emitter<'a> {
                         self.emit_str(&args[0])?;
                         self.emit_str(&args[1])?;
                         self.builder.push(Instr::Call(5));
-                        self.builder.push(Instr::Op(0xad));
+                        self.builder.push(Instr::Op(0xac));
                         return Ok(Ty::Int);
                     }
                     if name == "performance_now" && args.is_empty() {
@@ -4300,6 +4300,32 @@ mod tests {
             strings,
             vec!["3.5".to_string(), "4.5".to_string(), "2.5".to_string()]
         );
+    }
+
+    #[test]
+    fn file_and_map_failures_are_explicit() {
+        let missing =
+            compile_to_wasm("print(read_file(\"C:/definitely-missing-bx.txt\"))").unwrap();
+        let error = execute(&missing, &[], 0, 0, |_| {}, |_| {}).unwrap_err();
+        assert!(error.contains("cannot read"), "got {error}");
+
+        let full = compile_to_wasm(
+            "let m = map_new()\nlet i = 0\nwhile (i < 65) {\n  map_set(m, \"k\" + str(i), i)\n  i = i + 1\n}",
+        )
+        .unwrap();
+        let error = execute(&full, &[], 0, 0, |_| {}, |_| {}).unwrap_err();
+        assert!(error.contains("map is full"), "got {error}");
+
+        let blocker = std::env::temp_dir().join(format!("bx-wasm-blocker-{}", std::process::id()));
+        std::fs::write(&blocker, b"x").unwrap();
+        let bad_path = blocker
+            .join("child.txt")
+            .to_string_lossy()
+            .replace('\\', "/");
+        let source = format!("print(write_file(\"{}\", \"d\"))", bad_path);
+        let (numbers, _) = run_with_argv(&source, &[]);
+        let _ = std::fs::remove_file(&blocker);
+        assert_eq!(numbers, vec![-1]);
     }
 
     #[test]

@@ -28,6 +28,7 @@
 
 **实验性 wasm 目标**
 
+- IO/映射失败显式化：read_file 缺失文件报 cannot read，write_file 返回 0/-1（签名扩展），映射满/未初始化/分配失败均报错而非静默。
 - 索引对齐 VM：负索引（从末尾计）、浮点索引（截断）、字符串按 Unicode 字符取字符（host `env.str_char_at`）。`
 - 修复 bool 值比较（`true == false`、`false < true`）在条件里缺失的类型错误；修复空 needle 字符串方法（`"".contains("")`）导致宿主 panic 的问题。`
 - 运行时边界：数组索引越界、整数/浮点除零、取模零会以明确消息中止（`index out of bounds` / `division by zero` / `modulo by zero`），避免此前内存越界读/NaN 静默错误；VM 的 null 语义按已知分歧记录。`

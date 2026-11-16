@@ -863,6 +863,23 @@ if (wasmEdge3.code == 0 && wasmEdge3Run.out == wasmEdge3Vm.out && wasmEdge3Run.o
   casesFail += 1
   failures.push("wasm negative/string/float indexing\n    wasm=" + json(wasmEdge3Run.out) + " vm=" + json(wasmEdge3Vm.out) + " err=" + json(wasmEdge3Run.err))
 }
+write(artDir + "/wasm-iofail.bxs", 'print(read_file("C:/definitely-missing-bx-file.txt"))\n')
+let wasmIofail = exec([BX, "build", "--wasm", artDir + "/wasm-iofail.bxs", "-o", artDir + "/wasm-iofail.wasm"])
+let wasmIofailRun = exec([BX, "run", artDir + "/wasm-iofail.wasm"])
+write(artDir + "/wasm-mapfull.bxs", 'let m = map_new()\nlet i = 0\nwhile (i < 65) {\n  map_set(m, "k" + str(i), i)\n  i = i + 1\n}\nprint(map_len(m))\n')
+let wasmMapfull = exec([BX, "build", "--wasm", artDir + "/wasm-mapfull.bxs", "-o", artDir + "/wasm-mapfull.wasm"])
+let wasmMapfullRun = exec([BX, "run", artDir + "/wasm-mapfull.wasm"])
+let temp_file = artDir + "/bx-wasm-blocker.txt"
+write(temp_file, "x")
+write(artDir + "/wasm-writefail.bxs", 'print(write_file("bx-wasm-blocker.txt/child.txt", "d"))\n')
+let wasmWritefail = exec([BX, "build", "--wasm", artDir + "/wasm-writefail.bxs", "-o", artDir + "/wasm-writefail.wasm"])
+let wasmWritefailRun = exec([BX, "run", artDir + "/wasm-writefail.wasm"], { cwd: artDir })
+if (wasmIofail.code == 0 && wasmIofailRun.code == 1 && wasmIofailRun.err.contains("cannot read") && wasmMapfull.code == 0 && wasmMapfullRun.code == 1 && wasmMapfullRun.err.contains("map is full") && wasmWritefail.code == 0 && wasmWritefailRun.code == 0 && wasmWritefailRun.out.trim() == "-1") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm IO/map failures\n    read=" + wasmIofailRun.code + "/" + json(wasmIofailRun.err) + " mapfull=" + wasmMapfullRun.code + "/" + json(wasmMapfullRun.err) + " write=" + json(wasmWritefailRun.out))
+}
 write(artDir + "/wasm-bad.bxs", 'fn outer() {\n  let n = 5\n  let f = fn(x) { return x + n }\n  return f(1)\n}\nprint(outer())\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1 && wasmBad.err.contains("cannot capture outer variables")) {
