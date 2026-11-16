@@ -1,0 +1,69 @@
+// End-to-end verification of a bx binary or packed `.com`, written in bx itself
+// so it runs on every OS the product ships for.
+//
+//   bx run tools/verify.bxs -- path/to/bx
+//   ./minicon-bx-linux-x86_64.com run tools/verify.bxs minicon-bx-linux-x86_64.com
+//
+// Exit code 0 means every check passed.
+if (len(argv) < 1) {
+  eprint("usage: verify.bxs <bx-binary-or-com>\n")
+  exit(2)
+}
+let bin = argv[0]
+let tmp = env("TEMP")
+if (tmp == "" || tmp == null) { tmp = env("TMPDIR") }
+if (tmp == "" || tmp == null) { tmp = cwd() }
+let dir = tmp + "/bx-verify-" + str(now())
+mkdir(dir)
+
+let checks = 0
+let failures = []
+fn expect(name, ok) {
+  checks += 1
+  if (!ok) { failures.push(name) }
+}
+
+if (ends_with(bin, ".com")) {
+  let info = exec([bin, "--com-info"])
+  expect("--com-info names the product", info.code == 0 && info.out.contains("\"product\""))
+} else {
+  expect("native binary has no container metadata", exec([bin, "--com-info"]).code != 0)
+}
+
+let version = exec([bin, "version"])
+expect("version prints bx", version.code == 0 && starts_with(version.out.trim(), "bx "))
+
+expect("eval computes", exec([bin, "eval", "6 * 7"]).out.trim() == "42")
+expect("exit codes pass through", exec([bin, "eval", "exit(3)"]).code == 3)
+
+write(dir + "/ok.bxs", 'print(1)\n')
+expect("check compiles without running", exec([bin, "check", dir + "/ok.bxs"]).code == 0)
+expect("dis reads source", exec([bin, "dis", dir + "/ok.bxs"]).code == 0)
+
+write(dir + "/spin.bxs", 'while (true) { }\n')
+let capped = exec([bin, "run", "--max-steps", "200000", dir + "/spin.bxs"])
+expect("--max-steps stops a runaway script", capped.code == 1 && capped.err.contains("step limit"))
+
+write(dir + "/filter.bxs", 'print(read("-").trim().upper())\n')
+let piped = exec([bin, "run", dir + "/filter.bxs"], {stdin: "hi"})
+expect("read(-) drains stdin", piped.code == 0 && piped.out.trim() == "HI")
+
+write(dir + "/apply.bxs", 'print(json(patch(argv[0], read(argv[1]))))\n')
+write(dir + "/target.txt", "a\nb\n")
+write(dir + "/fix.diff", "--- a/target.txt\n+++ b/target.txt\n@@ -1,2 +1,2 @@\n a\n-b\n+B\n")
+let patched = exec([bin, "run", dir + "/apply.bxs", dir + "/target.txt", dir + "/fix.diff"])
+expect("patch applies a unified diff", patched.code == 0 && read(dir + "/target.txt") == "a\nB\n")
+
+let spawned = exec([bin, "eval", 'let h = spawn("echo hi", {shell: true}); let r = spawn_wait(h.id); r.out.trim()'])
+expect("spawn/wait works", spawned.code == 0 && spawned.out.trim() == "hi")
+
+let budgeted = exec([bin, "run", "--timeout", "5000", dir + "/ok.bxs"])
+expect("--timeout leaves normal runs alone", budgeted.code == 0)
+
+if (len(failures) == 0) {
+  print("PASS " + checks + " checks against " + bin)
+  exit(0)
+}
+for name in failures { eprint("FAIL " + name + "\n") }
+print("FAIL " + len(failures) + " of " + checks)
+exit(1)

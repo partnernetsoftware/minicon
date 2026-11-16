@@ -450,6 +450,14 @@ if ((exec([BX, "run", artDir + "/spawn-kill.bxs", BX]).out).trim() == "false") {
   failures.push("spawn_kill ends the child")
 }
 checkTrue("unknown spawn handle is an error", ["eval", 'attempt(fn() { spawn_wait(999) }).error.contains("unknown spawn handle")'])
+// the bx-native verifier passes against this binary (dogfooding the whole CLI)
+let verifyRun = exec([BX, "run", __dir__ + "/../tools/verify.bxs", BX])
+if (verifyRun.code == 0 && verifyRun.out.contains("PASS ")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("tools/verify.bxs passes\n    out=" + json(verifyRun.out.trim()) + " err=" + json(verifyRun.err.trim()))
+}
 
 // closures capture the enclosing function's visible locals by value
 check("closure factory", "15", ["eval", "fn adder(n) { return fn(x) { return x + n } } let f = adder(10); f(5)"])
