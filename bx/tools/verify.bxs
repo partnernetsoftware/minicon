@@ -187,6 +187,14 @@ write(dir + "/wasm-interp.bxs", 'let s = "v"\nprint("x=\${s} end")\nprint(1 + "x
 write(dir + "/wasm-builtins.bxs", 'print(round(2.5))\nprint(trim("  x "))\nprint(type(true))\n')
 write(dir + "/wasm-strarr.bxs", 'let parts = split("a,b", ",")\nprint(len(parts))\nprint(join(parts, "-"))\nprint(slice("hello", 1, 3))\n')
 write(dir + "/wasm-arrb.bxs", 'let a = range(3)\nprint(sum(a))\nfor v in reverse(a) { print(v) }\n')
+write(dir + "/wasm-hof.bxs", 'for v in map([1, 2], fn(x) { return x + 1 }) { print(v) }\nprint(reduce([1, 2], fn(a, x) { return a + x }))\n')
+test("wasm higher-order array builtins", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-hof.bxs", "-o", dir + "/wasm-hof.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-hof.wasm"])
+  let vm = exec([bin, "run", dir + "/wasm-hof.bxs"])
+  assert(ran.code == 0 && ran.out == vm.out && ran.out.trim() == "2\n3\n3", "wasm=" + json(ran.out) + " vm=" + json(vm.out))
+})
 test("wasm array builtins", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-arrb.bxs", "-o", dir + "/wasm-arrb.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

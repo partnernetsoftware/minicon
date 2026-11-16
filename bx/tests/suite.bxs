@@ -920,6 +920,16 @@ if (wasmArrb.code == 0 && wasmArrbRun.out == wasmArrbVm.out && wasmArrbRun.out.t
   casesFail += 1
   failures.push("wasm array builtins\n    wasm=" + json(wasmArrbRun.out) + " vm=" + json(wasmArrbVm.out) + " err=" + json(wasmArrbRun.err))
 }
+write(artDir + "/wasm-hof.bxs", 'for v in map([1, 2, 3], fn(x) { return x * 2 }) { print(v) }\nfor v in filter([1, 2, 3, 4], fn(x) { return x % 2 == 0 }) { print(v) }\nprint(reduce([1, 2, 3], fn(a, x) { return a + x }, 0))\neach([5], fn(x) { print(x + 1) })\n')
+let wasmHof = exec([BX, "build", "--wasm", artDir + "/wasm-hof.bxs", "-o", artDir + "/wasm-hof.wasm"])
+let wasmHofRun = exec([BX, "run", artDir + "/wasm-hof.wasm"])
+let wasmHofVm = exec([BX, "run", artDir + "/wasm-hof.bxs"])
+if (wasmHof.code == 0 && wasmHofRun.out == wasmHofVm.out && wasmHofRun.out.trim() == "2\n4\n6\n2\n4\n6\n6") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm higher-order array builtins\n    wasm=" + json(wasmHofRun.out) + " vm=" + json(wasmHofVm.out) + " err=" + json(wasmHofRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'fn outer() {\n  let n = 5\n  let f = fn(x) { return x + n }\n  return f(1)\n}\nprint(outer())\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1 && wasmBad.err.contains("cannot capture outer variables")) {
