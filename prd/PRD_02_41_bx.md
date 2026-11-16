@@ -175,6 +175,9 @@ flowchart LR
   bad magic), patch parsing/application (multi-hunk, mismatch, CRLF), JSON and VM
   comparison/len; `bx/scripts/test.sh` runs them before the self-hosted suite, so
   the CI build job runs both.
+- 2026-11-16 round 26: a deterministic container property test encodes 20 random
+  multi-chunk containers, asserts `encode(decode(x)) == x`, and rejects every
+  strict prefix (no panic on truncation). 15 Rust unit tests now back the format.
 - Open: execution on Linux x86_64/aarch64 and Windows ARM64 belongs to the
   six-runner matrix (`minicon-com.yml`, `bx_lane`), not the Windows host.
 

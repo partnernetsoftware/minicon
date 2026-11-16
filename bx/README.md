@@ -221,7 +221,7 @@ bx 以独立 workspace 住在 `bx/`（`Cargo.toml` 里的空 `[workspace]`），
 MiniCon 的 workspace members，终端二进制里也没有 bx 代码。
 
 ```bash
-bash bx/scripts/test.sh      # 宿主构建 + 14 项 Rust 单元测试 + 119 项自测
+bash bx/scripts/test.sh      # 宿主构建 + 15 项 Rust 单元测试 + 119 项自测
 bash bx/scripts/build-cells.sh   # 出每平台产物（宿主感知）
 ```
 

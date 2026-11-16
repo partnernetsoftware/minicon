@@ -1626,6 +1626,88 @@ mod tests {
     }
 
     #[test]
+    fn container_survives_random_chunks_and_any_truncation() {
+        // Deterministic xorshift so a failure is reproducible.
+        let mut seed: u64 = 0x1234_5678_9abc_def0;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+
+        for _round in 0..20 {
+            let mut chunks = Vec::new();
+            let chunk_count = 1 + (next() % 3) as usize;
+            for index in 0..chunk_count {
+                let mut chunk = Chunk::new(format!("f{index}"), (next() % 4) as u16);
+                chunk.file = Rc::new(if index % 2 == 0 {
+                    "lib.bxs".to_string()
+                } else {
+                    "üñïçødé.bxs".to_string()
+                });
+                chunk.max_slots = (next() % 8) as u16;
+
+                let mut code = Vec::new();
+                let mut lines = Vec::new();
+                let ops = 1 + (next() % 20);
+                for _ in 0..ops {
+                    let mut opcode = (next() % 47) as u8;
+                    if opcode == 36 {
+                        // gap between INDEX_SET and INDEX_SET_KEEP
+                        opcode = 0;
+                    }
+                    code.push(opcode);
+                    let line = (next() % 50) as u32;
+                    lines.push(line);
+                    if has_operand(opcode) {
+                        let operand = next() as i32;
+                        code.extend_from_slice(&operand.to_le_bytes());
+                        for _ in 0..4 {
+                            lines.push(line);
+                        }
+                    }
+                }
+                chunk.code = code;
+                chunk.lines = lines;
+
+                let const_count = (next() % 5) as usize;
+                let mut consts = Vec::new();
+                for _ in 0..const_count {
+                    consts.push(match next() % 5 {
+                        0 => Value::Null,
+                        1 => Value::Bool(next() % 2 == 0),
+                        2 => Value::Int(next() as i64),
+                        3 => Value::Float((next() % 1000) as f64 / 8.0),
+                        _ => Value::Str(Rc::new(format!("s{}", next() % 100))),
+                    });
+                }
+                chunk.consts = consts;
+                chunks.push(chunk);
+            }
+
+            let want_result = next() % 2 == 0;
+            let bytes = encode(&chunks, want_result);
+            let (decoded, decoded_want) = decode(&bytes).expect("decode random container");
+            assert_eq!(decoded_want, want_result);
+            assert_eq!(decoded.len(), chunks.len());
+            assert_eq!(
+                encode(&decoded, decoded_want),
+                bytes,
+                "encode(decode(x)) must be byte-identical"
+            );
+
+            // Every strict prefix must be rejected, and never panic.
+            for cut in 0..bytes.len() {
+                assert!(
+                    decode(&bytes[..cut]).is_err(),
+                    "truncated container of {cut} bytes was accepted"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn operand_bits_match_encodings() {
         assert!(has_operand(op::GET_GLOBAL));
         assert!(has_operand(op::SET_LOCAL));
