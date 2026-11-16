@@ -23,6 +23,9 @@ enum Ty {
     Obj(u32),
     /// Dynamic string-keyed map (values are ints; wasm-target extension).
     Map,
+    /// Non-capturing function literal (payload = literal id). Values carry a
+    /// dummy i32 and calls are resolved statically.
+    Func(u32),
 }
 
 fn ty_name(ty: Ty) -> &'static str {
@@ -33,6 +36,7 @@ fn ty_name(ty: Ty) -> &'static str {
         Ty::Arr => "array",
         Ty::Obj(_) => "object",
         Ty::Map => "map",
+        Ty::Func(_) => "function",
     }
 }
 
@@ -51,7 +55,7 @@ fn wasm_types(ty: Ty) -> Vec<ValType> {
         Ty::Int => vec![ValType::I64],
         Ty::Float => vec![ValType::F64],
         Ty::Str => vec![ValType::I32, ValType::I32],
-        Ty::Arr | Ty::Obj(_) | Ty::Map => vec![ValType::I32],
+        Ty::Arr | Ty::Obj(_) | Ty::Map | Ty::Func(_) => vec![ValType::I32],
     }
 }
 
@@ -121,6 +125,10 @@ struct Checker {
     globals_used: u32,
     shapes: RefCell<Vec<Shape>>,
     fns: HashMap<String, FnSig>,
+    /// Signatures of non-capturing function literals (wasm indices set later).
+    lit_sigs: Vec<FnSig>,
+    /// AST address -> literal id, filled by `compile_to_wasm`.
+    literal_ids: HashMap<usize, u32>,
     /// Overlay for the function body currently being checked.
     local_scope: HashMap<String, Ty>,
     /// Loop-scoped bindings (for-in variables) visible in the current block.
@@ -136,6 +144,8 @@ impl Checker {
             globals_used: 0,
             shapes: RefCell::new(Vec::new()),
             fns: HashMap::new(),
+            lit_sigs: Vec::new(),
+            literal_ids: HashMap::new(),
             local_scope: HashMap::new(),
             scopes: Vec::new(),
             fn_depth: 0,
@@ -175,6 +185,33 @@ impl Checker {
             sig.params = params;
             sig.result = result;
         }
+    }
+
+    fn literal_call(&self, id: u32, args: &[Expr]) -> Result<Ty, String> {
+        let sig = self
+            .lit_sigs
+            .get(id as usize)
+            .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+        let result = sig
+            .result
+            .ok_or_else(|| "wasm target function literal returns no value".to_string())?;
+        if args.len() != sig.params.len() {
+            return Err(format!(
+                "wasm target function literal takes {} arguments",
+                sig.params.len()
+            ));
+        }
+        for (arg, expected) in args.iter().zip(sig.params.iter()) {
+            let actual = self.infer(arg)?;
+            if !arg_ok(*expected, actual) {
+                return Err(format!(
+                    "wasm target function literal expects {}, got {}",
+                    ty_name(*expected),
+                    ty_name(actual)
+                ));
+            }
+        }
+        Ok(result)
     }
 
     fn global_types(&self) -> HashMap<String, Ty> {
@@ -266,6 +303,11 @@ impl Checker {
 
     fn infer(&self, expr: &Expr) -> Result<Ty, String> {
         match expr {
+            Expr::Func(..) => self
+                .literal_ids
+                .get(&(expr as *const Expr as usize))
+                .map(|id| Ty::Func(*id))
+                .ok_or_else(|| "wasm target lost a function literal".to_string()),
             Expr::Int(_) => Ok(Ty::Int),
             Expr::Float(_) => Ok(Ty::Float),
             Expr::Str(_) => Ok(Ty::Str),
@@ -470,6 +512,11 @@ impl Checker {
                         }
                         return Ok(Ty::Int);
                     }
+                    if self.fn_sig(name).is_none() {
+                        if let Ok(Ty::Func(id)) = self.infer(callee) {
+                            return self.literal_call(id, args);
+                        }
+                    }
                     if name == "map_new" && args.is_empty() {
                         return Ok(Ty::Map);
                     }
@@ -575,6 +622,40 @@ impl Checker {
         self.local_scope = saved_scope;
         self.fn_depth = saved_depth;
         outcome
+    }
+
+    fn check_literal_bodies(&mut self, decls: &[LitDecl]) -> Result<(), String> {
+        for (id, decl) in decls.iter().enumerate() {
+            let sig = self
+                .lit_sigs
+                .get(id)
+                .cloned()
+                .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+            let saved_scope = std::mem::take(&mut self.local_scope);
+            let saved_depth = self.fn_depth;
+            self.fn_depth = 1;
+            for (param, ty) in decl.params.iter().zip(sig.params.iter()) {
+                self.local_scope.insert(param.clone(), *ty);
+            }
+            let outcome = (|| -> Result<(), String> {
+                for stmt in decl.body {
+                    self.check_stmt(stmt)?;
+                }
+                Ok(())
+            })();
+            self.local_scope = saved_scope;
+            self.fn_depth = saved_depth;
+            if let Err(error) = outcome {
+                if error.starts_with("undefined variable") {
+                    return Err(format!(
+                        "wasm target function literals cannot capture outer variables yet ({})",
+                        error
+                    ));
+                }
+                return Err(error);
+            }
+        }
+        Ok(())
     }
 
     fn check_cond(&self, expr: &Expr) -> Result<(), String> {
@@ -728,7 +809,7 @@ impl Checker {
                     return Err("wasm target supports print(<value>) with one argument".to_string());
                 }
                 let ty = self.infer(&args[0])?;
-                if ty == Ty::Arr || matches!(ty, Ty::Obj(_) | Ty::Map) {
+                if ty == Ty::Arr || matches!(ty, Ty::Obj(_) | Ty::Map | Ty::Func(_)) {
                     return Err("wasm target cannot log arrays or objects yet".to_string());
                 }
             }
@@ -1008,6 +1089,8 @@ struct Emitter<'a> {
     result: Option<Ty>,
     /// Loop-scoped locals (for-in variables), innermost last.
     scoped: Vec<HashMap<String, LocalSlot>>,
+    /// AST address -> literal id, resolved statically.
+    literal_ids: HashMap<usize, u32>,
 }
 
 impl Emitter<'_> {
@@ -1167,6 +1250,31 @@ impl<'a> Emitter<'a> {
             ty_name(expected),
             ty_name(actual)
         ))
+    }
+
+    /// Resolve a callee to (params, result, wasm index) for direct calls.
+    fn callable(&self, callee: &Expr) -> Result<Option<CallableSig>, String> {
+        if let Expr::Ident(name) = callee {
+            if let Some(sig) = self.checker.fn_sig(name) {
+                return Ok(Some((sig.params.clone(), sig.result, sig.index)));
+            }
+            let local_func = self
+                .local_of(name)
+                .map(|slot| slot.ty)
+                .or_else(|| self.checker.lookup(name).ok());
+            if let Some(Ty::Func(id)) = local_func {
+                if let Some(sig) = self.checker.lit_sigs.get(id as usize) {
+                    return Ok(Some((sig.params.clone(), sig.result, sig.index)));
+                }
+            }
+            return Ok(None);
+        }
+        if let Ok(Ty::Func(id)) = self.type_of(callee) {
+            if let Some(sig) = self.checker.lit_sigs.get(id as usize) {
+                return Ok(Some((sig.params.clone(), sig.result, sig.index)));
+            }
+        }
+        Ok(None)
     }
 
     /// `for k, v in map { .. }`: entry-order key (string) / value (int) locals.
@@ -1798,6 +1906,15 @@ impl<'a> Emitter<'a> {
             return Ok(Ty::Str);
         }
         match expr {
+            Expr::Func(..) => {
+                let id = self
+                    .literal_ids
+                    .get(&(expr as *const Expr as usize))
+                    .copied()
+                    .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+                self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                Ok(Ty::Func(id))
+            }
             Expr::Int(value) => {
                 self.builder.push(Instr::Const(0x42, WVal::I64(*value)));
                 Ok(Ty::Int)
@@ -1818,7 +1935,7 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Global(0x23, base));
                         self.builder.push(Instr::Global(0x23, base + 1));
                     }
-                    Ty::Int | Ty::Float | Ty::Arr | Ty::Obj(_) | Ty::Map => {
+                    Ty::Int | Ty::Float | Ty::Arr | Ty::Obj(_) | Ty::Map | Ty::Func(_) => {
                         self.push_global(name, false)?
                     }
                 }
@@ -1938,6 +2055,23 @@ impl<'a> Emitter<'a> {
                 ))
             }
             Expr::Call(callee, args, _) => {
+                if let Some((params, result, index)) = self.callable(callee)? {
+                    let Some(result) = result else {
+                        return Err("wasm target function literal returns no value".to_string());
+                    };
+                    if args.len() != params.len() {
+                        return Err(
+                            "wasm target function literal takes a different number of arguments"
+                                .to_string(),
+                        );
+                    }
+                    for (arg, expected) in args.iter().zip(params.iter()) {
+                        let actual = self.emit_expr(arg)?;
+                        self.coerce_arg(*expected, actual)?;
+                    }
+                    self.builder.push(Instr::Call(index));
+                    return Ok(result);
+                }
                 if let Expr::Ident(name) = &**callee {
                     if let Some(sig) = self.checker.fn_sig(name).cloned() {
                         let Some(result) = sig.result else {
@@ -2191,7 +2325,9 @@ impl<'a> Emitter<'a> {
                             self.builder.add_local(ValType::I32);
                             slot
                         }
-                        Ty::Arr | Ty::Obj(_) | Ty::Map => self.builder.add_local(ValType::I32),
+                        Ty::Arr | Ty::Obj(_) | Ty::Map | Ty::Func(_) => {
+                            self.builder.add_local(ValType::I32)
+                        }
                     };
                     self.locals.insert(name.clone(), LocalSlot { ty, slot });
                     self.emit_store(name)?;
@@ -2238,6 +2374,26 @@ impl<'a> Emitter<'a> {
                 Ok(())
             }
             Stmt::Expr(Expr::Call(callee, args, _), _) => {
+                if let Some((params, result, index)) = self.callable(callee)? {
+                    if args.len() != params.len() {
+                        return Err(
+                            "wasm target function literal takes a different number of arguments"
+                                .to_string(),
+                        );
+                    }
+                    for (arg, expected) in args.iter().zip(params.iter()) {
+                        let actual = self.emit_expr(arg)?;
+                        self.coerce_arg(*expected, actual)?;
+                    }
+                    self.builder.push(Instr::Call(index));
+                    if let Some(result) = result {
+                        self.builder.push(Instr::Op(0x1a));
+                        if result == Ty::Str {
+                            self.builder.push(Instr::Op(0x1a));
+                        }
+                    }
+                    return Ok(());
+                }
                 let Expr::Ident(name) = &**callee else {
                     return Err("wasm target only supports calls to print()".to_string());
                 };
@@ -2396,7 +2552,7 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Op(0x1a));
                         self.builder.push(Instr::Op(0x1a));
                     }
-                    Ty::Int | Ty::Float | Ty::Arr | Ty::Obj(_) | Ty::Map => {
+                    Ty::Int | Ty::Float | Ty::Arr | Ty::Obj(_) | Ty::Map | Ty::Func(_) => {
                         self.builder.push(Instr::Op(0x1a))
                     }
                 }
@@ -2493,12 +2649,121 @@ struct FnDecl {
     body: Vec<Stmt>,
 }
 
+struct LitDecl<'a> {
+    params: Vec<String>,
+    body: &'a [Stmt],
+}
+
+fn collect_literal_nodes<'a>(stmts: &'a [Stmt], out: &mut Vec<&'a Expr>) {
+    for stmt in stmts {
+        collect_stmt_literals(stmt, out);
+    }
+}
+
+fn collect_stmt_literals<'a>(stmt: &'a Stmt, out: &mut Vec<&'a Expr>) {
+    match stmt {
+        Stmt::Let(_, Some(expr), _) => collect_expr_literals(expr, out),
+        Stmt::Expr(expr, _) => collect_expr_literals(expr, out),
+        Stmt::Fn(_, _, body, _) => collect_literal_nodes(body, out),
+        Stmt::Block(body) => collect_literal_nodes(body, out),
+        Stmt::If(cond, then_body, else_body, _) => {
+            collect_expr_literals(cond, out);
+            collect_literal_nodes(then_body, out);
+            if let Some(else_body) = else_body {
+                collect_literal_nodes(else_body, out);
+            }
+        }
+        Stmt::While(cond, body, _) => {
+            collect_expr_literals(cond, out);
+            collect_literal_nodes(body, out);
+        }
+        Stmt::ForC(init, cond, step, body, _) => {
+            if let Some(init) = init {
+                collect_stmt_literals(init, out);
+            }
+            if let Some(cond) = cond {
+                collect_expr_literals(cond, out);
+            }
+            if let Some(step) = step {
+                collect_expr_literals(step, out);
+            }
+            collect_literal_nodes(body, out);
+        }
+        Stmt::ForIn(_, _, iter, body, _) => {
+            collect_expr_literals(iter, out);
+            collect_literal_nodes(body, out);
+        }
+        Stmt::Return(Some(expr), _) => collect_expr_literals(expr, out),
+        _ => {}
+    }
+}
+
+fn collect_expr_literals<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
+    match expr {
+        Expr::Func(_, body, _) => {
+            out.push(expr);
+            collect_literal_nodes(body, out);
+        }
+        Expr::Neg(inner) | Expr::Not(inner) => collect_expr_literals(inner, out),
+        Expr::Bin(_, left, right) | Expr::And(left, right) | Expr::Or(left, right) => {
+            collect_expr_literals(left, out);
+            collect_expr_literals(right, out);
+        }
+        Expr::Ternary(cond, then, other, _) => {
+            collect_expr_literals(cond, out);
+            collect_expr_literals(then, out);
+            collect_expr_literals(other, out);
+        }
+        Expr::Call(callee, args, _) => {
+            collect_expr_literals(callee, out);
+            for arg in args {
+                collect_expr_literals(arg, out);
+            }
+        }
+        Expr::MethodCall(object, _, args, _) => {
+            collect_expr_literals(object, out);
+            for arg in args {
+                collect_expr_literals(arg, out);
+            }
+        }
+        Expr::Index(array, index, _) => {
+            collect_expr_literals(array, out);
+            collect_expr_literals(index, out);
+        }
+        Expr::Member(object, _, _) => collect_expr_literals(object, out),
+        Expr::Assign(target, value, _) => {
+            collect_expr_literals(target, out);
+            collect_expr_literals(value, out);
+        }
+        Expr::Compound(target, _, value, _) => {
+            collect_expr_literals(target, out);
+            collect_expr_literals(value, out);
+        }
+        Expr::Array(items) => {
+            for item in items {
+                collect_expr_literals(item, out);
+            }
+        }
+        Expr::Object(fields) => {
+            for (_, value) in fields {
+                collect_expr_literals(value, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// `(parameter types, result type, wasm function index)` resolved statically.
+type CallableSig = (Vec<Ty>, Option<Ty>, u32);
+
 /// Soft (partial) type inference for call sites and returns: `None` means the
 /// type is not known yet, so a later fixpoint iteration may resolve it.
 struct InferState<'a> {
     index: &'a HashMap<String, usize>,
     globals: &'a HashMap<String, Ty>,
     shapes: &'a RefCell<Vec<Shape>>,
+    literal_ids: &'a HashMap<usize, u32>,
+    decl_count: usize,
     params: Vec<Vec<Option<Ty>>>,
     results: Vec<Option<Ty>>,
 }
@@ -2519,6 +2784,10 @@ impl InferState<'_> {
 impl<'a> InferState<'a> {
     fn soft(&self, expr: &Expr, locals: &HashMap<String, Ty>) -> Option<Ty> {
         match expr {
+            Expr::Func(..) => self
+                .literal_ids
+                .get(&(expr as *const Expr as usize))
+                .map(|id| Ty::Func(*id)),
             Expr::Int(_) => Some(Ty::Int),
             Expr::Float(_) => Some(Ty::Float),
             Expr::Str(_) => Some(Ty::Str),
@@ -2573,6 +2842,16 @@ impl<'a> InferState<'a> {
                 Some(Ty::Int)
             }
             Expr::Call(callee, args, _) => {
+                if let Some(Ty::Func(id)) = self.soft(callee, locals) {
+                    for arg in args {
+                        self.soft(arg, locals)?;
+                    }
+                    return self
+                        .results
+                        .get(self.decl_count + id as usize)
+                        .copied()
+                        .flatten();
+                }
                 let Expr::Ident(name) = &**callee else {
                     return None;
                 };
@@ -2716,6 +2995,15 @@ impl<'a> InferState<'a> {
                         return Ok(changed);
                     }
                 }
+                if let Some(Ty::Func(id)) = self.soft(callee, locals) {
+                    let index = self.decl_count + id as usize;
+                    for (slot, arg) in args.iter().enumerate() {
+                        if let Some(ty) = self.soft(arg, locals) {
+                            changed |= self.unify_param(index, slot, ty)?;
+                        }
+                    }
+                    return Ok(changed);
+                }
                 for arg in args {
                     changed |= self.walk_expr(arg, locals)?;
                 }
@@ -2785,6 +3073,23 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
         checker.declare_fn(&decl.name, fn_index)?;
         index.insert(decl.name.clone(), slot);
     }
+    let mut literal_nodes: Vec<&Expr> = Vec::new();
+    collect_literal_nodes(&stmts, &mut literal_nodes);
+    let mut literal_ids: HashMap<usize, u32> = HashMap::new();
+    let mut lit_decls: Vec<LitDecl> = Vec::new();
+    for (id, node) in literal_nodes.iter().enumerate() {
+        literal_ids.insert(*node as *const Expr as usize, id as u32);
+        let Expr::Func(params, body, _) = node else {
+            continue;
+        };
+        lit_decls.push(LitDecl {
+            params: params.clone(),
+            body: body.as_slice(),
+        });
+    }
+    checker.literal_ids = literal_ids.clone();
+    let decl_count = declarations.len();
+    let lit_count = lit_decls.len();
     // Seed top-level globals so argument inference can see their types. The
     // checker itself types literals/arrays/records correctly; statements whose
     // initialiser cannot be typed yet (calls to not-yet-inferred functions) are
@@ -2805,11 +3110,14 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             index: &index,
             globals: &globals,
             shapes: &checker.shapes,
+            literal_ids: &literal_ids,
+            decl_count,
             params: declarations
                 .iter()
                 .map(|decl| vec![None; decl.params.len()])
+                .chain(lit_decls.iter().map(|decl| vec![None; decl.params.len()]))
                 .collect(),
-            results: vec![None; declarations.len()],
+            results: vec![None; decl_count + lit_count],
         };
         for _ in 0..8 {
             let mut changed = false;
@@ -2827,6 +3135,14 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                 }
                 changed |= infer.walk(&decl.body, &mut locals, Some(slot))?;
             }
+            for (id, decl) in lit_decls.iter().enumerate() {
+                let slot = decl_count + id;
+                let mut locals = globals.clone();
+                for (param, ty) in decl.params.iter().zip(infer.params[slot].iter()) {
+                    locals.insert(param.clone(), ty.unwrap_or(Ty::Int));
+                }
+                changed |= infer.walk(decl.body, &mut locals, Some(slot))?;
+            }
             if !changed {
                 break;
             }
@@ -2840,6 +3156,19 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             .collect();
         checker.set_fn_sig(&decl.name, params, inferred_results[slot]);
     }
+    for id in 0..lit_count {
+        let slot = decl_count + id;
+        let params: Vec<Ty> = inferred_params[slot]
+            .iter()
+            .map(|ty| ty.unwrap_or(Ty::Int))
+            .collect();
+        checker.lit_sigs.push(FnSig {
+            params,
+            result: inferred_results[slot],
+            index: IMPORT_COUNT + 1 + decl_count as u32 + id as u32,
+        });
+    }
+    checker.check_literal_bodies(&lit_decls)?;
     for stmt in &stmts {
         checker.check_stmt(stmt)?;
     }
@@ -2915,6 +3244,17 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
         };
         fn_types.push(builder.add_type(params, results));
     }
+    for sig in &checker.lit_sigs {
+        let mut params: Vec<ValType> = Vec::new();
+        for ty in &sig.params {
+            params.extend(wasm_types(*ty));
+        }
+        let results = match sig.result {
+            Some(ty) => wasm_types(ty),
+            None => Vec::new(),
+        };
+        fn_types.push(builder.add_type(params, results));
+    }
     builder.import_func("env", "print_i64", print_i64_ty);
     builder.import_func("env", "print_utf8", print_utf8_ty);
     builder.import_func("bx", "argc", argc_ty);
@@ -2962,7 +3302,9 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                 builder.add_global(ValType::I32, true, WVal::I32(0));
                 builder.add_global(ValType::I32, true, WVal::I32(0));
             }
-            Ty::Obj(_) | Ty::Map => builder.add_global(ValType::I32, true, WVal::I32(0)),
+            Ty::Obj(_) | Ty::Map | Ty::Func(_) => {
+                builder.add_global(ValType::I32, true, WVal::I32(0))
+            }
         }
     }
     let heap = checker.globals_used;
@@ -2983,6 +3325,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             temp_base: 0,
             result: None,
             scoped: Vec::new(),
+            literal_ids: literal_ids.clone(),
         };
         for stmt in &stmts {
             emitter.emit_stmt(stmt)?;
@@ -3013,6 +3356,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                 temp_base,
                 result: sig.result,
                 scoped: Vec::new(),
+                literal_ids: literal_ids.clone(),
             };
             let mut used = 0u32;
             for (param, ty) in decl.params.iter().zip(sig.params.iter()) {
@@ -3035,7 +3379,62 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                     emitter.builder.push(Instr::Const(0x41, WVal::I32(0)));
                     emitter.builder.push(Instr::Const(0x41, WVal::I32(0)));
                 }
-                Some(Ty::Arr | Ty::Obj(_) | Ty::Map) => {
+                Some(Ty::Arr | Ty::Obj(_) | Ty::Map | Ty::Func(_)) => {
+                    emitter.builder.push(Instr::Const(0x41, WVal::I32(0)))
+                }
+                None => {}
+            }
+        }
+    }
+    for (id, decl) in lit_decls.iter().enumerate() {
+        let sig = checker
+            .lit_sigs
+            .get(id)
+            .cloned()
+            .ok_or_else(|| "missing signature for a function literal".to_string())?;
+        builder.begin_function(fn_types[decl_count + id]);
+        let mut temp_base = 0u32;
+        for ty in &sig.params {
+            temp_base += wasm_types(*ty).len() as u32;
+        }
+        for _ in 0..8 {
+            builder.add_local(ValType::I32);
+        }
+        {
+            let mut emitter = Emitter {
+                checker: &checker,
+                builder: &mut builder,
+                heap,
+                labels: Vec::new(),
+                locals: HashMap::new(),
+                fn_mode: true,
+                temp_base,
+                result: sig.result,
+                scoped: Vec::new(),
+                literal_ids: literal_ids.clone(),
+            };
+            let mut used = 0u32;
+            for (param, ty) in decl.params.iter().zip(sig.params.iter()) {
+                emitter.locals.insert(
+                    param.clone(),
+                    LocalSlot {
+                        ty: *ty,
+                        slot: used,
+                    },
+                );
+                used += wasm_types(*ty).len() as u32;
+            }
+            for stmt in decl.body {
+                emitter.emit_stmt(stmt)?;
+            }
+            match sig.result {
+                Some(Ty::Int) => emitter.builder.push(Instr::Const(0x42, WVal::I64(0))),
+                Some(Ty::Float) => emitter.builder.push(Instr::Const(0x44, WVal::F64(0.0))),
+                Some(Ty::Str) => {
+                    emitter.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                    emitter.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                }
+                Some(Ty::Arr | Ty::Obj(_) | Ty::Map | Ty::Func(_)) => {
                     emitter.builder.push(Instr::Const(0x41, WVal::I32(0)))
                 }
                 None => {}
@@ -3221,6 +3620,29 @@ mod tests {
         assert_eq!(
             strings,
             vec!["3.5".to_string(), "4.5".to_string(), "2.5".to_string()]
+        );
+    }
+
+    #[test]
+    fn non_capturing_function_literals_work() {
+        let (numbers, strings) = run_with_argv(
+            "let double = fn(x) { return x * 2 }\nprint(double(21))\nfn apply(f, x) { return f(x) }\nlet inc = fn(x) { return x + 1 }\nprint(apply(inc, 41))\nlet hi = fn(name) { return \"hi \" + name }\nprint(hi(\"there\"))",
+            &[],
+        );
+        assert_eq!(numbers, vec![42, 42]);
+        assert_eq!(strings, vec!["hi there".to_string()]);
+    }
+
+    #[test]
+    fn capturing_function_literals_are_rejected() {
+        let error = compile_to_wasm(
+            "fn outer() {\n  let n = 5\n  let f = fn(x) { return x + n }\n  return f(1)\n}\nprint(outer())",
+        )
+        .unwrap_err();
+        assert!(
+            error.contains("cannot capture outer variables"),
+            "unexpected error: {}",
+            error
         );
     }
 
@@ -3487,7 +3909,7 @@ mod tests {
 
     #[test]
     fn unsupported_constructs_are_rejected() {
-        assert!(compile_to_wasm("let f = fn() { return 1 }").is_err());
+        assert!(compile_to_wasm("let f = fn() { return 1 }\nprint(f)").is_err());
         assert!(compile_to_wasm("print(unknown)").is_err());
         assert!(compile_to_wasm("let a = [1, \"x\"]").is_err());
         assert!(compile_to_wasm("let o = {}\nprint(o)").is_err());

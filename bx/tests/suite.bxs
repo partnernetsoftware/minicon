@@ -751,9 +751,19 @@ if (wasmMapfor.code == 0 && wasmMapforRun.code == 0 && wasmMapforRun.out.trim() 
   casesFail += 1
   failures.push("wasm map iteration\n    build=" + wasmMapfor.code + " out=" + json(wasmMapforRun.out) + " err=" + json(wasmMapforRun.err))
 }
-write(artDir + "/wasm-bad.bxs", 'let f = fn() { return 1 }\n')
+write(artDir + "/wasm-closure.bxs", 'let double = fn(x) { return x * 2 }\nprint(double(21))\nfn apply(f, x) { return f(x) }\nlet inc = fn(x) { return x + 1 }\nprint(apply(inc, 41))\nlet hi = fn(name) { return "hi " + name }\nprint(hi("there"))\n')
+let wasmClosure = exec([BX, "build", "--wasm", artDir + "/wasm-closure.bxs", "-o", artDir + "/wasm-closure.wasm"])
+let wasmClosureRun = exec([BX, "run", artDir + "/wasm-closure.wasm"])
+let wasmClosureVm = exec([BX, "run", artDir + "/wasm-closure.bxs"])
+if (wasmClosure.code == 0 && wasmClosureRun.out == wasmClosureVm.out && wasmClosureRun.out.trim() == "42\n42\nhi there") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm function literals\n    wasm=" + json(wasmClosureRun.out) + " vm=" + json(wasmClosureVm.out) + " err=" + json(wasmClosureRun.err))
+}
+write(artDir + "/wasm-bad.bxs", 'fn outer() {\n  let n = 5\n  let f = fn(x) { return x + n }\n  return f(1)\n}\nprint(outer())\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
-if (wasmBad.code == 1) {
+if (wasmBad.code == 1 && wasmBad.err.contains("cannot capture outer variables")) {
   casesOk += 1
 } else {
   casesFail += 1

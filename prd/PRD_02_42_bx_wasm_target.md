@@ -114,7 +114,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 60 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 62 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -125,6 +125,12 @@ bx wasm target
   suite and therefore by the packed six-cell CI lane.
 - `bx check <module> --json` reports the decoded import/export names and defined
   function count, so agents can introspect a module without a JS toolchain.
+- **Function literals**: `let f = fn(x) { return x * 2 }` compiles to a lifted
+  wasm function; the value is a dummy i32 and every call site resolves the
+  concrete literal statically (`Ty::Func(id)`). Literals can be passed to
+  parameters (`fn apply(f, x) { return f(x) }`) and returned, because the type
+  carries the identity. Capturing outer locals is rejected with a clear error
+  (pass a parameter instead); nested named functions remain unsupported.
 - **Dynamic maps** (wasm-target extension, not in the VM): `map_new()`,
   `map_set(map, key, int)` (statement), `map_get`, `map_has`, `map_len`.
   String keys, int values, fixed capacity of 64 entries in a dedicated memory
