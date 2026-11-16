@@ -147,12 +147,12 @@ let r = patch("src/lib.rs", read(__dir__ + "/fix.diff"))   // -> {ok, path, hunk
 
 | 用例 | 当前（0.2.0） | 第 3 轮（无闭包） |
 |---|---:|---:|
-| `fib(24)` | ~39 ms | ~98 ms |
-| 1e6 次 while 累加 | ~0.29 s | ~1.1 s |
-| 20 万次函数调用 | ~72 ms | ~254 ms |
-| 20 万次 `map` 回调 | ~29 ms | — |
+| `fib(24)` | ~36 ms | ~98 ms |
+| 1e6 次 while 累加 | ~0.22 s | ~1.1 s |
+| 20 万次函数调用 | ~66 ms | ~254 ms |
+| 20 万次 `map` 回调 | ~30 ms | — |
 
-全局名查找换成 FNV 哈希表，且全局读写不再 clone 名字（`SET_GLOBAL` 只在新增绑定时拥有名字）。调用路径做过四次去分配：chunk 名/来源文件走 `Rc<String>`、帧槽用复用池、`CALL` 参数直接 `drain` 进帧槽、内建回调（`map`/`filter`/`reduce`/`sort`）不再为每个元素构造 `Vec`。`fib(24)` 从 ~137 ms 降到 ~56 ms，20 万次 `map` 从 ~46 ms 降到 ~29 ms；两边 `dis` 字节码逐条一致，继续优化需要 profiler。
+全局名解析成槽位下标并按 chunk 缓存，热路径不再查哈希表；全局读写也不 clone 名字。调用路径做过四次去分配：chunk 名/来源文件走 `Rc<String>`、帧槽用复用池、`CALL` 参数直接 `drain` 进帧槽、内建回调（`map`/`filter`/`reduce`/`sort`）不再为每个元素构造 `Vec`。`fib(24)` 从 ~137 ms 降到 ~56 ms，20 万次 `map` 从 ~46 ms 降到 ~29 ms；两边 `dis` 字节码逐条一致，继续优化需要 profiler。
 ## 二进制
 
 `.bxb` 是带魔数 `BXB\x02` 的版本化容器：常量池 + 字节码 + 行号表（行程编码）+ 每个 chunk 的来源文件（v1 容器仍可读，来源文件未知）。

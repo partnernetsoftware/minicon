@@ -102,6 +102,7 @@
 无操作数指令 1 字节；带操作数指令 5 字节（1 + i32 小端）。跳转操作数是**绝对指令偏移**。
 
 **首行 shebang 是注释的一种。** `#!` 行在解析前被抹成等长空格：Unix 上可以 `./x.bxs` 直接跑，行号与字节偏移都不变，所以错误位置、缓存键、`.bxb` 行号表都不受影响。
+**全局名解析成槽位下标。** 全局存 `Vec<Value>`，名字只在首次解析时查表；每个 chunk 的每个名字常量都有缓存（`global_cache[chunk][const] = slot`），所以热循环里 `GET_GLOBAL`/`SET_GLOBAL` 就是一次数组索引。此前还有 FNV 哈希表与 String 克隆两步，`loop` 1e6 从 ~1.14 s 一路降到 ~0.22 s。
 **全局名用 FNV 哈希，且不在热路径上复制。** `GET_GLOBAL`/`SET_GLOBAL` 直接借常量池里的名字；`SET_GLOBAL` 先 `get_mut` 原地更新，只有新增绑定才 `to_string()`。此前每次全局读写都克隆一个 `String`，`loop` 1e6 光这里就占了大头：~1.14 s → ~0.29 s。
 **全局名用 FNV 哈希。** 顶层 `let` 是全局，热循环每轮要查多次名字；`BTreeMap` 的字符串比较比查找本身还贵，换成 FNV-1a 的 `HashMap` 后 `loop` 从 ~1.14 s 降到 ~0.85 s，`calls` 从 ~205 ms 降到 ~173 ms。
 **内建回调也走栈。** `map`/`filter`/`each`/`reduce`/`sort` 通过 `call_value1`/`call_value2` 把参数压到操作数栈再入帧，省掉每个元素的 `Vec`；20 万次 `map` 因此从 ~46 ms 降到 ~29 ms。

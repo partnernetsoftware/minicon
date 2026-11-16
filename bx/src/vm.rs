@@ -15,29 +15,14 @@ enum FrameArgs {
     Stack(usize),
 }
 
-/// FNV-1a: global-name lookups are hot and the names are short, so SipHash is
-/// more work than the lookup itself.
-#[derive(Default)]
-pub struct FnvHasher(u64);
-
-impl std::hash::Hasher for FnvHasher {
-    fn write(&mut self, bytes: &[u8]) {
-        for byte in bytes {
-            self.0 ^= *byte as u64;
-            self.0 = self.0.wrapping_mul(0x100_0000_01b3);
-        }
-    }
-    fn finish(&self) -> u64 {
-        self.0
-    }
-}
-
-pub type GlobalMap =
-    std::collections::HashMap<String, Value, std::hash::BuildHasherDefault<FnvHasher>>;
-
 pub struct Vm {
     pub chunks: Vec<Chunk>,
-    pub globals: GlobalMap,
+    globals: Vec<Value>,
+    global_names: std::collections::HashMap<String, usize>,
+    global_labels: Vec<String>,
+    global_defined: Vec<bool>,
+    /// Per chunk, per const index: the resolved global slot.
+    global_cache: Vec<Vec<Option<u32>>>,
     pub stack: Vec<Value>,
     pub script_name: String,
     depth: usize,
@@ -56,37 +41,91 @@ impl Vm {
         argv: Vec<Value>,
         script_dir: String,
     ) -> Vm {
-        let mut globals = GlobalMap::default();
+        let global_cache = chunks
+            .iter()
+            .map(|chunk| vec![None; chunk.consts.len()])
+            .collect();
+        let mut machine = Vm {
+            chunks,
+            globals: Vec::new(),
+            global_names: std::collections::HashMap::new(),
+            global_labels: Vec::new(),
+            global_defined: Vec::new(),
+            global_cache,
+            stack: Vec::with_capacity(256),
+            script_name,
+            depth: 0,
+            steps_left: 1_000_000_000,
+            ticks: 0,
+            frame_pool: Vec::new(),
+            deadline: None,
+        };
         for b in builtins::BUILTINS {
-            globals.insert(b.name.to_string(), Value::Builtin(b.name));
+            machine.define_global(b.name, Value::Builtin(b.name));
         }
-        globals.insert("argv".to_string(), array_val(argv.clone()));
-        globals.insert("script".to_string(), str_val(script_name.clone()));
-        globals.insert("__dir__".to_string(), str_val(script_dir));
+        machine.define_global("argv", array_val(argv));
+        machine.define_global("script", str_val(machine.script_name.clone()));
+        machine.define_global("__dir__", str_val(script_dir));
         let steps = std::env::var("BX_MAX_STEPS")
             .ok()
             .and_then(|s| s.trim().parse::<u64>().ok())
             .unwrap_or(1_000_000_000);
+        machine.steps_left = steps;
         let timeout_ms = std::env::var("BX_TIMEOUT_MS")
             .ok()
             .and_then(|s| s.trim().parse::<u64>().ok())
             .unwrap_or(0);
-        let deadline = if timeout_ms > 0 {
-            Some(std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms))
-        } else {
-            None
-        };
-        Vm {
-            chunks,
-            globals,
-            stack: Vec::with_capacity(256),
-            script_name,
-            depth: 0,
-            steps_left: steps,
-            ticks: 0,
-            frame_pool: Vec::new(),
-            deadline,
+        if timeout_ms > 0 {
+            machine.deadline =
+                Some(std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms));
         }
+        machine
+    }
+
+    fn define_global(&mut self, name: &str, value: Value) {
+        match self.global_names.get(name) {
+            Some(&slot) => {
+                self.globals[slot] = value;
+                self.global_defined[slot] = true;
+            }
+            None => {
+                let slot = self.globals.len();
+                self.globals.push(value);
+                self.global_labels.push(name.to_string());
+                self.global_defined.push(true);
+                self.global_names.insert(name.to_string(), slot);
+            }
+        }
+    }
+
+    /// Resolve a global-name operand (a const index) to a slot. The answer is
+    /// cached per chunk, so a hot loop pays no hashing after the first access.
+    fn global_slot(&mut self, ci: usize, const_index: u32) -> Result<usize, String> {
+        let idx = const_index as usize;
+        if let Some(Some(slot)) = self.global_cache.get(ci).and_then(|row| row.get(idx)) {
+            return Ok(*slot as usize);
+        }
+        let name = match self.chunks.get(ci).and_then(|chunk| chunk.consts.get(idx)) {
+            Some(Value::Str(name)) => name.to_string(),
+            _ => return Err("bad global name constant".to_string()),
+        };
+        let slot = match self.global_names.get(&name) {
+            Some(&slot) => slot,
+            None => {
+                let slot = self.globals.len();
+                self.globals.push(Value::Null);
+                self.global_labels.push(name.clone());
+                self.global_defined.push(false);
+                self.global_names.insert(name, slot);
+                slot
+            }
+        };
+        if let Some(row) = self.global_cache.get_mut(ci) {
+            if let Some(cell) = row.get_mut(idx) {
+                *cell = Some(slot as u32);
+            }
+        }
+        Ok(slot)
     }
 
     pub fn run(&mut self) -> Result<Value, String> {
@@ -132,7 +171,12 @@ impl Vm {
 
     #[allow(dead_code)]
     pub fn get_global(&self, name: &str) -> Option<Value> {
-        self.globals.get(name).cloned()
+        let slot = *self.global_names.get(name)?;
+        if self.global_defined.get(slot).copied().unwrap_or(false) {
+            Some(self.globals[slot].clone())
+        } else {
+            None
+        }
     }
 
     fn run_frame(
@@ -294,33 +338,24 @@ impl Vm {
                     }
                 }
                 op::GET_GLOBAL => {
-                    // Borrow the name from the constant pool: cloning it cost one
-                    // allocation on every global read.
-                    let holder = const_at!(arg);
-                    let name = match &holder {
-                        Value::Str(s) => s.as_str(),
-                        _ => fail!("bad global name constant"),
+                    let slot = match self.global_slot(ci, arg as u32) {
+                        Ok(slot) => slot,
+                        Err(e) => fail!("{}", e),
                     };
-                    match self.globals.get(name) {
-                        Some(v) => self.stack.push(v.clone()),
-                        None => fail!("undefined variable '{}'", name),
+                    if !self.global_defined[slot] {
+                        fail!("undefined variable '{}'", self.global_labels[slot]);
                     }
+                    let value = self.globals[slot].clone();
+                    self.stack.push(value);
                 }
                 op::SET_GLOBAL => {
-                    let holder = const_at!(arg);
-                    let name = match &holder {
-                        Value::Str(s) => s.as_str(),
-                        _ => fail!("bad global name constant"),
+                    let slot = match self.global_slot(ci, arg as u32) {
+                        Ok(slot) => slot,
+                        Err(e) => fail!("{}", e),
                     };
-                    let v = popv!();
-                    // Update in place when the name exists; only a new binding
-                    // needs to own the name.
-                    match self.globals.get_mut(name) {
-                        Some(slot) => *slot = v,
-                        None => {
-                            self.globals.insert(name.to_string(), v);
-                        }
-                    }
+                    let value = popv!();
+                    self.globals[slot] = value;
+                    self.global_defined[slot] = true;
                 }
                 op::ADD => {
                     let b = popv!();

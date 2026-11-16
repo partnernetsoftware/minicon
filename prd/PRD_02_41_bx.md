@@ -150,6 +150,10 @@ flowchart LR
   constant pool instead of cloning a `String` (and `SET_GLOBAL` updates in place
   for existing bindings). `loop` 1e6 from ~0.85 s to ~0.29 s, 200k calls from
   ~173 ms to ~72 ms, `fib(24)` from ~52 ms to ~39 ms. Suite: 108 checks.
+- 2026-11-16 round 21: globals live in a slot vector; a per-chunk cache maps
+  each name constant to its slot once, so hot `GET_GLOBAL`/`SET_GLOBAL` are plain
+  array indexes. `loop` 1e6 from ~0.29 s to ~0.22 s, 200k calls to ~66 ms.
+  Suite: 108 checks.
 - Open: execution on Linux x86_64/aarch64 and Windows ARM64 belongs to the
   six-runner matrix (`minicon-com.yml`, `bx_lane`), not the Windows host.
 
