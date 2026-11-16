@@ -1631,6 +1631,7 @@ where
             next_alloc: 8192,
             argv: argv.to_vec(),
             next_argv: 65_536,
+            next_file: 131_072,
         },
     );
     let start = module
@@ -1652,6 +1653,8 @@ struct PrintHost<'a, F: FnMut(i64), G: FnMut(&str)> {
     argv: Vec<String>,
     /// argv strings are written into the second memory page, [len u32][utf8].
     next_argv: u32,
+    /// File contents returned by `bx.read_file` live in the third page.
+    next_file: u32,
 }
 
 impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
@@ -1707,6 +1710,57 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 Ok(Vec::new())
             }
             ("bx", "argc") => Ok(vec![WVal::I32(self.argv.len() as i32)]),
+            ("bx", "read_file") => {
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("bx.read_file expects (i32 ptr, i32 len)".to_string()),
+                };
+                let path_bytes = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .ok_or_else(|| "bx.read_file path is outside memory".to_string())?;
+                let path = String::from_utf8_lossy(path_bytes);
+                let Ok(bytes) = std::fs::read(path.as_ref()) else {
+                    return Ok(vec![WVal::I32(0)]);
+                };
+                let size = 4 + bytes.len();
+                let start = self.next_file as usize;
+                if start + size > memory.len() {
+                    return Ok(vec![WVal::I32(0)]);
+                }
+                memory[start..start + 4].copy_from_slice(&(bytes.len() as u32).to_le_bytes());
+                memory[start + 4..start + size].copy_from_slice(&bytes);
+                self.next_file = (start + size + 7) as u32 & !7;
+                Ok(vec![WVal::I32(start as i32)])
+            }
+            ("bx", "write_file") => {
+                let read = |value: Option<&WVal>| match value {
+                    Some(WVal::I32(ptr)) => Some(*ptr as usize),
+                    _ => None,
+                };
+                let (pp, pl, dp, dl) = match (
+                    read(args.first()),
+                    read(args.get(1)),
+                    read(args.get(2)),
+                    read(args.get(3)),
+                ) {
+                    (Some(pp), Some(pl), Some(dp), Some(dl)) => (pp, pl, dp, dl),
+                    _ => {
+                        return Err(
+                            "bx.write_file expects (i32 path_ptr, i32 path_len, i32 data_ptr, i32 data_len)"
+                                .to_string(),
+                        )
+                    }
+                };
+                let path_bytes = memory
+                    .get(pp..pp.saturating_add(pl))
+                    .ok_or_else(|| "bx.write_file path is outside memory".to_string())?;
+                let path = String::from_utf8_lossy(path_bytes).to_string();
+                let data = memory
+                    .get(dp..dp.saturating_add(dl))
+                    .ok_or_else(|| "bx.write_file data is outside memory".to_string())?;
+                let ok = std::fs::write(&path, data).is_ok();
+                Ok(vec![WVal::I32(if ok { 0 } else { -1 })])
+            }
             ("bx", "arg") => {
                 let index = match args.first() {
                     Some(WVal::I32(value)) => *value,

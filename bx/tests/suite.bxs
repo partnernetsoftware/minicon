@@ -563,6 +563,15 @@ if (wasmArgs.code == 0 && wasmArgsRun.code == 0 && wasmArgsRun.out.trim() == "2\
   casesFail += 1
   failures.push("wasm argv ABI\n    build=" + wasmArgs.code + " out=" + json(wasmArgsRun.out) + " err=" + json(wasmArgsRun.err))
 }
+write(artDir + "/wasm-fs.bxs", 'print(write_file("wasm-fs.txt", "payload"))\nprint(read_file("wasm-fs.txt"))\n')
+let wasmFs = exec([BX, "build", "--wasm", artDir + "/wasm-fs.bxs", "-o", artDir + "/wasm-fs.wasm"])
+let wasmFsRun = exec([BX, "run", artDir + "/wasm-fs.wasm"], { cwd: artDir })
+if (wasmFs.code == 0 && wasmFsRun.code == 0 && wasmFsRun.out.trim() == "0\npayload") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm filesystem ABI\n    build=" + wasmFs.code + " out=" + json(wasmFsRun.out) + " err=" + json(wasmFsRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'let f = fn() { return 1 }\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1) {

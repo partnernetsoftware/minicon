@@ -339,6 +339,20 @@ impl Checker {
                         }
                         return Ok(Ty::Int);
                     }
+                    if name == "read_file" && args.len() == 1 {
+                        if self.infer(&args[0])? != Ty::Str {
+                            return Err("wasm target read_file(path) needs a string".to_string());
+                        }
+                        return Ok(Ty::Str);
+                    }
+                    if name == "write_file" && args.len() == 2 {
+                        if self.infer(&args[0])? != Ty::Str || self.infer(&args[1])? != Ty::Str {
+                            return Err(
+                                "wasm target write_file(path, data) needs strings".to_string()
+                            );
+                        }
+                        return Ok(Ty::Int);
+                    }
                     if name == "argc" && args.is_empty() {
                         return Ok(Ty::Int);
                     }
@@ -614,8 +628,8 @@ const DST: u32 = 5;
 const ALLOC_TMP: u32 = 6;
 const ARG_TMP: u32 = 7;
 
-/// Imported host functions: print_i64, print_utf8, argc, arg.
-const IMPORT_COUNT: u32 = 4;
+/// Imported host functions: print_i64, print_utf8, argc, arg, read_file, write_file.
+const IMPORT_COUNT: u32 = 6;
 
 struct Emitter<'a> {
     checker: &'a Checker,
@@ -997,6 +1011,24 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Call(sig.index));
                         return Ok(Ty::Int);
                     }
+                    if name == "read_file" && args.len() == 1 {
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Call(4));
+                        self.builder.push(Instr::Local(0x21, ARG_TMP));
+                        self.builder.push(Instr::Local(0x20, ARG_TMP));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x20, ARG_TMP));
+                        self.builder.push(Instr::Mem(0x28, 2, 0));
+                        return Ok(Ty::Str);
+                    }
+                    if name == "write_file" && args.len() == 2 {
+                        self.emit_str(&args[0])?;
+                        self.emit_str(&args[1])?;
+                        self.builder.push(Instr::Call(5));
+                        self.builder.push(Instr::Op(0xad));
+                        return Ok(Ty::Int);
+                    }
                     if name == "argc" && args.is_empty() {
                         self.builder.push(Instr::Call(2));
                         self.builder.push(Instr::Op(0xad));
@@ -1256,6 +1288,11 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let print_utf8_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![]);
     let argc_ty = builder.add_type(vec![], vec![ValType::I32]);
     let arg_ty = builder.add_type(vec![ValType::I32], vec![ValType::I32]);
+    let read_file_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
+    let write_file_ty = builder.add_type(
+        vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+        vec![ValType::I32],
+    );
     let start_ty = builder.add_type(vec![], vec![]);
     let mut fn_types: Vec<u32> = Vec::new();
     for (_, decl) in &declarations {
@@ -1271,7 +1308,9 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "print_utf8", print_utf8_ty);
     builder.import_func("bx", "argc", argc_ty);
     builder.import_func("bx", "arg", arg_ty);
-    builder.enable_memory(2);
+    builder.import_func("bx", "read_file", read_file_ty);
+    builder.import_func("bx", "write_file", write_file_ty);
+    builder.enable_memory(4);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
         match ty {
@@ -1399,6 +1438,19 @@ mod tests {
         let numbers = numbers.lock().expect("lock").clone();
         let strings = strings.lock().expect("lock").clone();
         (numbers, strings)
+    }
+
+    #[test]
+    fn files_round_trip_through_the_host() {
+        let path = std::env::temp_dir().join(format!("bx-wasm-fs-{}.txt", std::process::id()));
+        let escaped = path.to_string_lossy().replace('\\', "\\\\");
+        let source = format!(
+            "let p = \"{escaped}\"\nprint(write_file(p, \"payload\"))\nprint(read_file(p))"
+        );
+        let (numbers, strings) = run_with_argv(&source, &[]);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(numbers, vec![0]);
+        assert_eq!(strings, vec!["payload".to_string()]);
     }
 
     #[test]

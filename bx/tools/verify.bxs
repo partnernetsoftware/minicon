@@ -139,6 +139,13 @@ write(dir + "/wasm-rec.bxs", 'let o = {a: 10, b: 20}\nprint(o.a + o.b)\n')
 write(dir + "/wasm-flow.bxs", 'let i = 0\nlet sum = 0\nwhile (i < 6) {\n  i = i + 1\n  sum = sum + i\n}\nprint(sum)\n')
 write(dir + "/wasm-fn.bxs", 'fn fact(n) {\n  if (n < 2) { return 1 }\n  return n * fact(n - 1)\n}\nprint(fact(5))\n')
 write(dir + "/wasm-args.bxs", 'print(argc())\nprint(arg(0))\n')
+write(dir + "/wasm-fs.bxs", 'print(write_file("wasm-fs.txt", "payload"))\nprint(read_file("wasm-fs.txt"))\n')
+test("wasm filesystem ABI round-trips", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-fs.bxs", "-o", dir + "/wasm-fs.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-fs.wasm"], { cwd: dir })
+  assert(ran.code == 0 && ran.out.trim() == "0\npayload", "got " + ran.out + " " + ran.err)
+})
 test("wasm modules receive argv", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-args.bxs", "-o", dir + "/wasm-args.wasm"])
   assert(built.code == 0, "build failed: " + built.err)
