@@ -1011,6 +1011,19 @@ fn pop_f64(stack: &mut Vec<WVal>) -> Result<f64, String> {
     }
 }
 
+/// Write `text` as a `[len][utf8]` block into the host string region and return
+/// its start offset, mirroring the inline blocks used by the earlier imports.
+fn store_text_block(memory: &mut [u8], next_file: &mut u32, text: &[u8]) -> Option<u32> {
+    let start = *next_file as usize;
+    let size = 4 + text.len();
+    if start + size > memory.len() {
+        return None;
+    }
+    memory[start..start + 4].copy_from_slice(&(text.len() as u32).to_le_bytes());
+    memory[start + 4..start + size].copy_from_slice(text);
+    *next_file = (start + size + 7) as u32 & !7;
+    Some(start as u32)
+}
 impl<'m, H: Host> Exec<'m, H> {
     fn new(module: &'m Module, host: H) -> Exec<'m, H> {
         let globals = module.globals.iter().map(|global| global.init).collect();
@@ -1961,6 +1974,135 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 };
                 (self.on_str)(&text);
                 Ok(Vec::new())
+            }
+            ("env", "str_trim") => {
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("env.str_trim expects (i32 ptr, i32 len)".to_string()),
+                };
+                let text = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .ok_or_else(|| "env.str_trim string is outside memory".to_string())?;
+                let trimmed = text.trim();
+                match store_text_block(memory, &mut self.next_file, trimmed.as_bytes()) {
+                    Some(start) => Ok(vec![WVal::I32(start as i32)]),
+                    None => Err("string result does not fit the memory region".to_string()),
+                }
+            }
+            ("env", "str_upper") => {
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("env.str_upper expects (i32 ptr, i32 len)".to_string()),
+                };
+                let text = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .ok_or_else(|| "env.str_upper string is outside memory".to_string())?;
+                let upper = text.to_uppercase();
+                match store_text_block(memory, &mut self.next_file, upper.as_bytes()) {
+                    Some(start) => Ok(vec![WVal::I32(start as i32)]),
+                    None => Err("string result does not fit the memory region".to_string()),
+                }
+            }
+            ("env", "str_lower") => {
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("env.str_lower expects (i32 ptr, i32 len)".to_string()),
+                };
+                let text = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .ok_or_else(|| "env.str_lower string is outside memory".to_string())?;
+                let lower = text.to_lowercase();
+                match store_text_block(memory, &mut self.next_file, lower.as_bytes()) {
+                    Some(start) => Ok(vec![WVal::I32(start as i32)]),
+                    None => Err("string result does not fit the memory region".to_string()),
+                }
+            }
+            ("env", "str_replace") => {
+                let read = |value: Option<&WVal>| match value {
+                    Some(WVal::I32(ptr)) => Some(*ptr as usize),
+                    _ => None,
+                };
+                let (ptr, len, from_ptr, from_len, to_ptr, to_len) = match (
+                    read(args.first()),
+                    read(args.get(1)),
+                    read(args.get(2)),
+                    read(args.get(3)),
+                    read(args.get(4)),
+                    read(args.get(5)),
+                ) {
+                    (Some(ptr), Some(len), Some(fp), Some(fl), Some(tp), Some(tl)) => {
+                        (ptr, len, fp, fl, tp, tl)
+                    }
+                    _ => {
+                        return Err("env.str_replace expects (i32,i32,i32,i32,i32,i32)".to_string())
+                    }
+                };
+                let text = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .ok_or_else(|| "env.str_replace string is outside memory".to_string())?;
+                let from = memory
+                    .get(from_ptr..from_ptr.saturating_add(from_len))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .ok_or_else(|| "env.str_replace pattern is outside memory".to_string())?;
+                let to = memory
+                    .get(to_ptr..to_ptr.saturating_add(to_len))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .ok_or_else(|| "env.str_replace replacement is outside memory".to_string())?;
+                let replaced = text.replace(&from, &to);
+                match store_text_block(memory, &mut self.next_file, replaced.as_bytes()) {
+                    Some(start) => Ok(vec![WVal::I32(start as i32)]),
+                    None => Err("string result does not fit the memory region".to_string()),
+                }
+            }
+            ("env", "str_index_of") => {
+                let read = |value: Option<&WVal>| match value {
+                    Some(WVal::I32(ptr)) => Some(*ptr as usize),
+                    _ => None,
+                };
+                let (ptr, len, needle_ptr, needle_len) = match (
+                    read(args.first()),
+                    read(args.get(1)),
+                    read(args.get(2)),
+                    read(args.get(3)),
+                ) {
+                    (Some(ptr), Some(len), Some(np), Some(nl)) => (ptr, len, np, nl),
+                    _ => return Err("env.str_index_of expects (i32,i32,i32,i32)".to_string()),
+                };
+                let text = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .ok_or_else(|| "env.str_index_of string is outside memory".to_string())?;
+                let needle = memory
+                    .get(needle_ptr..needle_ptr.saturating_add(needle_len))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .ok_or_else(|| "env.str_index_of needle is outside memory".to_string())?;
+                let position = text.find(&needle).map(|at| at as i64).unwrap_or(-1);
+                Ok(vec![WVal::I64(position)])
+            }
+            ("env", "str_repeat") => {
+                let (ptr, len, count) = match (args.first(), args.get(1), args.get(2)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len)), Some(WVal::I64(count))) => {
+                        (*ptr as usize, *len as usize, *count)
+                    }
+                    _ => {
+                        return Err(
+                            "env.str_repeat expects (i32 ptr, i32 len, i64 count)".to_string()
+                        )
+                    }
+                };
+                let text = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .ok_or_else(|| "env.str_repeat string is outside memory".to_string())?;
+                let repeated = text.repeat(count.max(0) as usize);
+                match store_text_block(memory, &mut self.next_file, repeated.as_bytes()) {
+                    Some(start) => Ok(vec![WVal::I32(start as i32)]),
+                    None => Err("string result does not fit the memory region".to_string()),
+                }
             }
             ("env", "str_char_at") => {
                 let (ptr, len, index) = match (args.first(), args.get(1), args.get(2)) {

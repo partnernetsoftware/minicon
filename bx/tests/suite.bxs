@@ -890,6 +890,16 @@ if (wasmAssign.code == 0 && wasmAssignRun.out == wasmAssignVm.out && wasmAssignR
   casesFail += 1
   failures.push("wasm interpolation and assignments\n    wasm=" + json(wasmAssignRun.out) + " vm=" + json(wasmAssignVm.out) + " err=" + json(wasmAssignRun.err))
 }
+write(artDir + "/wasm-builtins.bxs", 'print(abs(-4))\nprint(floor(2.7))\nprint(round(2.5))\nprint(sqrt(9))\nprint(trim("  hi  "))\nprint(upper("aBc"))\nprint(replace("a-b", "-", "+"))\nprint(index_of("hello", "ll"))\nprint(repeat("ab", 2))\nprint(type(3))\nprint(type([1, 2]))\n')
+let wasmBuiltins = exec([BX, "build", "--wasm", artDir + "/wasm-builtins.bxs", "-o", artDir + "/wasm-builtins.wasm"])
+let wasmBuiltinsRun = exec([BX, "run", artDir + "/wasm-builtins.wasm"])
+let wasmBuiltinsVm = exec([BX, "run", artDir + "/wasm-builtins.bxs"])
+if (wasmBuiltins.code == 0 && wasmBuiltinsRun.out == wasmBuiltinsVm.out && wasmBuiltinsRun.out.trim() == "4\n2\n3\n3\nhi\nABC\na+b\n2\nabab\nint\narray") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm numeric/string/type builtins\n    wasm=" + json(wasmBuiltinsRun.out) + " vm=" + json(wasmBuiltinsVm.out) + " err=" + json(wasmBuiltinsRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'fn outer() {\n  let n = 5\n  let f = fn(x) { return x + n }\n  return f(1)\n}\nprint(outer())\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1 && wasmBad.err.contains("cannot capture outer variables")) {

@@ -128,7 +128,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 74 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 75 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -152,6 +152,12 @@ bx wasm target
 - **Record/array writes**: `r.a = v`, `r.a += v`, `xs[i] = v`, `xs[-1] = v` and
   `xs[i] += v` are supported with the same negative-index normalisation and
   bounds checks as reads (`+ - * %` for compound).
+- **Numeric/string/`type()` builtins**: `float`, `abs`, `floor`, `ceil`, `round`
+  (lowered to `floor(x±0.5)` so half-away-from-zero matches the VM), `sqrt`,
+  `trim`, `upper`, `lower`, `replace`, `index_of`, `repeat` and `type()` (static
+  type name: int/float/str/bool/array/object/function). String results flow
+  through host `env.str_*` block helpers; browser glue mirrors them with JS
+  string methods.
 - **Loop-condition fast path**: `while`/`for` exit tests over a direct comparison
   emit the inverse comparison opcode, dropping the trailing `eqz` on every
   iteration; the interpreter's timeout check short-circuits when no deadline is

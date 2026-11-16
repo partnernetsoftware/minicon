@@ -655,6 +655,68 @@ impl Checker {
                         }
                         return Ok(Ty::Int);
                     }
+                    if name == "float" && args.len() == 1 {
+                        if !is_number(self.infer(&args[0])?) {
+                            return Err("wasm target float() takes a number".to_string());
+                        }
+                        return Ok(Ty::Float);
+                    }
+                    if name == "abs" && args.len() == 1 {
+                        return match self.infer(&args[0])? {
+                            Ty::Int => Ok(Ty::Int),
+                            Ty::Float => Ok(Ty::Float),
+                            other => Err(format!(
+                                "wasm target abs() takes a number, got {}",
+                                ty_name(other)
+                            )),
+                        };
+                    }
+                    if matches!(name.as_str(), "floor" | "ceil" | "round") && args.len() == 1 {
+                        if !is_number(self.infer(&args[0])?) {
+                            return Err(format!("wasm target {}() takes a number", name));
+                        }
+                        return Ok(Ty::Float);
+                    }
+                    if name == "sqrt" && args.len() == 1 {
+                        if !is_number(self.infer(&args[0])?) {
+                            return Err("wasm target sqrt() takes a number".to_string());
+                        }
+                        return Ok(Ty::Float);
+                    }
+                    if matches!(name.as_str(), "trim" | "upper" | "lower") && args.len() == 1 {
+                        if self.infer(&args[0])? != Ty::Str {
+                            return Err(format!("wasm target {}() takes a string", name));
+                        }
+                        return Ok(Ty::Str);
+                    }
+                    if name == "replace" && args.len() == 3 {
+                        for arg in args {
+                            if self.infer(arg)? != Ty::Str {
+                                return Err("wasm target replace() takes three strings".to_string());
+                            }
+                        }
+                        return Ok(Ty::Str);
+                    }
+                    if name == "index_of" && args.len() == 2 {
+                        for arg in args {
+                            if self.infer(arg)? != Ty::Str {
+                                return Err("wasm target index_of() takes two strings".to_string());
+                            }
+                        }
+                        return Ok(Ty::Int);
+                    }
+                    if name == "repeat" && args.len() == 2 {
+                        if self.infer(&args[0])? != Ty::Str || self.infer(&args[1])? != Ty::Int {
+                            return Err(
+                                "wasm target repeat() takes a string and an int".to_string()
+                            );
+                        }
+                        return Ok(Ty::Str);
+                    }
+                    if name == "type" && args.len() == 1 {
+                        self.infer(&args[0])?;
+                        return Ok(Ty::Str);
+                    }
                     if name == "str" && args.len() == 1 {
                         let ty = self.infer(&args[0])?;
                         if !is_number(ty) && ty != Ty::Bool {
@@ -1191,7 +1253,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 40;
+const IMPORT_COUNT: u32 = 46;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -1222,6 +1284,12 @@ const BOOL_TO_STR: u32 = 36;
 const STR_TEST: u32 = 37;
 const PANIC: u32 = 38;
 const STR_CHAR_AT: u32 = 39;
+const STR_TRIM: u32 = 40;
+const STR_UPPER: u32 = 41;
+const STR_LOWER: u32 = 42;
+const STR_REPLACE: u32 = 43;
+const STR_INDEX_OF: u32 = 44;
+const STR_REPEAT: u32 = 45;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -2063,7 +2131,15 @@ impl<'a> Emitter<'a> {
                                 "wasm target function literal returns no value".to_string()
                             });
                     }
+                    if name == "abs" && args.len() == 1 {
+                        return self.type_of(&args[0]);
+                    }
                     let known = match name.as_str() {
+                        "float" => Some(Ty::Float),
+                        "floor" | "ceil" | "round" | "sqrt" => Some(Ty::Float),
+                        "trim" | "upper" | "lower" | "replace" | "repeat" => Some(Ty::Str),
+                        "index_of" => Some(Ty::Int),
+                        "type" => Some(Ty::Str),
                         "str" => Some(Ty::Str),
                         "int" => Some(Ty::Int),
                         "len" => Some(Ty::Int),
@@ -3062,6 +3138,139 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Call(FILE_EXISTS));
                         self.builder.push(Instr::Op(0xad));
                         return Ok(Ty::Int);
+                    }
+                    if name == "float" && args.len() == 1 {
+                        self.emit_f64(&args[0])?;
+                        return Ok(Ty::Float);
+                    }
+                    if name == "abs" && args.len() == 1 {
+                        return match self.type_of(&args[0])? {
+                            Ty::Int => {
+                                let temp = self.builder.add_local(ValType::I64);
+                                self.emit_expr(&args[0])?;
+                                self.builder.push(Instr::Local(0x21, temp));
+                                self.builder.push(Instr::Local(0x20, temp));
+                                self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                                self.builder.push(Instr::Op(0x53));
+                                self.builder.push(Instr::Block {
+                                    opcode: 0x04,
+                                    end: 0,
+                                    else_at: 0,
+                                    start: 0,
+                                });
+                                self.labels.push(0x04);
+                                self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                                self.builder.push(Instr::Local(0x20, temp));
+                                self.builder.push(Instr::Op(0x7d));
+                                self.builder.push(Instr::Local(0x21, temp));
+                                self.labels.pop();
+                                self.builder.push(Instr::Op(0x0b));
+                                self.builder.push(Instr::Local(0x20, temp));
+                                Ok(Ty::Int)
+                            }
+                            Ty::Float => {
+                                self.emit_f64(&args[0])?;
+                                self.builder.push(Instr::Op(0x99));
+                                Ok(Ty::Float)
+                            }
+                            other => Err(format!(
+                                "wasm target abs() takes a number, got {}",
+                                ty_name(other)
+                            )),
+                        };
+                    }
+                    if matches!(name.as_str(), "floor" | "ceil") && args.len() == 1 {
+                        self.emit_f64(&args[0])?;
+                        let opcode = if name == "floor" { 0x9c } else { 0x9b };
+                        self.builder.push(Instr::Op(opcode));
+                        return Ok(Ty::Float);
+                    }
+                    if name == "round" && args.len() == 1 {
+                        // The VM rounds half away from zero, while wasm's nearest is
+                        // ties-to-even; lower it to floor(x+0.5)/ceil(x-0.5).
+                        let temp = self.builder.add_local(ValType::F64);
+                        self.emit_f64(&args[0])?;
+                        self.builder.push(Instr::Local(0x21, temp));
+                        self.builder.push(Instr::Local(0x20, temp));
+                        self.builder.push(Instr::Const(0x44, WVal::F64(0.0)));
+                        self.builder.push(Instr::Op(0x66));
+                        self.builder.push(Instr::Block {
+                            opcode: 0x04,
+                            end: 0,
+                            else_at: 0,
+                            start: 0,
+                        });
+                        self.labels.push(0x04);
+                        self.builder.push(Instr::Local(0x20, temp));
+                        self.builder.push(Instr::Const(0x44, WVal::F64(0.5)));
+                        self.builder.push(Instr::Op(0xa0));
+                        self.builder.push(Instr::Op(0x9c));
+                        self.builder.push(Instr::Local(0x21, temp));
+                        self.builder.push(Instr::Else { end: 0 });
+                        self.builder.push(Instr::Local(0x20, temp));
+                        self.builder.push(Instr::Const(0x44, WVal::F64(0.5)));
+                        self.builder.push(Instr::Op(0xa1));
+                        self.builder.push(Instr::Op(0x9b));
+                        self.builder.push(Instr::Local(0x21, temp));
+                        self.labels.pop();
+                        self.builder.push(Instr::Op(0x0b));
+                        self.builder.push(Instr::Local(0x20, temp));
+                        return Ok(Ty::Float);
+                    }
+                    if name == "sqrt" && args.len() == 1 {
+                        self.emit_f64(&args[0])?;
+                        self.builder.push(Instr::Op(0x9f));
+                        return Ok(Ty::Float);
+                    }
+                    if matches!(name.as_str(), "trim" | "upper" | "lower") && args.len() == 1 {
+                        let import = match name.as_str() {
+                            "trim" => STR_TRIM,
+                            "upper" => STR_UPPER,
+                            _ => STR_LOWER,
+                        };
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Call(import));
+                        self.push_block_as_pair();
+                        return Ok(Ty::Str);
+                    }
+                    if name == "replace" && args.len() == 3 {
+                        for arg in args {
+                            self.emit_str(arg)?;
+                        }
+                        self.builder.push(Instr::Call(STR_REPLACE));
+                        self.push_block_as_pair();
+                        return Ok(Ty::Str);
+                    }
+                    if name == "index_of" && args.len() == 2 {
+                        self.emit_str(&args[0])?;
+                        self.emit_str(&args[1])?;
+                        self.builder.push(Instr::Call(STR_INDEX_OF));
+                        return Ok(Ty::Int);
+                    }
+                    if name == "repeat" && args.len() == 2 {
+                        self.emit_str(&args[0])?;
+                        self.emit_expr(&args[1])?;
+                        self.builder.push(Instr::Call(STR_REPEAT));
+                        self.push_block_as_pair();
+                        return Ok(Ty::Str);
+                    }
+                    if name == "type" && args.len() == 1 {
+                        let ty = self.type_of(&args[0])?;
+                        let label = match ty {
+                            Ty::Int => "int",
+                            Ty::Float => "float",
+                            Ty::Str => "str",
+                            Ty::Bool => "bool",
+                            Ty::Arr => "array",
+                            Ty::Obj(_) | Ty::Map => "object",
+                            Ty::Func(_) => "function",
+                        };
+                        let offset = self.builder.add_data(label.as_bytes());
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(offset as i32)));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(label.len() as i32)));
+                        return Ok(Ty::Str);
                     }
                     if name == "str" && args.len() == 1 {
                         let ty = self.type_of(&args[0])?;
@@ -4167,6 +4376,26 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
         vec![ValType::I32, ValType::I32, ValType::I32],
         vec![ValType::I32],
     );
+    let str_unary_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
+    let str_replace_ty = builder.add_type(
+        vec![
+            ValType::I32,
+            ValType::I32,
+            ValType::I32,
+            ValType::I32,
+            ValType::I32,
+            ValType::I32,
+        ],
+        vec![ValType::I32],
+    );
+    let str_index_of_ty = builder.add_type(
+        vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+        vec![ValType::I64],
+    );
+    let str_repeat_ty = builder.add_type(
+        vec![ValType::I32, ValType::I32, ValType::I64],
+        vec![ValType::I32],
+    );
     let str_test_ty = builder.add_type(
         vec![
             ValType::I32,
@@ -4249,6 +4478,12 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "str_test", str_test_ty);
     builder.import_func("env", "panic", panic_ty);
     builder.import_func("env", "str_char_at", str_char_at_ty);
+    builder.import_func("env", "str_trim", str_unary_ty);
+    builder.import_func("env", "str_upper", str_unary_ty);
+    builder.import_func("env", "str_lower", str_unary_ty);
+    builder.import_func("env", "str_replace", str_replace_ty);
+    builder.import_func("env", "str_index_of", str_index_of_ty);
+    builder.import_func("env", "str_repeat", str_repeat_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -4655,6 +4890,29 @@ mod tests {
         let (numbers, _) = run_with_argv(&source, &[]);
         let _ = std::fs::remove_file(&blocker);
         assert_eq!(numbers, vec![-1]);
+    }
+
+    #[test]
+    fn numeric_string_and_type_builtins() {
+        let (numbers, strings) = run_with_argv(
+            "print(abs(-4))\nprint(floor(2.7))\nprint(round(2.5))\nprint(sqrt(9))\nprint(trim(\"  hi  \"))\nprint(upper(\"aBc\"))\nprint(replace(\"a-b\", \"-\", \"+\"))\nprint(index_of(\"hello\", \"ll\"))\nprint(repeat(\"ab\", 2))\nprint(type(3))\nprint(type(true))",
+            &[],
+        );
+        assert_eq!(numbers, vec![4, 2]);
+        assert_eq!(
+            strings,
+            vec![
+                "2".to_string(),
+                "3".to_string(),
+                "3".to_string(),
+                "hi".to_string(),
+                "ABC".to_string(),
+                "a+b".to_string(),
+                "abab".to_string(),
+                "int".to_string(),
+                "bool".to_string(),
+            ]
+        );
     }
 
     #[test]

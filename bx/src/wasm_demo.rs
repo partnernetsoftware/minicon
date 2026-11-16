@@ -151,7 +151,33 @@ const imports = {
       }
       return 0;
     },
-    str_char_at: (ptr, len, index) => {
+    str_trim: (ptr, len) => {
+      const text = new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, ptr, len));
+      return writeStringBlock(text.trim());
+    },
+    str_upper: (ptr, len) => {
+      const text = new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, ptr, len));
+      return writeStringBlock(text.toUpperCase());
+    },
+    str_lower: (ptr, len) => {
+      const text = new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, ptr, len));
+      return writeStringBlock(text.toLowerCase());
+    },
+    str_replace: (ptr, len, fromPtr, fromLen, toPtr, toLen) => {
+      const decode = (p, l) => new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, p, l));
+      const text = decode(ptr, len);
+      const from = decode(fromPtr, fromLen);
+      const to = decode(toPtr, toLen);
+      return writeStringBlock(text.split(from).join(to));
+    },
+    str_index_of: (ptr, len, needlePtr, needleLen) => {
+      const decode = (p, l) => new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, p, l));
+      return BigInt(decode(ptr, len).indexOf(decode(needlePtr, needleLen)));
+    },
+    str_repeat: (ptr, len, count) => {
+      const text = new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, ptr, len));
+      return writeStringBlock(text.repeat(Number(count)));
+    },    str_char_at: (ptr, len, index) => {
       const text = new TextDecoder("utf-8").decode(
         new Uint8Array(instance.exports.memory.buffer, ptr, len),
       );

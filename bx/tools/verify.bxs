@@ -184,6 +184,14 @@ test("wasm IO failures are explicit", fn() {
   assert(fullRun.code == 1 && fullRun.err.contains("map is full"), "got " + fullRun.code + " " + json(fullRun.err))
 })
 write(dir + "/wasm-interp.bxs", 'let s = "v"\nprint("x=\${s} end")\nprint(1 + "x")\nprint(-2.5)\nlet r = {a: 1}\nr.a = 7\nprint(r.a)\n')
+write(dir + "/wasm-builtins.bxs", 'print(round(2.5))\nprint(trim("  x "))\nprint(type(true))\n')
+test("wasm numeric and string builtins", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-builtins.bxs", "-o", dir + "/wasm-builtins.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-builtins.wasm"])
+  let vm = exec([bin, "run", dir + "/wasm-builtins.bxs"])
+  assert(ran.code == 0 && ran.out == vm.out && ran.out.trim() == "3\nx\nbool", "wasm=" + json(ran.out) + " vm=" + json(vm.out))
+})
 test("wasm interpolation and assignments", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-interp.bxs", "-o", dir + "/wasm-interp.wasm"])
   assert(built.code == 0, "build failed: " + built.err)
