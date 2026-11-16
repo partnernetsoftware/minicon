@@ -704,6 +704,16 @@ if (wasmPush.code == 0 && wasmPushRun.out == wasmPushVm.out && wasmPushRun.out.t
   casesFail += 1
   failures.push("wasm array push\n    wasm=" + json(wasmPushRun.out) + " vm=" + json(wasmPushVm.out) + " err=" + json(wasmPushRun.err))
 }
+write(artDir + "/wasm-forin.bxs", 'let a = [5, 6, 7]\nlet s = 0\nfor v in a { s = s + v }\nprint(s)\nlet b = []\nfor k, v in a { b.push(k * 10 + v) }\nprint(len(b))\nprint(b[2])\nfn total(xs) {\n  let t = 0\n  for v in xs { t = t + v }\n  return t\n}\nprint(total([1, 2, 3]))\n')
+let wasmForin = exec([BX, "build", "--wasm", artDir + "/wasm-forin.bxs", "-o", artDir + "/wasm-forin.wasm"])
+let wasmForinRun = exec([BX, "run", artDir + "/wasm-forin.wasm"])
+let wasmForinVm = exec([BX, "run", artDir + "/wasm-forin.bxs"])
+if (wasmForin.code == 0 && wasmForinRun.out == wasmForinVm.out && wasmForinRun.out.trim() == "18\n3\n27\n6") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm for-in arrays\n    wasm=" + json(wasmForinRun.out) + " vm=" + json(wasmForinVm.out) + " err=" + json(wasmForinRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'let f = fn() { return 1 }\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1) {

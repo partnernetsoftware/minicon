@@ -120,6 +120,8 @@ struct Checker {
     fns: HashMap<String, FnSig>,
     /// Overlay for the function body currently being checked.
     local_scope: HashMap<String, Ty>,
+    /// Loop-scoped bindings (for-in variables) visible in the current block.
+    scopes: Vec<HashMap<String, Ty>>,
     fn_depth: usize,
 }
 
@@ -132,6 +134,7 @@ impl Checker {
             shapes: RefCell::new(Vec::new()),
             fns: HashMap::new(),
             local_scope: HashMap::new(),
+            scopes: Vec::new(),
             fn_depth: 0,
         }
     }
@@ -241,6 +244,11 @@ impl Checker {
     }
 
     fn lookup(&self, name: &str) -> Result<Ty, String> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(ty) = scope.get(name) {
+                return Ok(*ty);
+            }
+        }
         if self.fn_depth > 0 {
             if let Some(ty) = self.local_scope.get(name) {
                 return Ok(*ty);
@@ -747,6 +755,33 @@ impl Checker {
                 }
             }
             Stmt::Break(_) | Stmt::Continue(_) => {}
+            Stmt::ForIn(key, value, iter, body, _) => {
+                let ty = self.infer(iter)?;
+                if ty != Ty::Arr {
+                    return Err(format!(
+                        "wasm target iterates arrays only, got {}",
+                        ty_name(ty)
+                    ));
+                }
+                let mut scope = HashMap::new();
+                let (key_name, value_name) = match value {
+                    Some(value) => (Some(key.clone()), value.clone()),
+                    None => (None, key.clone()),
+                };
+                if let Some(key_name) = key_name {
+                    scope.insert(key_name, Ty::Int);
+                }
+                scope.insert(value_name, Ty::Int);
+                self.scopes.push(scope);
+                let outcome = (|| -> Result<(), String> {
+                    for stmt in body {
+                        self.check_stmt(stmt)?;
+                    }
+                    Ok(())
+                })();
+                self.scopes.pop();
+                outcome?;
+            }
             Stmt::Return(expr, _) => {
                 if self.fn_depth == 0 {
                     return Err("wasm target has no function to return from".to_string());
@@ -840,6 +875,8 @@ struct Emitter<'a> {
     temp_base: u32,
     /// Result type of the function currently being emitted (`None` = unit).
     result: Option<Ty>,
+    /// Loop-scoped locals (for-in variables), innermost last.
+    scoped: Vec<HashMap<String, LocalSlot>>,
 }
 
 impl Emitter<'_> {
@@ -878,6 +915,11 @@ impl<'a> Emitter<'a> {
     }
 
     fn local_of(&self, name: &str) -> Option<LocalSlot> {
+        for scope in self.scoped.iter().rev() {
+            if let Some(slot) = scope.get(name) {
+                return Some(*slot);
+            }
+        }
         if self.fn_mode {
             self.locals.get(name).copied()
         } else {
@@ -994,6 +1036,104 @@ impl<'a> Emitter<'a> {
             ty_name(expected),
             ty_name(actual)
         ))
+    }
+
+    /// `for k, v in array { .. }`: index/value locals advanced over the array.
+    fn emit_for_in(
+        &mut self,
+        key: &str,
+        value: Option<&str>,
+        iter: &Expr,
+        body: &[Stmt],
+    ) -> Result<(), String> {
+        let iter_ty = self.type_of(iter)?;
+        if iter_ty != Ty::Arr {
+            return Err(format!(
+                "wasm target iterates arrays only, got {}",
+                ty_name(iter_ty)
+            ));
+        }
+        let array_tmp = self.builder.add_local(ValType::I32);
+        let index_tmp = self.builder.add_local(ValType::I64);
+        let (key_name, value_name) = match value {
+            Some(value) => (Some(key), value),
+            None => (None, key),
+        };
+        let mut scope = HashMap::new();
+        let value_tmp = self.builder.add_local(ValType::I64);
+        scope.insert(
+            value_name.to_string(),
+            LocalSlot {
+                ty: Ty::Int,
+                slot: value_tmp,
+            },
+        );
+        let key_tmp = key_name.map(|name| {
+            let tmp = self.builder.add_local(ValType::I64);
+            scope.insert(
+                name.to_string(),
+                LocalSlot {
+                    ty: Ty::Int,
+                    slot: tmp,
+                },
+            );
+            tmp
+        });
+        self.scoped.push(scope);
+        self.emit_expr(iter)?;
+        self.builder.push(Instr::Local(0x21, array_tmp));
+        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+        self.builder.push(Instr::Local(0x21, index_tmp));
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x02);
+        self.builder.push(Instr::Block {
+            opcode: 0x03,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x03);
+        // condition: index < len(array)
+        self.builder.push(Instr::Local(0x20, index_tmp));
+        self.builder.push(Instr::Local(0x20, array_tmp));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Op(0xad));
+        self.builder.push(Instr::Op(0x53));
+        self.builder.push(Instr::Op(0x45));
+        self.builder.push(Instr::BrIf(1));
+        if let Some(key_tmp) = key_tmp {
+            self.builder.push(Instr::Local(0x20, index_tmp));
+            self.builder.push(Instr::Local(0x21, key_tmp));
+        }
+        self.builder.push(Instr::Local(0x20, array_tmp));
+        self.builder.push(Instr::Local(0x20, index_tmp));
+        self.builder.push(Instr::Op(0xa7));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Mem(0x29, 3, 0));
+        self.builder.push(Instr::Local(0x21, value_tmp));
+        for stmt in body {
+            self.emit_stmt(stmt)?;
+        }
+        self.builder.push(Instr::Local(0x20, index_tmp));
+        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+        self.builder.push(Instr::Op(0x7c));
+        self.builder.push(Instr::Local(0x21, index_tmp));
+        self.builder.push(Instr::Br(0));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.scoped.pop();
+        Ok(())
     }
 
     /// `arr.push(value)`: allocate a larger block, copy the old one, append and
@@ -1802,6 +1942,9 @@ impl<'a> Emitter<'a> {
                 }
                 Ok(())
             }
+            Stmt::ForIn(key, value, iter, body, _) => {
+                self.emit_for_in(key, value.as_deref(), iter, body)
+            }
             Stmt::Expr(Expr::MethodCall(object, name, args, _), _) => {
                 let Expr::Ident(array) = &**object else {
                     return Err("wasm target supports .push on array variables only".to_string());
@@ -2377,6 +2520,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             fn_mode: false,
             temp_base: 0,
             result: None,
+            scoped: Vec::new(),
         };
         for stmt in &stmts {
             emitter.emit_stmt(stmt)?;
@@ -2406,6 +2550,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                 fn_mode: true,
                 temp_base,
                 result: sig.result,
+                scoped: Vec::new(),
             };
             let mut used = 0u32;
             for (param, ty) in decl.params.iter().zip(sig.params.iter()) {
@@ -2615,6 +2760,14 @@ mod tests {
             strings,
             vec!["3.5".to_string(), "4.5".to_string(), "2.5".to_string()]
         );
+    }
+
+    #[test]
+    fn for_in_iterates_arrays() {
+        let prints = run_source(
+            "let a = [5, 6, 7]\nlet s = 0\nfor v in a { s = s + v }\nprint(s)\nlet b = []\nfor k, v in a { b.push(k * 10 + v) }\nprint(len(b))\nprint(b[2])\nfn total(xs) {\n  let t = 0\n  for v in xs { t = t + v }\n  return t\n}\nprint(total([1, 2, 3]))",
+        );
+        assert_eq!(prints, vec![18, 3, 27, 6]);
     }
 
     #[test]

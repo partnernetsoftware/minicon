@@ -85,6 +85,10 @@ fn gen() {
   } else {
     lines.push('if (cmp_a == cmp_b) { print(1) } else { print(2) }')
   }
+  lines.push("let it = [1, 2, 3]")
+  lines.push("let its = 0")
+  lines.push("for iv in it { its = its + iv }")
+  lines.push("print(its)")
   lines.push("let grow = [1, 2]")
   lines.push("grow.push(" + str(1 + pick(9)) + ")")
   lines.push("print(len(grow))")
