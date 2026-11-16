@@ -850,6 +850,39 @@ impl Checker {
                         }
                         return Ok(Ty::Int);
                     }
+                    if name == "keys" && args.len() == 1 {
+                        if matches!(self.infer(&args[0])?, Ty::Obj(_)) {
+                            return Ok(Ty::ArrStr);
+                        }
+                        return Err("wasm target keys() takes a record".to_string());
+                    }
+                    if name == "values" && args.len() == 1 {
+                        if matches!(self.infer(&args[0])?, Ty::Obj(_)) {
+                            return Ok(Ty::Arr);
+                        }
+                        return Err("wasm target values() takes a record".to_string());
+                    }
+                    if name == "has" && args.len() == 2 {
+                        if !matches!(self.infer(&args[0])?, Ty::Obj(_))
+                            || self.infer(&args[1])? != Ty::Str
+                        {
+                            return Err("wasm target has() takes a record and a string".to_string());
+                        }
+                        return Ok(Ty::Bool);
+                    }
+                    if name == "get" && (args.len() == 2 || args.len() == 3) {
+                        if !matches!(self.infer(&args[0])?, Ty::Obj(_))
+                            || self.infer(&args[1])? != Ty::Str
+                        {
+                            return Err(
+                                "wasm target get() takes a record and a string key".to_string()
+                            );
+                        }
+                        if args.len() == 3 && self.infer(&args[2])? != Ty::Int {
+                            return Err("wasm target get() default must be an int".to_string());
+                        }
+                        return Ok(Ty::Int);
+                    }
                     if name == "str" && args.len() == 1 {
                         let ty = self.infer(&args[0])?;
                         if !is_number(ty) && ty != Ty::Bool {
@@ -3959,6 +3992,369 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Local(0x20, acc_tmp));
                         return Ok(Ty::Int);
                     }
+                    if name == "keys" && args.len() == 1 {
+                        let Ty::Obj(shape) = self.type_of(&args[0])? else {
+                            return Err("wasm target keys() takes a record".to_string());
+                        };
+                        let (table, count) = self.record_table(shape)?;
+                        let record_tmp = self.builder.add_local(ValType::I32);
+                        let out_tmp = self.builder.add_local(ValType::I32);
+                        let index_tmp = self.builder.add_local(ValType::I64);
+                        self.emit_expr(&args[0])?;
+                        self.builder.push(Instr::Local(0x21, record_tmp));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32((4 + 8 * count) as i32)));
+                        self.emit_alloc_dynamic();
+                        self.builder.push(Instr::Local(0x21, out_tmp));
+                        self.builder.push(Instr::Local(0x20, out_tmp));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(count as i32)));
+                        self.builder.push(Instr::Mem(0x36, 2, 0));
+                        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                        self.builder.push(Instr::Local(0x21, index_tmp));
+                        self.builder.push(Instr::Block {
+                            opcode: 0x02,
+                            end: 0,
+                            else_at: 0,
+                            start: 0,
+                        });
+                        self.labels.push(0x02);
+                        self.builder.push(Instr::Block {
+                            opcode: 0x03,
+                            end: 0,
+                            else_at: 0,
+                            start: 0,
+                        });
+                        self.labels.push(0x03);
+                        self.builder.push(Instr::Local(0x20, index_tmp));
+                        self.builder.push(Instr::Op(0xa7));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(count as i32)));
+                        self.builder.push(Instr::Op(0x48));
+                        self.builder.push(Instr::Op(0x45));
+                        self.builder.push(Instr::BrIf(1));
+                        // key block address = table + load(table + 4*index)
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(table as i32)));
+                        self.builder.push(Instr::Local(0x20, index_tmp));
+                        self.builder.push(Instr::Op(0xa7));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6c));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Mem(0x28, 2, 0));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(table as i32)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x21, record_tmp));
+                        // original record no longer needed; reuse temp as block ptr
+                        let store_pair = |emitter: &mut Emitter, block_tmp: u32, index_tmp: u32| {
+                            emitter.builder.push(Instr::Local(0x20, out_tmp));
+                            emitter.builder.push(Instr::Local(0x20, index_tmp));
+                            emitter.builder.push(Instr::Op(0xa7));
+                            emitter.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                            emitter.builder.push(Instr::Op(0x6c));
+                            emitter.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                            emitter.builder.push(Instr::Op(0x6a));
+                            emitter.builder.push(Instr::Op(0x6a));
+                            emitter.builder.push(Instr::Local(0x20, block_tmp));
+                            emitter.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                            emitter.builder.push(Instr::Op(0x6a));
+                            emitter.builder.push(Instr::Mem(0x36, 2, 0));
+                            emitter.builder.push(Instr::Local(0x20, out_tmp));
+                            emitter.builder.push(Instr::Local(0x20, index_tmp));
+                            emitter.builder.push(Instr::Op(0xa7));
+                            emitter.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                            emitter.builder.push(Instr::Op(0x6c));
+                            emitter.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                            emitter.builder.push(Instr::Op(0x6a));
+                            emitter.builder.push(Instr::Op(0x6a));
+                            emitter.builder.push(Instr::Local(0x20, block_tmp));
+                            emitter.builder.push(Instr::Mem(0x28, 2, 0));
+                            emitter.builder.push(Instr::Mem(0x36, 2, 0));
+                        };
+                        store_pair(self, record_tmp, index_tmp);
+                        self.builder.push(Instr::Local(0x20, index_tmp));
+                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+                        self.builder.push(Instr::Op(0x7c));
+                        self.builder.push(Instr::Local(0x21, index_tmp));
+                        self.builder.push(Instr::Br(0));
+                        self.labels.pop();
+                        self.builder.push(Instr::Op(0x0b));
+                        self.labels.pop();
+                        self.builder.push(Instr::Op(0x0b));
+                        self.builder.push(Instr::Local(0x20, out_tmp));
+                        return Ok(Ty::ArrStr);
+                    }
+                    if name == "values" && args.len() == 1 {
+                        let Ty::Obj(shape) = self.type_of(&args[0])? else {
+                            return Err("wasm target values() takes a record".to_string());
+                        };
+                        let (_, count) = self.record_table(shape)?;
+                        let record_tmp = self.builder.add_local(ValType::I32);
+                        let out_tmp = self.builder.add_local(ValType::I32);
+                        let index_tmp = self.builder.add_local(ValType::I64);
+                        self.emit_expr(&args[0])?;
+                        self.builder.push(Instr::Local(0x21, record_tmp));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32((4 + 8 * count) as i32)));
+                        self.emit_alloc_dynamic();
+                        self.builder.push(Instr::Local(0x21, out_tmp));
+                        self.builder.push(Instr::Local(0x20, out_tmp));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(count as i32)));
+                        self.builder.push(Instr::Mem(0x36, 2, 0));
+                        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                        self.builder.push(Instr::Local(0x21, index_tmp));
+                        self.builder.push(Instr::Block {
+                            opcode: 0x02,
+                            end: 0,
+                            else_at: 0,
+                            start: 0,
+                        });
+                        self.labels.push(0x02);
+                        self.builder.push(Instr::Block {
+                            opcode: 0x03,
+                            end: 0,
+                            else_at: 0,
+                            start: 0,
+                        });
+                        self.labels.push(0x03);
+                        self.builder.push(Instr::Local(0x20, index_tmp));
+                        self.builder.push(Instr::Op(0xa7));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(count as i32)));
+                        self.builder.push(Instr::Op(0x48));
+                        self.builder.push(Instr::Op(0x45));
+                        self.builder.push(Instr::BrIf(1));
+                        self.builder.push(Instr::Local(0x20, out_tmp));
+                        self.builder.push(Instr::Local(0x20, index_tmp));
+                        self.builder.push(Instr::Op(0xa7));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                        self.builder.push(Instr::Op(0x6c));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x20, record_tmp));
+                        self.builder.push(Instr::Local(0x20, index_tmp));
+                        self.builder.push(Instr::Op(0xa7));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                        self.builder.push(Instr::Op(0x6c));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Mem(0x29, 3, 0));
+                        self.builder.push(Instr::Mem(0x37, 3, 0));
+                        self.builder.push(Instr::Local(0x20, index_tmp));
+                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+                        self.builder.push(Instr::Op(0x7c));
+                        self.builder.push(Instr::Local(0x21, index_tmp));
+                        self.builder.push(Instr::Br(0));
+                        self.labels.pop();
+                        self.builder.push(Instr::Op(0x0b));
+                        self.labels.pop();
+                        self.builder.push(Instr::Op(0x0b));
+                        self.builder.push(Instr::Local(0x20, out_tmp));
+                        return Ok(Ty::Arr);
+                    }
+                    if name == "has" && args.len() == 2 {
+                        let Ty::Obj(shape) = self.type_of(&args[0])? else {
+                            return Err("wasm target has() takes a record".to_string());
+                        };
+                        let (table, count) = self.record_table(shape)?;
+                        let record_tmp = self.builder.add_local(ValType::I32);
+                        let key_ptr = self.builder.add_local(ValType::I32);
+                        let key_len = self.builder.add_local(ValType::I32);
+                        let index_tmp = self.builder.add_local(ValType::I64);
+                        let block_tmp = self.builder.add_local(ValType::I32);
+                        let found_tmp = self.builder.add_local(ValType::I32);
+                        self.emit_expr(&args[0])?;
+                        self.builder.push(Instr::Local(0x21, record_tmp));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                        self.builder.push(Instr::Local(0x21, found_tmp));
+                        self.emit_str(&args[1])?;
+                        self.builder.push(Instr::Local(0x21, key_len));
+                        self.builder.push(Instr::Local(0x21, key_ptr));
+                        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                        self.builder.push(Instr::Local(0x21, index_tmp));
+                        self.builder.push(Instr::Block {
+                            opcode: 0x02,
+                            end: 0,
+                            else_at: 0,
+                            start: 0,
+                        });
+                        self.labels.push(0x02);
+                        self.builder.push(Instr::Block {
+                            opcode: 0x03,
+                            end: 0,
+                            else_at: 0,
+                            start: 0,
+                        });
+                        self.labels.push(0x03);
+                        self.builder.push(Instr::Local(0x20, index_tmp));
+                        self.builder.push(Instr::Op(0xa7));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(count as i32)));
+                        self.builder.push(Instr::Op(0x48));
+                        self.builder.push(Instr::Op(0x45));
+                        self.builder.push(Instr::BrIf(1));
+                        // block address
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(table as i32)));
+                        self.builder.push(Instr::Local(0x20, index_tmp));
+                        self.builder.push(Instr::Op(0xa7));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6c));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Mem(0x28, 2, 0));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(table as i32)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x21, block_tmp));
+                        self.builder.push(Instr::Local(0x20, block_tmp));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x20, block_tmp));
+                        self.builder.push(Instr::Mem(0x28, 2, 0));
+                        self.builder.push(Instr::Local(0x20, key_ptr));
+                        self.builder.push(Instr::Local(0x20, key_len));
+                        self.builder.push(Instr::Call(STR_COMPARE));
+                        self.builder.push(Instr::Op(0x45));
+                        self.builder.push(Instr::Block {
+                            opcode: 0x04,
+                            end: 0,
+                            else_at: 0,
+                            start: 0,
+                        });
+                        self.labels.push(0x04);
+                        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+                        self.builder.push(Instr::Local(0x21, found_tmp));
+                        self.builder.push(Instr::Br(2));
+                        self.labels.pop();
+                        self.builder.push(Instr::Op(0x0b));
+                        self.builder.push(Instr::Local(0x20, index_tmp));
+                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+                        self.builder.push(Instr::Op(0x7c));
+                        self.builder.push(Instr::Local(0x21, index_tmp));
+                        self.builder.push(Instr::Br(0));
+                        self.labels.pop();
+                        self.builder.push(Instr::Op(0x0b));
+                        self.labels.pop();
+                        self.builder.push(Instr::Op(0x0b));
+                        self.builder.push(Instr::Local(0x20, found_tmp));
+                        return Ok(Ty::Bool);
+                    }
+                    if name == "get" && (args.len() == 2 || args.len() == 3) {
+                        let Ty::Obj(shape) = self.type_of(&args[0])? else {
+                            return Err("wasm target get() takes a record".to_string());
+                        };
+                        let (table, count) = self.record_table(shape)?;
+                        let record_tmp = self.builder.add_local(ValType::I32);
+                        let key_ptr = self.builder.add_local(ValType::I32);
+                        let key_len = self.builder.add_local(ValType::I32);
+                        let index_tmp = self.builder.add_local(ValType::I64);
+                        let block_tmp = self.builder.add_local(ValType::I32);
+                        let result_tmp = self.builder.add_local(ValType::I64);
+                        let found_tmp = self.builder.add_local(ValType::I32);
+                        self.emit_expr(&args[0])?;
+                        self.builder.push(Instr::Local(0x21, record_tmp));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                        self.builder.push(Instr::Local(0x21, found_tmp));
+                        self.emit_str(&args[1])?;
+                        self.builder.push(Instr::Local(0x21, key_len));
+                        self.builder.push(Instr::Local(0x21, key_ptr));
+                        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                        self.builder.push(Instr::Local(0x21, index_tmp));
+                        self.builder.push(Instr::Block {
+                            opcode: 0x02,
+                            end: 0,
+                            else_at: 0,
+                            start: 0,
+                        });
+                        self.labels.push(0x02);
+                        self.builder.push(Instr::Block {
+                            opcode: 0x03,
+                            end: 0,
+                            else_at: 0,
+                            start: 0,
+                        });
+                        self.labels.push(0x03);
+                        self.builder.push(Instr::Local(0x20, index_tmp));
+                        self.builder.push(Instr::Op(0xa7));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(count as i32)));
+                        self.builder.push(Instr::Op(0x48));
+                        self.builder.push(Instr::Op(0x45));
+                        self.builder.push(Instr::BrIf(1));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(table as i32)));
+                        self.builder.push(Instr::Local(0x20, index_tmp));
+                        self.builder.push(Instr::Op(0xa7));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6c));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Mem(0x28, 2, 0));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(table as i32)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x21, block_tmp));
+                        self.builder.push(Instr::Local(0x20, block_tmp));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x20, block_tmp));
+                        self.builder.push(Instr::Mem(0x28, 2, 0));
+                        self.builder.push(Instr::Local(0x20, key_ptr));
+                        self.builder.push(Instr::Local(0x20, key_len));
+                        self.builder.push(Instr::Call(STR_COMPARE));
+                        self.builder.push(Instr::Op(0x45));
+                        self.builder.push(Instr::Block {
+                            opcode: 0x04,
+                            end: 0,
+                            else_at: 0,
+                            start: 0,
+                        });
+                        self.labels.push(0x04);
+                        // result = record field value
+                        self.builder.push(Instr::Local(0x20, record_tmp));
+                        self.builder.push(Instr::Local(0x20, index_tmp));
+                        self.builder.push(Instr::Op(0xa7));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                        self.builder.push(Instr::Op(0x6c));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Mem(0x29, 3, 0));
+                        self.builder.push(Instr::Local(0x21, result_tmp));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+                        self.builder.push(Instr::Local(0x21, found_tmp));
+                        self.builder.push(Instr::Br(2));
+                        self.labels.pop();
+                        self.builder.push(Instr::Op(0x0b));
+                        self.builder.push(Instr::Local(0x20, index_tmp));
+                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+                        self.builder.push(Instr::Op(0x7c));
+                        self.builder.push(Instr::Local(0x21, index_tmp));
+                        self.builder.push(Instr::Br(0));
+                        self.labels.pop();
+                        self.builder.push(Instr::Op(0x0b));
+                        self.labels.pop();
+                        self.builder.push(Instr::Op(0x0b));
+                        // missing key: use the default or abort
+                        self.builder.push(Instr::Local(0x20, found_tmp));
+                        self.builder.push(Instr::Op(0x45));
+                        self.builder.push(Instr::Block {
+                            opcode: 0x04,
+                            end: 0,
+                            else_at: 0,
+                            start: 0,
+                        });
+                        self.labels.push(0x04);
+                        if args.len() == 3 {
+                            self.emit_expr(&args[2])?;
+                            self.builder.push(Instr::Local(0x21, result_tmp));
+                        } else {
+                            self.emit_panic("get() missing key with no default");
+                        }
+                        self.labels.pop();
+                        self.builder.push(Instr::Op(0x0b));
+                        self.builder.push(Instr::Local(0x20, result_tmp));
+                        return Ok(Ty::Int);
+                    }
                     if name == "str" && args.len() == 1 {
                         let ty = self.type_of(&args[0])?;
                         if ty == Ty::Bool {
@@ -5735,6 +6131,24 @@ mod tests {
         let (numbers, _) = run_with_argv(&source, &[]);
         let _ = std::fs::remove_file(&blocker);
         assert_eq!(numbers, vec![-1]);
+    }
+
+    #[test]
+    fn record_builtins() {
+        let (numbers, strings) = run_with_argv(
+            "let o = {a: 1, b: 2}\nfor k in keys(o) {\n  print(k)\n}\nfor v in values(o) {\n  print(v)\n}\nprint(has(o, \"a\"))\nprint(get(o, \"b\"))\nprint(get(o, \"z\", 9))\nprint(join(keys(o), \"+\"))",
+            &[],
+        );
+        assert_eq!(numbers, vec![1, 2, 2, 9]);
+        assert_eq!(
+            strings,
+            vec![
+                "a".to_string(),
+                "b".to_string(),
+                "true".to_string(),
+                "a+b".to_string()
+            ]
+        );
     }
 
     #[test]

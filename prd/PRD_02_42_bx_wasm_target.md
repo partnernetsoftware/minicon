@@ -128,7 +128,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 78 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 79 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -152,6 +152,11 @@ bx wasm target
 - **Record/array writes**: `r.a = v`, `r.a += v`, `xs[i] = v`, `xs[-1] = v` and
   `xs[i] += v` are supported with the same negative-index normalisation and
   bounds checks as reads (`+ - * %` for compound).
+- **Record builtins**: `keys` -> string array, `values` -> int array, `has`, and
+  `get(record, key[, default])` walk the per-shape key table at runtime with
+  `str_compare`; a missing key without a default aborts (`get() missing key with
+  no default`) instead of returning the VM's null. `merge` remains unsupported
+  (it would need a dynamic object shape).
 - **Higher-order array builtins**: `map`, `filter`, `reduce` and statement-level
   `each` accept non-capturing function literals; the emitter inlines a loop and
   calls the lifted literal directly (no indirect dispatch). `map` results are
