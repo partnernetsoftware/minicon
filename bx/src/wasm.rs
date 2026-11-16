@@ -2171,7 +2171,8 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 }
                 let at = ptr + 8 + index * 16;
                 let key_ptr = u32::from_le_bytes(memory[at..at + 4].try_into().unwrap()) as usize;
-                let key_len = u32::from_le_bytes(memory[at + 4..at + 8].try_into().unwrap()) as usize;
+                let key_len =
+                    u32::from_le_bytes(memory[at + 4..at + 8].try_into().unwrap()) as usize;
                 let start = self.next_file as usize;
                 let size = 4 + key_len;
                 if start + size > memory.len() {

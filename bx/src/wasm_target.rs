@@ -1193,13 +1193,7 @@ impl<'a> Emitter<'a> {
         );
         let value_slot = value.map(|value| {
             let slot = self.builder.add_local(ValType::I64);
-            scope.insert(
-                value.to_string(),
-                LocalSlot {
-                    ty: Ty::Int,
-                    slot,
-                },
-            );
+            scope.insert(value.to_string(), LocalSlot { ty: Ty::Int, slot });
             slot
         });
         self.scoped.push(scope);
@@ -3228,6 +3222,16 @@ mod tests {
             strings,
             vec!["3.5".to_string(), "4.5".to_string(), "2.5".to_string()]
         );
+    }
+
+    #[test]
+    fn maps_iterate_in_entry_order() {
+        let (numbers, strings) = run_with_argv(
+            "let m = map_new()\nmap_set(m, \"a\", 1)\nmap_set(m, \"b\", 2)\nfor k, v in m {\n  print(k)\n  print(v)\n}\nfor k in m {\n  print(k)\n}",
+            &[],
+        );
+        assert_eq!(numbers, vec![1, 2]);
+        assert_eq!(strings, vec!["a", "b", "a", "b"]);
     }
 
     #[test]

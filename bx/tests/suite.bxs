@@ -742,6 +742,15 @@ if (wasmMap.code == 0 && wasmMapRun.code == 0 && wasmMapRun.out.trim() == "2\n7\
   casesFail += 1
   failures.push("wasm dynamic maps\n    build=" + wasmMap.code + " out=" + json(wasmMapRun.out) + " err=" + json(wasmMapRun.err))
 }
+write(artDir + "/wasm-mapfor.bxs", 'let m = map_new()\nmap_set(m, "a", 1)\nmap_set(m, "b", 2)\nfor k, v in m {\n  print(k)\n  print(v)\n}\nfor k in m {\n  print(k)\n}\nprint(map_len(m))\n')
+let wasmMapfor = exec([BX, "build", "--wasm", artDir + "/wasm-mapfor.bxs", "-o", artDir + "/wasm-mapfor.wasm"])
+let wasmMapforRun = exec([BX, "run", artDir + "/wasm-mapfor.wasm"])
+if (wasmMapfor.code == 0 && wasmMapforRun.code == 0 && wasmMapforRun.out.trim() == "a\n1\nb\n2\na\nb\n2") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm map iteration\n    build=" + wasmMapfor.code + " out=" + json(wasmMapforRun.out) + " err=" + json(wasmMapforRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'let f = fn() { return 1 }\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1) {

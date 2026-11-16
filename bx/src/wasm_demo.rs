@@ -120,6 +120,14 @@ const imports = {
       return maps[id] && maps[id].has(key) ? 1 : 0;
     },
     map_len: (id) => (maps[id] ? maps[id].size : 0),
+    map_key_at: (id, index) => {
+      const entries = maps[id] ? Array.from(maps[id].keys()) : [];
+      return index < entries.length ? writeStringBlock(entries[index]) : 0;
+    },
+    map_value_at: (id, index) => {
+      const entries = maps[id] ? Array.from(maps[id].values()) : [];
+      return index < entries.length ? BigInt(entries[index]) : 0n;
+    },
     now_ms: () => BigInt(Date.now()),
     sleep_ms: (millis) => {
       const until = Date.now() + Number(millis);

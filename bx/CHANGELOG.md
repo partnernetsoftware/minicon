@@ -28,7 +28,7 @@
 
 **实验性 wasm 目标**
 
-- 动态键映射（wasm 侧扩展，VM 暂无）：`map_new`/`map_set`/`map_get`/`map_has`/`map_len`，字符串键 + int 值，固定 64 槽；浏览器胶水用 JS Map。`
+- 动态键映射（wasm 侧扩展，VM 暂无）：`map_new`/`map_set`/`map_get`/`map_has`/`map_len`，字符串键 + int 值，固定 64 槽，支持 `for k, v in m` 按插入序遍历；浏览器胶水用 JS Map。`
 - 原生工具：`now()`/`sleep(ms)`/`cwd()`/`env(name)`/`mkdir(path)`/`file_exists(path)`（浏览器胶水提供 stub）。`
 - `str(x)`/`int(x)` 数值字符串互转（格式与 VM 一致）、`.len()` 与语句级 `.pop()`；`for v in` / `for k, v in` 数组遍历（索引/值局部变量按块作用域）；差分测试加入 for-in。`
 - 数组可变：`arr.push(x)`（分配-复制-写回，容量按需增长）；差分测试加入 push。`
