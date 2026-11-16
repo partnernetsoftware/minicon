@@ -153,9 +153,6 @@ impl Checker {
 
     fn declare_let(&mut self, name: &str, ty: Ty) -> Result<(), String> {
         if self.fn_depth > 0 {
-            if ty != Ty::Int {
-                return Err("wasm target functions support int locals only".to_string());
-            }
             self.local_scope.insert(name.to_string(), ty);
             return Ok(());
         }
@@ -238,12 +235,6 @@ impl Checker {
                 let lt = self.infer(left)?;
                 let rt = self.infer(right)?;
                 if op == &BinOp::Add && lt == Ty::Str && rt == Ty::Str {
-                    if self.fn_depth > 0 {
-                        return Err(
-                            "wasm target does not support string concatenation inside functions yet"
-                                .to_string(),
-                        );
-                    }
                     return Ok(Ty::Str);
                 }
                 match (lt, rt) {
@@ -682,6 +673,13 @@ const ARG_TMP: u32 = 7;
 /// run, capture, print_f64, fmod.
 const IMPORT_COUNT: u32 = 10;
 
+#[derive(Clone, Copy)]
+struct LocalSlot {
+    ty: Ty,
+    /// First wasm local index; strings own two slots (ptr, len).
+    slot: u32,
+}
+
 struct Emitter<'a> {
     checker: &'a Checker,
     builder: &'a mut Builder,
@@ -690,8 +688,16 @@ struct Emitter<'a> {
     /// Structured-control stack: 0x02 block (loop exit), 0x03 loop, 0x04 if.
     labels: Vec<u8>,
     /// Wasm local slots while emitting a user function body.
-    locals: HashMap<String, u32>,
+    locals: HashMap<String, LocalSlot>,
     fn_mode: bool,
+    /// First temporary-local index for the function currently being emitted.
+    temp_base: u32,
+}
+
+impl Emitter<'_> {
+    fn temp(&self, offset: u32) -> u32 {
+        self.temp_base + offset
+    }
 }
 
 impl<'a> Emitter<'a> {
@@ -715,15 +721,15 @@ impl<'a> Emitter<'a> {
 
     /// Bump-allocate `size` bytes where the size is already the top stack value.
     fn emit_alloc_dynamic(&mut self) {
-        self.builder.push(Instr::Local(0x21, ALLOC_TMP));
+        self.builder.push(Instr::Local(0x21, self.temp(ALLOC_TMP)));
         self.builder.push(Instr::Global(0x23, self.heap));
         self.builder.push(Instr::Global(0x23, self.heap));
-        self.builder.push(Instr::Local(0x20, ALLOC_TMP));
+        self.builder.push(Instr::Local(0x20, self.temp(ALLOC_TMP)));
         self.builder.push(Instr::Op(0x6a));
         self.builder.push(Instr::Global(0x24, self.heap));
     }
 
-    fn local_of(&self, name: &str) -> Option<u32> {
+    fn local_of(&self, name: &str) -> Option<LocalSlot> {
         if self.fn_mode {
             self.locals.get(name).copied()
         } else {
@@ -731,9 +737,25 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// Push a local (or a string's ptr/len pair) onto the operand stack.
+    fn push_local(&mut self, slot: LocalSlot) {
+        self.builder.push(Instr::Local(0x20, slot.slot));
+        if slot.ty == Ty::Str {
+            self.builder.push(Instr::Local(0x20, slot.slot + 1));
+        }
+    }
+
+    /// Pop the value (or ptr/len pair) into a local.
+    fn pop_local(&mut self, slot: LocalSlot) {
+        if slot.ty == Ty::Str {
+            self.builder.push(Instr::Local(0x21, slot.slot + 1));
+        }
+        self.builder.push(Instr::Local(0x21, slot.slot));
+    }
+
     fn emit_load(&mut self, name: &str) -> Result<(), String> {
         match self.local_of(name) {
-            Some(index) => self.builder.push(Instr::Local(0x20, index)),
+            Some(slot) => self.push_local(slot),
             None => self.push_global(name, false)?,
         }
         Ok(())
@@ -741,7 +763,7 @@ impl<'a> Emitter<'a> {
 
     fn emit_store(&mut self, name: &str) -> Result<(), String> {
         match self.local_of(name) {
-            Some(index) => self.builder.push(Instr::Local(0x21, index)),
+            Some(slot) => self.pop_local(slot),
             None => self.store_ident(name)?,
         }
         Ok(())
@@ -767,7 +789,7 @@ impl<'a> Emitter<'a> {
 
     fn emit_compound(&mut self, name: &str, op: BinOp, value: &Expr) -> Result<(), String> {
         let target_ty = match self.local_of(name) {
-            Some(_) => Ty::Int,
+            Some(slot) => slot.ty,
             None => self.checker.binding(name)?.ty,
         };
         if !is_number(target_ty) {
@@ -814,7 +836,7 @@ impl<'a> Emitter<'a> {
     fn type_of(&self, expr: &Expr) -> Result<Ty, String> {
         match expr {
             Expr::Ident(name) => match self.local_of(name) {
-                Some(_) => Ok(Ty::Int),
+                Some(slot) => Ok(slot.ty),
                 None => self.checker.infer(expr),
             },
             Expr::Int(_) => Ok(Ty::Int),
@@ -826,7 +848,7 @@ impl<'a> Emitter<'a> {
             Expr::Bin(op, left, right) => {
                 let lt = self.type_of(left)?;
                 let rt = self.type_of(right)?;
-                if op == &BinOp::Add && lt == Ty::Str && rt == Ty::Str && !self.fn_mode {
+                if op == &BinOp::Add && lt == Ty::Str && rt == Ty::Str {
                     return Ok(Ty::Str);
                 }
                 if !is_number(lt) || !is_number(rt) {
@@ -1072,6 +1094,16 @@ impl<'a> Emitter<'a> {
         }
         match expr {
             Expr::Ident(name) => {
+                if let Some(slot) = self.local_of(name) {
+                    if slot.ty != Ty::Str {
+                        return Err(format!(
+                            "wasm target cannot use {} as a string",
+                            ty_name(slot.ty)
+                        ));
+                    }
+                    self.push_local(slot);
+                    return Ok(());
+                }
                 let base = self.checker.binding(name)?.base;
                 self.builder.push(Instr::Global(0x23, base));
                 self.builder.push(Instr::Global(0x23, base + 1));
@@ -1079,29 +1111,29 @@ impl<'a> Emitter<'a> {
             }
             Expr::Bin(BinOp::Add, left, right) => {
                 self.emit_str(left)?;
-                self.builder.push(Instr::Local(0x21, LEN_A));
-                self.builder.push(Instr::Local(0x21, PTR_A));
+                self.builder.push(Instr::Local(0x21, self.temp(LEN_A)));
+                self.builder.push(Instr::Local(0x21, self.temp(PTR_A)));
                 self.emit_str(right)?;
-                self.builder.push(Instr::Local(0x21, LEN_B));
-                self.builder.push(Instr::Local(0x21, PTR_B));
-                self.builder.push(Instr::Local(0x20, LEN_A));
-                self.builder.push(Instr::Local(0x20, LEN_B));
+                self.builder.push(Instr::Local(0x21, self.temp(LEN_B)));
+                self.builder.push(Instr::Local(0x21, self.temp(PTR_B)));
+                self.builder.push(Instr::Local(0x20, self.temp(LEN_A)));
+                self.builder.push(Instr::Local(0x20, self.temp(LEN_B)));
                 self.builder.push(Instr::Op(0x6a));
                 self.emit_alloc_dynamic();
-                self.builder.push(Instr::Local(0x21, DST));
-                self.builder.push(Instr::Local(0x20, DST));
-                self.builder.push(Instr::Local(0x20, PTR_A));
-                self.builder.push(Instr::Local(0x20, LEN_A));
+                self.builder.push(Instr::Local(0x21, self.temp(DST)));
+                self.builder.push(Instr::Local(0x20, self.temp(DST)));
+                self.builder.push(Instr::Local(0x20, self.temp(PTR_A)));
+                self.builder.push(Instr::Local(0x20, self.temp(LEN_A)));
                 self.builder.push(Instr::MemoryCopy);
-                self.builder.push(Instr::Local(0x20, DST));
-                self.builder.push(Instr::Local(0x20, LEN_A));
+                self.builder.push(Instr::Local(0x20, self.temp(DST)));
+                self.builder.push(Instr::Local(0x20, self.temp(LEN_A)));
                 self.builder.push(Instr::Op(0x6a));
-                self.builder.push(Instr::Local(0x20, PTR_B));
-                self.builder.push(Instr::Local(0x20, LEN_B));
+                self.builder.push(Instr::Local(0x20, self.temp(PTR_B)));
+                self.builder.push(Instr::Local(0x20, self.temp(LEN_B)));
                 self.builder.push(Instr::MemoryCopy);
-                self.builder.push(Instr::Local(0x20, DST));
-                self.builder.push(Instr::Local(0x20, LEN_A));
-                self.builder.push(Instr::Local(0x20, LEN_B));
+                self.builder.push(Instr::Local(0x20, self.temp(DST)));
+                self.builder.push(Instr::Local(0x20, self.temp(LEN_A)));
+                self.builder.push(Instr::Local(0x20, self.temp(LEN_B)));
                 self.builder.push(Instr::Op(0x6a));
                 Ok(())
             }
@@ -1127,9 +1159,9 @@ impl<'a> Emitter<'a> {
                 Ok(Ty::Float)
             }
             Expr::Ident(name) => {
-                if let Some(index) = self.local_of(name) {
-                    self.builder.push(Instr::Local(0x20, index));
-                    return Ok(Ty::Int);
+                if let Some(slot) = self.local_of(name) {
+                    self.push_local(slot);
+                    return Ok(slot.ty);
                 }
                 let ty = self.checker.lookup(name)?;
                 match ty {
@@ -1149,7 +1181,7 @@ impl<'a> Emitter<'a> {
                 Ok(Ty::Int)
             }
             Expr::Bin(BinOp::Add, left, right) => {
-                if !self.fn_mode && self.checker.infer(left)? == Ty::Str {
+                if self.type_of(left)? == Ty::Str {
                     self.emit_str(expr)?;
                     return Ok(Ty::Str);
                 }
@@ -1157,23 +1189,32 @@ impl<'a> Emitter<'a> {
             }
             Expr::Bin(op, left, right) => self.emit_numeric(*op, left, right),
             Expr::Object(fields) => {
-                let ty = self.checker.infer(expr)?;
-                let Ty::Obj(shape) = ty else {
-                    return Err("wasm target object type mismatch".to_string());
-                };
+                let mut keys: Vec<String> = Vec::new();
+                for (key, value) in fields {
+                    let field_ty = self.type_of(value)?;
+                    if field_ty != Ty::Int {
+                        return Err(format!(
+                            "wasm target supports int object fields only, got {}",
+                            ty_name(field_ty)
+                        ));
+                    }
+                    keys.push(key.clone());
+                }
+                let shape = self.checker.shape_id(&keys);
+                let shape = Ty::Obj(shape);
                 let size = 8 * fields.len() as u32;
                 self.emit_alloc_const(size);
-                self.builder.push(Instr::Local(0x21, ARR_TMP));
+                self.builder.push(Instr::Local(0x21, self.temp(ARR_TMP)));
                 for (index, (_, value)) in fields.iter().enumerate() {
-                    self.builder.push(Instr::Local(0x20, ARR_TMP));
+                    self.builder.push(Instr::Local(0x20, self.temp(ARR_TMP)));
                     self.emit_expr(value)?;
                     self.builder.push(Instr::Mem(0x37, 3, (8 * index) as u32));
                 }
-                self.builder.push(Instr::Local(0x20, ARR_TMP));
-                Ok(Ty::Obj(shape))
+                self.builder.push(Instr::Local(0x20, self.temp(ARR_TMP)));
+                Ok(shape)
             }
             Expr::Member(object, key, _) => {
-                let ty = self.checker.infer(object)?;
+                let ty = self.type_of(object)?;
                 let Ty::Obj(shape) = ty else {
                     return Err(format!(
                         "wasm target can read fields of objects only, got {}",
@@ -1189,20 +1230,20 @@ impl<'a> Emitter<'a> {
                 let count = items.len() as u32;
                 let size = 4 + 8 * count;
                 self.emit_alloc_const(size);
-                self.builder.push(Instr::Local(0x21, ARR_TMP));
-                self.builder.push(Instr::Local(0x20, ARR_TMP));
+                self.builder.push(Instr::Local(0x21, self.temp(ARR_TMP)));
+                self.builder.push(Instr::Local(0x20, self.temp(ARR_TMP)));
                 self.builder
                     .push(Instr::Const(0x41, WVal::I32(count as i32)));
                 self.builder.push(Instr::Mem(0x36, 2, 0));
                 for (index, item) in items.iter().enumerate() {
-                    self.builder.push(Instr::Local(0x20, ARR_TMP));
+                    self.builder.push(Instr::Local(0x20, self.temp(ARR_TMP)));
                     self.builder
                         .push(Instr::Const(0x41, WVal::I32((4 + 8 * index as u32) as i32)));
                     self.builder.push(Instr::Op(0x6a));
                     self.emit_expr(item)?;
                     self.builder.push(Instr::Mem(0x37, 3, 0));
                 }
-                self.builder.push(Instr::Local(0x20, ARR_TMP));
+                self.builder.push(Instr::Local(0x20, self.temp(ARR_TMP)));
                 Ok(Ty::Arr)
             }
             Expr::Index(array, index, _) => {
@@ -1248,22 +1289,22 @@ impl<'a> Emitter<'a> {
                     if name == "capture" && args.len() == 1 {
                         self.emit_str(&args[0])?;
                         self.builder.push(Instr::Call(7));
-                        self.builder.push(Instr::Local(0x21, ARG_TMP));
-                        self.builder.push(Instr::Local(0x20, ARG_TMP));
+                        self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
+                        self.builder.push(Instr::Local(0x20, self.temp(ARG_TMP)));
                         self.builder.push(Instr::Const(0x41, WVal::I32(8)));
                         self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Local(0x20, ARG_TMP));
+                        self.builder.push(Instr::Local(0x20, self.temp(ARG_TMP)));
                         self.builder.push(Instr::Mem(0x28, 2, 4));
                         return Ok(Ty::Str);
                     }
                     if name == "read_file" && args.len() == 1 {
                         self.emit_str(&args[0])?;
                         self.builder.push(Instr::Call(4));
-                        self.builder.push(Instr::Local(0x21, ARG_TMP));
-                        self.builder.push(Instr::Local(0x20, ARG_TMP));
+                        self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
+                        self.builder.push(Instr::Local(0x20, self.temp(ARG_TMP)));
                         self.builder.push(Instr::Const(0x41, WVal::I32(4)));
                         self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Local(0x20, ARG_TMP));
+                        self.builder.push(Instr::Local(0x20, self.temp(ARG_TMP)));
                         self.builder.push(Instr::Mem(0x28, 2, 0));
                         return Ok(Ty::Str);
                     }
@@ -1283,16 +1324,16 @@ impl<'a> Emitter<'a> {
                         self.emit_expr(&args[0])?;
                         self.builder.push(Instr::Op(0xa7));
                         self.builder.push(Instr::Call(3));
-                        self.builder.push(Instr::Local(0x21, ARG_TMP));
-                        self.builder.push(Instr::Local(0x20, ARG_TMP));
+                        self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
+                        self.builder.push(Instr::Local(0x20, self.temp(ARG_TMP)));
                         self.builder.push(Instr::Const(0x41, WVal::I32(4)));
                         self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Local(0x20, ARG_TMP));
+                        self.builder.push(Instr::Local(0x20, self.temp(ARG_TMP)));
                         self.builder.push(Instr::Mem(0x28, 2, 0));
                         return Ok(Ty::Str);
                     }
                     if name == "len" && args.len() == 1 {
-                        match self.checker.infer(&args[0])? {
+                        match self.type_of(&args[0])? {
                             Ty::Arr => {
                                 self.emit_expr(&args[0])?;
                                 self.builder.push(Instr::Mem(0x28, 2, 0));
@@ -1306,6 +1347,14 @@ impl<'a> Emitter<'a> {
                                             .to_string(),
                                     );
                                 };
+                                if let Some(slot) = self.local_of(var) {
+                                    if slot.ty != Ty::Str {
+                                        return Err("wasm target cannot take len here".to_string());
+                                    }
+                                    self.builder.push(Instr::Local(0x20, slot.slot + 1));
+                                    self.builder.push(Instr::Op(0xad));
+                                    return Ok(Ty::Int);
+                                }
                                 let base = self.checker.binding(var)?.base;
                                 self.builder.push(Instr::Global(0x23, base + 1));
                                 self.builder.push(Instr::Op(0xad));
@@ -1340,12 +1389,18 @@ impl<'a> Emitter<'a> {
                     }
                 };
                 if self.fn_mode {
-                    if ty != Ty::Int {
-                        return Err("wasm target functions support int locals only".to_string());
-                    }
-                    let index = self.builder.add_local(ValType::I64);
-                    self.builder.push(Instr::Local(0x21, index));
-                    self.locals.insert(name.clone(), index);
+                    let slot = match ty {
+                        Ty::Int => self.builder.add_local(ValType::I64),
+                        Ty::Float => self.builder.add_local(ValType::F64),
+                        Ty::Str => {
+                            let slot = self.builder.add_local(ValType::I32);
+                            self.builder.add_local(ValType::I32);
+                            slot
+                        }
+                        Ty::Arr | Ty::Obj(_) => self.builder.add_local(ValType::I32),
+                    };
+                    self.locals.insert(name.clone(), LocalSlot { ty, slot });
+                    self.emit_store(name)?;
                     return Ok(());
                 }
                 let base = self.checker.binding(name)?.base;
@@ -1604,6 +1659,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             labels: Vec::new(),
             locals: HashMap::new(),
             fn_mode: false,
+            temp_base: 0,
         };
         for stmt in &stmts {
             emitter.emit_stmt(stmt)?;
@@ -1612,6 +1668,10 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
 
     for (index, (_, decl)) in declarations.iter().enumerate() {
         builder.begin_function(fn_types[index]);
+        let temp_base = declarations[index].1.params.len() as u32;
+        for _ in 0..8 {
+            builder.add_local(ValType::I32);
+        }
         {
             let mut emitter = Emitter {
                 checker: &checker,
@@ -1620,9 +1680,16 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                 labels: Vec::new(),
                 locals: HashMap::new(),
                 fn_mode: true,
+                temp_base,
             };
             for (slot, param) in decl.params.iter().enumerate() {
-                emitter.locals.insert(param.clone(), slot as u32);
+                emitter.locals.insert(
+                    param.clone(),
+                    LocalSlot {
+                        ty: Ty::Int,
+                        slot: slot as u32,
+                    },
+                );
             }
             for stmt in &decl.body {
                 emitter.emit_stmt(stmt)?;
@@ -1812,6 +1879,16 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn functions_support_rich_locals() {
+        let (numbers, strings) = run_with_argv(
+            "fn build() {\n  let a = [1, 2, 3]\n  let s = \"hi\"\n  print(a[1])\n  print(s + \"!\")\n  let o = {k: 7}\n  print(o.k)\n  let f = 1.5\n  print(f * 2)\n}\nbuild()",
+            &[],
+        );
+        assert_eq!(numbers, vec![2, 7]);
+        assert_eq!(strings, vec!["hi!".to_string(), "3".to_string()]);
+    }
+
     #[test]
     fn functions_read_rich_globals() {
         let (numbers, strings) = run_with_argv(

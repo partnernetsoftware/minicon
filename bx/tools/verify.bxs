@@ -147,6 +147,13 @@ test("wasm backend matches the VM on generated programs", fn() {
   assert(out.code == 0 && out.out.contains("PASS 8 differential cases"), "got " + out.out + " " + out.err)
 })
 write(dir + "/wasm-flt.bxs", 'print(7 / 2)\nprint(6 / 2)\n')
+write(dir + "/wasm-rich.bxs", 'fn build() {\n  let a = [7, 8]\n  print(a[1])\n}\nbuild()\n')
+test("wasm functions hold array/string locals", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-rich.bxs", "-o", dir + "/wasm-rich.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-rich.wasm"])
+  assert(ran.code == 0 && ran.out.trim() == "8", "got " + ran.out + " " + ran.err)
+})
 test("wasm check --json describes the module", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-num.bxs", "-o", dir + "/wasm-json.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

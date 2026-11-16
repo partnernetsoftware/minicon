@@ -614,6 +614,16 @@ if (wasmJson.code == 0 && wasmJson.out.contains("\"imports\"") && wasmJson.out.c
   casesFail += 1
   failures.push("wasm check --json exposes imports/exports\n    out=" + json(wasmJson.out))
 }
+write(artDir + "/wasm-rich.bxs", 'fn build() {\n  let a = [1, 2, 3]\n  let s = "hi"\n  print(a[1])\n  print(s + "!")\n}\nbuild()\n')
+let wasmRich = exec([BX, "build", "--wasm", artDir + "/wasm-rich.bxs", "-o", artDir + "/wasm-rich.wasm"])
+let wasmRichRun = exec([BX, "run", artDir + "/wasm-rich.wasm"])
+let wasmRichVm = exec([BX, "run", artDir + "/wasm-rich.bxs"])
+if (wasmRich.code == 0 && wasmRichRun.code == 0 && wasmRichRun.out == wasmRichVm.out && wasmRichRun.out.trim() == "2\nhi!") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm rich function locals\n    wasm=" + json(wasmRichRun.out) + " vm=" + json(wasmRichVm.out))
+}
 write(artDir + "/wasm-bad.bxs", 'let f = fn() { return 1 }\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1) {

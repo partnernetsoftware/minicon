@@ -78,6 +78,13 @@ fn gen() {
   lines.push("  if (n < 2) { return 1 }")
   lines.push("  return n * fact(n - 1)")
   lines.push("}")
+  lines.push("fn rich() {")
+  lines.push("  let a = [4, 5]")
+  lines.push("  let s = \"d\"")
+  lines.push("  print(a[1])")
+  lines.push("  print(s + \"iff\")")
+  lines.push("}")
+  lines.push("rich()")
   lines.push("print(helper0(" + str(1 + pick(9)) + ", " + str(1 + pick(9)) + "))")
   lines.push("print(fact(" + str(1 + pick(5)) + "))")
   if (pick(2) == 0) {

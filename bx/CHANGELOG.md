@@ -28,7 +28,7 @@
 
 **实验性 wasm 目标**
 
-- `bx check <module> --json` 输出 wasm 模块 imports/exports/函数数；差分测试加入用户函数与递归。`
+- `bx check <module> --json` 输出 wasm 模块 imports/exports/函数数；差分测试加入用户函数与递归；函数内可用字符串/数组/记录/浮点局部变量（每个函数独立临时槽）。`
 - 浮点类型：浮点字面量/全局、`/` 浮点除法、混合提升、`env.print_f64` 与 VM 一致的格式化、`env.fmod`；修正解释器比较/位运算 opcode 映射（`rem`、`le`、`ge` 等与 wasm 规范、node 一致）；函数可读写字符串/数组/记录全局。
 
 - `bx build --wasm` 输出标准 WebAssembly 模块，`bx run *.wasm` 用自研解释器执行；零第三方 wasm 依赖。
