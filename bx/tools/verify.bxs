@@ -190,6 +190,14 @@ write(dir + "/wasm-arrb.bxs", 'let a = range(3)\nprint(sum(a))\nfor v in reverse
 write(dir + "/wasm-hof.bxs", 'for v in map([1, 2], fn(x) { return x + 1 }) { print(v) }\nprint(reduce([1, 2], fn(a, x) { return a + x }))\n')
 write(dir + "/wasm-objb.bxs", 'let o = {a: 1}\nfor k in keys(o) { print(k) }\nprint(get(o, "a"))\n')
 write(dir + "/wasm-merge.bxs", 'let o = merge({a: 1}, {b: 2})\nprint(o.a + o.b)\nprint(join(keys(o), "+"))\n')
+write(dir + "/wasm-clo2.bxs", 'fn adder(n) { return fn(x) { return x + n } }\nlet add3 = adder(3)\nprint(add3(4))\nfn counter() { let n = 0; return fn() { n = n + 1; return n } }\nlet c = counter()\nprint(c())\nprint(c())\n')
+test("wasm capturing closures", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-clo2.bxs", "-o", dir + "/wasm-clo2.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-clo2.wasm"])
+  let vm = exec([bin, "run", dir + "/wasm-clo2.bxs"])
+  assert(ran.code == 0 && ran.out == vm.out && ran.out.trim() == "7\n1\n2", "wasm=" + json(ran.out) + " vm=" + json(vm.out))
+})
 test("wasm record merge", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-merge.bxs", "-o", dir + "/wasm-merge.wasm"])
   assert(built.code == 0, "build failed: " + built.err)
@@ -322,7 +330,8 @@ test("wasm function literals", fn() {
   let ran = exec([bin, "run", dir + "/wasm-closure.wasm"])
   assert(ran.code == 0 && ran.out.trim() == "42", "got " + json(ran.out) + " " + ran.err)
   let capture = exec([bin, "build", "--wasm", dir + "/wasm-capture.bxs", "-o", dir + "/wasm-capture.wasm"])
-  assert(capture.code == 1 && capture.err.contains("cannot capture outer variables"), "capture should be rejected: " + json(capture.err))
+  let captureRun = exec([bin, "run", dir + "/wasm-capture.wasm"])
+  assert(capture.code == 0 && captureRun.out.trim() == "6", "capture should run: " + json(capture.err) + " out=" + json(captureRun.out))
 })
 test("wasm maps iterate", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-mapfor.bxs", "-o", dir + "/wasm-mapfor.wasm"])

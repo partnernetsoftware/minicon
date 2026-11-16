@@ -43,7 +43,7 @@ bx .wasm migration (M6)
 │   ├── [v] budgets: --max-steps / --timeout parity with the VM
 │   ├── [v] evidence: suite (152 checks), verifier (49 tests), differential
 │   │   generator, node/independent-engine cross-checks
-│   └── [-] remaining core gaps: capturing closures, arrays of strings/records,
+│   └── [-] remaining core gaps: loop-variable captures, capturing builtin callbacks, arrays of records,
 │       `attempt`, method surface beyond push/pop/len, dynamic-object syntax
 ├── G1 opt-in default
 │   └── [-] --target flag + BX_TARGET env accepted by build/run (soak pending)
@@ -74,6 +74,11 @@ flowchart TD
     gate2 --> rollback
 ```
 
+Capturing closures are supported since the shared-cell implementation: literals
+take an environment pointer, captured locals/parameters are boxed into heap
+cells, and nested captures are transitive. Remaining capture gaps: a loop
+variable cannot be captured, and `map`/`filter`/`reduce`/`each` callbacks may not
+capture outer locals (both fail with explicit messages).
 ## Parity matrix
 
 Legend: `[v]` supported and covered by evidence, `[-]` missing but planned,

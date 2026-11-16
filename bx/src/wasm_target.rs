@@ -1,4 +1,5 @@
 //! Experimental `.wasm` target: emit a standard WebAssembly module for a small
+//! Experimental `.wasm` target: emit a standard WebAssembly module for a small
 //! subset of bx, executed by bx's own interpreter (`crate::wasm`). No
 //! third-party wasm crates.
 //!
@@ -949,6 +950,15 @@ impl Checker {
                         };
                     }
                 }
+                if let Ok(Ty::Func(id)) = self.infer(callee) {
+                    let sig = self
+                        .lit_sigs
+                        .get(id as usize)
+                        .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+                    return sig.result.ok_or_else(|| {
+                        "wasm target function literal returns no value".to_string()
+                    });
+                }
                 Err(format!(
                     "wasm target does not support this call yet: {}",
                     expr_kind(expr)
@@ -984,7 +994,11 @@ impl Checker {
         outcome
     }
 
-    fn check_literal_bodies(&mut self, decls: &[LitDecl]) -> Result<(), String> {
+    fn check_literal_bodies(
+        &mut self,
+        decls: &[LitDecl],
+        captures: &[Vec<(String, Ty)>],
+    ) -> Result<(), String> {
         for (id, decl) in decls.iter().enumerate() {
             let sig = self
                 .lit_sigs
@@ -996,6 +1010,12 @@ impl Checker {
             self.fn_depth = 1;
             for (param, ty) in decl.params.iter().zip(sig.params.iter()) {
                 self.local_scope.insert(param.clone(), *ty);
+            }
+            // Captured outer bindings become ordinary locals in the literal body.
+            if let Some(list) = captures.get(id) {
+                for (name, ty) in list {
+                    self.local_scope.insert(name.clone(), *ty);
+                }
             }
             let outcome = (|| -> Result<(), String> {
                 for stmt in decl.body {
@@ -1535,8 +1555,13 @@ const ARR_SORT: u32 = 53;
 #[derive(Clone, Copy)]
 struct LocalSlot {
     ty: Ty,
-    /// First wasm local index; strings own two slots (ptr, len).
+    /// First wasm local index; strings own two slots (ptr, len). For captured
+    /// names this is the environment offset instead.
     slot: u32,
+    /// Value lives in a heap cell pointed to by `slot`.
+    boxed: bool,
+    /// Value lives in the enclosing literal's environment at this offset.
+    capture: Option<u32>,
 }
 
 struct Emitter<'a> {
@@ -1561,6 +1586,14 @@ struct Emitter<'a> {
     record_tables: HashMap<u32, (u32, u32)>,
     /// Labels index that `continue` must branch to (innermost last).
     continue_targets: Vec<usize>,
+    /// Captures of the literal currently being emitted (empty for functions).
+    captures: Vec<Capture>,
+    /// Wasm local holding this literal's environment pointer (first parameter).
+    env_slot: Option<u32>,
+    /// Names of the current frame that must live in heap cells.
+    boxed: std::collections::HashSet<String>,
+    /// Capture analysis shared by all emission (literal creation needs it).
+    analysis: &'a CaptureAnalysis,
 }
 
 impl Emitter<'_> {
@@ -1605,26 +1638,171 @@ impl<'a> Emitter<'a> {
             }
         }
         if self.fn_mode {
-            self.locals.get(name).copied()
-        } else {
-            None
+            if let Some(slot) = self.locals.get(name) {
+                return Some(*slot);
+            }
         }
+        if let Some((offset, capture)) = self
+            .captures
+            .iter()
+            .enumerate()
+            .find(|(_, capture)| capture.name == name)
+        {
+            return Some(LocalSlot {
+                ty: capture.ty,
+                slot: offset as u32,
+                boxed: false,
+                capture: Some(offset as u32),
+            });
+        }
+        None
+    }
+
+    /// Push the heap-cell pointer of a boxed local or a captured binding.
+    fn push_cell_ptr(&mut self, slot: LocalSlot) -> Result<(), String> {
+        if let Some(offset) = slot.capture {
+            let env = self
+                .env_slot
+                .ok_or_else(|| "wasm target captured a name outside a literal".to_string())?;
+            self.builder.push(Instr::Local(0x20, env));
+            self.builder
+                .push(Instr::Const(0x41, WVal::I32((4 * offset) as i32)));
+            self.builder.push(Instr::Op(0x6a));
+            self.builder.push(Instr::Mem(0x28, 2, 0));
+        } else {
+            self.builder.push(Instr::Local(0x20, slot.slot));
+        }
+        Ok(())
     }
 
     /// Push a local (or a string's ptr/len pair) onto the operand stack.
     fn push_local(&mut self, slot: LocalSlot) {
+        if slot.capture.is_some() || slot.boxed {
+            let _ = self.push_cell_ptr(slot);
+            match slot.ty {
+                Ty::Str => {
+                    self.builder.push(Instr::Mem(0x28, 2, 0));
+                    let _ = self.push_cell_ptr(slot);
+                    self.builder.push(Instr::Mem(0x28, 2, 8));
+                }
+                Ty::Int => self.builder.push(Instr::Mem(0x29, 3, 0)),
+                Ty::Float => self.builder.push(Instr::Mem(0x2b, 3, 0)),
+                _ => self.builder.push(Instr::Mem(0x28, 2, 0)),
+            }
+            return;
+        }
         self.builder.push(Instr::Local(0x20, slot.slot));
         if slot.ty == Ty::Str {
             self.builder.push(Instr::Local(0x20, slot.slot + 1));
         }
     }
 
-    /// Pop the value (or ptr/len pair) into a local.
+    /// Pop the value (or ptr/len pair) into a local, or into its heap cell.
     fn pop_local(&mut self, slot: LocalSlot) {
-        if slot.ty == Ty::Str {
-            self.builder.push(Instr::Local(0x21, slot.slot + 1));
+        if slot.capture.is_none() && !slot.boxed {
+            if slot.ty == Ty::Str {
+                self.builder.push(Instr::Local(0x21, slot.slot + 1));
+            }
+            self.builder.push(Instr::Local(0x21, slot.slot));
+            return;
         }
-        self.builder.push(Instr::Local(0x21, slot.slot));
+        match slot.ty {
+            Ty::Str => {
+                let len_tmp = self.builder.add_local(ValType::I32);
+                let ptr_tmp = self.builder.add_local(ValType::I32);
+                self.builder.push(Instr::Local(0x21, len_tmp));
+                self.builder.push(Instr::Local(0x21, ptr_tmp));
+                let _ = self.push_cell_ptr(slot);
+                self.builder.push(Instr::Local(0x20, ptr_tmp));
+                self.builder.push(Instr::Mem(0x36, 2, 0));
+                let _ = self.push_cell_ptr(slot);
+                self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                self.builder.push(Instr::Op(0x6a));
+                self.builder.push(Instr::Local(0x20, len_tmp));
+                self.builder.push(Instr::Mem(0x36, 2, 0));
+            }
+            Ty::Int => {
+                let tmp = self.builder.add_local(ValType::I64);
+                self.builder.push(Instr::Local(0x21, tmp));
+                let _ = self.push_cell_ptr(slot);
+                self.builder.push(Instr::Local(0x20, tmp));
+                self.builder.push(Instr::Mem(0x37, 3, 0));
+            }
+            Ty::Float => {
+                let tmp = self.builder.add_local(ValType::F64);
+                self.builder.push(Instr::Local(0x21, tmp));
+                let _ = self.push_cell_ptr(slot);
+                self.builder.push(Instr::Local(0x20, tmp));
+                self.builder.push(Instr::Mem(0x39, 3, 0));
+            }
+            _ => {
+                let tmp = self.builder.add_local(ValType::I32);
+                self.builder.push(Instr::Local(0x21, tmp));
+                let _ = self.push_cell_ptr(slot);
+                self.builder.push(Instr::Local(0x20, tmp));
+                self.builder.push(Instr::Mem(0x36, 2, 0));
+            }
+        }
+    }
+
+    /// Move the value on top of the stack into a fresh heap cell and point the
+    /// named local at that cell (used for captured locals/parameters).
+    fn box_local(&mut self, name: &str, ty: Ty) -> Result<(), String> {
+        let size = if ty == Ty::Str { 16 } else { 8 };
+        match ty {
+            Ty::Str => {
+                let len_tmp = self.builder.add_local(ValType::I32);
+                let ptr_tmp = self.builder.add_local(ValType::I32);
+                self.builder.push(Instr::Local(0x21, len_tmp));
+                self.builder.push(Instr::Local(0x21, ptr_tmp));
+                self.emit_alloc_const(size);
+                let cell = self.builder.add_local(ValType::I32);
+                self.builder.push(Instr::Local(0x21, cell));
+                self.builder.push(Instr::Local(0x20, cell));
+                self.builder.push(Instr::Local(0x20, ptr_tmp));
+                self.builder.push(Instr::Mem(0x36, 2, 0));
+                self.builder.push(Instr::Local(0x20, cell));
+                self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                self.builder.push(Instr::Op(0x6a));
+                self.builder.push(Instr::Local(0x20, len_tmp));
+                self.builder.push(Instr::Mem(0x36, 2, 0));
+                self.locals.insert(
+                    name.to_string(),
+                    LocalSlot {
+                        ty,
+                        slot: cell,
+                        boxed: true,
+                        capture: None,
+                    },
+                );
+            }
+            _ => {
+                let (load_op, store_op, tmp_ty) = match ty {
+                    Ty::Int => (0x29u8, 0x37u8, ValType::I64),
+                    Ty::Float => (0x2b, 0x39, ValType::F64),
+                    _ => (0x28, 0x36, ValType::I32),
+                };
+                let _ = load_op;
+                let tmp = self.builder.add_local(tmp_ty);
+                self.builder.push(Instr::Local(0x21, tmp));
+                self.emit_alloc_const(size);
+                let cell = self.builder.add_local(ValType::I32);
+                self.builder.push(Instr::Local(0x21, cell));
+                self.builder.push(Instr::Local(0x20, cell));
+                self.builder.push(Instr::Local(0x20, tmp));
+                self.builder.push(Instr::Mem(store_op, 3, 0));
+                self.locals.insert(
+                    name.to_string(),
+                    LocalSlot {
+                        ty,
+                        slot: cell,
+                        boxed: true,
+                        capture: None,
+                    },
+                );
+            }
+        }
+        Ok(())
     }
 
     fn emit_load(&mut self, name: &str) -> Result<(), String> {
@@ -1811,11 +1989,21 @@ impl<'a> Emitter<'a> {
             LocalSlot {
                 ty: Ty::Str,
                 slot: key_slot,
+                boxed: false,
+                capture: None,
             },
         );
         let value_slot = value.map(|value| {
             let slot = self.builder.add_local(ValType::I64);
-            scope.insert(value.to_string(), LocalSlot { ty: Ty::Int, slot });
+            scope.insert(
+                value.to_string(),
+                LocalSlot {
+                    ty: Ty::Int,
+                    slot,
+                    boxed: false,
+                    capture: None,
+                },
+            );
             slot
         });
         self.scoped.push(scope);
@@ -1911,6 +2099,8 @@ impl<'a> Emitter<'a> {
             LocalSlot {
                 ty: Ty::Str,
                 slot: value_ptr,
+                boxed: false,
+                capture: None,
             },
         );
         let key_tmp = key_name.map(|name| {
@@ -1920,6 +2110,8 @@ impl<'a> Emitter<'a> {
                 LocalSlot {
                     ty: Ty::Int,
                     slot: tmp,
+                    boxed: false,
+                    capture: None,
                 },
             );
             tmp
@@ -2013,11 +2205,21 @@ impl<'a> Emitter<'a> {
             LocalSlot {
                 ty: Ty::Str,
                 slot: key_slot,
+                boxed: false,
+                capture: None,
             },
         );
         let value_slot = value.map(|value| {
             let slot = self.builder.add_local(ValType::I64);
-            scope.insert(value.to_string(), LocalSlot { ty: Ty::Int, slot });
+            scope.insert(
+                value.to_string(),
+                LocalSlot {
+                    ty: Ty::Int,
+                    slot,
+                    boxed: false,
+                    capture: None,
+                },
+            );
             slot
         });
         self.scoped.push(scope);
@@ -2120,6 +2322,8 @@ impl<'a> Emitter<'a> {
             LocalSlot {
                 ty: Ty::Int,
                 slot: value_tmp,
+                boxed: false,
+                capture: None,
             },
         );
         let key_tmp = key_name.map(|name| {
@@ -2129,6 +2333,8 @@ impl<'a> Emitter<'a> {
                 LocalSlot {
                     ty: Ty::Int,
                     slot: tmp,
+                    boxed: false,
+                    capture: None,
                 },
             );
             tmp
@@ -2508,6 +2714,11 @@ impl<'a> Emitter<'a> {
                         }
                         return Ok(ty);
                     }
+                }
+                if let Some((_, result, _)) = self.callable(callee)? {
+                    return result.ok_or_else(|| {
+                        "wasm target function literal returns no value".to_string()
+                    });
                 }
                 self.checker.infer(expr)
             }
@@ -2973,7 +3184,51 @@ impl<'a> Emitter<'a> {
                     .get(&(expr as *const Expr as usize))
                     .copied()
                     .ok_or_else(|| "wasm target lost a function literal".to_string())?;
-                self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                let captures = self
+                    .analysis
+                    .lit_captures
+                    .get(id as usize)
+                    .cloned()
+                    .unwrap_or_default();
+                if captures.is_empty() {
+                    self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                    return Ok(Ty::Func(id));
+                }
+                let env_tmp = self.builder.add_local(ValType::I32);
+                self.emit_alloc_const(4 * captures.len() as u32);
+                self.builder.push(Instr::Local(0x21, env_tmp));
+                for (index, capture) in captures.iter().enumerate() {
+                    self.builder.push(Instr::Local(0x20, env_tmp));
+                    self.builder
+                        .push(Instr::Const(0x41, WVal::I32((4 * index) as i32)));
+                    self.builder.push(Instr::Op(0x6a));
+                    match capture.source {
+                        CaptureSource::Local => {
+                            let slot = self.local_of(&capture.name).ok_or_else(|| {
+                                format!("wasm target lost the captured binding '{}'", capture.name)
+                            })?;
+                            if !slot.boxed {
+                                return Err(format!(
+                                    "wasm target captured '{}' without a cell",
+                                    capture.name
+                                ));
+                            }
+                            self.builder.push(Instr::Local(0x20, slot.slot));
+                        }
+                        CaptureSource::Env(offset) => {
+                            let env = self.env_slot.ok_or_else(|| {
+                                "wasm target lost a literal environment".to_string()
+                            })?;
+                            self.builder.push(Instr::Local(0x20, env));
+                            self.builder
+                                .push(Instr::Const(0x41, WVal::I32((4 * offset) as i32)));
+                            self.builder.push(Instr::Op(0x6a));
+                            self.builder.push(Instr::Mem(0x28, 2, 0));
+                        }
+                    }
+                    self.builder.push(Instr::Mem(0x36, 2, 0));
+                }
+                self.builder.push(Instr::Local(0x20, env_tmp));
                 Ok(Ty::Func(id))
             }
             Expr::Int(value) => {
@@ -3420,6 +3675,13 @@ impl<'a> Emitter<'a> {
             }
             Expr::Call(callee, args, _) => {
                 if let Some((params, result, index)) = self.callable(callee)? {
+                    let literal_call = match &**callee {
+                        Expr::Ident(name) => self.checker.fn_sig(name).is_none(),
+                        _ => true,
+                    };
+                    if literal_call {
+                        self.emit_expr(callee)?;
+                    }
                     let Some(result) = result else {
                         return Err("wasm target function literal returns no value".to_string());
                     };
@@ -3819,6 +4081,18 @@ impl<'a> Emitter<'a> {
                             .get(id as usize)
                             .cloned()
                             .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+                        if self
+                            .analysis
+                            .lit_captures
+                            .get(id as usize)
+                            .map(|captures| !captures.is_empty())
+                            .unwrap_or(false)
+                        {
+                            return Err(format!(
+                                "wasm target {}() callbacks cannot capture outer variables yet",
+                                name
+                            ));
+                        }
                         let result_ty = if name == "map" {
                             sig.result.ok_or_else(|| {
                                 "wasm target map() callback returns nothing".to_string()
@@ -3913,6 +4187,7 @@ impl<'a> Emitter<'a> {
                             self.builder.push(Instr::Op(0x6a));
                             self.builder.push(Instr::Op(0x6a));
                             self.builder.push(Instr::Local(0x21, addr_tmp));
+                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
                             load_elem(self, elem_str);
                             self.builder.push(Instr::Call(sig.index));
                             if result_str {
@@ -3934,6 +4209,7 @@ impl<'a> Emitter<'a> {
                                 self.builder.push(Instr::Mem(0x37, 3, 0));
                             }
                         } else {
+                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
                             load_elem(self, elem_str);
                             self.builder.push(Instr::Call(sig.index));
                             self.builder.push(Instr::Block {
@@ -4018,6 +4294,18 @@ impl<'a> Emitter<'a> {
                             .get(id as usize)
                             .cloned()
                             .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+                        if self
+                            .analysis
+                            .lit_captures
+                            .get(id as usize)
+                            .map(|captures| !captures.is_empty())
+                            .unwrap_or(false)
+                        {
+                            return Err(
+                                "wasm target reduce() callbacks cannot capture outer variables yet"
+                                    .to_string(),
+                            );
+                        }
                         let arr_tmp = self.builder.add_local(ValType::I32);
                         let idx_tmp = self.builder.add_local(ValType::I64);
                         let acc_tmp = self.builder.add_local(ValType::I64);
@@ -4071,6 +4359,7 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Op(0x53));
                         self.builder.push(Instr::Op(0x45));
                         self.builder.push(Instr::BrIf(1));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
                         self.builder.push(Instr::Local(0x20, acc_tmp));
                         self.builder.push(Instr::Local(0x20, arr_tmp));
                         self.builder.push(Instr::Local(0x20, idx_tmp));
@@ -4627,7 +4916,19 @@ impl<'a> Emitter<'a> {
                             self.builder.add_local(ValType::I32)
                         }
                     };
-                    self.locals.insert(name.clone(), LocalSlot { ty, slot });
+                    if self.boxed.contains(name) {
+                        self.box_local(name, ty)?;
+                        return Ok(());
+                    }
+                    self.locals.insert(
+                        name.clone(),
+                        LocalSlot {
+                            ty,
+                            slot,
+                            boxed: false,
+                            capture: None,
+                        },
+                    );
                     self.emit_store(name)?;
                     return Ok(());
                 }
@@ -4782,6 +5083,18 @@ impl<'a> Emitter<'a> {
                             .get(id as usize)
                             .cloned()
                             .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+                        if self
+                            .analysis
+                            .lit_captures
+                            .get(id as usize)
+                            .map(|captures| !captures.is_empty())
+                            .unwrap_or(false)
+                        {
+                            return Err(
+                                "wasm target each() callbacks cannot capture outer variables yet"
+                                    .to_string(),
+                            );
+                        }
                         let array_tmp = self.builder.add_local(ValType::I32);
                         let index_tmp = self.builder.add_local(ValType::I64);
                         self.emit_expr(&args[0])?;
@@ -4809,6 +5122,7 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Op(0x53));
                         self.builder.push(Instr::Op(0x45));
                         self.builder.push(Instr::BrIf(1));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
                         self.builder.push(Instr::Local(0x20, array_tmp));
                         self.builder.push(Instr::Local(0x20, index_tmp));
                         self.builder.push(Instr::Op(0xa7));
@@ -5090,10 +5404,10 @@ impl<'a> Emitter<'a> {
     }
 }
 
-struct FnDecl {
+struct FnDecl<'a> {
     name: String,
     params: Vec<String>,
-    body: Vec<Stmt>,
+    body: &'a [Stmt],
 }
 
 struct LitDecl<'a> {
@@ -5335,9 +5649,33 @@ impl<'a> InferState<'a> {
                     return self.results.get(*index).copied().flatten();
                 }
                 match name.as_str() {
-                    "len" | "argc" | "write_file" | "run" | "gl_pixel" | "gl_png" => Some(Ty::Int),
-                    "arg" | "read_file" | "capture" => Some(Ty::Str),
-                    "performance_now" => Some(Ty::Float),
+                    "len" | "argc" | "write_file" | "run" | "gl_pixel" | "gl_png" | "int"
+                    | "abs" | "floor" | "ceil" | "round" | "sum" | "reduce" | "get" | "now"
+                    | "sleep" | "mkdir" => Some(Ty::Int),
+                    "str" | "type" | "arg" | "read_file" | "capture" | "cwd" | "env" | "join"
+                    | "slice" => Some(Ty::Str),
+                    "float" | "sqrt" => Some(Ty::Float),
+                    "exists" | "file_exists" | "has" => Some(Ty::Bool),
+                    "split" | "keys" => Some(Ty::ArrStr),
+                    "range" | "values" | "reverse" | "sort" => Some(Ty::Arr),
+                    "map" => {
+                        if let Some(Ty::Func(id)) =
+                            args.get(1).and_then(|arg| self.soft(arg, locals))
+                        {
+                            match self
+                                .results
+                                .get(self.decl_count + id as usize)
+                                .copied()
+                                .flatten()
+                            {
+                                Some(Ty::Str) => Some(Ty::ArrStr),
+                                _ => Some(Ty::Arr),
+                            }
+                        } else {
+                            Some(Ty::Arr)
+                        }
+                    }
+                    "filter" => args.first().and_then(|arg| self.soft(arg, locals)),
                     _ => {
                         for arg in args {
                             self.soft(arg, locals)?;
@@ -5549,6 +5887,9 @@ impl<'a> InferState<'a> {
                     }
                     return Ok(changed);
                 }
+                if !matches!(&**callee, Expr::Ident(_)) {
+                    changed |= self.walk_expr(callee, locals)?;
+                }
                 for arg in args {
                     changed |= self.walk_expr(arg, locals)?;
                 }
@@ -5598,6 +5939,597 @@ impl<'a> InferState<'a> {
     }
 }
 
+/// Which function frame owns a binding during capture analysis.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum CaptureFrame {
+    Start,
+    Fn(usize),
+    Lit(u32),
+}
+
+/// How a capturing literal obtains the *cell pointer* for one capture at its
+/// creation site: from a boxed local of the immediately enclosing frame, or
+/// from the enclosing literal's environment block.
+#[derive(Clone, Copy)]
+enum CaptureSource {
+    Local,
+    Env(u32),
+}
+
+#[derive(Clone)]
+struct Capture {
+    name: String,
+    ty: Ty,
+    source: CaptureSource,
+}
+
+#[derive(Default)]
+struct CaptureAnalysis {
+    /// Captures per literal id, in environment order.
+    lit_captures: Vec<Vec<Capture>>,
+    /// Literal id -> names that must live in heap cells (captured by an inner literal).
+    lit_boxed: HashMap<u32, std::collections::HashSet<String>>,
+    /// Named-function slot -> names that must live in heap cells.
+    fn_boxed: HashMap<usize, std::collections::HashSet<String>>,
+}
+
+#[derive(Clone)]
+struct FrameBinding {
+    ty: Ty,
+    loop_var: bool,
+}
+
+struct FrameState {
+    id: CaptureFrame,
+    scopes: Vec<HashMap<String, FrameBinding>>,
+    captures: Vec<Capture>,
+    boxed: std::collections::HashSet<String>,
+}
+
+struct CaptureWalker<'a> {
+    checker: &'a Checker,
+    index: &'a HashMap<String, usize>,
+    literal_ids: &'a HashMap<usize, u32>,
+    lit_params: Vec<Vec<String>>,
+    frames: Vec<FrameState>,
+    globals: HashMap<String, Ty>,
+    analysis: CaptureAnalysis,
+}
+
+impl<'a> CaptureWalker<'a> {
+    fn new(
+        checker: &'a Checker,
+        index: &'a HashMap<String, usize>,
+        literal_ids: &'a HashMap<usize, u32>,
+    ) -> Self {
+        let literal_count = checker.lit_sigs.len();
+        CaptureWalker {
+            checker,
+            index,
+            literal_ids,
+            lit_params: vec![Vec::new(); literal_count],
+            frames: Vec::new(),
+            globals: HashMap::new(),
+            analysis: CaptureAnalysis {
+                lit_captures: vec![Vec::new(); literal_count],
+                lit_boxed: HashMap::new(),
+                fn_boxed: HashMap::new(),
+            },
+        }
+    }
+
+    fn frame(&mut self) -> &mut FrameState {
+        self.frames
+            .last_mut()
+            .expect("capture frame stack is never empty")
+    }
+
+    fn binding_in(&self, frame: usize, name: &str) -> Option<FrameBinding> {
+        for scope in self.frames[frame].scopes.iter().rev() {
+            if let Some(binding) = scope.get(name) {
+                return Some(binding.clone());
+            }
+        }
+        None
+    }
+
+    fn lookup_ty(&self, name: &str) -> Option<Ty> {
+        for frame in (0..self.frames.len()).rev() {
+            if let Some(binding) = self.binding_in(frame, name) {
+                return Some(binding.ty);
+            }
+        }
+        if let Some(ty) = self.globals.get(name) {
+            return Some(*ty);
+        }
+        if let Ok(ty) = self.checker.lookup(name) {
+            return Some(ty);
+        }
+        None
+    }
+
+    fn shape_id(&self, keys: &[String]) -> u32 {
+        let mut shapes = self.checker.shapes.borrow_mut();
+        if let Some(index) = shapes.iter().position(|shape| shape.keys == keys) {
+            return index as u32;
+        }
+        shapes.push(Shape {
+            keys: keys.to_vec(),
+        });
+        (shapes.len() - 1) as u32
+    }
+
+    /// Best-effort static type used only to give captured bindings a wasm type.
+    fn ty_of(&self, expr: &Expr) -> Ty {
+        match expr {
+            Expr::Null => Ty::Int,
+            Expr::Bool(_) => Ty::Bool,
+            Expr::Int(_) => Ty::Int,
+            Expr::Float(_) => Ty::Float,
+            Expr::Str(_) => Ty::Str,
+            Expr::Ident(name) => self.lookup_ty(name).unwrap_or(Ty::Int),
+            Expr::Array(items) => {
+                if items.iter().any(|item| matches!(item, Expr::Str(_))) {
+                    Ty::ArrStr
+                } else {
+                    Ty::Arr
+                }
+            }
+            Expr::Object(fields) => {
+                let keys: Vec<String> = fields.iter().map(|(key, _)| key.clone()).collect();
+                Ty::Obj(self.shape_id(&keys))
+            }
+            Expr::Neg(inner) => match self.ty_of(inner) {
+                Ty::Float => Ty::Float,
+                _ => Ty::Int,
+            },
+            Expr::Not(_) => Ty::Bool,
+            Expr::And(..) | Expr::Or(..) => Ty::Bool,
+            Expr::Bin(op, left, right) => {
+                let lt = self.ty_of(left);
+                let rt = self.ty_of(right);
+                if matches!(
+                    op,
+                    BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge
+                ) {
+                    return Ty::Bool;
+                }
+                if *op == BinOp::Add {
+                    if lt == Ty::Str || rt == Ty::Str {
+                        return Ty::Str;
+                    }
+                    if matches!(lt, Ty::Str | Ty::Int | Ty::Float | Ty::Bool) {
+                        return Ty::Str;
+                    }
+                }
+                if *op == BinOp::Div || lt == Ty::Float || rt == Ty::Float {
+                    Ty::Float
+                } else {
+                    Ty::Int
+                }
+            }
+            Expr::Ternary(_, then, other, _) => {
+                let a = self.ty_of(then);
+                let b = self.ty_of(other);
+                if a == Ty::Str || b == Ty::Str {
+                    Ty::Str
+                } else if a == Ty::ArrStr || b == Ty::ArrStr {
+                    Ty::ArrStr
+                } else if a == Ty::Float || b == Ty::Float {
+                    Ty::Float
+                } else {
+                    Ty::Int
+                }
+            }
+            Expr::MethodCall(object, key, _, _) => match key.as_str() {
+                "len" => Ty::Int,
+                "contains" | "starts_with" | "ends_with" => Ty::Bool,
+                "pop" => match self.ty_of(object) {
+                    Ty::ArrStr => Ty::Str,
+                    _ => Ty::Int,
+                },
+                "push" => Ty::Int,
+                _ => Ty::Int,
+            },
+            Expr::Index(array, _, _) => match self.ty_of(array) {
+                Ty::ArrStr | Ty::Str | Ty::Map => Ty::Str,
+                _ => Ty::Int,
+            },
+            Expr::Member(object, _, _) => {
+                let _ = self.ty_of(object);
+                Ty::Int
+            }
+            Expr::Assign(target, _, _) => self.ty_of(target),
+            Expr::Compound(target, _, _, _) => self.ty_of(target),
+            Expr::Func(_, _, _) => self
+                .literal_ids
+                .get(&(expr as *const Expr as usize))
+                .map(|id| Ty::Func(*id))
+                .unwrap_or(Ty::Int),
+            Expr::Call(callee, args, _) => self.call_result_ty(callee, args),
+        }
+    }
+
+    fn call_result_ty(&self, callee: &Expr, args: &[Expr]) -> Ty {
+        if let Expr::Ident(name) = callee {
+            if let Some(slot) = self.index.get(name).copied() {
+                if let Some(sig) = self.checker.fn_sig(name) {
+                    let _ = slot;
+                    return sig.result.unwrap_or(Ty::Int);
+                }
+            }
+            if let Some(Ty::Func(_)) = self.lookup_ty(name).filter(|ty| matches!(ty, Ty::Func(_))) {
+                // literal-valued variable
+                if let Some(Ty::Func(id)) = self.lookup_ty(name) {
+                    if let Some(sig) = self.checker.lit_sigs.get(id as usize) {
+                        return sig.result.unwrap_or(Ty::Int);
+                    }
+                }
+            }
+            return match name.as_str() {
+                "str" => Ty::Str,
+                "int" => Ty::Int,
+                "float" => Ty::Float,
+                "len" | "argc" | "write_file" | "run" | "now" | "sleep" | "mkdir" | "get"
+                | "sum" | "reduce" => Ty::Int,
+                "abs" | "floor" | "ceil" | "round" => Ty::Int,
+                "sqrt" => Ty::Float,
+                "type" | "arg" | "read_file" | "capture" | "cwd" | "env" | "join" | "slice" => {
+                    Ty::Str
+                }
+                "exists" | "file_exists" | "has" => Ty::Bool,
+                "split" | "keys" => Ty::ArrStr,
+                "range" | "values" | "reverse" | "sort" => Ty::Arr,
+                "merge" => Ty::Int,
+                "map" => {
+                    if let Some(Ty::Func(id)) = args.get(1).map(|arg| self.ty_of(arg)) {
+                        match self
+                            .checker
+                            .lit_sigs
+                            .get(id as usize)
+                            .and_then(|sig| sig.result)
+                        {
+                            Some(Ty::Str) => Ty::ArrStr,
+                            _ => Ty::Arr,
+                        }
+                    } else {
+                        Ty::Arr
+                    }
+                }
+                "filter" => args.first().map(|arg| self.ty_of(arg)).unwrap_or(Ty::Arr),
+                _ => Ty::Int,
+            };
+        }
+        match self.ty_of(callee) {
+            Ty::Func(id) => self
+                .checker
+                .lit_sigs
+                .get(id as usize)
+                .and_then(|sig| sig.result)
+                .unwrap_or(Ty::Int),
+            _ => Ty::Int,
+        }
+    }
+
+    fn declare(&mut self, name: &str, ty: Ty, loop_var: bool) {
+        let frame = self.frame();
+        if let Some(scope) = frame.scopes.last_mut() {
+            scope.insert(name.to_string(), FrameBinding { ty, loop_var });
+        }
+    }
+
+    fn push_scope(&mut self) {
+        self.frame().scopes.push(HashMap::new());
+    }
+
+    fn pop_scope(&mut self) {
+        self.frame().scopes.pop();
+    }
+
+    /// Ensure `frame` (a literal) captures `name`; returns how that frame sees
+    /// the cell pointer (`Env(offset)` in its own environment).
+    fn ensure_capture(&mut self, frame: usize, name: &str) -> Result<CaptureSource, String> {
+        if let Some(position) = self.frames[frame]
+            .captures
+            .iter()
+            .position(|cap| cap.name == name)
+        {
+            return Ok(CaptureSource::Env(position as u32));
+        }
+        let parent = frame - 1;
+        if let Some(binding) = self.binding_in(parent, name) {
+            if binding.loop_var {
+                return Err("wasm target cannot capture a loop variable yet".to_string());
+            }
+            self.frames[parent].boxed.insert(name.to_string());
+            let ty = binding.ty;
+            self.frames[frame].captures.push(Capture {
+                name: name.to_string(),
+                ty,
+                source: CaptureSource::Local,
+            });
+            return Ok(CaptureSource::Env(
+                (self.frames[frame].captures.len() - 1) as u32,
+            ));
+        }
+        if self.frames[parent].id == CaptureFrame::Start {
+            // Globals are read directly from inside literals; nothing to capture.
+            return Err("wasm target internal: unexpected global capture".to_string());
+        }
+        let source = self.ensure_capture(parent, name)?;
+        let ty = self
+            .lookup_ty(name)
+            .ok_or_else(|| format!("wasm target cannot type captured '{}'", name))?;
+        self.frames[frame].captures.push(Capture {
+            name: name.to_string(),
+            ty,
+            source,
+        });
+        Ok(CaptureSource::Env(
+            (self.frames[frame].captures.len() - 1) as u32,
+        ))
+    }
+
+    fn use_name(&mut self, name: &str) -> Result<(), String> {
+        let current = self.frames.len() - 1;
+        let mut found = None;
+        for frame in (0..=current).rev() {
+            if self.binding_in(frame, name).is_some() {
+                found = Some(frame);
+                break;
+            }
+        }
+        let Some(owner) = found else {
+            return Ok(());
+        };
+        if owner == current {
+            return Ok(());
+        }
+        if self.frames[owner].id == CaptureFrame::Start {
+            return Ok(());
+        }
+        for frame in (owner + 1)..=current {
+            if matches!(self.frames[frame].id, CaptureFrame::Lit(_)) {
+                self.ensure_capture(frame, name)?;
+            }
+        }
+        self.frames[owner].boxed.insert(name.to_string());
+        Ok(())
+    }
+
+    fn walk_expr(&mut self, expr: &Expr) -> Result<(), String> {
+        match expr {
+            Expr::Null | Expr::Bool(_) | Expr::Int(_) | Expr::Float(_) | Expr::Str(_) => Ok(()),
+            Expr::Ident(name) => self.use_name(name),
+            Expr::Array(items) => {
+                for item in items {
+                    self.walk_expr(item)?;
+                }
+                Ok(())
+            }
+            Expr::Object(fields) => {
+                for (_, value) in fields {
+                    self.walk_expr(value)?;
+                }
+                Ok(())
+            }
+            Expr::Neg(inner) | Expr::Not(inner) => self.walk_expr(inner),
+            Expr::Bin(_, left, right) => {
+                self.walk_expr(left)?;
+                self.walk_expr(right)
+            }
+            Expr::Ternary(cond, then, other, _) => {
+                self.walk_expr(cond)?;
+                self.walk_expr(then)?;
+                self.walk_expr(other)
+            }
+            Expr::And(left, right) | Expr::Or(left, right) => {
+                self.walk_expr(left)?;
+                self.walk_expr(right)
+            }
+            Expr::Func(params, body, _) => {
+                let Some(id) = self
+                    .literal_ids
+                    .get(&(expr as *const Expr as usize))
+                    .copied()
+                else {
+                    return Err("wasm target lost a function literal id".to_string());
+                };
+                self.lit_params[id as usize] = params.clone();
+                let param_tys: Vec<Ty> = self
+                    .checker
+                    .lit_sigs
+                    .get(id as usize)
+                    .map(|sig| sig.params.clone())
+                    .unwrap_or_else(|| vec![Ty::Int; params.len()]);
+                self.frames.push(FrameState {
+                    id: CaptureFrame::Lit(id),
+                    scopes: vec![HashMap::new()],
+                    captures: Vec::new(),
+                    boxed: std::collections::HashSet::new(),
+                });
+                for (param, ty) in params.iter().zip(param_tys.iter()) {
+                    self.declare(param, *ty, false);
+                }
+                self.walk_stmts(body)?;
+                let frame = self.frames.pop().expect("literal frame");
+                let id = match frame.id {
+                    CaptureFrame::Lit(id) => id,
+                    _ => unreachable!(),
+                };
+                if !frame.boxed.is_empty() {
+                    self.analysis.lit_boxed.insert(id, frame.boxed);
+                }
+                self.analysis.lit_captures[id as usize] = frame.captures;
+                Ok(())
+            }
+            Expr::Call(callee, args, _) => {
+                if let Expr::Ident(name) = &**callee {
+                    let is_value = self
+                        .lookup_ty(name)
+                        .map(|ty| matches!(ty, Ty::Func(_)))
+                        .unwrap_or(false);
+                    if is_value {
+                        self.use_name(name)?;
+                    }
+                }
+                for arg in args {
+                    self.walk_expr(arg)?;
+                }
+                Ok(())
+            }
+            Expr::MethodCall(object, _, args, _) => {
+                self.walk_expr(object)?;
+                for arg in args {
+                    self.walk_expr(arg)?;
+                }
+                Ok(())
+            }
+            Expr::Index(array, index, _) => {
+                self.walk_expr(array)?;
+                self.walk_expr(index)
+            }
+            Expr::Member(object, _, _) => self.walk_expr(object),
+            Expr::Assign(target, value, _) | Expr::Compound(target, _, value, _) => {
+                self.walk_expr(value)?;
+                match &**target {
+                    Expr::Ident(name) => self.use_name(name),
+                    other => self.walk_expr(other),
+                }
+            }
+        }
+    }
+
+    fn walk_stmts(&mut self, stmts: &[Stmt]) -> Result<(), String> {
+        for stmt in stmts {
+            self.walk_stmt(stmt)?;
+        }
+        Ok(())
+    }
+
+    fn walk_stmt(&mut self, stmt: &Stmt) -> Result<(), String> {
+        match stmt {
+            Stmt::Let(name, init, _) => {
+                if let Some(init) = init {
+                    self.walk_expr(init)?;
+                    let ty = self.ty_of(init);
+                    self.declare(name, ty, false);
+                } else {
+                    self.declare(name, Ty::Int, false);
+                }
+                Ok(())
+            }
+            Stmt::Expr(expr, _) => self.walk_expr(expr),
+            Stmt::Fn(..) => Ok(()),
+            Stmt::Block(body) => {
+                self.push_scope();
+                let result = self.walk_stmts(body);
+                self.pop_scope();
+                result
+            }
+            Stmt::If(cond, then_body, else_body, _) => {
+                self.walk_expr(cond)?;
+                self.push_scope();
+                self.walk_stmts(then_body)?;
+                self.pop_scope();
+                if let Some(else_body) = else_body {
+                    self.push_scope();
+                    self.walk_stmts(else_body)?;
+                    self.pop_scope();
+                }
+                Ok(())
+            }
+            Stmt::While(cond, body, _) => {
+                self.walk_expr(cond)?;
+                self.push_scope();
+                let result = self.walk_stmts(body);
+                self.pop_scope();
+                result
+            }
+            Stmt::ForC(init, cond, step, body, _) => {
+                self.push_scope();
+                if let Some(init) = init {
+                    self.walk_stmt(init)?;
+                }
+                if let Some(cond) = cond {
+                    self.walk_expr(cond)?;
+                }
+                if let Some(step) = step {
+                    self.walk_expr(step)?;
+                }
+                let result = self.walk_stmts(body);
+                self.pop_scope();
+                result
+            }
+            Stmt::ForIn(key, value, iter, body, _) => {
+                self.walk_expr(iter)?;
+                let iter_ty = self.ty_of(iter);
+                let (key_ty, value_ty) = match iter_ty {
+                    Ty::ArrStr => (Ty::Int, Ty::Str),
+                    Ty::Obj(_) | Ty::Map => (Ty::Str, Ty::Int),
+                    _ => (Ty::Int, Ty::Int),
+                };
+                self.push_scope();
+                match value {
+                    Some(value) => {
+                        self.declare(key, key_ty, true);
+                        self.declare(value, value_ty, true);
+                    }
+                    None => self.declare(key, value_ty, true),
+                }
+                let result = self.walk_stmts(body);
+                self.pop_scope();
+                result
+            }
+            Stmt::Return(Some(expr), _) => self.walk_expr(expr),
+            Stmt::Return(None, _) | Stmt::Break(_) | Stmt::Continue(_) | Stmt::Use(..) => Ok(()),
+        }
+    }
+
+    fn run(
+        &mut self,
+        stmts: &[Stmt],
+        declarations: &[(String, Vec<String>, &[Stmt])],
+    ) -> Result<(), String> {
+        self.globals = self.checker.global_types();
+        // Top-level frame: bindings are module globals, read directly by literals.
+        self.frames.push(FrameState {
+            id: CaptureFrame::Start,
+            scopes: vec![HashMap::new()],
+            captures: Vec::new(),
+            boxed: std::collections::HashSet::new(),
+        });
+        for stmt in stmts {
+            if let Stmt::Fn(..) = stmt {
+                continue;
+            }
+            self.walk_stmt(stmt)?;
+        }
+        self.frames.pop();
+        for (slot, (name, params, body)) in declarations.iter().enumerate() {
+            let param_tys: Vec<Ty> = self
+                .checker
+                .fn_sig(name)
+                .map(|sig| sig.params.clone())
+                .unwrap_or_else(|| vec![Ty::Int; params.len()]);
+            self.frames.push(FrameState {
+                id: CaptureFrame::Fn(slot),
+                scopes: vec![HashMap::new()],
+                captures: Vec::new(),
+                boxed: std::collections::HashSet::new(),
+            });
+            for (param, ty) in params.iter().zip(param_tys.iter()) {
+                self.declare(param, *ty, false);
+            }
+            self.walk_stmts(body)?;
+            let frame = self.frames.pop().expect("function frame");
+            if !frame.boxed.is_empty() {
+                self.analysis.fn_boxed.insert(slot, frame.boxed);
+            }
+        }
+        Ok(())
+    }
+}
 /// Compile bx source to a standard WebAssembly module (current subset only).
 pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let stmts = crate::parser::parse(source)?;
@@ -5608,7 +6540,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             declarations.push(FnDecl {
                 name: name.clone(),
                 params: params.clone(),
-                body: body.clone(),
+                body: body.as_slice(),
             });
         }
     }
@@ -5649,7 +6581,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             }
         }
     }
-    let (inferred_params, inferred_results) = {
+    let (mut inferred_params, mut inferred_results) = {
         let globals = checker.global_types();
         let mut infer = InferState {
             index: &index,
@@ -5678,7 +6610,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                 for (param, ty) in decl.params.iter().zip(infer.params[slot].iter()) {
                     locals.insert(param.clone(), ty.unwrap_or(Ty::Int));
                 }
-                changed |= infer.walk(&decl.body, &mut locals, Some(slot))?;
+                changed |= infer.walk(decl.body, &mut locals, Some(slot))?;
             }
             for (id, decl) in lit_decls.iter().enumerate() {
                 let slot = decl_count + id;
@@ -5713,7 +6645,112 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             index: IMPORT_COUNT + 1 + decl_count as u32 + id as u32,
         });
     }
-    checker.check_literal_bodies(&lit_decls)?;
+
+    // Second seeding round: globals whose initialiser needs a literal signature
+    // (for example `let f = make(1)`) could not be typed before inference; now
+    // that provisional literal signatures exist, declare them so later calls
+    // through those globals can be inferred.
+    for _ in 0..4 {
+        let mut declared_any = false;
+        for stmt in &stmts {
+            if let Stmt::Let(name, _, _) = stmt {
+                if checker.lookup(name).is_err() && checker.check_stmt(stmt).is_ok() {
+                    declared_any = true;
+                }
+            }
+        }
+        if !declared_any {
+            break;
+        }
+    }
+    // Capture analysis must run before literal bodies are checked so captured
+    // outer bindings can be put in scope for them (and for inference pass B).
+    let mut analysis = {
+        let mut walker = CaptureWalker::new(&checker, &index, &literal_ids);
+        let decls: Vec<(String, Vec<String>, &[Stmt])> = declarations
+            .iter()
+            .map(|decl| (decl.name.clone(), decl.params.clone(), decl.body))
+            .collect();
+        walker.run(&stmts, &decls)?;
+        walker.analysis
+    };
+    if analysis.lit_captures.len() < lit_count {
+        analysis.lit_captures.resize(lit_count, Vec::new());
+    }
+    let capture_types: Vec<Vec<(String, Ty)>> = analysis
+        .lit_captures
+        .iter()
+        .map(|list| {
+            list.iter()
+                .map(|capture| (capture.name.clone(), capture.ty))
+                .collect()
+        })
+        .collect();
+    // Inference pass B: re-run with captured outer bindings in scope so callback
+    // results that depend on a capture get a real type.
+    {
+        let globals = checker.global_types();
+        let mut infer = InferState {
+            index: &index,
+            globals: &globals,
+            shapes: &checker.shapes,
+            literal_ids: &literal_ids,
+            decl_count,
+            params: inferred_params.clone(),
+            results: inferred_results.clone(),
+        };
+        for _ in 0..8 {
+            let mut changed = false;
+            for stmt in &stmts {
+                if let Stmt::Fn(..) = stmt {
+                    continue;
+                }
+                let mut locals = globals.clone();
+                changed |= infer.walk(std::slice::from_ref(stmt), &mut locals, None)?;
+            }
+            for (slot, decl) in declarations.iter().enumerate() {
+                let mut locals = globals.clone();
+                for (param, ty) in decl.params.iter().zip(infer.params[slot].iter()) {
+                    locals.insert(param.clone(), ty.unwrap_or(Ty::Int));
+                }
+                changed |= infer.walk(decl.body, &mut locals, Some(slot))?;
+            }
+            for (id, decl) in lit_decls.iter().enumerate() {
+                let slot = decl_count + id;
+                let mut locals = globals.clone();
+                for (param, ty) in decl.params.iter().zip(infer.params[slot].iter()) {
+                    locals.insert(param.clone(), ty.unwrap_or(Ty::Int));
+                }
+                if let Some(list) = capture_types.get(id) {
+                    for (name, ty) in list {
+                        locals.insert(name.clone(), *ty);
+                    }
+                }
+                changed |= infer.walk(decl.body, &mut locals, Some(slot))?;
+            }
+            if !changed {
+                break;
+            }
+        }
+        inferred_params = infer.params;
+        inferred_results = infer.results;
+    }
+    for (slot, decl) in declarations.iter().enumerate() {
+        let params: Vec<Ty> = inferred_params[slot]
+            .iter()
+            .map(|ty| ty.unwrap_or(Ty::Int))
+            .collect();
+        checker.set_fn_sig(&decl.name, params, inferred_results[slot]);
+    }
+    for (id, sig) in checker.lit_sigs.iter_mut().enumerate() {
+        let slot = decl_count + id;
+        sig.params = inferred_params[slot]
+            .iter()
+            .map(|ty| ty.unwrap_or(Ty::Int))
+            .collect();
+        sig.result = inferred_results[slot];
+    }
+    checker.check_literal_bodies(&lit_decls, &capture_types)?;
     for stmt in &stmts {
         checker.check_stmt(stmt)?;
     }
@@ -5848,7 +6885,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
         fn_types.push(builder.add_type(params, results));
     }
     for sig in &checker.lit_sigs {
-        let mut params: Vec<ValType> = Vec::new();
+        let mut params: Vec<ValType> = vec![ValType::I32];
         for ty in &sig.params {
             params.extend(wasm_types(*ty));
         }
@@ -5949,6 +6986,10 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             literal_ids: literal_ids.clone(),
             record_tables: HashMap::new(),
             continue_targets: Vec::new(),
+            captures: Vec::new(),
+            env_slot: None,
+            boxed: std::collections::HashSet::new(),
+            analysis: &analysis,
         };
         for stmt in &stmts {
             emitter.emit_stmt(stmt)?;
@@ -5982,6 +7023,10 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                 literal_ids: literal_ids.clone(),
                 record_tables: HashMap::new(),
                 continue_targets: Vec::new(),
+                captures: Vec::new(),
+                env_slot: None,
+                boxed: analysis.fn_boxed.get(&slot).cloned().unwrap_or_default(),
+                analysis: &analysis,
             };
             let mut used = 0u32;
             for (param, ty) in decl.params.iter().zip(sig.params.iter()) {
@@ -5990,11 +7035,20 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                     LocalSlot {
                         ty: *ty,
                         slot: used,
+                        boxed: false,
+                        capture: None,
                     },
                 );
                 used += wasm_types(*ty).len() as u32;
             }
-            for stmt in &decl.body {
+            let boxed_params = emitter.boxed.clone();
+            for name in boxed_params {
+                if let Some(slot_info) = emitter.locals.get(&name).copied() {
+                    emitter.emit_load(&name)?;
+                    emitter.box_local(&name, slot_info.ty)?;
+                }
+            }
+            for stmt in decl.body {
                 emitter.emit_stmt(stmt)?;
             }
             match sig.result {
@@ -6039,17 +7093,34 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                 literal_ids: literal_ids.clone(),
                 record_tables: HashMap::new(),
                 continue_targets: Vec::new(),
+                captures: analysis.lit_captures.get(id).cloned().unwrap_or_default(),
+                env_slot: Some(0),
+                boxed: analysis
+                    .lit_boxed
+                    .get(&(id as u32))
+                    .cloned()
+                    .unwrap_or_default(),
+                analysis: &analysis,
             };
-            let mut used = 0u32;
+            let mut used = 1u32;
             for (param, ty) in decl.params.iter().zip(sig.params.iter()) {
                 emitter.locals.insert(
                     param.clone(),
                     LocalSlot {
                         ty: *ty,
                         slot: used,
+                        boxed: false,
+                        capture: None,
                     },
                 );
                 used += wasm_types(*ty).len() as u32;
+            }
+            let boxed_params = emitter.boxed.clone();
+            for name in boxed_params {
+                if let Some(slot) = emitter.locals.get(&name).copied() {
+                    emitter.emit_load(&name)?;
+                    emitter.box_local(&name, slot.ty)?;
+                }
             }
             for stmt in decl.body {
                 emitter.emit_stmt(stmt)?;
@@ -6590,18 +7661,14 @@ mod tests {
     }
 
     #[test]
-    fn capturing_function_literals_are_rejected() {
-        let error = compile_to_wasm(
-            "fn outer() {\n  let n = 5\n  let f = fn(x) { return x + n }\n  return f(1)\n}\nprint(outer())",
-        )
-        .unwrap_err();
-        assert!(
-            error.contains("cannot capture outer variables"),
-            "unexpected error: {}",
-            error
+    fn capturing_function_literals_share_cells() {
+        let (numbers, strings) = run_with_argv(
+            "fn adder(n) {\n  return fn(x) { return x + n }\n}\nlet add2 = adder(2)\nprint(add2(5))\nfn counter() {\n  let n = 0\n  return fn() { n = n + 1; return n }\n}\nlet c = counter()\nprint(c())\nprint(c())\nlet d = counter()\nprint(d())\nprint(c())\nfn compose(f, x) { return f(x) }\nprint(compose(fn(y) { return y * 3 }, 4))",
+            &[],
         );
+        assert!(strings.is_empty());
+        assert_eq!(numbers, vec![7, 1, 2, 1, 3, 12]);
     }
-
     #[test]
     fn maps_iterate_in_entry_order() {
         let (numbers, strings) = run_with_argv(

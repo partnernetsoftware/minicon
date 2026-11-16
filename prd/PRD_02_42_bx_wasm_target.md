@@ -161,6 +161,16 @@ bx wasm target
   `str_compare`; a missing key without a default aborts (`get() missing key with
   no default`) instead of returning the VM's null. `merge` remains unsupported
   (it would need a dynamic object shape).
+- **Capturing closures**: each function literal gets a leading environment
+  pointer parameter; captured outer bindings live in heap cells referenced from
+  that environment. Locals/parameters captured by an inner literal are boxed
+  (a cell is allocated at declaration/entry), so closures share mutable state
+  exactly like the VM (verified with counters). Capture analysis runs before
+  literal bodies are checked and is transitive across nested literals; it also
+  feeds inference pass B so callback results that read captures are typed.
+  Named functions and top-level globals are read directly (no capture needed).
+  Remaining limits: loop variables cannot be captured yet, and `map`/`filter`/
+  `reduce`/`each` callbacks cannot capture outer locals yet (explicit error).
 - **Higher-order builtins over string arrays**: `map`/`filter` accept string
   arrays; `map` returns a string array when the callback returns a string (an
   int array when it returns an int), `filter` keeps the input element kind.
