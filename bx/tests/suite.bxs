@@ -950,6 +950,16 @@ if (wasmMerge.code == 0 && wasmMergeRun.out == wasmMergeVm.out && wasmMergeRun.o
   casesFail += 1
   failures.push("wasm record merge\n    wasm=" + json(wasmMergeRun.out) + " vm=" + json(wasmMergeVm.out) + " err=" + json(wasmMergeRun.err))
 }
+write(artDir + "/wasm-hofstr.bxs", 'for v in filter(["a", "bb", "ccc"], fn(s) { return s.len() > 1 }) { print(v) }\nfor v in map(["a", "b"], fn(s) { return s + "!" }) { print(v) }\nfor v in map(["aa", "b"], fn(s) { return s.len() }) { print(v) }\nlet w = ["x", "yy"]\nw = map(w, fn(s) { return "[" + s + "]" })\nprint(join(w, ","))\n')
+let wasmHofStr = exec([BX, "build", "--wasm", artDir + "/wasm-hofstr.bxs", "-o", artDir + "/wasm-hofstr.wasm"])
+let wasmHofStrRun = exec([BX, "run", artDir + "/wasm-hofstr.wasm"])
+let wasmHofStrVm = exec([BX, "run", artDir + "/wasm-hofstr.bxs"])
+if (wasmHofStr.code == 0 && wasmHofStrRun.out == wasmHofStrVm.out && wasmHofStrRun.out.trim() == "bb\nccc\na!\nb!\n2\n1\n[x],[yy]") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm higher-order string arrays\n    wasm=" + json(wasmHofStrRun.out) + " vm=" + json(wasmHofStrVm.out) + " err=" + json(wasmHofStrRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'fn outer() {\n  let n = 5\n  let f = fn(x) { return x + n }\n  return f(1)\n}\nprint(outer())\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1 && wasmBad.err.contains("cannot capture outer variables")) {

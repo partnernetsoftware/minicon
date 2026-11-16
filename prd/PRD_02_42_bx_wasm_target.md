@@ -128,7 +128,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 80 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 81 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -161,6 +161,12 @@ bx wasm target
   `str_compare`; a missing key without a default aborts (`get() missing key with
   no default`) instead of returning the VM's null. `merge` remains unsupported
   (it would need a dynamic object shape).
+- **Higher-order builtins over string arrays**: `map`/`filter` accept string
+  arrays; `map` returns a string array when the callback returns a string (an
+  int array when it returns an int), `filter` keeps the input element kind.
+  Soft inference now distinguishes string-array literals, walks `let`
+  initialisers and `for-in` iterators, and types `.len()`/mixed `+` inside
+  callbacks.
 - **Higher-order array builtins**: `map`, `filter`, `reduce` and statement-level
   `each` accept non-capturing function literals; the emitter inlines a loop and
   calls the lifted literal directly (no indirect dispatch). `map` results are

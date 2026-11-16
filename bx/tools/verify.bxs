@@ -204,6 +204,14 @@ test("wasm record builtins", fn() {
   let vm = exec([bin, "run", dir + "/wasm-objb.bxs"])
   assert(ran.code == 0 && ran.out == vm.out && ran.out.trim() == "a\n1", "wasm=" + json(ran.out) + " vm=" + json(vm.out))
 })
+write(dir + "/wasm-hofstr.bxs", 'for v in map(["a", "b"], fn(s) { return s + "!" }) { print(v) }\nfor v in filter(["a", "bb"], fn(s) { return s.len() > 1 }) { print(v) }\n')
+test("wasm higher-order string arrays", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-hofstr.bxs", "-o", dir + "/wasm-hofstr.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-hofstr.wasm"])
+  let vm = exec([bin, "run", dir + "/wasm-hofstr.bxs"])
+  assert(ran.code == 0 && ran.out == vm.out && ran.out.trim() == "a!\nb!\nbb", "wasm=" + json(ran.out) + " vm=" + json(vm.out))
+})
 test("wasm higher-order array builtins", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-hof.bxs", "-o", dir + "/wasm-hof.wasm"])
   assert(built.code == 0, "build failed: " + built.err)
