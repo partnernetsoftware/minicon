@@ -1983,23 +1983,35 @@ impl<'a> Emitter<'a> {
         let key_slot = self.builder.add_local(ValType::I32);
         let key_len_slot = self.builder.add_local(ValType::I32);
         let mut scope = HashMap::new();
+        let key_boxed = self.boxed.contains(key);
+        let key_cell = if key_boxed {
+            Some(self.loop_cell(Ty::Str))
+        } else {
+            None
+        };
         scope.insert(
             key.to_string(),
             LocalSlot {
                 ty: Ty::Str,
-                slot: key_slot,
-                boxed: false,
+                slot: key_cell.unwrap_or(key_slot),
+                boxed: key_boxed,
                 capture: None,
             },
         );
+        let value_boxed = value.map(|name| self.boxed.contains(name)).unwrap_or(false);
+        let value_cell = if value_boxed {
+            Some(self.loop_cell(Ty::Int))
+        } else {
+            None
+        };
         let value_slot = value.map(|value| {
             let slot = self.builder.add_local(ValType::I64);
             scope.insert(
                 value.to_string(),
                 LocalSlot {
                     ty: Ty::Int,
-                    slot,
-                    boxed: false,
+                    slot: value_cell.unwrap_or(slot),
+                    boxed: value_boxed,
                     capture: None,
                 },
             );
@@ -2058,6 +2070,19 @@ impl<'a> Emitter<'a> {
             self.builder.push(Instr::Mem(0x29, 3, 0));
             self.builder.push(Instr::Local(0x21, value_slot));
         }
+        if let Some(cell) = key_cell {
+            self.builder.push(Instr::Local(0x20, cell));
+            self.builder.push(Instr::Local(0x20, key_slot));
+            self.builder.push(Instr::Mem(0x36, 2, 0));
+            self.builder.push(Instr::Local(0x20, cell));
+            self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+            self.builder.push(Instr::Op(0x6a));
+            self.builder.push(Instr::Local(0x20, key_len_slot));
+            self.builder.push(Instr::Mem(0x36, 2, 0));
+        }
+        if let (Some(cell), Some(slot)) = (value_cell, value_slot) {
+            self.refresh_loop_cell(cell, slot, Ty::Int);
+        }
         self.push_continue_block();
         for stmt in body {
             self.emit_stmt(stmt)?;
@@ -2093,27 +2118,49 @@ impl<'a> Emitter<'a> {
         let mut scope = HashMap::new();
         let value_ptr = self.builder.add_local(ValType::I32);
         let value_len = self.builder.add_local(ValType::I32);
+        let value_boxed = self.boxed.contains(value_name);
+        let value_cell = if value_boxed {
+            Some(self.loop_cell(Ty::Str))
+        } else {
+            None
+        };
         scope.insert(
             value_name.to_string(),
             LocalSlot {
                 ty: Ty::Str,
-                slot: value_ptr,
-                boxed: false,
+                slot: value_cell.unwrap_or(value_ptr),
+                boxed: value_boxed,
                 capture: None,
             },
         );
         let key_tmp = key_name.map(|name| {
             let tmp = self.builder.add_local(ValType::I64);
+            let boxed = self.boxed.contains(name);
+            let cell = if boxed {
+                Some(self.loop_cell(Ty::Int))
+            } else {
+                None
+            };
             scope.insert(
                 name.to_string(),
                 LocalSlot {
                     ty: Ty::Int,
-                    slot: tmp,
-                    boxed: false,
+                    slot: cell.unwrap_or(tmp),
+                    boxed,
                     capture: None,
                 },
             );
             tmp
+        });
+        let key_cell = key_name.and_then(|name| {
+            if self.boxed.contains(name) {
+                self.scoped
+                    .last()
+                    .and_then(|scope| scope.get(name))
+                    .map(|slot| slot.slot)
+            } else {
+                None
+            }
         });
         self.scoped.push(scope);
         self.emit_expr(iter)?;
@@ -2167,6 +2214,12 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Local(0x21, value_len));
         self.builder.push(Instr::Local(0x20, value_ptr));
         self.builder.push(Instr::Local(0x20, value_len));
+        if let Some(cell) = value_cell {
+            self.refresh_loop_cell(cell, value_ptr, Ty::Str);
+        }
+        if let (Some(cell), Some(tmp)) = (key_cell, key_tmp) {
+            self.refresh_loop_cell(cell, tmp, Ty::Int);
+        }
         self.push_continue_block();
         for stmt in body {
             self.emit_stmt(stmt)?;
@@ -2199,23 +2252,35 @@ impl<'a> Emitter<'a> {
         let mut scope = HashMap::new();
         let key_slot = self.builder.add_local(ValType::I32);
         self.builder.add_local(ValType::I32);
+        let key_boxed = self.boxed.contains(key);
+        let key_cell = if key_boxed {
+            Some(self.loop_cell(Ty::Str))
+        } else {
+            None
+        };
         scope.insert(
             key.to_string(),
             LocalSlot {
                 ty: Ty::Str,
-                slot: key_slot,
-                boxed: false,
+                slot: key_cell.unwrap_or(key_slot),
+                boxed: key_boxed,
                 capture: None,
             },
         );
+        let value_boxed = value.map(|name| self.boxed.contains(name)).unwrap_or(false);
+        let value_cell = if value_boxed {
+            Some(self.loop_cell(Ty::Int))
+        } else {
+            None
+        };
         let value_slot = value.map(|value| {
             let slot = self.builder.add_local(ValType::I64);
             scope.insert(
                 value.to_string(),
                 LocalSlot {
                     ty: Ty::Int,
-                    slot,
-                    boxed: false,
+                    slot: value_cell.unwrap_or(slot),
+                    boxed: value_boxed,
                     capture: None,
                 },
             );
@@ -2265,6 +2330,12 @@ impl<'a> Emitter<'a> {
             self.builder.push(Instr::Local(0x20, index_tmp));
             self.builder.push(Instr::Call(MAP_VALUE_AT));
             self.builder.push(Instr::Local(0x21, value_slot));
+        }
+        if let Some(cell) = key_cell {
+            self.refresh_loop_cell(cell, key_slot, Ty::Str);
+        }
+        if let (Some(cell), Some(slot)) = (value_cell, value_slot) {
+            self.refresh_loop_cell(cell, slot, Ty::Int);
         }
         self.push_continue_block();
         for stmt in body {
@@ -6012,8 +6083,6 @@ struct CaptureAnalysis {
 struct FrameBinding {
     ty: Ty,
     loop_var: bool,
-    /// Loop variables over int arrays may be captured (the emitter boxes them).
-    boxable_loop: bool,
 }
 
 struct FrameState {
@@ -6218,6 +6287,8 @@ impl<'a> CaptureWalker<'a> {
                 "exists" | "file_exists" | "has" => Ty::Bool,
                 "split" | "keys" => Ty::ArrStr,
                 "range" | "values" | "reverse" | "sort" => Ty::Arr,
+                "map_new" => Ty::Map,
+                "map_get" | "map_has" | "map_len" | "map_set" => Ty::Int,
                 "merge" => Ty::Int,
                 "map" => {
                     if let Some(Ty::Func(id)) = args.get(1).map(|arg| self.ty_of(arg)) {
@@ -6250,20 +6321,9 @@ impl<'a> CaptureWalker<'a> {
     }
 
     fn declare(&mut self, name: &str, ty: Ty, loop_var: bool) {
-        self.declare_loop(name, ty, loop_var, false);
-    }
-
-    fn declare_loop(&mut self, name: &str, ty: Ty, loop_var: bool, boxable_loop: bool) {
         let frame = self.frame();
         if let Some(scope) = frame.scopes.last_mut() {
-            scope.insert(
-                name.to_string(),
-                FrameBinding {
-                    ty,
-                    loop_var,
-                    boxable_loop,
-                },
-            );
+            scope.insert(name.to_string(), FrameBinding { ty, loop_var });
         }
     }
 
@@ -6287,11 +6347,7 @@ impl<'a> CaptureWalker<'a> {
         }
         let parent = frame - 1;
         if let Some(binding) = self.binding_in(parent, name) {
-            if binding.loop_var && !binding.boxable_loop {
-                return Err(
-                    "wasm target can only capture loop variables over int arrays yet".to_string(),
-                );
-            }
+            let _ = binding.loop_var;
             self.frames[parent].boxed.insert(name.to_string());
             let ty = binding.ty;
             self.frames[frame].captures.push(Capture {
@@ -6523,13 +6579,20 @@ impl<'a> CaptureWalker<'a> {
                     _ => (Ty::Int, Ty::Int),
                 };
                 self.push_scope();
-                let boxable = iter_ty == Ty::Arr;
                 match value {
                     Some(value) => {
-                        self.declare_loop(key, key_ty, true, boxable);
-                        self.declare_loop(value, value_ty, true, boxable);
+                        self.declare(key, key_ty, true);
+                        self.declare(value, value_ty, true);
                     }
-                    None => self.declare_loop(key, value_ty, true, boxable),
+                    None => {
+                        // A single loop variable binds the key for records/maps and
+                        // the element for arrays.
+                        let single_ty = match iter_ty {
+                            Ty::Obj(_) | Ty::Map => key_ty,
+                            _ => value_ty,
+                        };
+                        self.declare(key, single_ty, true);
+                    }
                 }
                 let result = self.walk_stmts(body);
                 self.pop_scope();
@@ -7713,6 +7776,26 @@ mod tests {
         );
         assert_eq!(numbers, vec![42, 42]);
         assert_eq!(strings, vec!["hi there".to_string()]);
+    }
+
+    #[test]
+    fn loop_variables_are_capturable_over_any_iterable() {
+        let (numbers, strings) = run_with_argv(
+            "for s in [\"a\", \"bb\"] {\n  print(fn() { return s + \"!\" }())\n}\nlet o = {x: 1, y: 2}\nfor k in o {\n  print(fn() { return k + \"?\" }())\n}\nfor k, v in o {\n  print(fn() { return k + \":\" + str(v) }())\n}\nfor i in range(2) {\n  print(fn() { return i * 5 }())\n}",
+            &[],
+        );
+        assert_eq!(numbers, vec![0, 5]);
+        assert_eq!(
+            strings,
+            vec![
+                "a!".to_string(),
+                "bb!".to_string(),
+                "x?".to_string(),
+                "y?".to_string(),
+                "x:1".to_string(),
+                "y:2".to_string(),
+            ]
+        );
     }
 
     #[test]

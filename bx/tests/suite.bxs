@@ -930,6 +930,25 @@ if (wasmHof.code == 0 && wasmHofRun.out == wasmHofVm.out && wasmHofRun.out.trim(
   casesFail += 1
   failures.push("wasm higher-order array builtins\n    wasm=" + json(wasmHofRun.out) + " vm=" + json(wasmHofVm.out) + " err=" + json(wasmHofRun.err))
 }
+write(artDir + "/wasm-loopcap.bxs", 'for s in ["a", "bb"] { print(fn() { return s + "!" }()) }\nlet o = {x: 1, y: 2}\nfor k in o { print(fn() { return k }()) }\nfor k, v in o { print(fn() { return k + str(v) }()) }\nfor i in range(2) { print(fn() { return i * 5 }()) }\n')
+let wasmLoopCap = exec([BX, "build", "--wasm", artDir + "/wasm-loopcap.bxs", "-o", artDir + "/wasm-loopcap.wasm"])
+let wasmLoopCapRun = exec([BX, "run", artDir + "/wasm-loopcap.wasm"])
+let wasmLoopCapVm = exec([BX, "run", artDir + "/wasm-loopcap.bxs"])
+if (wasmLoopCap.code == 0 && wasmLoopCapRun.out == wasmLoopCapVm.out && wasmLoopCapRun.out.trim() == "a!\nbb!\nx\ny\nx1\ny2\n0\n5") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm loop variable capture over iterables\n    wasm=" + json(wasmLoopCapRun.out) + " vm=" + json(wasmLoopCapVm.out) + " err=" + json(wasmLoopCapRun.err))
+}
+write(artDir + "/wasm-maploopcap.bxs", 'let m = map_new()\nmap_set(m, "one", 1)\nmap_set(m, "two", 2)\nfor mk in m { print(fn() { return mk }()) }\nfor mk, mv in m { print(fn() { return mk + str(mv) }()) }\n')
+let wasmMapLoopCap = exec([BX, "build", "--wasm", artDir + "/wasm-maploopcap.bxs", "-o", artDir + "/wasm-maploopcap.wasm"])
+let wasmMapLoopCapRun = exec([BX, "run", artDir + "/wasm-maploopcap.wasm"])
+if (wasmMapLoopCap.code == 0 && wasmMapLoopCapRun.out.trim() == "one\ntwo\none1\ntwo2") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm map loop variable capture\n    out=" + json(wasmMapLoopCapRun.out) + " err=" + json(wasmMapLoopCapRun.err))
+}
 write(artDir + "/wasm-clocap.bxs", 'fn scale_all(base) {\n  let factor = 2\n  return map([1, 2, 3], fn(x) { return x * factor + base })\n}\nfor v in scale_all(10) { print(v) }\nfn keep(base) {\n  let limit = 3\n  return filter([1, 2, 4, 5], fn(x) { return x + base > limit })\n}\nfor v in keep(0) { print(v) }\nfn total(base) {\n  let extra = 5\n  return reduce([1, 2, 3], fn(a, x) { return a + x + extra }, base)\n}\nprint(total(100))\nfor i in range(3) {\n  print(fn() { return i }())\n}\nfn loopy() {\n  for v in [10, 20] {\n    let f = fn() { return v + 1 }\n    print(f())\n  }\n}\nloopy()\n')
 let wasmCloCap = exec([BX, "build", "--wasm", artDir + "/wasm-clocap.bxs", "-o", artDir + "/wasm-clocap.wasm"])
 let wasmCloCapRun = exec([BX, "run", artDir + "/wasm-clocap.wasm"])

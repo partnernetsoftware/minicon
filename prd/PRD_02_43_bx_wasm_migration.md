@@ -43,7 +43,7 @@ bx .wasm migration (M6)
 │   ├── [v] budgets: --max-steps / --timeout parity with the VM
 │   ├── [v] evidence: suite (152 checks), verifier (49 tests), differential
 │   │   generator, node/independent-engine cross-checks
-│   └── [-] remaining core gaps: arrays of records, map/record loop captures, `attempt`,
+│   └── [-] remaining core gaps: arrays of records, `attempt`, function-value site polymorphism,
 │       `attempt`, method surface beyond push/pop/len, dynamic-object syntax
 ├── G1 opt-in default
 │   └── [-] --target flag + BX_TARGET env accepted by build/run (soak pending)
@@ -79,9 +79,10 @@ take an environment pointer, captured locals/parameters are boxed into heap
 cells, and nested captures are transitive. Capturing callbacks for
 `map`/`filter`/`reduce`/`each` work (the callback environment is evaluated once
 and passed to each call), and int-array loop variables are capturable with the
-VM's single-shared-binding semantics. Remaining capture gaps: loop variables
-over records/maps/string arrays, and one variable holding function literals from
-two different syntactic sites.
+VM's single-shared-binding semantics; loop variables over every iterable
+(arrays, string arrays, records, maps) are capturable the same way. Remaining
+capture gaps: one variable holding function literals from two different
+syntactic sites.
 ## Parity matrix
 
 Legend: `[v]` supported and covered by evidence, `[-]` missing but planned,

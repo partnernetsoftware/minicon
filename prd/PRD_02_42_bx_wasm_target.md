@@ -169,14 +169,14 @@ bx wasm target
   literal bodies are checked and is transitive across nested literals; it also
   feeds inference pass B so callback results that read captures are typed.
   Named functions and top-level globals are read directly (no capture needed).
-  Loop variables over int arrays are capturable too: the loop allocates one cell
-  before the loop and refreshes it each iteration, matching the VM's
-  single-shared-binding semantics. `map`/`filter`/`reduce`/`each` callbacks may
-  capture outer locals: the callback value (its environment) is evaluated once
-  and passed into every callback invocation. Remaining limits: loop variables
-  over records/maps/string arrays cannot be captured yet (explicit error), and a
-  variable cannot hold function literals from two different syntactic sites
-  (`requires stable types`).
+  Loop variables over every iterable (int arrays, string arrays, records, maps)
+  are capturable: each loop allocates one cell before the loop and refreshes it
+  every iteration, matching the VM's single-shared-binding semantics.
+  `map`/`filter`/`reduce`/`each` callbacks may capture outer locals: the callback
+  value (its environment) is evaluated once and passed into every callback
+  invocation. Remaining limits: a variable cannot hold function literals from
+  two different syntactic sites (`requires stable types`), and arrays of records
+  are not supported.
 - **Higher-order builtins over string arrays**: `map`/`filter` accept string
   arrays; `map` returns a string array when the callback returns a string (an
   int array when it returns an int), `filter` keeps the input element kind.
