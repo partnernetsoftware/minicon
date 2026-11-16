@@ -554,10 +554,10 @@ if (wasmFn.code == 0 && wasmFnRun.code == 0 && wasmFnRun.out.trim() == "120\n10"
   casesFail += 1
   failures.push("wasm user functions and recursion\n    build=" + wasmFn.code + " out=" + json(wasmFnRun.out) + " err=" + json(wasmFnRun.err))
 }
-write(artDir + "/wasm-args.bxs", 'print(argc())\nprint(arg(0))\nprint(arg(1))\n')
+write(artDir + "/wasm-args.bxs", 'print(argc())\nprint(arg(0))\nprint(arg(1))\nprint(arg(9))\n')
 let wasmArgs = exec([BX, "build", "--wasm", artDir + "/wasm-args.bxs", "-o", artDir + "/wasm-args.wasm"])
-let wasmArgsRun = exec([BX, "run", artDir + "/wasm-args.wasm", "alpha", "beta"])
-if (wasmArgs.code == 0 && wasmArgsRun.code == 0 && wasmArgsRun.out.trim() == "2\nalpha\nbeta") {
+let wasmArgsRun = exec([BX, "run", artDir + "/wasm-args.wasm", "hello world", "héllo"])
+if (wasmArgs.code == 0 && wasmArgsRun.code == 0 && wasmArgsRun.out.trim() == "2\nhello world\nhéllo") {
   casesOk += 1
 } else {
   casesFail += 1
@@ -572,7 +572,7 @@ if (wasmFs.code == 0 && wasmFsRun.code == 0 && wasmFsRun.out.trim() == "0\npaylo
   casesFail += 1
   failures.push("wasm filesystem ABI\n    build=" + wasmFs.code + " out=" + json(wasmFsRun.out) + " err=" + json(wasmFsRun.err))
 }
-write(artDir + "/wasm-proc.bxs", 'print(run("echo hi"))\nprint(capture("echo hi"))\n')
+write(artDir + "/wasm-proc.bxs", 'print(run("echo hi"))\nprint(capture("echo hi"))\nprint(capture("printf abc"))\n')
 let wasmProc = exec([BX, "build", "--wasm", artDir + "/wasm-proc.bxs", "-o", artDir + "/wasm-proc.wasm"])
 let wasmProcRun = exec([BX, "run", artDir + "/wasm-proc.wasm"])
 if (wasmProc.code == 0 && wasmProcRun.code == 0 && wasmProcRun.out.contains("0") && wasmProcRun.out.contains("hi")) {

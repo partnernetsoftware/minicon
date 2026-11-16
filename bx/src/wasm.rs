@@ -2570,7 +2570,10 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 let start = self.next_proc as usize;
                 let size = 8 + stdout.len();
                 if start + size > memory.len() {
-                    return Ok(vec![WVal::I32(0)]);
+                    return Err(format!(
+                        "capture output of {} bytes does not fit the result region",
+                        stdout.len()
+                    ));
                 }
                 memory[start..start + 4].copy_from_slice(&code.to_le_bytes());
                 memory[start + 4..start + 8].copy_from_slice(&(stdout.len() as u32).to_le_bytes());

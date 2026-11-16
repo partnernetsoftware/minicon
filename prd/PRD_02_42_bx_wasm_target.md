@@ -86,6 +86,11 @@ bx wasm target
   returns a pointer to `[len][bytes]` in the third page (0 on failure);
   `bx.write_file(path_ptr, path_len, data_ptr, data_len) -> i32` returns 0 on
   success, -1 on failure. Paths and data are UTF-8 byte ranges in memory.
+- **Argv/capture bounds**: `argc()`/`arg(i)` pass through spaces and unicode and
+  return an empty string for out-of-range indexes; `capture` returns the raw
+  stdout in page 4 (not trimmed) with the exit code in its header, and aborts
+  with `capture output ... does not fit` instead of silently returning an empty
+  string when the result region is exhausted.
 - **Processes** (native extension, `bx.*`): `bx.run(cmd_ptr, cmd_len) -> i32` runs
   the command line through the platform shell (`cmd /C` on Windows, `sh -c`
   elsewhere) with inherited stdio and returns its exit code; `bx.capture(...)`
@@ -123,7 +128,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 72 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 73 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of

@@ -28,6 +28,7 @@
 
 **实验性 wasm 目标**
 
+- argv 支持空格/Unicode、越界返回空串；capture 返回未 trim 的原始 stdout，结果区不足时报错而非静默空串。
 - IO/映射失败显式化：read_file 缺失文件报 cannot read，write_file 返回 0/-1（签名扩展），映射满/未初始化/分配失败均报错而非静默。
 - 索引对齐 VM：负索引（从末尾计）、浮点索引（截断）、字符串按 Unicode 字符取字符（host `env.str_char_at`）。`
 - 修复 bool 值比较（`true == false`、`false < true`）在条件里缺失的类型错误；修复空 needle 字符串方法（`"".contains("")`）导致宿主 panic 的问题。`

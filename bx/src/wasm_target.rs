@@ -4303,6 +4303,50 @@ mod tests {
     }
 
     #[test]
+    fn argv_capture_and_budgets_work() {
+        let source =
+            "let i = 0\nwhile (i < argc()) {\n  print(arg(i))\n  i = i + 1\n}\nprint(arg(99))";
+        let bytes = compile_to_wasm(source).unwrap();
+        let mut text = Vec::new();
+        let mut numbers = Vec::new();
+        execute(
+            &bytes,
+            &["hello world".to_string(), "héllo".to_string()],
+            0,
+            0,
+            |value| numbers.push(value),
+            |line| text.push(line.to_string()),
+        )
+        .unwrap();
+        assert_eq!(numbers, Vec::<i64>::new());
+        assert_eq!(
+            text,
+            vec![
+                "hello world".to_string(),
+                "héllo".to_string(),
+                String::new(),
+            ]
+        );
+
+        let capture = compile_to_wasm("print(capture(\"printf abc\"))").unwrap();
+        let mut text = Vec::new();
+        execute(
+            &capture,
+            &[],
+            0,
+            0,
+            |_| {},
+            |line| text.push(line.to_string()),
+        )
+        .unwrap();
+        assert_eq!(text, vec!["abc".to_string()]);
+
+        let looping = compile_to_wasm("let n = 0\nwhile (true) { n = n + 1 }").unwrap();
+        let error = execute(&looping, &[], 500, 0, |_| {}, |_| {}).unwrap_err();
+        assert!(error.contains("step budget"), "got {error}");
+    }
+
+    #[test]
     fn file_and_map_failures_are_explicit() {
         let missing =
             compile_to_wasm("print(read_file(\"C:/definitely-missing-bx.txt\"))").unwrap();
