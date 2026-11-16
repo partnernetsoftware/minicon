@@ -28,6 +28,7 @@
 
 **实验性 wasm 目标**
 
+- 修复作用域循环变量出现在调用实参里（如 `k + ":" + str(v)`）时的「undefined variable」构建错误：emitter 的 type_of 自行解析内建调用返回类型。`
 - 修复 `continue` 在 for-in/for 中跳过步进的问题：循环体包一层 continue 目标块，索引自增与 for-step 始终执行。`
 - 记录遍历 `for k, v in o`（声明序键表）与字符串方法 `.contains/.starts_with/.ends_with`（host `env.str_test`）；差分生成器限制乘法量级以避开 VM 的 9e15 浮点提升区间。`
 - G1 目标选择：`bx build --target wasm|bxb` 与 `BX_TARGET=wasm|bxb`（默认仍为 bxb）；非法值退出 2，`BX_TARGET=wasm bx run 脚本` 走 wasm 且失败时提示回退。`

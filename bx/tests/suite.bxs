@@ -817,6 +817,16 @@ if (wasmContinue.code == 0 && wasmContinueRun.out == wasmContinueVm.out && wasmC
   casesFail += 1
   failures.push("wasm continue\n    wasm=" + json(wasmContinueRun.out) + " vm=" + json(wasmContinueVm.out) + " err=" + json(wasmContinueRun.err))
 }
+write(artDir + "/wasm-scopedcall.bxs", 'let m = {x: 1, y: 2}\nfor k, v in m {\n  if (v == 2) { continue }\n  print(k + ":" + str(v))\n}\nfor v in [7, 8] { print(v + 1) }\n')
+let wasmScoped = exec([BX, "build", "--wasm", artDir + "/wasm-scopedcall.bxs", "-o", artDir + "/wasm-scopedcall.wasm"])
+let wasmScopedRun = exec([BX, "run", artDir + "/wasm-scopedcall.wasm"])
+let wasmScopedVm = exec([BX, "run", artDir + "/wasm-scopedcall.bxs"])
+if (wasmScoped.code == 0 && wasmScopedRun.out == wasmScopedVm.out && wasmScopedRun.out.trim() == "x:1\n8\n9") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm scoped loop variables in calls\n    wasm=" + json(wasmScopedRun.out) + " vm=" + json(wasmScopedVm.out) + " err=" + json(wasmScopedRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'fn outer() {\n  let n = 5\n  let f = fn(x) { return x + n }\n  return f(1)\n}\nprint(outer())\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1 && wasmBad.err.contains("cannot capture outer variables")) {

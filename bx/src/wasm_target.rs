@@ -1845,19 +1845,60 @@ impl<'a> Emitter<'a> {
                     ty_name(rt)
                 ))
             }
-            Expr::Call(callee, _, _) => {
+            Expr::MethodCall(object, key, args, _) => {
+                if matches!(key.as_str(), "contains" | "starts_with" | "ends_with") {
+                    return Ok(Ty::Bool);
+                }
+                if key == "len" && args.is_empty() {
+                    return match self.type_of(object)? {
+                        Ty::Str | Ty::Arr => Ok(Ty::Int),
+                        other => Err(format!("wasm target cannot take len of {}", ty_name(other))),
+                    };
+                }
+                self.checker.infer(expr)
+            }
+            Expr::Call(callee, args, _) => {
                 if let Expr::Ident(name) = &**callee {
-                    if self.checker.fn_sig(name).is_some() {
-                        return Ok(Ty::Int);
+                    if let Some(sig) = self.checker.fn_sig(name) {
+                        return sig.result.ok_or_else(|| {
+                            format!("wasm target function '{}' returns no value", name)
+                        });
                     }
-                    match name.as_str() {
-                        "argc" | "write_file" | "run" => return Ok(Ty::Int),
-                        "arg" | "read_file" | "capture" => return Ok(Ty::Str),
-                        _ => {}
+                    if let Ok(Ty::Func(id)) = self.type_of(callee) {
+                        return self
+                            .checker
+                            .lit_sigs
+                            .get(id as usize)
+                            .and_then(|sig| sig.result)
+                            .ok_or_else(|| {
+                                "wasm target function literal returns no value".to_string()
+                            });
+                    }
+                    let known = match name.as_str() {
+                        "str" => Some(Ty::Str),
+                        "int" => Some(Ty::Int),
+                        "len" => Some(Ty::Int),
+                        "argc" | "run" | "capture" | "write_file" => Some(Ty::Int),
+                        "arg" | "read_file" => Some(Ty::Str),
+                        "map_new" => Some(Ty::Map),
+                        "map_get" | "map_has" | "map_len" | "file_exists" => Some(Ty::Int),
+                        "exists" => Some(Ty::Bool),
+                        "now" => Some(Ty::Int),
+                        "cwd" | "env" => Some(Ty::Str),
+                        "performance_now" => Some(Ty::Float),
+                        "gl_create" | "gl_pixel" | "gl_png" => Some(Ty::Int),
+                        _ => None,
+                    };
+                    if let Some(ty) = known {
+                        for arg in args {
+                            self.type_of(arg)?;
+                        }
+                        return Ok(ty);
                     }
                 }
                 self.checker.infer(expr)
             }
+
             _ => self.checker.infer(expr),
         }
     }
@@ -4091,6 +4132,16 @@ mod tests {
             strings,
             vec!["3.5".to_string(), "4.5".to_string(), "2.5".to_string()]
         );
+    }
+
+    #[test]
+    fn scoped_loop_variables_work_inside_calls() {
+        let (numbers, strings) = run_with_argv(
+            "let m = {x: 1, y: 2}\nfor k, v in m {\n  print(k + \":\" + str(v))\n}\nfor v in [7, 8] {\n  print(v + 1)\n}",
+            &[],
+        );
+        assert_eq!(numbers, vec![8, 9]);
+        assert_eq!(strings, vec!["x:1".to_string(), "y:2".to_string()]);
     }
 
     #[test]

@@ -123,7 +123,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 67 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 68 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -139,6 +139,12 @@ bx wasm target
   `&&`/`||`/`!` through if/else locals, ternary with int/float/bool branches
   (string branches still rejected) and `str(bool)`/`print(bool)` via host
   `env.bool_to_str`.
+- **Scoped loop variables in call arguments**: `print(k + ":" + str(v))` inside
+  a record/map `for k, v in` loop now type-checks through the emitter's own
+  `type_of` for builtin calls, instead of falling back to the checker (which
+  cannot see loop-scoped locals during emission). Nested while/for-in inside a
+  for-in, and `k + ":" + str(v)` forms are covered by unit/suite/verifier and
+  the differential generator.
 - **Loop `continue`**: for-in loops (array/map/record) and `for (…; …; step)`
   route `continue` through a dedicated block so the index increment / step still
   runs; previously `continue` branched to the loop header and skipped it
