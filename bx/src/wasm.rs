@@ -758,7 +758,7 @@ fn decode_code_body(r: &mut Reader) -> Result<(Vec<ValType>, Vec<Instr>), String
 }
 
 fn is_supported_numeric_opcode(opcode: u8) -> bool {
-    matches!(opcode, 0x45..=0x8a | 0xa0..=0xa3 | 0xa7 | 0xac | 0xad | 0xb0 | 0xb9)
+    matches!(opcode, 0x45..=0x8a | 0x99..=0x9f | 0xa0..=0xa3 | 0xa7 | 0xac | 0xad | 0xb0 | 0xb9)
 }
 
 pub fn decode(bytes: &[u8]) -> Result<Module, String> {
@@ -1554,6 +1554,34 @@ impl<'m, H: Host> Exec<'m, H> {
                 let b = pop_i64(stack)?;
                 let a = pop_i64(stack)?;
                 stack.push(WVal::I64(i64_binop(opcode, a, b)?));
+            }
+            0x99 => {
+                let value = pop_f64(stack)?;
+                stack.push(WVal::F64(value.abs()));
+            }
+            0x9a => {
+                let value = pop_f64(stack)?;
+                stack.push(WVal::F64(-value));
+            }
+            0x9b => {
+                let value = pop_f64(stack)?;
+                stack.push(WVal::F64(value.ceil()));
+            }
+            0x9c => {
+                let value = pop_f64(stack)?;
+                stack.push(WVal::F64(value.floor()));
+            }
+            0x9d => {
+                let value = pop_f64(stack)?;
+                stack.push(WVal::F64(value.trunc()));
+            }
+            0x9e => {
+                let value = pop_f64(stack)?;
+                stack.push(WVal::F64(value.round_ties_even()));
+            }
+            0x9f => {
+                let value = pop_f64(stack)?;
+                stack.push(WVal::F64(value.sqrt()));
             }
             0xa0..=0xa3 => {
                 let b = pop_f64(stack)?;

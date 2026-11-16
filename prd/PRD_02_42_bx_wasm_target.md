@@ -128,7 +128,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 73 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 74 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -144,6 +144,14 @@ bx wasm target
   `&&`/`||`/`!` through if/else locals, ternary with int/float/bool branches
   (string branches still rejected) and `str(bool)`/`print(bool)` via host
   `env.bool_to_str`.
+- **Interpolation and mixed concatenation**: the parser lowers `"x=${e} end"` to
+  string `+`; the emitter stringifies int/float/bool operands (host
+  `int_to_str`/`f64_to_str`/`bool_to_str`) so interpolation and mixed forms like
+  `1 + "x"` match the VM. Float negation (`-x` for floats) maps to `f64.neg`
+  (0x9a) and the interpreter now decodes the f64 unary range 0x99–0x9f.
+- **Record/array writes**: `r.a = v`, `r.a += v`, `xs[i] = v`, `xs[-1] = v` and
+  `xs[i] += v` are supported with the same negative-index normalisation and
+  bounds checks as reads (`+ - * %` for compound).
 - **Loop-condition fast path**: `while`/`for` exit tests over a direct comparison
   emit the inverse comparison opcode, dropping the trailing `eqz` on every
   iteration; the interpreter's timeout check short-circuits when no deadline is

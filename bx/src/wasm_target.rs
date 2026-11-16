@@ -326,13 +326,14 @@ impl Checker {
             Expr::Ident(name) => self.lookup(name),
             Expr::Neg(inner) => {
                 let ty = self.infer(inner)?;
-                if ty != Ty::Int {
-                    return Err(format!(
-                        "wasm target supports arithmetic on ints only, got {}",
-                        ty_name(ty)
-                    ));
+                match ty {
+                    Ty::Int => Ok(Ty::Int),
+                    Ty::Float => Ok(Ty::Float),
+                    other => Err(format!(
+                        "wasm target negates numbers only, got {}",
+                        ty_name(other)
+                    )),
                 }
-                Ok(Ty::Int)
             }
             Expr::Not(inner) => {
                 if self.infer(inner)? == Ty::Bool {
@@ -375,6 +376,15 @@ impl Checker {
             ) => {
                 let lt = self.infer(left)?;
                 let rt = self.infer(right)?;
+                if op == &BinOp::Add && (lt == Ty::Str || rt == Ty::Str) {
+                    let other = if lt == Ty::Str { rt } else { lt };
+                    if matches!(other, Ty::Str | Ty::Int | Ty::Float | Ty::Bool) {
+                        return Ok(Ty::Str);
+                    }
+                }
+                if op == &BinOp::Add && lt == Ty::Str && rt == Ty::Str {
+                    return Ok(Ty::Str);
+                }
                 let comparable = (is_number(lt) && is_number(rt))
                     || (lt == Ty::Str && rt == Ty::Str)
                     || (lt == Ty::Bool && rt == Ty::Bool);
@@ -391,8 +401,11 @@ impl Checker {
             Expr::Bin(op @ (BinOp::Add | BinOp::Sub | BinOp::Mul), left, right) => {
                 let lt = self.infer(left)?;
                 let rt = self.infer(right)?;
-                if op == &BinOp::Add && lt == Ty::Str && rt == Ty::Str {
-                    return Ok(Ty::Str);
+                if op == &BinOp::Add && (lt == Ty::Str || rt == Ty::Str) {
+                    let other = if lt == Ty::Str { rt } else { lt };
+                    if matches!(other, Ty::Str | Ty::Int | Ty::Float | Ty::Bool) {
+                        return Ok(Ty::Str);
+                    }
                 }
                 match (lt, rt) {
                     (Ty::Int, Ty::Int) => Ok(Ty::Int),
@@ -763,18 +776,51 @@ impl Checker {
                 self.declare_let(name, ty)?;
             }
             Stmt::Expr(Expr::Assign(target, value, _), _) => {
-                let Expr::Ident(name) = &**target else {
-                    return Err("wasm target supports assignment to a global name only".to_string());
-                };
-                let expected = self.lookup(name)?;
-                let actual = self.infer(value)?;
-                if expected != actual {
-                    return Err(format!(
-                        "wasm target requires stable types: '{}' is {}, assigned {}",
-                        name,
-                        ty_name(expected),
-                        ty_name(actual)
-                    ));
+                match &**target {
+                    Expr::Ident(name) => {
+                        let expected = self.lookup(name)?;
+                        let actual = self.infer(value)?;
+                        if expected != actual {
+                            return Err(format!(
+                                "wasm target requires stable types: '{}' is {}, assigned {}",
+                                name,
+                                ty_name(expected),
+                                ty_name(actual)
+                            ));
+                        }
+                    }
+                    Expr::Member(object, key, _) => {
+                        let Ty::Obj(shape) = self.infer(object)? else {
+                            return Err(
+                                "wasm target writes record fields only".to_string()
+                            );
+                        };
+                        self.field_index(shape, key)?;
+                        if self.infer(value)? != Ty::Int {
+                            return Err(
+                                "wasm target records hold ints only".to_string()
+                            );
+                        }
+                    }
+                    Expr::Index(array, index, _) => {
+                        if self.infer(array)? != Ty::Arr {
+                            return Err(
+                                "wasm target writes int array elements only".to_string()
+                            );
+                        }
+                        if !is_number(self.infer(index)?) {
+                            return Err("wasm target needs a numeric index".to_string());
+                        }
+                        if self.infer(value)? != Ty::Int {
+                            return Err("wasm target arrays hold ints only".to_string());
+                        }
+                    }
+                    _ => {
+                        return Err(
+                            "wasm target supports assignment to names, record fields and array elements only"
+                                .to_string(),
+                        )
+                    }
                 }
             }
             Stmt::Expr(Expr::Call(callee, args, _), _) => {
@@ -882,6 +928,46 @@ impl Checker {
             }
 
             Stmt::Expr(Expr::Compound(target, _op, value, _), _) => {
+                if !matches!(**target, Expr::Ident(_)) {
+                    match &**target {
+                        Expr::Member(object, key, _) => {
+                            let Ty::Obj(shape) = self.infer(object)? else {
+                                return Err(
+                                    "wasm target writes record fields only".to_string()
+                                );
+                            };
+                            self.field_index(shape, key)?;
+                        }
+                        Expr::Index(array, index, _) => {
+                            if self.infer(array)? != Ty::Arr {
+                                return Err(
+                                    "wasm target writes int array elements only".to_string()
+                                );
+                            }
+                            if !is_number(self.infer(index)?) {
+                                return Err("wasm target needs a numeric index".to_string());
+                            }
+                        }
+                        _ => {
+                            return Err(
+                                "wasm target supports compound assignment to names, record fields and array elements only"
+                                    .to_string(),
+                            )
+                        }
+                    }
+                    if !matches!(
+                        _op,
+                        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Mod
+                    ) {
+                        return Err(
+                            "wasm target compound-assigns with + - * % only".to_string()
+                        );
+                    }
+                    if self.infer(value)? != Ty::Int {
+                        return Err("wasm target records and arrays hold ints".to_string());
+                    }
+                    return Ok(());
+                }
                 let Expr::Ident(name) = &**target else {
                     return Err(
                         "wasm target supports compound assignment to a global only".to_string()
@@ -1690,6 +1776,87 @@ impl<'a> Emitter<'a> {
         Ok(())
     }
 
+    /// Emit the address of an assignable record field / array element.
+    fn emit_target_address(&mut self, target: &Expr) -> Result<Ty, String> {
+        match target {
+            Expr::Member(object, key, _) => {
+                let Ty::Obj(shape) = self.type_of(object)? else {
+                    return Err("wasm target writes record fields only".to_string());
+                };
+                let index = self.checker.field_index(shape, key)?;
+                self.emit_expr(object)?;
+                self.builder
+                    .push(Instr::Const(0x41, WVal::I32((8 * index) as i32)));
+                self.builder.push(Instr::Op(0x6a));
+                Ok(Ty::Int)
+            }
+            Expr::Index(array, index, _) => {
+                let array_tmp = self.builder.add_local(ValType::I32);
+                let index_tmp = self.builder.add_local(ValType::I64);
+                self.emit_expr(array)?;
+                self.builder.push(Instr::Local(0x21, array_tmp));
+                if self.type_of(index)? == Ty::Float {
+                    self.emit_f64(index)?;
+                    self.builder.push(Instr::Op(0xb0));
+                } else {
+                    self.emit_expr(index)?;
+                }
+                self.builder.push(Instr::Local(0x21, index_tmp));
+                // negative indexes count from the end
+                self.builder.push(Instr::Local(0x20, index_tmp));
+                self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                self.builder.push(Instr::Op(0x53));
+                self.builder.push(Instr::Block {
+                    opcode: 0x04,
+                    end: 0,
+                    else_at: 0,
+                    start: 0,
+                });
+                self.labels.push(0x04);
+                self.builder.push(Instr::Local(0x20, index_tmp));
+                self.builder.push(Instr::Local(0x20, array_tmp));
+                self.builder.push(Instr::Mem(0x28, 2, 0));
+                self.builder.push(Instr::Op(0xad));
+                self.builder.push(Instr::Op(0x7c));
+                self.builder.push(Instr::Local(0x21, index_tmp));
+                self.labels.pop();
+                self.builder.push(Instr::Op(0x0b));
+                // bounds check: index < 0 || index >= len
+                self.builder.push(Instr::Local(0x20, index_tmp));
+                self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                self.builder.push(Instr::Op(0x53));
+                self.builder.push(Instr::Local(0x20, index_tmp));
+                self.builder.push(Instr::Local(0x20, array_tmp));
+                self.builder.push(Instr::Mem(0x28, 2, 0));
+                self.builder.push(Instr::Op(0xad));
+                self.builder.push(Instr::Op(0x59));
+                self.builder.push(Instr::Op(0x72));
+                self.builder.push(Instr::Block {
+                    opcode: 0x04,
+                    end: 0,
+                    else_at: 0,
+                    start: 0,
+                });
+                self.labels.push(0x04);
+                self.emit_panic("index out of bounds");
+                self.labels.pop();
+                self.builder.push(Instr::Op(0x0b));
+                self.builder.push(Instr::Local(0x20, array_tmp));
+                self.builder.push(Instr::Local(0x20, index_tmp));
+                self.builder.push(Instr::Op(0xa7));
+                self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                self.builder.push(Instr::Op(0x6c));
+                self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                self.builder.push(Instr::Op(0x6a));
+                self.builder.push(Instr::Op(0x6a));
+                Ok(Ty::Int)
+            }
+            _ => Err(
+                "wasm target supports assignment to names, record fields and array elements only"
+                    .to_string(),
+            ),
+        }
+    }
     /// `arr.pop()` statement: shrink the length when the array is not empty
     /// (bx returns the removed value in an expression; that is not supported yet).
     fn emit_pop(&mut self, name: &str) -> Result<(), String> {
@@ -1782,10 +1949,14 @@ impl<'a> Emitter<'a> {
             },
             Expr::Int(_) => Ok(Ty::Int),
             Expr::Float(_) => Ok(Ty::Float),
-            Expr::Neg(inner) => {
-                self.type_of(inner)?;
-                Ok(Ty::Int)
-            }
+            Expr::Neg(inner) => match self.type_of(inner)? {
+                Ty::Int => Ok(Ty::Int),
+                Ty::Float => Ok(Ty::Float),
+                other => Err(format!(
+                    "wasm target negates numbers only, got {}",
+                    ty_name(other)
+                )),
+            },
             Expr::Bin(op, left, right) => {
                 let lt = self.type_of(left)?;
                 let rt = self.type_of(right)?;
@@ -1805,8 +1976,11 @@ impl<'a> Emitter<'a> {
                     }
                     return Ok(Ty::Bool);
                 }
-                if op == &BinOp::Add && lt == Ty::Str && rt == Ty::Str {
-                    return Ok(Ty::Str);
+                if op == &BinOp::Add && (lt == Ty::Str || rt == Ty::Str) {
+                    let other = if lt == Ty::Str { rt } else { lt };
+                    if matches!(other, Ty::Str | Ty::Int | Ty::Float | Ty::Bool) {
+                        return Ok(Ty::Str);
+                    }
                 }
                 if !is_number(lt) || !is_number(rt) {
                     return Err(format!(
@@ -2256,6 +2430,45 @@ impl<'a> Emitter<'a> {
     }
 
     /// Push an integer string address/length pair for a string expression.
+    /// Emit an expression as a `(ptr, len)` string pair; numbers and bools are
+    /// stringified first (used by interpolation and mixed `+` concatenation).
+    fn emit_str_operand(&mut self, expr: &Expr) -> Result<(), String> {
+        match self.type_of(expr)? {
+            Ty::Str => self.emit_str(expr),
+            Ty::Int => {
+                self.emit_expr(expr)?;
+                self.builder.push(Instr::Call(INT_TO_STR));
+                self.push_block_as_pair();
+                Ok(())
+            }
+            Ty::Float => {
+                self.emit_f64(expr)?;
+                self.builder.push(Instr::Call(F64_TO_STR));
+                self.push_block_as_pair();
+                Ok(())
+            }
+            Ty::Bool => {
+                self.emit_expr(expr)?;
+                self.builder.push(Instr::Call(BOOL_TO_STR));
+                self.push_block_as_pair();
+                Ok(())
+            }
+            other => Err(format!(
+                "wasm target cannot use {} in a string concatenation",
+                ty_name(other)
+            )),
+        }
+    }
+
+    /// Turn a `[len][utf8]` block pointer on the stack into a `(ptr, len)` pair.
+    fn push_block_as_pair(&mut self) {
+        self.builder.push(Instr::Local(0x21, ARG_TMP));
+        self.builder.push(Instr::Local(0x20, ARG_TMP));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, ARG_TMP));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+    }
     fn emit_str(&mut self, expr: &Expr) -> Result<(), String> {
         if let Some(text) = string_value(expr) {
             let offset = self.builder.add_data(text.as_bytes());
@@ -2283,10 +2496,10 @@ impl<'a> Emitter<'a> {
                 Ok(())
             }
             Expr::Bin(BinOp::Add, left, right) => {
-                self.emit_str(left)?;
+                self.emit_str_operand(left)?;
                 self.builder.push(Instr::Local(0x21, self.temp(LEN_A)));
                 self.builder.push(Instr::Local(0x21, self.temp(PTR_A)));
-                self.emit_str(right)?;
+                self.emit_str_operand(right)?;
                 self.builder.push(Instr::Local(0x21, self.temp(LEN_B)));
                 self.builder.push(Instr::Local(0x21, self.temp(PTR_B)));
                 self.builder.push(Instr::Local(0x20, self.temp(LEN_A)));
@@ -2310,16 +2523,17 @@ impl<'a> Emitter<'a> {
                 self.builder.push(Instr::Op(0x6a));
                 Ok(())
             }
-            other => {
-                if self.type_of(other)? == Ty::Str {
+            other => match self.type_of(other)? {
+                Ty::Str => {
                     self.emit_expr(other)?;
-                    return Ok(());
+                    Ok(())
                 }
-                Err(format!(
+                Ty::Int | Ty::Float | Ty::Bool => self.emit_str_operand(other),
+                _ => Err(format!(
                     "wasm target does not support this string expression yet: {}",
                     expr_kind(other)
-                ))
-            }
+                )),
+            },
         }
     }
 
@@ -2456,13 +2670,18 @@ impl<'a> Emitter<'a> {
                 Ok(ty)
             }
             Expr::Neg(inner) => {
+                if self.type_of(inner)? == Ty::Float {
+                    self.emit_f64(inner)?;
+                    self.builder.push(Instr::Op(0x9a));
+                    return Ok(Ty::Float);
+                }
                 self.builder.push(Instr::Const(0x42, WVal::I64(0)));
                 self.emit_expr(inner)?;
                 self.builder.push(Instr::Op(0x7d));
                 Ok(Ty::Int)
             }
             Expr::Bin(BinOp::Add, left, right) => {
-                if self.type_of(left)? == Ty::Str {
+                if self.type_of(left)? == Ty::Str || self.type_of(right)? == Ty::Str {
                     self.emit_str(expr)?;
                     return Ok(Ty::Str);
                 }
@@ -2988,6 +3207,15 @@ impl<'a> Emitter<'a> {
                 Ok(())
             }
             Stmt::Expr(Expr::Assign(target, value, _), _) => {
+                if !matches!(**target, Expr::Ident(_)) {
+                    self.emit_target_address(target)?;
+                    let ty = self.emit_expr(value)?;
+                    if ty != Ty::Int {
+                        return Err("wasm target records and arrays hold ints".to_string());
+                    }
+                    self.builder.push(Instr::Mem(0x37, 3, 0));
+                    return Ok(());
+                }
                 let Expr::Ident(name) = &**target else {
                     return Err("wasm target supports assignment to a global name only".to_string());
                 };
@@ -3193,6 +3421,33 @@ impl<'a> Emitter<'a> {
                 Ok(())
             }
             Stmt::Expr(Expr::Compound(target, op, value, _), _) => {
+                if !matches!(**target, Expr::Ident(_)) {
+                    let address = self.builder.add_local(ValType::I32);
+                    self.emit_target_address(target)?;
+                    self.builder.push(Instr::Local(0x21, address));
+                    self.builder.push(Instr::Local(0x20, address));
+                    self.builder.push(Instr::Mem(0x29, 3, 0));
+                    let ty = self.emit_expr(value)?;
+                    if ty != Ty::Int {
+                        return Err("wasm target records and arrays hold ints".to_string());
+                    }
+                    let opcode = match op {
+                        BinOp::Add => 0x7c,
+                        BinOp::Sub => 0x7d,
+                        BinOp::Mul => 0x7e,
+                        BinOp::Mod => 0x81,
+                        _ => {
+                            return Err("wasm target compound-assigns with + - * % only".to_string())
+                        }
+                    };
+                    self.builder.push(Instr::Op(opcode));
+                    let result = self.builder.add_local(ValType::I64);
+                    self.builder.push(Instr::Local(0x21, result));
+                    self.builder.push(Instr::Local(0x20, address));
+                    self.builder.push(Instr::Local(0x20, result));
+                    self.builder.push(Instr::Mem(0x37, 3, 0));
+                    return Ok(());
+                }
                 let Expr::Ident(name) = &**target else {
                     return Err(
                         "wasm target supports compound assignment to a global only".to_string()
@@ -4400,6 +4655,24 @@ mod tests {
         let (numbers, _) = run_with_argv(&source, &[]);
         let _ = std::fs::remove_file(&blocker);
         assert_eq!(numbers, vec![-1]);
+    }
+
+    #[test]
+    fn interpolation_and_assignments_work() {
+        let (numbers, strings) = run_with_argv(
+            "let r = {a: 1, b: 2}\nr.a = 5\nr.b += 10\nprint(r.a + r.b)\nlet xs = [1, 2, 3]\nxs[0] = 9\nxs[-1] = 7\nxs[1] += 5\nprint(xs[0] + xs[1] + xs[2])\nlet s = \"v\"\nprint(\"x=${s} end\")\nprint(\"n=${1 + 2}\")\nprint(1 + \"x\")\nprint(-2.5)",
+            &[],
+        );
+        assert_eq!(numbers, vec![17, 23]);
+        assert_eq!(
+            strings,
+            vec![
+                "x=v end".to_string(),
+                "n=3".to_string(),
+                "1x".to_string(),
+                "-2.5".to_string(),
+            ]
+        );
     }
 
     #[test]

@@ -183,6 +183,14 @@ test("wasm IO failures are explicit", fn() {
   let fullRun = exec([bin, "run", dir + "/wasm-mapfull.wasm"])
   assert(fullRun.code == 1 && fullRun.err.contains("map is full"), "got " + fullRun.code + " " + json(fullRun.err))
 })
+write(dir + "/wasm-interp.bxs", 'let s = "v"\nprint("x=\${s} end")\nprint(1 + "x")\nprint(-2.5)\nlet r = {a: 1}\nr.a = 7\nprint(r.a)\n')
+test("wasm interpolation and assignments", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-interp.bxs", "-o", dir + "/wasm-interp.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-interp.wasm"])
+  let vm = exec([bin, "run", dir + "/wasm-interp.bxs"])
+  assert(ran.code == 0 && ran.out == vm.out && ran.out.trim() == "x=v end\n1x\n-2.5\n7", "wasm=" + json(ran.out) + " vm=" + json(vm.out))
+})
 test("wasm negative and string indexing", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-edge3.bxs", "-o", dir + "/wasm-edge3.wasm"])
   assert(built.code == 0, "build failed: " + built.err)
