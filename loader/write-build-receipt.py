@@ -174,6 +174,32 @@ def authenticode_layout(path: Path, expected_version: str) -> dict[str, int | bo
     }
 
 
+def rust_com_digests() -> dict[str, dict[str, object]]:
+    """Per-cell Rust-launcher artifacts (loader/dist/rust): the v0.2.27
+    single-file assets. Every present artifact must carry the container table
+    (MINICOM1) and match the manifest pack-rust-all.sh wrote beside it."""
+    rust_dir = DIST / "rust"
+    manifest_path = rust_dir / "manifest.json"
+    if not manifest_path.is_file():
+        return {}
+    manifest = json.loads(manifest_path.read_text())
+    out: dict[str, dict[str, object]] = {}
+    for name, identity in sorted(manifest.get("artifacts", {}).items()):
+        path = rust_dir / name
+        if not path.is_file():
+            raise SystemExit(f"manifest names a missing artifact: {name}")
+        raw = path.read_bytes()
+        if raw.rfind(b"MINICOM1") < 0:
+            raise SystemExit(f"{name}: no MINICOM1 container")
+        if identity.get("sha256") != sha256(path) or identity.get("bytes") != len(raw):
+            raise SystemExit(f"{name}: manifest identity mismatch")
+        out[name] = {
+            "sha256": identity["sha256"],
+            "bytes": len(raw),
+        }
+    return out
+
+
 def main() -> None:
     com = DIST / "minicon.com"
     if not com.is_file():
@@ -208,6 +234,7 @@ def main() -> None:
             "cosmocc": cmd("cosmocc", "--version"),
         },
         "payloads": payload_digests(version),
+        "rust_coms": rust_com_digests(),
     }
     empty = [k for k, v in receipt["tools"].items() if not v]
     if empty:
