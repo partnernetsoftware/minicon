@@ -122,6 +122,12 @@ bx wasm target
   suite and therefore by the packed six-cell CI lane.
 - `bx check <module> --json` reports the decoded import/export names and defined
   function count, so agents can introspect a module without a JS toolchain.
+- **Browser demo**: `bx build --wasm --html script.bxs -o demo.html` writes a
+  self-contained page (module embedded as base64) plus a sibling `demo.js`. The
+  glue implements the same import namespaces as the native host (`env.print_*`,
+  `bx.argc/arg`; file/process imports are stubbed out) and prints into `<pre>`
+  in a browser or stdout under node. The suite and verifier run `node demo.js`
+  when node is available and compare against the native module output.
 - **Performance** (`bash bx/scripts/bench.sh --wasm`, wall clock, min of 3, this
   machine): fib 108 ms (VM 131 ms), 1e6-iteration loop 205 ms (VM 358 ms), 200k
   helper calls 128 ms (VM 184 ms) — the wasm interpreter is now faster than the
@@ -148,5 +154,5 @@ bx wasm target
 | M2 | data model: strings, arrays, objects in linear memory | `[-]` (strings incl. runtime concat, int arrays, fixed-layout records, in-module bump heap done; dynamic keys, mixed-type fields and growable arrays next) |
 | M3 | functions, closures, control flow compiled to wasm | `[-]` (control flow, user functions/recursion and float values done; closures next) |
 | M4 | builtins + native process ABI (`bx.*`), default target flip | `[-]` (argv, file and process imports done; default target flip next) |
-| M5 | `web.*` + `webgl.*` ABI, software backend, browser demo | `[_]` |
+| M5 | `web.*` + `webgl.*` ABI, software backend, browser demo | `[-]` (self-contained browser demo generated from any script; `web.*`/`webgl.*` namespaces next) |
 | M6 | remove `.bxb` + legacy code paths, six-cell wasm evidence | `[_]` |

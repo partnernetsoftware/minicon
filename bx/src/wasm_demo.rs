@@ -1,0 +1,193 @@
+//! Self-contained browser demo generator for the wasm target.
+//!
+//! `bx build --wasm --html script.bxs` writes `<name>.html` plus a sibling
+//! `<name>.js`. The module is embedded as base64, so the HTML works when opened
+//! directly from disk, and the same JavaScript runs under node for verification.
+
+use crate::wasm_target;
+
+const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+fn base64_encode(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = *chunk.get(1).unwrap_or(&0) as u32;
+        let b2 = *chunk.get(2).unwrap_or(&0) as u32;
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        out.push(B64[(triple >> 18) as usize & 63] as char);
+        out.push(B64[(triple >> 12) as usize & 63] as char);
+        out.push(if chunk.len() > 1 {
+            B64[(triple >> 6) as usize & 63] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            B64[triple as usize & 63] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
+
+/// `(module_bytes, js, html)` for one script, ready to write to disk.
+pub fn build_demo(source: &str) -> Result<(Vec<u8>, String, String), String> {
+    let module = wasm_target::compile_to_wasm(source)?;
+    let encoded = base64_encode(&module);
+    let js = GLUE.replace("__WASM_BASE64__", &encoded);
+    let html = HTML.replace("__WASM_JS__", &js);
+    Ok((module, js, html))
+}
+
+const GLUE: &str = r#""use strict";
+const WASM_BASE64 = "__WASM_BASE64__";
+function decodeBase64(text) {
+  if (typeof Buffer !== "undefined") {
+    return new Uint8Array(Buffer.from(text, "base64"));
+  }
+  const raw = atob(text);
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  return bytes;
+}
+function emit(text) {
+  if (typeof process !== "undefined" && process.stdout) {
+    process.stdout.write(text + "\n");
+    return;
+  }
+  if (typeof document !== "undefined") {
+    const out = document.getElementById("out");
+    if (out) out.textContent += text + "\n";
+    return;
+  }
+  console.log(text);
+}
+function formatFloat(value) {
+  if (!Number.isFinite(value)) return "null";
+  return String(value);
+}
+let instance = null;
+let nextArg = 65536;
+const queryArgs = (() => {
+  if (typeof process !== "undefined" && Array.isArray(process.argv)) {
+    return process.argv.slice(2);
+  }
+  if (typeof location !== "undefined" && location.search) {
+    return Array.from(new URLSearchParams(location.search).getAll("arg"));
+  }
+  return [];
+})();
+const imports = {
+  env: {
+    print_i64: (value) => { emit(value.toString()); return value; },
+    print_utf8: (ptr, len) => {
+      const bytes = new Uint8Array(instance.exports.memory.buffer, ptr, len);
+      emit(new TextDecoder("utf-8").decode(bytes));
+    },
+    print_f64: (value) => { emit(formatFloat(value)); },
+    fmod: (a, b) => a % b,
+  },
+  bx: {
+    argc: () => queryArgs.length,
+    arg: (index) => {
+      if (index < 0 || index >= queryArgs.length) return 0;
+      const bytes = new TextEncoder().encode(queryArgs[index]);
+      const start = nextArg;
+      const view = new DataView(instance.exports.memory.buffer);
+      view.setUint32(start, bytes.length, true);
+      new Uint8Array(instance.exports.memory.buffer, start + 4, bytes.length).set(bytes);
+      nextArg = start + 4 + bytes.length;
+      return start;
+    },
+    read_file: () => 0,
+    write_file: () => -1,
+    run: () => -1,
+    capture: () => 0,
+  },
+};
+async function main() {
+  const bytes = decodeBase64(WASM_BASE64);
+  const result = await WebAssembly.instantiate(bytes, imports);
+  instance = result.instance;
+  instance.exports._start();
+}
+main().catch((error) => {
+  emit("wasm demo failed: " + (error && error.message ? error.message : error));
+  if (typeof process !== "undefined") process.exitCode = 1;
+});
+"#;
+
+const HTML: &str = r#"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>bx wasm demo</title>
+  <style>
+    body { font-family: ui-monospace, monospace; margin: 2rem; background: #111; color: #eee; }
+    pre { background: #1c1c1c; padding: 1rem; border-radius: 6px; }
+    .hint { color: #888; }
+  </style>
+</head>
+<body>
+  <h1>bx wasm demo</h1>
+  <p class="hint">stdout of the compiled script; query args are available as <code>arg(i)</code>.</p>
+  <pre id="out"></pre>
+  <script>
+__WASM_JS__
+  </script>
+</body>
+</html>
+"#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn base64_decode(text: &str) -> Vec<u8> {
+        let mut table = [0u8; 256];
+        for (index, byte) in B64.iter().enumerate() {
+            table[*byte as usize] = index as u8;
+        }
+        let mut bytes = Vec::new();
+        let mut buffer = 0u32;
+        let mut bits = 0u32;
+        for byte in text.bytes() {
+            if byte == b'=' {
+                break;
+            }
+            let value = table[byte as usize] as u32;
+            buffer = (buffer << 6) | value;
+            bits += 6;
+            if bits >= 8 {
+                bits -= 8;
+                bytes.push((buffer >> bits) as u8);
+            }
+        }
+        bytes
+    }
+
+    #[test]
+    fn base64_round_trips() {
+        for sample in [b"".as_slice(), b"a", b"ab", b"abc", b"\0asm\x01\0\0\0"] {
+            assert_eq!(base64_decode(&base64_encode(sample)), sample);
+        }
+    }
+
+    #[test]
+    fn demo_embeds_a_valid_module() {
+        let source = "print(6 * 7)\nprint(\"hi\")";
+        let (module, js, html) = build_demo(source).expect("demo");
+        assert_eq!(&module[0..4], b"\0asm");
+        assert!(html.contains("WebAssembly.instantiate"));
+        assert!(html.contains("print_utf8"));
+        assert!(js.contains("decodeBase64"));
+        // The embedded text decodes back to the exact module bytes.
+        let start = js.find("__WASM_BASE64__").is_none();
+        assert!(start);
+        let marker = "const WASM_BASE64 = \"";
+        let body = &js[js.find(marker).expect("marker") + marker.len()..];
+        let b64 = &body[..body.find('"').expect("quote")];
+        assert_eq!(base64_decode(b64), module);
+    }
+}

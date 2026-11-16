@@ -7,6 +7,7 @@ mod parser;
 mod value;
 mod vm;
 mod wasm;
+mod wasm_demo;
 mod wasm_target;
 
 use std::fs;
@@ -86,7 +87,8 @@ fn print_help() {
 
 usage
   bx run [--max-steps N] [--timeout MS] <script.bxs|.bxb|.wasm> [args...]
-  bx build --wasm <script.bxs> [-o out.wasm]      compile the numeric subset to WebAssembly
+  bx build --wasm <script.bxs> [-o out.wasm]      compile to WebAssembly
+  bx build --wasm --html <script> [-o demo.html]  self-contained browser demo (module base64 + glue)
   bx eval [--max-steps N] [--timeout MS] "<source>"          evaluate and print
   bx build <script.bxs> [-o out.bxb]         compile source to bytecode
   bx dis <script.bxs|out.bxb>                disassemble bytecode
@@ -313,11 +315,16 @@ fn cmd_build(args: Vec<String>) -> i32 {
     let mut input: Option<String> = None;
     let mut output: Option<String> = None;
     let mut wasm = false;
+    let mut html = false;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
             "--wasm" => {
                 wasm = true;
+                i += 1;
+            }
+            "--html" => {
+                html = true;
                 i += 1;
             }
             "-o" | "--out" => {
@@ -352,6 +359,40 @@ fn cmd_build(args: Vec<String>) -> i32 {
             return 1;
         }
     };
+    if wasm && html {
+        let (module, js, page) = match wasm_demo::build_demo(&src) {
+            Ok(parts) => parts,
+            Err(e) => {
+                eprintln!("bx: {}", e);
+                return 1;
+            }
+        };
+        let out = output.unwrap_or_else(|| {
+            Path::new(&input)
+                .with_extension("html")
+                .to_string_lossy()
+                .into_owned()
+        });
+        if let Some(parent) = Path::new(&out).parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let js_path = Path::new(&out).with_extension("js");
+        if let Err(e) = fs::write(&out, &page) {
+            eprintln!("bx build: cannot write '{}': {}", out, e);
+            return 1;
+        }
+        if let Err(e) = fs::write(&js_path, &js) {
+            eprintln!("bx build: cannot write '{}': {}", js_path.display(), e);
+            return 1;
+        }
+        eprintln!(
+            "bx: wrote {} ({} bytes module, browser demo) and {}",
+            out,
+            module.len(),
+            js_path.display()
+        );
+        return 0;
+    }
     if wasm {
         let bytes = match wasm_target::compile_to_wasm(&src) {
             Ok(bytes) => bytes,

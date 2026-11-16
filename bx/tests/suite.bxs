@@ -624,6 +624,18 @@ if (wasmRich.code == 0 && wasmRichRun.code == 0 && wasmRichRun.out == wasmRichVm
   casesFail += 1
   failures.push("wasm rich function locals\n    wasm=" + json(wasmRichRun.out) + " vm=" + json(wasmRichVm.out))
 }
+let nodeProbe = exec(["node", "--version"])
+if (nodeProbe.code == 0) {
+  write(artDir + "/wasm-demo.bxs", 'print(6 * 7)\nprint("hi")\n')
+  let demo = exec([BX, "build", "--wasm", "--html", artDir + "/wasm-demo.bxs", "-o", artDir + "/wasm-demo.html"])
+  let demoRun = exec(["node", artDir + "/wasm-demo.js"])
+  if (demo.code == 0 && demoRun.code == 0 && demoRun.out.trim() == "42\nhi") {
+    casesOk += 1
+  } else {
+    casesFail += 1
+    failures.push("wasm browser demo runs under node\n    build=" + demo.code + " out=" + json(demoRun.out) + " err=" + json(demoRun.err))
+  }
+}
 write(artDir + "/wasm-bad.bxs", 'let f = fn() { return 1 }\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1) {
