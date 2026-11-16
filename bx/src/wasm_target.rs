@@ -76,6 +76,18 @@ fn expr_kind(expr: &Expr) -> &'static str {
     }
 }
 
+/// Statically known string value: literals and `+` of string values. Anything
+/// that needs runtime allocation is rejected until the heap lands (M2.2).
+fn string_value(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Str(text) => Some(text.clone()),
+        Expr::Bin(BinOp::Add, left, right) => {
+            Some(format!("{}{}", string_value(left)?, string_value(right)?))
+        }
+        _ => None,
+    }
+}
+
 struct Emitter<'a> {
     names: &'a [String],
     builder: &'a mut Builder,
@@ -153,11 +165,23 @@ impl<'a> Emitter<'a> {
                     ));
                 }
                 if args.len() != 1 {
-                    return Err("wasm target supports print(<int>) with one argument".to_string());
+                    return Err(
+                        "wasm target supports print(<int>) or print(<string>) with one argument"
+                            .to_string(),
+                    );
                 }
-                self.emit_expr(&args[0])?;
-                self.builder.push(Instr::Call(0));
-                self.builder.push(Instr::Op(0x1a));
+                if let Some(text) = string_value(&args[0]) {
+                    let offset = self.builder.add_data(text.as_bytes());
+                    self.builder
+                        .push(Instr::Const(0x41, WVal::I32(offset as i32)));
+                    self.builder
+                        .push(Instr::Const(0x41, WVal::I32(text.len() as i32)));
+                    self.builder.push(Instr::Call(1));
+                } else {
+                    self.emit_expr(&args[0])?;
+                    self.builder.push(Instr::Call(0));
+                    self.builder.push(Instr::Op(0x1a));
+                }
             }
             Stmt::Expr(expr, _) => {
                 self.emit_expr(expr)?;
@@ -182,8 +206,11 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
 
     let mut builder = Builder::new();
     let print_ty = builder.add_type(vec![ValType::I64], vec![ValType::I64]);
+    let print_utf8_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![]);
     let start_ty = builder.add_type(vec![], vec![]);
     builder.import_func("env", PRINT_IMPORT, print_ty);
+    builder.import_func("env", "print_utf8", print_utf8_ty);
+    builder.enable_memory(1);
     for _ in &names {
         builder.add_global(ValType::I64, true, WVal::I64(0));
     }
@@ -205,12 +232,14 @@ pub fn validate(bytes: &[u8]) -> Result<(), String> {
     crate::wasm::validate(bytes).map(|_| ())
 }
 
-/// Instantiate and run `_start`, forwarding every `env.print_i64` call.
-pub fn execute<F>(bytes: &[u8], sink: F) -> Result<(), String>
+/// Instantiate and run `_start`, forwarding `env.print_i64` and
+/// `env.print_utf8` calls to their sinks.
+pub fn execute<F, G>(bytes: &[u8], on_i64: F, on_str: G) -> Result<(), String>
 where
     F: FnMut(i64),
+    G: FnMut(&str),
 {
-    crate::wasm::run_start(bytes, sink)
+    crate::wasm::run_start(bytes, on_i64, on_str)
 }
 
 #[cfg(test)]
@@ -222,9 +251,13 @@ mod tests {
         let bytes = compile_to_wasm(source).expect("compile");
         let seen = Arc::new(Mutex::new(Vec::new()));
         let sink = seen.clone();
-        execute(&bytes, move |value| {
-            sink.lock().expect("lock").push(value);
-        })
+        execute(
+            &bytes,
+            move |value| {
+                sink.lock().expect("lock").push(value);
+            },
+            |_text| {},
+        )
         .expect("execute");
         let out = seen.lock().expect("lock").clone();
         out
@@ -237,6 +270,23 @@ mod tests {
     }
 
     #[test]
+    fn strings_print_through_memory() {
+        let bytes = compile_to_wasm("print(\"ab\" + \"cd\")").expect("compile");
+        validate(&bytes).expect("validate");
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let sink = seen.clone();
+        execute(
+            &bytes,
+            |_value| {},
+            move |text| {
+                sink.lock().expect("lock").push(text.to_string());
+            },
+        )
+        .expect("execute");
+        assert_eq!(*seen.lock().expect("lock"), vec!["abcd".to_string()]);
+    }
+
+    #[test]
     fn module_is_standard_wasm() {
         let bytes = compile_to_wasm("print(7)").expect("compile");
         assert_eq!(&bytes[0..4], b"\0asm");
@@ -245,7 +295,7 @@ mod tests {
 
     #[test]
     fn unsupported_constructs_are_rejected() {
-        assert!(compile_to_wasm("print(\"hi\")").is_err());
+        assert!(compile_to_wasm("let s = \"x\"\nprint(s)").is_err());
         assert!(compile_to_wasm("fn f() { return 1 }").is_err());
         assert!(compile_to_wasm("print(unknown)").is_err());
     }

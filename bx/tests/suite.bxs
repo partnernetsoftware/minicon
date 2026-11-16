@@ -500,7 +500,16 @@ if (wasmCheck.code == 0 && wasmCheck.out.contains("wasm")) {
   casesFail += 1
   failures.push("wasm check validates a module\n    out=" + json(wasmCheck.out))
 }
-write(artDir + "/wasm-bad.bxs", 'print("text")\n')
+write(artDir + "/wasm-str.bxs", 'print("hello " + "wasm")\nprint(6 * 7)\n')
+let wasmStr = exec([BX, "build", "--wasm", artDir + "/wasm-str.bxs", "-o", artDir + "/wasm-str.wasm"])
+let wasmStrRun = exec([BX, "run", artDir + "/wasm-str.wasm"])
+if (wasmStr.code == 0 && wasmStrRun.code == 0 && wasmStrRun.out.trim() == "hello wasm\n42") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm strings through linear memory\n    build=" + wasmStr.code + " out=" + json(wasmStrRun.out) + " err=" + json(wasmStrRun.err))
+}
+write(artDir + "/wasm-bad.bxs", 'fn unsupported() { return 1 }\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1) {
   casesOk += 1

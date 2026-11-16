@@ -34,9 +34,10 @@ bx wasm target
 ├── runtime (standard module execution, own code)
 │   ├── [v] decode + validate (type/import/function/global/export/code)
 │   ├── [v] interpreter: consts, globals, locals, calls, control flow, numeric ops
-│   └── [-] memory/table/data sections, conversions, float arithmetic
+│   ├── [v] linear memory + active data segments + exported `memory`
+│   └── [-] table sections, conversions, float arithmetic
 ├── host ABI (web-shaped)
-│   ├── [v] prototype import: `env.print_i64`
+│   ├── [v] prototype imports: `env.print_i64`, `env.print_utf8(ptr,len)`
 │   └── [-] `web.console.*`, `web.performance.*`, `bx.*` native process, `webgl.*`
 └── delivery
     ├── [v] `bx build --wasm`, `bx run <file.wasm>`, `bx check <file.wasm>`
@@ -46,7 +47,8 @@ bx wasm target
 ## Host ABI (v0 draft)
 
 - **Namespaces**
-  - `env.print_i64(i64) -> i64` — prototype output import (echoes the value).
+  - `env.print_i64(i64) -> i64` — prototype integer output import (echoes the value).
+  - `env.print_utf8(ptr: i32, len: i32)` — UTF-8 out of the linear memory.
   - `web.*` — console / performance / timers first, `fetch` later; names follow
     the browser globals so browser and native hosts share one module ABI.
   - `bx.*` — native extensions (process spawning, files, argv). Explicitly
@@ -69,7 +71,10 @@ bx wasm target
   part of `bx/scripts/test.sh`.
 - `bx build --wasm` output starts with `\0asm` and is instantiated by **node v24**
   (an independent engine), which proves the bytes are standard WebAssembly rather
-  than a bx-private format.
+  than a bx-private format. String scripts are executed by node too, reading the
+  exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
+- 23 in-tree unit tests cover encoder round-trip, memory/data decoding, UTF-8
+  imports, operator precedence and rejection of unsupported constructs.
 - CLI round-trip (`build --wasm` → `run` → `check`) is covered by the self-hosted
   suite and therefore by the packed six-cell CI lane.
 
@@ -87,7 +92,7 @@ bx wasm target
 |---|---|---|
 | M0 | this spec + decision record | `[v]` |
 | M1 | numeric vertical slice: emit → run → `check`, node cross-check | `[v]` |
-| M2 | data model: strings, arrays, objects, heap in linear memory | `[-]` |
+| M2 | data model: strings, arrays, objects in linear memory | `[-]` (strings done: literals + compile-time `+`, `env.print_utf8`, exported memory; heap/arrays next) |
 | M3 | functions, closures, control flow compiled to wasm | `[_]` |
 | M4 | builtins + native process ABI (`bx.*`), default target flip | `[_]` |
 | M5 | `web.*` + `webgl.*` ABI, software backend, browser demo | `[_]` |

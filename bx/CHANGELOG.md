@@ -29,7 +29,7 @@
 **实验性 wasm 目标**
 
 - `bx build --wasm` 输出标准 WebAssembly 模块，`bx run *.wasm` 用自研解释器执行；零第三方 wasm 依赖。
-- 当前覆盖数值子集（`let`/赋值/`+ - *`/`print(<int>)`），host ABI 见 PRD 42。
+- 覆盖数值子集与字符串（字面量、编译期 `+`）——字符串在线性内存数据段里，经 `env.print_utf8` 输出；host ABI 见 PRD 42。
 
 **打包与测试**
 

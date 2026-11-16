@@ -120,6 +120,13 @@ test("wasm check validates", fn() {
   let out = exec([bin, "check", dir + "/wasm-num.wasm"])
   assert(out.code == 0, "got " + out.err)
 })
+write(dir + "/wasm-str.bxs", 'print("hello " + "wasm")\nprint(6 * 7)\n')
+test("wasm strings use linear memory", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-str.bxs", "-o", dir + "/wasm-str.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-str.wasm"])
+  assert(ran.code == 0 && ran.out.trim() == "hello wasm\n42", "got " + ran.out + " " + ran.err)
+})
 test("language smoke (closures, pairs, interpolation)", fn() {
   let out = exec([bin, "eval", 'fn make() { let n = 0; return fn() { n = n + 1; return n } } let c = make(); c(); c(); let s = ""; for k, v in {a: 1} { s = k + str(v) }; s + " " + str(c())'])
   assert(out.code == 0 && out.out.trim() == "a1 3", "got " + out.out + " " + out.err)

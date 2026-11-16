@@ -218,7 +218,11 @@ fn cmd_run(args: Vec<String>) -> i32 {
                 return 1;
             }
         };
-        return match wasm_target::execute(&bytes, |value| println!("{}", value)) {
+        return match wasm_target::execute(
+            &bytes,
+            |value| println!("{}", value),
+            |text| println!("{}", text),
+        ) {
             Ok(()) => 0,
             Err(e) => {
                 eprintln!("bx: {}", e);

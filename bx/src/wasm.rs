@@ -125,12 +125,21 @@ pub struct Func {
 }
 
 #[derive(Clone, Debug)]
+pub struct DataSegment {
+    pub offset: u32,
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
 pub struct Module {
     pub types: Vec<FuncType>,
     pub imports: Vec<Import>,
     pub funcs: Vec<Func>,
     pub globals: Vec<GlobalDef>,
     pub exports: Vec<(String, u32)>,
+    pub memory_min_pages: u32,
+    pub exports_memory: bool,
+    pub data: Vec<DataSegment>,
 }
 
 // ---------------------------------------------------------------------------
@@ -214,6 +223,10 @@ pub struct Builder {
     globals: Vec<GlobalDef>,
     body: Vec<Instr>,
     body_type: Option<u32>,
+    memory_min_pages: u32,
+    export_memory: bool,
+    data: Vec<DataSegment>,
+    next_data_offset: u32,
 }
 
 impl Builder {
@@ -224,7 +237,30 @@ impl Builder {
             globals: Vec::new(),
             body: Vec::new(),
             body_type: None,
+            memory_min_pages: 0,
+            export_memory: false,
+            data: Vec::new(),
+            next_data_offset: 1024,
         }
+    }
+
+    /// Declare one linear memory of `pages` 64 KiB pages and export it.
+    pub fn enable_memory(&mut self, pages: u32) {
+        self.memory_min_pages = pages.max(1);
+        self.export_memory = true;
+    }
+
+    /// Append a byte string to the data section and return its address in
+    /// linear memory. Addresses start at 1024 so the zero page stays untouchable.
+    pub fn add_data(&mut self, bytes: &[u8]) -> u32 {
+        let offset = self.next_data_offset;
+        self.data.push(DataSegment {
+            offset,
+            bytes: bytes.to_vec(),
+        });
+        self.next_data_offset += bytes.len() as u32;
+        self.next_data_offset = (self.next_data_offset + 7) & !7;
+        offset
     }
 
     pub fn add_type(&mut self, params: Vec<ValType>, results: Vec<ValType>) -> u32 {
@@ -291,6 +327,15 @@ impl Builder {
         uleb(&mut section, body_type as u64);
         push_section(&mut out, 3, &section);
 
+        // memory section (id 5): one memory, min pages only
+        if self.memory_min_pages > 0 {
+            let mut section = Vec::new();
+            uleb(&mut section, 1);
+            section.push(0x00);
+            uleb(&mut section, self.memory_min_pages as u64);
+            push_section(&mut out, 5, &section);
+        }
+
         let mut section = Vec::new();
         uleb(&mut section, self.globals.len() as u64);
         for global in &self.globals {
@@ -319,11 +364,17 @@ impl Builder {
         push_section(&mut out, 6, &section);
 
         let mut section = Vec::new();
-        uleb(&mut section, 1);
+        uleb(&mut section, if self.export_memory { 2 } else { 1 });
         uleb(&mut section, export_name.len() as u64);
         section.extend_from_slice(export_name.as_bytes());
         section.push(0x00);
         uleb(&mut section, self.imports.len() as u64);
+        if self.export_memory {
+            uleb(&mut section, 6);
+            section.extend_from_slice(b"memory");
+            section.push(0x02);
+            uleb(&mut section, 0);
+        }
         push_section(&mut out, 7, &section);
 
         let mut body = Vec::new();
@@ -337,6 +388,21 @@ impl Builder {
         uleb(&mut section, body.len() as u64);
         section.extend_from_slice(&body);
         push_section(&mut out, 10, &section);
+
+        // data section (id 11): active segments into memory 0
+        if !self.data.is_empty() {
+            let mut section = Vec::new();
+            uleb(&mut section, self.data.len() as u64);
+            for segment in &self.data {
+                section.push(0x00);
+                section.push(0x41);
+                sleb(&mut section, segment.offset as i64);
+                section.push(0x0b);
+                uleb(&mut section, segment.bytes.len() as u64);
+                section.extend_from_slice(&segment.bytes);
+            }
+            push_section(&mut out, 11, &section);
+        }
 
         Ok(out)
     }
@@ -419,6 +485,16 @@ impl<'a> Reader<'a> {
             .ok_or_else(|| "wasm name truncated".to_string())?;
         self.pos = end;
         String::from_utf8(slice.to_vec()).map_err(|_| "wasm name is not UTF-8".to_string())
+    }
+
+    fn bytes(&mut self, len: usize) -> Result<Vec<u8>, String> {
+        let end = self.pos.checked_add(len).ok_or("wasm bytes overflow")?;
+        let slice = self
+            .bytes
+            .get(self.pos..end)
+            .ok_or_else(|| "wasm bytes truncated".to_string())?;
+        self.pos = end;
+        Ok(slice.to_vec())
     }
 
     fn sub(&mut self, len: usize) -> Result<Reader<'a>, String> {
@@ -615,6 +691,9 @@ pub fn decode(bytes: &[u8]) -> Result<Module, String> {
         funcs: Vec::new(),
         globals: Vec::new(),
         exports: Vec::new(),
+        memory_min_pages: 0,
+        exports_memory: false,
+        data: Vec::new(),
     };
     let mut func_type_indices: Vec<u32> = Vec::new();
     let mut code_bodies: Vec<(Vec<ValType>, Vec<Instr>)> = Vec::new();
@@ -690,10 +769,57 @@ pub fn decode(bytes: &[u8]) -> Result<Module, String> {
                     let name = section.name()?;
                     let kind = section.u8()?;
                     let index = section.uleb()? as u32;
-                    if kind != 0x00 {
-                        return Err("only function exports are supported".to_string());
+                    match kind {
+                        0x00 => module.exports.push((name, index)),
+                        0x02 => {
+                            if index != 0 {
+                                return Err("memory export must refer to memory 0".to_string());
+                            }
+                            module.exports_memory = true;
+                        }
+                        other => {
+                            return Err(format!("unsupported wasm export kind 0x{other:02x}"));
+                        }
                     }
-                    module.exports.push((name, index));
+                }
+            }
+            5 => {
+                let count = section.uleb()? as usize;
+                if count != 1 {
+                    return Err("only one linear memory is supported".to_string());
+                }
+                let flags = section.uleb()?;
+                if flags > 1 {
+                    return Err("unsupported memory limits".to_string());
+                }
+                let min = section.uleb()? as u32;
+                if flags == 1 {
+                    let _max = section.uleb()?;
+                }
+                module.memory_min_pages = min;
+            }
+            11 => {
+                let count = section.uleb()? as usize;
+                for _ in 0..count {
+                    let flags = section.uleb()?;
+                    if flags != 0 {
+                        return Err(
+                            "only active data segments for memory 0 are supported".to_string()
+                        );
+                    }
+                    let (offset_ty, offset_value) = decode_const_expr(&mut section)?;
+                    if offset_ty != ValType::I32 {
+                        return Err("data segment offset must be i32".to_string());
+                    }
+                    let offset = match offset_value {
+                        WVal::I32(value) => value as u32,
+                        _ => return Err("bad data segment offset".to_string()),
+                    };
+                    let len = section.uleb()? as usize;
+                    module.data.push(DataSegment {
+                        offset,
+                        bytes: section.bytes(len)?,
+                    });
                 }
             }
             10 => {
@@ -733,7 +859,13 @@ pub fn decode(bytes: &[u8]) -> Result<Module, String> {
 // ---------------------------------------------------------------------------
 
 pub trait Host {
-    fn call(&mut self, module: &str, name: &str, args: &[WVal]) -> Result<Vec<WVal>, String>;
+    fn call(
+        &mut self,
+        module: &str,
+        name: &str,
+        args: &[WVal],
+        memory: &mut [u8],
+    ) -> Result<Vec<WVal>, String>;
 }
 
 #[derive(Clone, Copy)]
@@ -747,6 +879,7 @@ struct Label {
 struct Exec<'m, H: Host> {
     module: &'m Module,
     globals: Vec<WVal>,
+    memory: Vec<u8>,
     stack: Vec<WVal>,
     labels: Vec<Label>,
     host: H,
@@ -790,9 +923,19 @@ fn pop_f64(stack: &mut Vec<WVal>) -> Result<f64, String> {
 impl<'m, H: Host> Exec<'m, H> {
     fn new(module: &'m Module, host: H) -> Exec<'m, H> {
         let globals = module.globals.iter().map(|global| global.init).collect();
+        let pages = module.memory_min_pages.min(256) as usize;
+        let mut memory = vec![0u8; pages * 65_536];
+        for segment in &module.data {
+            let start = segment.offset as usize;
+            let end = start + segment.bytes.len();
+            if end <= memory.len() {
+                memory[start..end].copy_from_slice(&segment.bytes);
+            }
+        }
         Exec {
             module,
             globals,
+            memory,
             stack: Vec::new(),
             labels: Vec::new(),
             host,
@@ -804,7 +947,9 @@ impl<'m, H: Host> Exec<'m, H> {
         let import_count = self.module.imports.len() as u32;
         if index < import_count {
             let import = &self.module.imports[index as usize];
-            return self.host.call(&import.module, &import.name, &args);
+            return self
+                .host
+                .call(&import.module, &import.name, &args, &mut self.memory);
         }
         let func = self
             .module
@@ -1268,13 +1413,21 @@ pub fn validate(bytes: &[u8]) -> Result<Module, String> {
     decode(bytes)
 }
 
-/// Run the `_start` export, forwarding `env.print_i64` calls to the sink.
-pub fn run_start<F>(bytes: &[u8], mut sink: F) -> Result<(), String>
+/// Run the `_start` export, forwarding `env.print_i64` and `env.print_utf8`
+/// calls to the two sinks.
+pub fn run_start<F, G>(bytes: &[u8], mut on_i64: F, mut on_str: G) -> Result<(), String>
 where
     F: FnMut(i64),
+    G: FnMut(&str),
 {
     let module = decode(bytes)?;
-    let mut exec = Exec::new(&module, PrintHost { sink: &mut sink });
+    let mut exec = Exec::new(
+        &module,
+        PrintHost {
+            on_i64: &mut on_i64,
+            on_str: &mut on_str,
+        },
+    );
     let start = module
         .exports
         .iter()
@@ -1285,21 +1438,49 @@ where
     Ok(())
 }
 
-struct PrintHost<'a, F: FnMut(i64)> {
-    sink: &'a mut F,
+struct PrintHost<'a, F: FnMut(i64), G: FnMut(&str)> {
+    on_i64: &'a mut F,
+    on_str: &'a mut G,
 }
 
-impl<'a, F: FnMut(i64)> Host for PrintHost<'a, F> {
-    fn call(&mut self, module: &str, name: &str, args: &[WVal]) -> Result<Vec<WVal>, String> {
-        if module != "env" || name != "print_i64" {
-            return Err(format!("unimplemented wasm host import: {module}.{name}"));
+impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
+    fn call(
+        &mut self,
+        module: &str,
+        name: &str,
+        args: &[WVal],
+        memory: &mut [u8],
+    ) -> Result<Vec<WVal>, String> {
+        match (module, name) {
+            ("env", "print_i64") => {
+                let value = match args.first() {
+                    Some(WVal::I64(value)) => *value,
+                    _ => return Err("env.print_i64 expects one i64".to_string()),
+                };
+                (self.on_i64)(value);
+                Ok(vec![WVal::I64(value)])
+            }
+            ("env", "print_utf8") => {
+                let ptr = match args.first() {
+                    Some(WVal::I32(value)) => *value as usize,
+                    _ => return Err("env.print_utf8 expects (i32 ptr, i32 len)".to_string()),
+                };
+                let len = match args.get(1) {
+                    Some(WVal::I32(value)) => *value as usize,
+                    _ => return Err("env.print_utf8 expects (i32 ptr, i32 len)".to_string()),
+                };
+                let end = ptr
+                    .checked_add(len)
+                    .ok_or_else(|| "env.print_utf8 range overflow".to_string())?;
+                let slice = memory
+                    .get(ptr..end)
+                    .ok_or_else(|| "env.print_utf8 range is outside memory".to_string())?;
+                let text = String::from_utf8_lossy(slice).to_string();
+                (self.on_str)(&text);
+                Ok(Vec::new())
+            }
+            _ => Err(format!("unimplemented wasm host import: {module}.{name}")),
         }
-        let value = match args.first() {
-            Some(WVal::I64(value)) => *value,
-            _ => return Err("env.print_i64 expects one i64".to_string()),
-        };
-        (self.sink)(value);
-        Ok(vec![WVal::I64(value)])
     }
 }
 
@@ -1307,30 +1488,62 @@ impl<'a, F: FnMut(i64)> Host for PrintHost<'a, F> {
 mod tests {
     use super::*;
 
-    struct Collect<'a> {
-        seen: &'a mut Vec<i64>,
+    struct Collect {
+        numbers: Vec<i64>,
+        strings: Vec<String>,
     }
 
-    impl Host for Collect<'_> {
-        fn call(&mut self, module: &str, name: &str, args: &[WVal]) -> Result<Vec<WVal>, String> {
-            if module != "env" || name != "print_i64" {
-                return Err("unexpected import".to_string());
+    impl Host for Collect {
+        fn call(
+            &mut self,
+            module: &str,
+            name: &str,
+            args: &[WVal],
+            memory: &mut [u8],
+        ) -> Result<Vec<WVal>, String> {
+            match (module, name) {
+                ("env", "print_i64") => {
+                    let value = match args.first() {
+                        Some(WVal::I64(value)) => *value,
+                        _ => return Err("bad argument".to_string()),
+                    };
+                    self.numbers.push(value);
+                    Ok(vec![WVal::I64(value)])
+                }
+                ("env", "print_utf8") => {
+                    let ptr = match args.first() {
+                        Some(WVal::I32(value)) => *value as usize,
+                        _ => return Err("bad argument".to_string()),
+                    };
+                    let len = match args.get(1) {
+                        Some(WVal::I32(value)) => *value as usize,
+                        _ => return Err("bad argument".to_string()),
+                    };
+                    let slice = memory
+                        .get(ptr..ptr + len)
+                        .ok_or_else(|| "range outside memory".to_string())?;
+                    self.strings
+                        .push(String::from_utf8_lossy(slice).to_string());
+                    Ok(Vec::new())
+                }
+                _ => Err("unexpected import".to_string()),
             }
-            let value = match args.first() {
-                Some(WVal::I64(value)) => *value,
-                _ => return Err("bad argument".to_string()),
-            };
-            self.seen.push(value);
-            Ok(vec![WVal::I64(value)])
         }
     }
 
-    fn run_export(bytes: &[u8]) -> Vec<i64> {
+    fn run_export(bytes: &[u8]) -> Collect {
         let module = validate(bytes).expect("validate");
-        let mut seen = Vec::new();
-        let mut exec = Exec::new(&module, Collect { seen: &mut seen });
+        let mut exec = Exec::new(
+            &module,
+            Collect {
+                numbers: Vec::new(),
+                strings: Vec::new(),
+            },
+        );
         exec.call_func(1, Vec::new()).expect("run");
-        seen
+        // Move the host back out of the interpreter.
+        let host = exec.host;
+        host
     }
 
     #[test]
@@ -1350,7 +1563,23 @@ mod tests {
         builder.push(Instr::Op(0x1a));
         let bytes = builder.finish("_start").expect("build");
         assert_eq!(&bytes[0..4], b"\0asm");
-        assert_eq!(run_export(&bytes), vec![42]);
+        assert_eq!(run_export(&bytes).numbers, vec![42]);
+    }
+
+    #[test]
+    fn strings_live_in_linear_memory() {
+        let mut builder = Builder::new();
+        let print_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![]);
+        let start_ty = builder.add_type(vec![], vec![]);
+        builder.import_func("env", "print_utf8", print_ty);
+        builder.enable_memory(1);
+        let offset = builder.add_data("héllo".as_bytes());
+        builder.set_body_type(start_ty);
+        builder.push(Instr::Const(0x41, WVal::I32(offset as i32)));
+        builder.push(Instr::Const(0x41, WVal::I32("héllo".len() as i32)));
+        builder.push(Instr::Call(0));
+        let bytes = builder.finish("_start").expect("build");
+        assert_eq!(run_export(&bytes).strings, vec!["héllo".to_string()]);
     }
 
     #[test]
@@ -1378,6 +1607,6 @@ mod tests {
         builder.push(Instr::Call(0));
         builder.push(Instr::Op(0x1a));
         let bytes = builder.finish("_start").expect("build");
-        assert_eq!(run_export(&bytes), vec![1]);
+        assert_eq!(run_export(&bytes).numbers, vec![1]);
     }
 }
