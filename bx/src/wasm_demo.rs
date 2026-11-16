@@ -151,6 +151,12 @@ const imports = {
       }
       return 0;
     },
+    panic: (ptr, len) => {
+      const text = new TextDecoder("utf-8").decode(
+        new Uint8Array(instance.exports.memory.buffer, ptr, len),
+      );
+      throw new Error(text);
+    },
     str_test: (ap, al, bp, bl, mode) => {
       const hay = new Uint8Array(instance.exports.memory.buffer, ap, al);
       const needle = new Uint8Array(instance.exports.memory.buffer, bp, bl);

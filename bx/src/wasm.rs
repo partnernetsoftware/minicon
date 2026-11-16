@@ -1930,6 +1930,17 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 (self.on_str)(&text);
                 Ok(Vec::new())
             }
+            ("env", "panic") => {
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("env.panic expects (i32 ptr, i32 len)".to_string()),
+                };
+                let text = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .unwrap_or_default();
+                Err(text)
+            }
             ("env", "str_test") => {
                 let read = |value: Option<&WVal>| match value {
                     Some(WVal::I32(value)) => Some(*value as usize),

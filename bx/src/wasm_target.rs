@@ -1102,7 +1102,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 38;
+const IMPORT_COUNT: u32 = 39;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -1131,6 +1131,7 @@ const MAP_KEY_AT: u32 = 34;
 const MAP_VALUE_AT: u32 = 35;
 const BOOL_TO_STR: u32 = 36;
 const STR_TEST: u32 = 37;
+const PANIC: u32 = 38;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -1311,6 +1312,16 @@ impl<'a> Emitter<'a> {
             ty_name(expected),
             ty_name(actual)
         ))
+    }
+
+    /// Abort the module with `message` (host `env.panic`), mirroring VM aborts.
+    fn emit_panic(&mut self, message: &str) {
+        let base = self.builder.add_data(message.as_bytes());
+        self.builder
+            .push(Instr::Const(0x41, WVal::I32(base as i32)));
+        self.builder
+            .push(Instr::Const(0x41, WVal::I32(message.len() as i32)));
+        self.builder.push(Instr::Call(PANIC));
     }
 
     /// Push a continue-target block around a loop body so `continue` can reach
@@ -1930,20 +1941,68 @@ impl<'a> Emitter<'a> {
         let both_int = lt == Ty::Int && rt == Ty::Int;
         match op {
             BinOp::Div => {
-                self.emit_f64(left)?;
+                let divisor = self.builder.add_local(ValType::F64);
                 self.emit_f64(right)?;
+                self.builder.push(Instr::Local(0x21, divisor));
+                self.builder.push(Instr::Local(0x20, divisor));
+                self.builder.push(Instr::Const(0x44, WVal::F64(0.0)));
+                self.builder.push(Instr::Op(0x61));
+                self.builder.push(Instr::Block {
+                    opcode: 0x04,
+                    end: 0,
+                    else_at: 0,
+                    start: 0,
+                });
+                self.labels.push(0x04);
+                self.emit_panic("division by zero");
+                self.labels.pop();
+                self.builder.push(Instr::Op(0x0b));
+                self.emit_f64(left)?;
+                self.builder.push(Instr::Local(0x20, divisor));
                 self.builder.push(Instr::Op(0xa3));
                 Ok(Ty::Float)
             }
             BinOp::Mod if !both_int => {
-                self.emit_f64(left)?;
+                let divisor = self.builder.add_local(ValType::F64);
                 self.emit_f64(right)?;
+                self.builder.push(Instr::Local(0x21, divisor));
+                self.builder.push(Instr::Local(0x20, divisor));
+                self.builder.push(Instr::Const(0x44, WVal::F64(0.0)));
+                self.builder.push(Instr::Op(0x61));
+                self.builder.push(Instr::Block {
+                    opcode: 0x04,
+                    end: 0,
+                    else_at: 0,
+                    start: 0,
+                });
+                self.labels.push(0x04);
+                self.emit_panic("modulo by zero");
+                self.labels.pop();
+                self.builder.push(Instr::Op(0x0b));
+                self.emit_f64(left)?;
+                self.builder.push(Instr::Local(0x20, divisor));
                 self.builder.push(Instr::Call(9));
                 Ok(Ty::Float)
             }
             BinOp::Mod => {
-                self.emit_expr(left)?;
+                let divisor = self.builder.add_local(ValType::I64);
                 self.emit_expr(right)?;
+                self.builder.push(Instr::Local(0x21, divisor));
+                self.builder.push(Instr::Local(0x20, divisor));
+                self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                self.builder.push(Instr::Op(0x51));
+                self.builder.push(Instr::Block {
+                    opcode: 0x04,
+                    end: 0,
+                    else_at: 0,
+                    start: 0,
+                });
+                self.labels.push(0x04);
+                self.emit_panic("modulo by zero");
+                self.labels.pop();
+                self.builder.push(Instr::Op(0x0b));
+                self.emit_expr(left)?;
+                self.builder.push(Instr::Local(0x20, divisor));
                 self.builder.push(Instr::Op(0x81));
                 Ok(Ty::Int)
             }
@@ -2431,8 +2490,34 @@ impl<'a> Emitter<'a> {
                 Ok(Ty::Arr)
             }
             Expr::Index(array, index, _) => {
+                let array_tmp = self.builder.add_local(ValType::I32);
+                let index_tmp = self.builder.add_local(ValType::I64);
                 self.emit_expr(array)?;
+                self.builder.push(Instr::Local(0x21, array_tmp));
                 self.emit_expr(index)?;
+                self.builder.push(Instr::Local(0x21, index_tmp));
+                // bounds check: index < 0 || index >= len
+                self.builder.push(Instr::Local(0x20, index_tmp));
+                self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                self.builder.push(Instr::Op(0x53));
+                self.builder.push(Instr::Local(0x20, index_tmp));
+                self.builder.push(Instr::Local(0x20, array_tmp));
+                self.builder.push(Instr::Mem(0x28, 2, 0));
+                self.builder.push(Instr::Op(0xad));
+                self.builder.push(Instr::Op(0x59));
+                self.builder.push(Instr::Op(0x72));
+                self.builder.push(Instr::Block {
+                    opcode: 0x04,
+                    end: 0,
+                    else_at: 0,
+                    start: 0,
+                });
+                self.labels.push(0x04);
+                self.emit_panic("index out of bounds");
+                self.labels.pop();
+                self.builder.push(Instr::Op(0x0b));
+                self.builder.push(Instr::Local(0x20, array_tmp));
+                self.builder.push(Instr::Local(0x20, index_tmp));
                 self.builder.push(Instr::Op(0xa7));
                 self.builder.push(Instr::Const(0x41, WVal::I32(8)));
                 self.builder.push(Instr::Op(0x6c));
@@ -3716,6 +3801,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let map_key_at_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
     let map_value_at_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I64]);
     let bool_to_str_ty = builder.add_type(vec![ValType::I32], vec![ValType::I32]);
+    let panic_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![]);
     let str_test_ty = builder.add_type(
         vec![
             ValType::I32,
@@ -3796,6 +3882,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "map_value_at", map_value_at_ty);
     builder.import_func("env", "bool_to_str", bool_to_str_ty);
     builder.import_func("env", "str_test", str_test_ty);
+    builder.import_func("env", "panic", panic_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -4132,6 +4219,25 @@ mod tests {
             strings,
             vec!["3.5".to_string(), "4.5".to_string(), "2.5".to_string()]
         );
+    }
+
+    #[test]
+    fn out_of_bounds_and_zero_division_abort() {
+        let out_of_bounds = compile_to_wasm("let a = [1]\nprint(a[5])").unwrap();
+        let error = execute(&out_of_bounds, &[], 0, 0, |_| {}, |_| {}).unwrap_err();
+        assert!(error.contains("index out of bounds"), "got {error}");
+
+        let divide = compile_to_wasm("print(7 / 0)").unwrap();
+        let error = execute(&divide, &[], 0, 0, |_| {}, |_| {}).unwrap_err();
+        assert_eq!(error, "division by zero");
+
+        let modulo = compile_to_wasm("print(7 % 0)").unwrap();
+        let error = execute(&modulo, &[], 0, 0, |_| {}, |_| {}).unwrap_err();
+        assert_eq!(error, "modulo by zero");
+
+        let negative = compile_to_wasm("let a = [1]\nprint(a[-1])").unwrap();
+        let error = execute(&negative, &[], 0, 0, |_| {}, |_| {}).unwrap_err();
+        assert!(error.contains("index out of bounds"), "got {error}");
     }
 
     #[test]

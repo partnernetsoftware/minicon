@@ -168,6 +168,18 @@ write(dir + "/g1.bxs", 'let a = [3, 4]\nlet total = 0\nfor v in a { total = tota
 write(dir + "/wasm-reciter.bxs", 'let o = {a: 1, b: 2}\nfor k, v in o { print(k)\nprint(v) }\nprint("abc".contains("b"))\n')
 write(dir + "/wasm-continue.bxs", 'let sum = 0\nfor v in [1, 2, 3, 4] { if (v == 2) { continue } sum = sum + v }\nprint(sum)\n')
 write(dir + "/wasm-scopedcall.bxs", 'let m = {x: 1}\nfor k, v in m { print(k + ":" + str(v)) }\n')
+write(dir + "/wasm-oob.bxs", 'let a = [1, 2]\nprint(a[5])\n')
+test("wasm runtime boundary aborts", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-oob.bxs", "-o", dir + "/wasm-oob.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-oob.wasm"])
+  assert(ran.code == 1 && ran.err.contains("index out of bounds"), "got " + ran.code + " " + json(ran.err))
+  write(dir + "/wasm-div0.bxs", 'print(7 / 0)\n')
+  let div = exec([bin, "build", "--wasm", dir + "/wasm-div0.bxs", "-o", dir + "/wasm-div0.wasm"])
+  assert(div.code == 0, "build failed: " + div.err)
+  let divRun = exec([bin, "run", dir + "/wasm-div0.wasm"])
+  assert(divRun.code == 1 && divRun.err.contains("division by zero"), "got " + divRun.code + " " + json(divRun.err))
+})
 test("wasm scoped loop variables in calls", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-scopedcall.bxs", "-o", dir + "/wasm-scopedcall.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

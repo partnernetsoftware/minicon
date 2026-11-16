@@ -827,6 +827,22 @@ if (wasmScoped.code == 0 && wasmScopedRun.out == wasmScopedVm.out && wasmScopedR
   casesFail += 1
   failures.push("wasm scoped loop variables in calls\n    wasm=" + json(wasmScopedRun.out) + " vm=" + json(wasmScopedVm.out) + " err=" + json(wasmScopedRun.err))
 }
+write(artDir + "/wasm-oob.bxs", 'let a = [1, 2]\nprint(a[5])\n')
+let wasmOob = exec([BX, "build", "--wasm", artDir + "/wasm-oob.bxs", "-o", artDir + "/wasm-oob.wasm"])
+let wasmOobRun = exec([BX, "run", artDir + "/wasm-oob.wasm"])
+write(artDir + "/wasm-div0.bxs", 'print(7 / 0)\n')
+let wasmDiv0 = exec([BX, "build", "--wasm", artDir + "/wasm-div0.bxs", "-o", artDir + "/wasm-div0.wasm"])
+let wasmDiv0Run = exec([BX, "run", artDir + "/wasm-div0.wasm"])
+let wasmDiv0Vm = exec([BX, "run", artDir + "/wasm-div0.bxs"])
+write(artDir + "/wasm-mod0.bxs", 'print(7 % 0)\n')
+let wasmMod0 = exec([BX, "build", "--wasm", artDir + "/wasm-mod0.bxs", "-o", artDir + "/wasm-mod0.wasm"])
+let wasmMod0Run = exec([BX, "run", artDir + "/wasm-mod0.wasm"])
+if (wasmOob.code == 0 && wasmOobRun.code == 1 && wasmOobRun.err.contains("index out of bounds") && wasmDiv0.code == 0 && wasmDiv0Run.code == 1 && wasmDiv0Run.err.contains("division by zero") && wasmDiv0Vm.code == 1 && wasmMod0.code == 0 && wasmMod0Run.code == 1 && wasmMod0Run.err.contains("modulo by zero")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm runtime boundary aborts\n    oob=" + wasmOobRun.code + "/" + json(wasmOobRun.err) + " div0=" + wasmDiv0Run.code + "/" + json(wasmDiv0Run.err) + " mod0=" + wasmMod0Run.code + "/" + json(wasmMod0Run.err))
+}
 write(artDir + "/wasm-bad.bxs", 'fn outer() {\n  let n = 5\n  let f = fn(x) { return x + n }\n  return f(1)\n}\nprint(outer())\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1 && wasmBad.err.contains("cannot capture outer variables")) {
