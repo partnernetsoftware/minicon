@@ -70,9 +70,9 @@ Outcome: the shipped single-file artifact is produced by MiniCon's own Rust tool
 │   safe failure: deleting a court before its rust-lane replacement is green is forbidden — court first, delete second
 │   dependency: P27; PRD 27 APE-join section re-owned as frozen history in the same edit
 │   non-goal: rewriting frozen archive histories
-└── [_] R27 — qualify and publish 0.2.27 exact-source
+└── [-] R27 — qualify and publish 0.2.27 exact-source
     invariant: every shipped claim names source, cell, artifact digest and observed behavior
-    evidence: version bump to 0.2.27 with release-policy.json; fmt/clippy/test gates; six-runner execution of the exact .com bytes (version, unknown-flag nonzero, --status, control journey); signing + Defender + reputation receipts; public-download smoke
+    evidence: version bumped to 0.2.27 (Cargo.toml/lock, release-policy.json, launcher PE ProductVersion and __meta__ both stamp 0.2.27; local packed win-x86_64 .com executes minicon 0.2.27 and answers --com-info); G27 chain edits green locally (candidate_bundle 8/8, signing_receipt, reputation_court 3/3, alignment 16/16, selftest.sh); six-runner CI dispatched on 1f80a35 (run 43817958394). Open: that run's six-cell PASS, then company-signing → Defender → reputation → Candidate → Promotion under owner publish authority
     safe failure: absent court or absent owner version/publish authority blocks Promotion
     dependency: D27..C27 and PRD 27 release policy
     non-goal: treating this plan as publication approval
