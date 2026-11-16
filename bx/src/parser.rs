@@ -284,19 +284,30 @@ impl Parser {
         let paren = self.accept(&Tok::LParen);
         self.skip_newlines();
 
-        // for x in xs { }  |  for let x in xs { }  |  for (x in xs) { }
+        // for x in xs  |  for k, v in xs  |  for let x in xs  |  ... with parens
         let let_kw = self.is_kw("let") || self.is_kw("const");
-        let is_forin = if let_kw {
-            matches!(self.peek_at(2), Tok::Ident(s) if s == "in")
+        let probe = self.pos + if let_kw { 1 } else { 0 };
+        let at_ident = matches!(self.toks.get(probe).map(|t| &t.0), Some(Tok::Ident(_)));
+        let at_comma = matches!(self.toks.get(probe + 1).map(|t| &t.0), Some(Tok::Comma));
+        let at_value = matches!(self.toks.get(probe + 2).map(|t| &t.0), Some(Tok::Ident(_)));
+        let in_at =
+            |i: usize| matches!(self.toks.get(i).map(|t| &t.0), Some(Tok::Ident(s)) if s == "in");
+        let two_names = at_ident && at_comma && at_value;
+        let is_forin = if two_names {
+            in_at(probe + 3)
         } else {
-            matches!(self.peek(), Tok::Ident(_))
-                && matches!(self.peek_at(1), Tok::Ident(s) if s == "in")
+            at_ident && in_at(probe + 1)
         };
         if is_forin {
             if let_kw {
                 self.advance();
             }
-            let name = self.ident()?;
+            let key = self.ident()?;
+            let value = if self.accept(&Tok::Comma) {
+                Some(self.ident()?)
+            } else {
+                None
+            };
             self.advance(); // in
             self.skip_newlines();
             let iter = self.parse_expr()?;
@@ -305,7 +316,7 @@ impl Parser {
                 self.expect(&Tok::RParen, "')'")?;
             }
             let body = self.parse_block()?;
-            return Ok(Stmt::ForIn(name, iter, body, line));
+            return Ok(Stmt::ForIn(key, value, iter, body, line));
         }
 
         if !paren {

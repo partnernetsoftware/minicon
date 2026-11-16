@@ -19,15 +19,17 @@ an exact nonzero exit, never a mangled status.
 bx — binary scripting surface
 ├── language and VM → bx/README.md
 │   ├── [v] compile-to-bytecode + `.bxcache`
-│   ├── [v] iteration protocol: array | string | object keys
+│   ├── [v] iteration protocol: array | string | object keys, plus `for k, v in`
 │   ├── [v] `attempt(fn)` error capture
+│   ├── [v] closures share mutable locals at any nesting depth (per-call cells; per-iteration loop captures)
+│   ├── [v] `c ? a : b` and `"${expr}"` interpolation (`\$` escapes a literal dollar)
 │   └── [no] closures, try/catch, regex (roadmap, not claimed)
-├── delivery → ../../loader/bx/README.md
+├── delivery → ../loader/bx/README.md
 │   ├── [v] `MINICOM1` launcher lane (Rust; no cosmocc, no C)
 │   ├── [v] four cells packed locally: {win,lnx} × {x86_64,aarch64}
 │   └── [-] six-cell execution evidence (CI `bx_lane`)
 └── qualification
-    ├── [v] 51-check suite passes through the packed win-x86_64 artifact
+    ├── [v] 82-check suite passes through the packed win-x86_64 artifact
     └── [-] the same suite on the five remaining runners
 ```
 
@@ -66,8 +68,9 @@ flowchart LR
 - `minicon-bx-win-x86_64.com`: `version` → `bx 0.1.0`; `eval "6*7"` → `42`;
   `exit(3)` → `3` (verbatim, not `(128+3)<<8`); a parent `exec` captures
   `[0,"42\n"]`.
-- `BX_BIN=minicon-bx-win-x86_64.com bx run bx/tests/suite.bxs` → **PASS 51
-  checks**.
+- `BX_BIN=minicon-bx-win-x86_64.com bx run bx/tests/suite.bxs` → **PASS 82
+  checks** (ternary, interpolation and its escape, CLI flags, stdin, argv with
+  spaces/unicode, and include-aware cache invalidation).
 - 2026-11-16 review pass: the container now carries `__meta__` metadata
   (`com-pack info` → product/cell/version/source_sha), publishes atomically,
   extracts into a private 0700 directory on Unix, cleans up on spawn failure,
@@ -81,6 +84,29 @@ flowchart LR
   reports launcher format/subsystem, cells and metadata. Re-measured with 20
   interleaved runs: native cell p50 20.0 ms, packed p50 48.3 ms, launcher-only
   about 21 ms — the rest is the second process creation plus the 825 KB write.
+- 2026-11-16 round 2: the `.bxcache` key now covers every recursively included
+  file, so editing a `use` dependency rebuilds the program (a stale-cache bug:
+  the key used to hash only the main script). The suite grew to 65 checks and
+  covers `--version`/`--help`, `eval -` stdin, and argv with spaces/unicode.
+- 2026-11-16 round 3: nested functions capture the enclosing function's visible
+  locals by value (`GET_UPVALUE`/`MAKE_CLOSURE`); captured names are read-only,
+  which is enforced at compile time. Factories and callback captures now work
+  (`adder(10)(5)`, `map` with a captured base). Suite: 70 checks.
+- 2026-11-16 round 4: `for k, v in` binds key/value for objects and index/value
+  for arrays and strings through `ITER_KEYS`; a pre-existing stack residue after
+  a loop used as the last statement is fixed and covered. Suite: 74 checks.
+- 2026-11-16 round 5: function locals and parameters are boxed per call, so
+  closures share mutable state (counters, two closures over one binding), writes
+  reach the creator, and loop-created closures keep their own iteration value.
+  Suite: 77 checks.
+- 2026-11-16 round 6: a closure now sees every name visible at its creation
+  point, forwarding further-out locals through the creator's own upvalues
+  (`GET_UPVALUE_RAW`), so reads and writes work two or three levels up. Suite:
+  80 checks.
+- 2026-11-16 round 7: runtime errors now name the failing function
+  (`script(line) in fn(): message`) and no longer duplicate the location prefix
+  when they cross a call boundary; both are covered by suite cases. Suite: 82
+  checks.
 - Open: execution on Linux x86_64/aarch64 and Windows ARM64 belongs to the
   six-runner matrix (`minicon-com.yml`, `bx_lane`), not the Windows host.
 

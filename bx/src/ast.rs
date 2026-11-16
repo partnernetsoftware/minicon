@@ -53,7 +53,7 @@ pub enum Stmt {
         Vec<Stmt>,
         u32,
     ),
-    ForIn(String, Expr, Vec<Stmt>, u32),
+    ForIn(String, Option<String>, Expr, Vec<Stmt>, u32),
     Return(Option<Expr>, u32),
     Break(u32),
     Continue(u32),

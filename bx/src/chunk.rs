@@ -48,6 +48,14 @@ pub mod op {
     /// Normalise any iterable into the array a `for … in` walks: an array stays
     /// itself, a string becomes its characters, an object becomes its keys.
     pub const ITER_PREP: u8 = 38;
+    pub const GET_UPVALUE: u8 = 39;
+    pub const MAKE_CLOSURE: u8 = 40;
+    pub const ITER_KEYS: u8 = 41;
+    pub const GET_CELL: u8 = 42;
+    pub const SET_CELL: u8 = 43;
+    pub const WRAP_CELL: u8 = 44;
+    pub const SET_UPVALUE: u8 = 45;
+    pub const GET_UPVALUE_RAW: u8 = 46;
 }
 
 pub fn has_operand(o: u8) -> bool {
@@ -66,6 +74,12 @@ pub fn has_operand(o: u8) -> bool {
             | op::CALL
             | op::MAKE_ARRAY
             | op::MAKE_OBJECT
+            | op::GET_UPVALUE
+            | op::MAKE_CLOSURE
+            | op::GET_CELL
+            | op::SET_CELL
+            | op::SET_UPVALUE
+            | op::GET_UPVALUE_RAW
     )
 }
 
@@ -110,6 +124,14 @@ pub fn op_name(o: u8) -> &'static str {
         op::DUP2 => "DUP2",
         op::INDEX_SET_KEEP => "INDEX_SET_KEEP",
         op::ITER_PREP => "ITER_PREP",
+        op::GET_UPVALUE => "GET_UPVALUE",
+        op::MAKE_CLOSURE => "MAKE_CLOSURE",
+        op::ITER_KEYS => "ITER_KEYS",
+        op::GET_CELL => "GET_CELL",
+        op::SET_CELL => "SET_CELL",
+        op::WRAP_CELL => "WRAP_CELL",
+        op::SET_UPVALUE => "SET_UPVALUE",
+        op::GET_UPVALUE_RAW => "GET_UPVALUE_RAW",
         _ => "?",
     }
 }
@@ -358,7 +380,7 @@ fn decode_const(r: &mut Reader) -> Result<Value, String> {
         5 => {
             let chunk = r.u32()? as usize;
             let name = r.string()?;
-            Value::Func(Rc::new(FuncRef { chunk, name }))
+            Value::Func(Rc::new(FuncRef::new(chunk, name)))
         }
         t => return Err(format!("unknown constant tag {}", t)),
     })
@@ -451,13 +473,23 @@ pub fn compile(src: &str, base_dir: PathBuf, keep_last: bool) -> Result<Vec<Chun
             line: 0,
             const_map: HashMap::new(),
             include_stack: Vec::new(),
+            captures: Vec::new(),
         };
         c.compile_stmts(&stmts, keep_last)?;
         c.emit(op::HALT, 0, 0);
-        let fin = c.finish();
+        let (fin, _captures) = c.finish();
         chunks[0] = fin;
     }
     Ok(chunks)
+}
+
+/// Where a closure fetches one captured value from, in its creator's frame.
+#[derive(Clone, Copy)]
+enum CaptureSource {
+    /// The creator's local slot, which holds a cell.
+    Local(u16),
+    /// The creator's own upvalue, forwarded from a further level.
+    Upvalue(u16),
 }
 
 struct Compiler<'a> {
@@ -473,12 +505,14 @@ struct Compiler<'a> {
     line: u32,
     const_map: HashMap<String, u32>,
     include_stack: Vec<PathBuf>,
+    /// Names this function closed over, and where its creator keeps them.
+    captures: Vec<(String, CaptureSource)>,
 }
 
 impl<'a> Compiler<'a> {
-    fn finish(mut self) -> Chunk {
+    fn finish(mut self) -> (Chunk, Vec<(String, CaptureSource)>) {
         self.cur.max_slots = self.max_slots;
-        self.cur
+        (self.cur, self.captures)
     }
 
     fn here(&self) -> usize {
@@ -568,6 +602,63 @@ impl<'a> Compiler<'a> {
         None
     }
 
+    /// Index of a captured name in this function's upvalue list.
+    fn capture_position(&self, name: &str) -> Option<u16> {
+        self.captures
+            .iter()
+            .position(|(n, _)| n == name)
+            .map(|i| i as u16)
+    }
+
+    /// A for-in binding: top-level names are globals, function-level ones are
+    /// fresh locals (matching the surrounding `let` rule).
+    fn loop_binding(&mut self, name: &str) -> Target {
+        if self.is_top {
+            Target::Global(self.name_idx(name))
+        } else {
+            Target::Local(self.declare_local(name))
+        }
+    }
+
+    fn emit_set(&mut self, target: &Target, line: u32) {
+        match target {
+            Target::Local(slot) => {
+                // A loop binding is a fresh box per iteration, so a closure made
+                // in iteration N keeps iteration N's value.
+                self.emit(op::WRAP_CELL, 0, line);
+                self.emit(op::SET_LOCAL, *slot as i32, line);
+            }
+            Target::Global(k) => {
+                self.emit(op::SET_GLOBAL, *k as i32, line);
+            }
+        }
+    }
+
+    /// Push the function constant, then its captured values, then close it.
+    fn emit_closure(
+        &mut self,
+        idx: usize,
+        name: &str,
+        captures: &[(String, CaptureSource)],
+        line: u32,
+    ) {
+        let k = self.const_idx(Value::Func(Rc::new(FuncRef::new(idx, name.to_string()))));
+        self.emit(op::CONST, k as i32, line);
+        if !captures.is_empty() {
+            for (_, source) in captures {
+                match source {
+                    CaptureSource::Local(slot) => {
+                        self.emit(op::GET_LOCAL, *slot as i32, line);
+                    }
+                    CaptureSource::Upvalue(i) => {
+                        self.emit(op::GET_UPVALUE_RAW, *i as i32, line);
+                    }
+                }
+            }
+            self.emit(op::MAKE_CLOSURE, captures.len() as i32, line);
+        }
+    }
+
     fn compile_stmts(&mut self, stmts: &[Stmt], keep_last: bool) -> Result<(), String> {
         let n = stmts.len();
         for (i, s) in stmts.iter().enumerate() {
@@ -599,21 +690,19 @@ impl<'a> Compiler<'a> {
                     self.emit(op::SET_GLOBAL, k as i32, *line);
                 } else {
                     let slot = self.declare_local(name);
+                    self.emit(op::WRAP_CELL, 0, *line);
                     self.emit(op::SET_LOCAL, slot as i32, *line);
                 }
             }
             Stmt::Fn(name, params, body, line) => {
-                let idx = self.compile_function(Some(name.clone()), params, body)?;
-                let k = self.const_idx(Value::Func(Rc::new(FuncRef {
-                    chunk: idx,
-                    name: name.clone(),
-                })));
-                self.emit(op::CONST, k as i32, *line);
+                let (idx, captures) = self.compile_function(Some(name.clone()), params, body)?;
+                self.emit_closure(idx, name, &captures, *line);
                 if self.is_top {
                     let nk = self.name_idx(name);
                     self.emit(op::SET_GLOBAL, nk as i32, *line);
                 } else {
                     let slot = self.declare_local(name);
+                    self.emit(op::WRAP_CELL, 0, *line);
                     self.emit(op::SET_LOCAL, slot as i32, *line);
                 }
             }
@@ -699,22 +788,34 @@ impl<'a> Compiler<'a> {
                 }
                 self.end_scope();
             }
-            Stmt::ForIn(name, iter, body, line) => {
+            Stmt::ForIn(name, value, iter, body, line) => {
                 self.begin_scope();
+                let src_slot = self.declare_local("$src");
                 let seq_slot = self.declare_local("$seq");
                 let idx_slot = self.declare_local("$i");
+                let key_slot = if value.is_some() {
+                    Some(self.declare_local("$k"))
+                } else {
+                    None
+                };
                 self.compile_expr(iter)?;
-                self.emit(op::ITER_PREP, 0, *line);
+                self.emit(op::SET_LOCAL, src_slot as i32, *line);
+                self.emit(op::GET_LOCAL, src_slot as i32, *line);
+                // Key/value form walks keys (objects) or indices (arrays and
+                // strings), so `src[k]` is the value in every case.
+                let prepare = if value.is_some() {
+                    op::ITER_KEYS
+                } else {
+                    op::ITER_PREP
+                };
+                self.emit(prepare, 0, *line);
                 self.emit(op::SET_LOCAL, seq_slot as i32, *line);
-                let one = self.const_idx(Value::Int(0));
-                self.emit(op::CONST, one as i32, *line);
+                let zero = self.const_idx(Value::Int(0));
+                self.emit(op::CONST, zero as i32, *line);
                 self.emit(op::SET_LOCAL, idx_slot as i32, *line);
 
-                let target = if self.is_top {
-                    Target::Global(self.name_idx(name))
-                } else {
-                    Target::Local(self.declare_local(name))
-                };
+                let target_key = self.loop_binding(name);
+                let target_value = value.as_ref().map(|binding| self.loop_binding(binding));
 
                 let start = self.here();
                 self.emit(op::GET_LOCAL, idx_slot as i32, *line);
@@ -723,15 +824,27 @@ impl<'a> Compiler<'a> {
                 self.emit(op::LT, 0, *line);
                 let jf = self.emit(op::JUMP_IF_FALSE, 0, *line);
 
-                self.emit(op::GET_LOCAL, seq_slot as i32, *line);
-                self.emit(op::GET_LOCAL, idx_slot as i32, *line);
-                self.emit(op::INDEX_GET, 0, *line);
-                match target {
-                    Target::Local(slot) => {
-                        self.emit(op::SET_LOCAL, slot as i32, *line);
+                match (&target_value, key_slot) {
+                    (Some(_), Some(kslot)) => {
+                        // key once, then bind the name pair
+                        self.emit(op::GET_LOCAL, seq_slot as i32, *line);
+                        self.emit(op::GET_LOCAL, idx_slot as i32, *line);
+                        self.emit(op::INDEX_GET, 0, *line);
+                        self.emit(op::SET_LOCAL, kslot as i32, *line);
+                        self.emit(op::GET_LOCAL, kslot as i32, *line);
+                        self.emit_set(&target_key, *line);
+                        self.emit(op::GET_LOCAL, src_slot as i32, *line);
+                        self.emit(op::GET_LOCAL, kslot as i32, *line);
+                        self.emit(op::INDEX_GET, 0, *line);
+                        if let Some(value_target) = &target_value {
+                            self.emit_set(value_target, *line);
+                        }
                     }
-                    Target::Global(k) => {
-                        self.emit(op::SET_GLOBAL, k as i32, *line);
+                    _ => {
+                        self.emit(op::GET_LOCAL, seq_slot as i32, *line);
+                        self.emit(op::GET_LOCAL, idx_slot as i32, *line);
+                        self.emit(op::INDEX_GET, 0, *line);
+                        self.emit_set(&target_key, *line);
                     }
                 }
 
@@ -820,11 +933,12 @@ impl<'a> Compiler<'a> {
         name: Option<String>,
         params: &[String],
         body: &[Stmt],
-    ) -> Result<usize, String> {
+    ) -> Result<(usize, Vec<(String, CaptureSource)>), String> {
         let chunk_name = match &name {
             Some(n) => n.clone(),
             None => "<lambda>".to_string(),
         };
+        let inherited = inherited_captures(self);
         let mut sub = Compiler {
             chunks: &mut *self.chunks,
             cur: Chunk::new(chunk_name, params.len() as u16),
@@ -838,17 +952,21 @@ impl<'a> Compiler<'a> {
             line: self.line,
             const_map: HashMap::new(),
             include_stack: self.include_stack.clone(),
+            captures: inherited,
         };
         for p in params {
-            sub.declare_local(p);
+            let slot = sub.declare_local(p);
+            sub.emit(op::GET_LOCAL, slot as i32, 0);
+            sub.emit(op::WRAP_CELL, 0, 0);
+            sub.emit(op::SET_LOCAL, slot as i32, 0);
         }
         sub.compile_stmts(body, false)?;
         sub.emit(op::NULL, 0, 0);
         sub.emit(op::RET, 0, 0);
-        let fin = sub.finish();
+        let (fin, captures) = sub.finish();
         let idx = self.chunks.len();
         self.chunks.push(fin);
-        Ok(idx)
+        Ok((idx, captures))
     }
 
     fn compile_expr(&mut self, e: &Expr) -> Result<(), String> {
@@ -873,7 +991,9 @@ impl<'a> Compiler<'a> {
             }
             Expr::Ident(name) => {
                 if let Some(slot) = self.resolve_local(name) {
-                    self.emit(op::GET_LOCAL, slot as i32, self.line);
+                    self.emit(op::GET_CELL, slot as i32, self.line);
+                } else if let Some(i) = self.capture_position(name) {
+                    self.emit(op::GET_UPVALUE, i as i32, self.line);
                 } else {
                     let k = self.name_idx(name);
                     self.emit(op::GET_GLOBAL, k as i32, self.line);
@@ -976,7 +1096,9 @@ impl<'a> Compiler<'a> {
                     self.compile_expr(value)?;
                     self.emit(op::DUP, 0, *line);
                     if let Some(slot) = self.resolve_local(name) {
-                        self.emit(op::SET_LOCAL, slot as i32, *line);
+                        self.emit(op::SET_CELL, slot as i32, *line);
+                    } else if let Some(i) = self.capture_position(name) {
+                        self.emit(op::SET_UPVALUE, i as i32, *line);
                     } else {
                         let k = self.name_idx(name);
                         self.emit(op::SET_GLOBAL, k as i32, *line);
@@ -1009,7 +1131,9 @@ impl<'a> Compiler<'a> {
                 match &**target {
                     Expr::Ident(name) => {
                         if let Some(slot) = self.resolve_local(name) {
-                            self.emit(op::GET_LOCAL, slot as i32, *line);
+                            self.emit(op::GET_CELL, slot as i32, *line);
+                        } else if let Some(i) = self.capture_position(name) {
+                            self.emit(op::GET_UPVALUE, i as i32, *line);
                         } else {
                             let k = self.name_idx(name);
                             self.emit(op::GET_GLOBAL, k as i32, *line);
@@ -1018,7 +1142,9 @@ impl<'a> Compiler<'a> {
                         self.emit(o, 0, *line);
                         self.emit(op::DUP, 0, *line);
                         if let Some(slot) = self.resolve_local(name) {
-                            self.emit(op::SET_LOCAL, slot as i32, *line);
+                            self.emit(op::SET_CELL, slot as i32, *line);
+                        } else if let Some(i) = self.capture_position(name) {
+                            self.emit(op::SET_UPVALUE, i as i32, *line);
                         } else {
                             let k = self.name_idx(name);
                             self.emit(op::SET_GLOBAL, k as i32, *line);
@@ -1047,12 +1173,8 @@ impl<'a> Compiler<'a> {
                 }
             }
             Expr::Func(params, body, line) => {
-                let idx = self.compile_function(None, params, body)?;
-                let k = self.const_idx(Value::Func(Rc::new(FuncRef {
-                    chunk: idx,
-                    name: "<lambda>".to_string(),
-                })));
-                self.emit(op::CONST, k as i32, *line);
+                let (idx, captures) = self.compile_function(None, params, body)?;
+                self.emit_closure(idx, "<lambda>", &captures, *line);
             }
         }
         Ok(())
@@ -1068,7 +1190,7 @@ fn stmt_line(s: &Stmt) -> u32 {
         | Stmt::If(_, _, _, l)
         | Stmt::While(_, _, l)
         | Stmt::ForC(_, _, _, _, l)
-        | Stmt::ForIn(_, _, _, l)
+        | Stmt::ForIn(_, _, _, _, l)
         | Stmt::Return(_, l)
         | Stmt::Break(l)
         | Stmt::Continue(l)
@@ -1085,4 +1207,29 @@ pub fn compile_file(path: &Path, keep_last: bool) -> Result<Vec<Chunk>, String> 
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
     compile(&src, base, keep_last)
+}
+
+/// Everything a nested function may see: the creator's locals (as cells) plus
+/// the creator's own captures (forwarded), so nesting depth does not limit
+/// access to enclosing locals.
+fn inherited_captures(parent: &Compiler) -> Vec<(String, CaptureSource)> {
+    let mut out: Vec<(String, CaptureSource)> = Vec::new();
+    for scope in &parent.scopes {
+        for (name, slot) in scope {
+            if name.starts_with('$') {
+                continue;
+            }
+            match out.iter().position(|(n, _)| n == name) {
+                Some(pos) => out[pos] = (name.clone(), CaptureSource::Local(*slot)),
+                None => out.push((name.clone(), CaptureSource::Local(*slot))),
+            }
+        }
+    }
+    for (i, (name, _)) in parent.captures.iter().enumerate() {
+        if out.iter().any(|(n, _)| n == name) {
+            continue;
+        }
+        out.push((name.clone(), CaptureSource::Upvalue(i as u16)));
+    }
+    out
 }

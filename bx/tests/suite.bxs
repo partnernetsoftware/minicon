@@ -98,16 +98,63 @@ check("interpolation method", "hello X", ["eval", 'let s = "x".upper(); "hello \
 checkFail("interpolation unterminated", "unterminated string interpolation", 1, ["eval", '"open \${1"'])
 checkFail("interpolation empty", "empty string interpolation", 1, ["eval", '"empty \${}"'])
 
+// CLI surface agents rely on
+checkContains("--version flag", "bx 0.", ["--version"])
+checkContains("--help flag", "usage", ["--help"])
+let stdinRun = exec([BX, "eval", "-"], {stdin: "1 + 2"})
+if (stdinRun.code == 0 && stdinRun.out.trim() == "3") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("eval reads stdin\n    code=" + stdinRun.code + " stdout=" + json(stdinRun.out.trim()) + " stderr=" + json(stdinRun.err.trim()))
+}
+check("argv keeps spaces and unicode", '["a b","ü"]', ["run", __dir__ + "/cases/argv.bxs", "a b", "ü"])
+
+// closures capture the enclosing function's visible locals by value
+check("closure factory", "15", ["eval", "fn adder(n) { return fn(x) { return x + n } } let f = adder(10); f(5)"])
+check("closure captures a local for a callback", "[10,20,30]", ["eval", "fn scale(base) { return map([1,2,3], fn(x) { return x * base }) } scale(10)"])
+check("closure captures parameter and local", "6", ["eval", "fn f(a) { let b = 2; return fn(c) { return a + b + c } } f(1)(3)"])
+check("closure sees later updates", "9", ["eval", "fn f() { let n = 1; let g = fn() { return n }; n = 9; return g() } f()"])
+check("closures share mutable state", "3", ["eval", "fn make() { let n = 0; return fn() { n = n + 1; return n } } let c = make(); c(); c(); c()"])
+check("two closures share one binding", "2", ["eval", "fn make() { let n = 0; return [fn() { n = n + 1; return n }, fn() { return n }] } let p = make(); p[0](); p[0](); p[1]()"])
+check("a closure can update a parameter", "2", ["eval", "fn f(x) { let g = fn() { x = x + 1; return x }; g(); return x } f(1)"])
+check("loop closures keep their iteration", "[10,21]", ["eval", "fn f() { let fs = []; for i, x in [10, 20] { push(fs, fn() { return x + i }) }; return map(fs, fn(g) { return g() }) } f()"])
+check("closure reads two levels up", "5", ["eval", "fn outer() { let n = 5; return fn() { return fn() { return n } } } outer()()()"])
+check("closure writes two levels up", "11", ["eval", "fn outer() { let n = 1; let mid = fn() { return fn() { n = n + 10; return n } }; let c = mid(); c(); return n } outer()"])
+check("closure reads three levels up", "7", ["eval", "fn a() { let n = 7; return fn() { return fn() { return fn() { return n } } } } a()()()()"])
+
 // iteration: arrays, strings and objects share one protocol
 check("iterate object keys", "ab", ["eval", 'let o = {b:2, a:1}; let s = ""; for k in o { s += k } s'])
 check("iterate string chars", "a.b.c.", ["eval", 'let s = ""; for c in "abc" { s += c + "." } s'])
 check("iterate object values", "1,2", ["eval", 'let o = {a:1, b:2}; join(map(keys(o), fn(k) { return str(o[k]) }), ",")'])
-checkFail("iterate non-iterable", "cannot iterate over", 1, ["eval", "for x in 5 { print(x) }"])
+
+// key/value iteration: objects give key/value, arrays and strings give index/value
+check("iterate pairs over an object", "a=1 b=2", ["eval", 'let s = ""; for k, v in {a:1, b:2} { s += k + "=" + v + " " }; s.trim()'])
+check("iterate pairs over an array", "0:10 1:20", ["eval", 'let s = ""; for i, x in [10, 20] { s += str(i) + ":" + str(x) + " " }; s.trim()'])
+check("iterate pairs over a string", "0a1b", ["eval", 'let s = ""; for i, c in "ab" { s += str(i) + c }; s'])
+check("pair iteration inside a function", "3", ["eval", "fn total(o) { let t = 0; for k, v in o { t += v }; return t } total({a:1, b:2})"])
+check("loop leaves no residue on the stack", "", ["eval", "for k, v in {a:1} { }"])
 
 // error capture: a failing expression becomes a value, not an exit
 check("attempt ok=false", "false", ["eval", "attempt(fn() { return 1 / 0 }).ok"])
 check("attempt value", "42", ["eval", "attempt(fn() { return 6 * 7 }).value"])
 checkTrue("attempt error text", ["eval", 'attempt(fn() { return 1 / 0 }).error.contains("division by zero")'])
+
+// diagnostics: an error names the failing function and keeps one location
+let namedErr = exec([BX, "eval", "fn inner() { return missing } inner()"])
+if (namedErr.code == 1 && namedErr.err.contains("in inner()")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("errors name the failing function\n    stderr=" + json(namedErr.err.trim()))
+}
+let closureErr = exec([BX, "eval", "fn make() { return fn() { return missing } } make()()"])
+if (closureErr.code == 1 && closureErr.err.contains("in <lambda>()") && !closureErr.err.contains("<eval>(1): <eval>")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("closure errors are not double-prefixed\n    stderr=" + json(closureErr.err.trim()))
+}
 check("attempt keeps script alive", "still here", ["eval", 'let r = attempt(fn() { return [][3].x }); if (!r.ok) { print("still here") }'])
 
 // ---------------------------------------------------------------------------
@@ -182,6 +229,23 @@ if (probe.code == 0 && probe.out.trim() == "cached" && len(cacheFiles) > 0) {
 }
 let warm = run(["run", cacheScript])
 check("cached run still executes", "cached", ["run", cacheScript])
+// Editing an included file must invalidate the cached bytecode: `use` inlines
+// the file, so the key has to cover the dependency, not just the main script.
+let useDir = artDir + "/use-cache"
+mkdir(useDir)
+write(useDir + "/lib.bxs", 'fn v() { return 1 }\n')
+write(useDir + "/main.bxs", 'use "lib.bxs"\nprint(v())\n')
+let stale = run(["run", useDir + "/main.bxs"])
+write(useDir + "/lib.bxs", 'fn v() { return 2 }\n')
+let fresh = run(["run", useDir + "/main.bxs"])
+if (stale.out.trim() == "1" && fresh.out.trim() == "2") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push(
+    "include edit invalidates the cache\n    first=" + json(stale.out.trim()) + " after-edit=" + json(fresh.out.trim())
+  )
+}
 
 // ---------------------------------------------------------------------------
 // errors

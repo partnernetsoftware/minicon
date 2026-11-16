@@ -3,7 +3,8 @@ use std::collections::BTreeMap;
 
 use crate::builtins;
 use crate::chunk::{has_operand, op, Chunk};
-use crate::value::{array_val, object_val, str_val, Value};
+use crate::value::{array_val, object_val, str_val, FuncRef, Value};
+use std::rc::Rc;
 
 const MAX_DEPTH: usize = 220;
 
@@ -45,7 +46,7 @@ impl Vm {
     }
 
     pub fn run(&mut self) -> Result<Value, String> {
-        self.run_frame(0, Vec::new())
+        self.run_frame(0, Vec::new(), Vec::new())
     }
 
     pub fn call_value(
@@ -55,7 +56,7 @@ impl Vm {
         _line: u32,
     ) -> Result<Value, String> {
         match callee {
-            Value::Func(f) => self.run_frame(f.chunk, args),
+            Value::Func(f) => self.run_frame(f.chunk, f.upvalues.clone(), args),
             Value::Builtin(name) => builtins::call(self, name, &args),
             other => Err(format!("{} value is not callable", other.type_name())),
         }
@@ -66,7 +67,12 @@ impl Vm {
         self.globals.get(name).cloned()
     }
 
-    fn run_frame(&mut self, ci: usize, args: Vec<Value>) -> Result<Value, String> {
+    fn run_frame(
+        &mut self,
+        ci: usize,
+        mut upvalues: Vec<Value>,
+        args: Vec<Value>,
+    ) -> Result<Value, String> {
         if ci >= self.chunks.len() {
             return Err("bytecode references a missing function chunk".to_string());
         }
@@ -122,9 +128,20 @@ impl Vm {
             }
 
             macro_rules! fail {
-                ($($t:tt)*) => {
-                    break Err(format!("{}({}): {}", self.script_name, line, format!($($t)*)))
-                };
+                ($($t:tt)*) => {{
+                    let context = if chunk_name == "<main>" {
+                        String::new()
+                    } else {
+                        format!(" in {}()", chunk_name)
+                    };
+                    break Err(format!(
+                        "{}({}){}: {}",
+                        self.script_name,
+                        line,
+                        context,
+                        format!($($t)*)
+                    ))
+                }};
             }
             macro_rules! popv {
                 () => {
@@ -333,7 +350,14 @@ impl Vm {
                     let callee = popv!();
                     match self.call_value(callee, call_args, line) {
                         Ok(v) => self.stack.push(v),
-                        Err(e) => break Err(format!("{}({}): {}", self.script_name, line, e)),
+                        Err(e) => {
+                            // The callee already reports its own location and
+                            // function; do not stack a second prefix on it.
+                            if e.starts_with(self.script_name.as_str()) {
+                                break Err(e);
+                            }
+                            break Err(format!("{}({}): {}", self.script_name, line, e));
+                        }
                     }
                 }
                 op::RET => {
@@ -396,6 +420,85 @@ impl Vm {
                         Err(e) => fail!("{}", e),
                     }
                 }
+                op::ITER_KEYS => {
+                    let v = popv!();
+                    match iterable_keys(v) {
+                        Ok(a) => self.stack.push(a),
+                        Err(e) => fail!("{}", e),
+                    }
+                }
+                op::GET_UPVALUE => {
+                    let i = arg as usize;
+                    match upvalues.get(i) {
+                        Some(Value::Cell(cell)) => {
+                            let value = cell.borrow().clone();
+                            self.stack.push(value);
+                        }
+                        Some(v) => self.stack.push(v.clone()),
+                        None => fail!("bad upvalue index {}", i),
+                    }
+                }
+                op::GET_UPVALUE_RAW => {
+                    let i = arg as usize;
+                    match upvalues.get(i) {
+                        Some(v) => self.stack.push(v.clone()),
+                        None => fail!("bad upvalue index {}", i),
+                    }
+                }
+                op::SET_UPVALUE => {
+                    let value = popv!();
+                    let i = arg as usize;
+                    match upvalues.get(i) {
+                        Some(Value::Cell(cell)) => {
+                            *cell.borrow_mut() = value;
+                        }
+                        Some(_) => {
+                            upvalues[i] = value;
+                        }
+                        None => fail!("bad upvalue index {}", i),
+                    }
+                }
+                op::WRAP_CELL => {
+                    let value = popv!();
+                    self.stack
+                        .push(Value::Cell(Rc::new(std::cell::RefCell::new(value))));
+                }
+                op::GET_CELL => {
+                    let slot = arg as usize;
+                    match slots.get(slot) {
+                        Some(Value::Cell(cell)) => {
+                            let value = cell.borrow().clone();
+                            self.stack.push(value);
+                        }
+                        _ => fail!("local {} is not a cell", slot),
+                    }
+                }
+                op::SET_CELL => {
+                    let value = popv!();
+                    let slot = arg as usize;
+                    match slots.get_mut(slot) {
+                        Some(Value::Cell(cell)) => {
+                            *cell.borrow_mut() = value;
+                        }
+                        _ => fail!("local {} is not a cell", slot),
+                    }
+                }
+                op::MAKE_CLOSURE => {
+                    let n = arg.max(0) as usize;
+                    if self.stack.len() < n + 1 {
+                        fail!("internal stack underflow creating a closure");
+                    }
+                    let captured = self.stack.split_off(self.stack.len() - n);
+                    let callee = popv!();
+                    match callee {
+                        Value::Func(f) => {
+                            let mut closure = FuncRef::new(f.chunk, f.name.clone());
+                            closure.upvalues = captured;
+                            self.stack.push(Value::Func(Rc::new(closure)));
+                        }
+                        other => fail!("cannot close over {}", other.type_name()),
+                    }
+                }
                 op::DUP2 => {
                     if self.stack.len() < 2 {
                         fail!("internal stack underflow");
@@ -436,6 +539,27 @@ pub fn iterable(v: Value) -> Result<Value, String> {
         )),
         Value::Object(o) => Ok(array_val(
             o.borrow().keys().map(|k| str_val(k.clone())).collect(),
+        )),
+        other => Err(format!("cannot iterate over {}", other.type_name())),
+    }
+}
+
+/// The iteration keys a `for k, v in` walks: an object's keys, or the indices of
+/// an array/string. `v` is then always `source[k]`, which works for all three.
+pub fn iterable_keys(v: Value) -> Result<Value, String> {
+    match v {
+        Value::Object(o) => Ok(array_val(
+            o.borrow().keys().map(|k| str_val(k.clone())).collect(),
+        )),
+        Value::Array(a) => Ok(array_val(
+            (0..a.borrow().len())
+                .map(|i| Value::Int(i as i64))
+                .collect(),
+        )),
+        Value::Str(s) => Ok(array_val(
+            (0..s.chars().count())
+                .map(|i| Value::Int(i as i64))
+                .collect(),
         )),
         other => Err(format!("cannot iterate over {}", other.type_name())),
     }

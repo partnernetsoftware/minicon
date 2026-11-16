@@ -17,7 +17,7 @@ target-six
 /assets/minicon.iconset/
 .mcfix/
 .workbuddy/
-loader/com-rs/target/
+loader/com-rs/target*/
 loader/bx/dist/minicon-trial/minicon-win-x86_64.com
 loader/bx/dist/minicon-win-x86_64.com
 loader/bx/cells/win-x86_64/minicon.exe
@@ -28,3 +28,4 @@ bx/cells/win-x86_64/bx.exe
 bx/cells/win-aarch64/bx.exe
 bx/cells/lnx-x86_64/bx
 bx/cells/lnx-aarch64/bx
+/bx/target*/

@@ -41,6 +41,8 @@ bx build examples\hello.bxs -o hello.bxb   # 编译成字节码
 bx run hello.bxb                            # 直接执行二进制
 bx dis hello.bxb                            # 反汇编
 bx help exec                                # 单个内建的契约
+bx --version                                # 等价 bx version（-v/-V 亦可）
+bx --help                                   # 等价 bx help
 ```
 
 ```js
@@ -65,7 +67,7 @@ JS 风格，语句以换行或 `;` 结束。
 | 函数 | `fn add(a, b) { return a + b }`，匿名 `fn(x) { return x * 2 }` |
 | 条件 | `if c { } else if c2 { } else { }`（括号可选） |
 | 循环 | `while c { }`、`for (let i = 0; i < n; i++) { }`、`for x in xs { }`、`for (let x in xs) { }` |
-| 迭代 | `for x in xs` 对数组给元素、对字符串给字符、对对象给**键**（`for k in o { o[k] }`） |
+| 迭代 | `for x in xs` 对数组给元素、对字符串给字符、对对象给键；`for k, v in xs` 给键值对（对象 key/value、数组与字符串 index/value） |
 | 跳转 | `break` / `continue` / `return` |
 | 数组 | `[1, 2]`、`a[0]`、`a[-1]`、`a.push(3)` |
 | 对象 | `{name: "bx"}`、`o.name`、`o["k"]`、`o.n += 1` |
@@ -78,7 +80,7 @@ JS 风格，语句以换行或 `;` 结束。
 
 语义要点（有意与 JS 不同/收紧的地方）：
 
-- **顶层 `let` 是全局**，函数内 `let` 是局部；函数**没有闭包**，只能读写全局。这是为“脚本”而不是“应用”设计的取舍。
+- **顶层 `let` 是全局**，函数内 `let` 是局部。函数局部与参数存放在 cell 里，嵌套函数**按引用捕获**直接外层的可见名字：闭包写回外层变量、两个闭包共享一个状态都成立；循环变量每轮是新 cell，所以每轮创建的闭包各自保留当轮的值；嵌套任意深度都能读到、写回更外层函数的局部（捕获逐层转发）。
 - `print(obj)` 输出紧凑 JSON；`json(v)` 显式序列化；对象键排序保证输出稳定（便于 diff 与断言）。
 - `==` 对数组/对象做**结构相等**，int 与 float 数值互比；真值判断只有 `false / null / 0 / ""` 为假。
 - `+` 在任一侧是字符串时做拼接，两个数组相加以拼接，其余走数值。
@@ -88,6 +90,7 @@ JS 风格，语句以换行或 `;` 结束。
 ### 错误处理
 
 bx 没有 `try/catch` 语法——运行时错误就是一次栈展开。要兜底时用 `attempt`，失败变成值而不是进程退出：
+运行时错误的位置带上**出错函数名**：`<script>(3) in inner(): undefined variable 'x'`，闭包是 `in <lambda>()`；顶层错误不带函数段。上下文只拼一次，不会出现重复的 `location: location:` 前缀。
 
 ```js
 let r = attempt(fn() { return 1 / 0 })
@@ -127,7 +130,7 @@ bx run script.bxb one two    # 参数进 argv
 bx dis script.bxb
 ```
 
-`bx run *.bxs` 也会把编译结果缓存到脚本旁边的 `.bxcache/`（键 = 源码哈希 + 版本），下次直接加载字节码。设 `BX_CACHE_DIR` 可改位置，写不进去就静默跳过缓存。
+`bx run *.bxs` 也会把编译结果缓存到脚本旁边的 `.bxcache/`，下次直接加载字节码。键 = 主脚本 + **递归 `use` 依赖的文件内容** + 版本：改被 include 的文件会让缓存失效（这正是 v0.1 的一个真 bug，已修）。设 `BX_CACHE_DIR` 可改位置，写不进去就静默跳过缓存。
 
 30 000 行生成脚本的实测：
 
@@ -149,7 +152,7 @@ bx dis script.bxb
 
 ## 限制（现在明确不做）
 
-- 没有闭包捕获、`try/catch`、正则、字符串插值、模块导出（只有 `use` 内联）。
+- 闭包按可见名字捕获（含逐层转发的更外层局部），所以闭包会带上创建点可见的变量数；没有 `try/catch`（用 `attempt`）、正则、模块导出（只有 `use` 内联）。
 - 单线程；没有异步。阻塞内建就是阻塞。
 - `.bxb` 是**可执行内容**，只运行可信产物（解码会校验魔数、操作码与行号表，但不校验跳转目标）。
 - 资源上限：调用深度 220，步数 `BX_MAX_STEPS`（默认 10 亿），`exec` 输出 8 MB。

@@ -323,7 +323,7 @@ fn load_program(path: &Path, keep_last: bool) -> Result<(Vec<Chunk>, String), St
     let name = display_name(path);
 
     if let Some(dir) = cache_dir_for(path) {
-        let key = cache_key(&src);
+        let key = cache_key(path, &src);
         let cpath = dir.join(format!("{}.bxb", key));
         if let Ok(bytes) = fs::read(&cpath) {
             if let Ok((chunks, _)) = chunk::decode(&bytes) {
@@ -386,11 +386,80 @@ fn cache_dir_for(path: &Path) -> Option<PathBuf> {
     }
 }
 
-fn cache_key(src: &str) -> String {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in format!("{}\0{}", VERSION, src).as_bytes() {
-        h ^= *b as u64;
-        h = h.wrapping_mul(0x100_0000_01b3);
+fn hash_bytes(h: &mut u64, bytes: &[u8]) {
+    for b in bytes {
+        *h ^= *b as u64;
+        *h = (*h).wrapping_mul(0x100_0000_01b3);
     }
+}
+
+/// A cached program stays valid only while the files it `use`s are unchanged:
+/// the compiler inlines them into the chunk, so the key mixes every included
+/// file's bytes, recursively.
+fn cache_key(path: &Path, src: &str) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    hash_bytes(&mut h, VERSION.as_bytes());
+    hash_bytes(&mut h, b"\0source\0");
+    hash_bytes(&mut h, src.as_bytes());
+    let base = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."));
+    let mut seen = std::collections::HashSet::new();
+    mix_includes(&mut h, &base, src, &mut seen, 0);
     format!("{:016x}", h)
+}
+
+fn mix_includes(
+    h: &mut u64,
+    base: &Path,
+    src: &str,
+    seen: &mut std::collections::HashSet<PathBuf>,
+    depth: u32,
+) {
+    if depth > 32 {
+        return;
+    }
+    for rel in included_paths(src) {
+        let raw = Path::new(&rel);
+        let full = if raw.is_absolute() {
+            raw.to_path_buf()
+        } else {
+            base.join(raw)
+        };
+        let canon = std::fs::canonicalize(&full).unwrap_or(full);
+        if !seen.insert(canon.clone()) {
+            continue;
+        }
+        hash_bytes(h, b"\0include\0");
+        match std::fs::read(&canon) {
+            Ok(bytes) => {
+                hash_bytes(h, &bytes);
+                if let Ok(text) = std::str::from_utf8(&bytes) {
+                    let next = canon.parent().unwrap_or(base).to_path_buf();
+                    mix_includes(h, &next, text, seen, depth + 1);
+                }
+            }
+            Err(_) => hash_bytes(h, b"\0missing\0"),
+        }
+    }
+}
+
+/// `use "path"` occurrences taken from the token stream, so a mention inside a
+/// comment or another string cannot invalidate the cache spuriously.
+fn included_paths(src: &str) -> Vec<String> {
+    use crate::lexer::{lex, Tok};
+    let Ok(toks) = lex(src) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for pair in toks.windows(2) {
+        if let (Tok::Ident(k), (Tok::Str(s), _)) = (&pair[0].0, &pair[1]) {
+            if k == "use" {
+                out.push(s.clone());
+            }
+        }
+    }
+    out
 }

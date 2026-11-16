@@ -7,6 +7,18 @@ use std::rc::Rc;
 pub struct FuncRef {
     pub chunk: usize,
     pub name: String,
+    /// Values captured at closure creation; a plain function has none.
+    pub upvalues: Vec<Value>,
+}
+
+impl FuncRef {
+    pub fn new(chunk: usize, name: String) -> FuncRef {
+        FuncRef {
+            chunk,
+            name,
+            upvalues: Vec::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -18,6 +30,9 @@ pub enum Value {
     Str(Rc<String>),
     Array(Rc<RefCell<Vec<Value>>>),
     Object(Rc<RefCell<BTreeMap<String, Value>>>),
+    /// A function-scope variable boxed so closures can share it. Never escapes
+    /// into user data: display/json/compare delegate to the inner value.
+    Cell(Rc<RefCell<Value>>),
     Func(Rc<FuncRef>),
     Builtin(&'static str),
 }
@@ -55,6 +70,7 @@ impl Value {
             Value::Int(i) => *i != 0,
             Value::Float(f) => *f != 0.0 && !f.is_nan(),
             Value::Str(s) => !s.is_empty(),
+            Value::Cell(c) => c.borrow().truthy(),
             _ => true,
         }
     }
@@ -69,6 +85,7 @@ impl Value {
             Value::Array(_) => "array",
             Value::Object(_) => "object",
             Value::Func(_) | Value::Builtin(_) => "fn",
+            Value::Cell(c) => c.borrow().type_name(),
         }
     }
 
@@ -79,6 +96,7 @@ impl Value {
             Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
             Value::Null => Some(0.0),
             Value::Str(s) => s.trim().parse::<f64>().ok(),
+            Value::Cell(c) => c.borrow().to_num(),
             _ => None,
         }
     }
@@ -112,6 +130,7 @@ impl Value {
         }
         match self {
             Value::Null => out.push_str("null"),
+            Value::Cell(c) => c.borrow().write_json(out, depth + 1),
             Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
             Value::Int(i) => {
                 let _ = write!(out, "{}", i);
