@@ -15,10 +15,10 @@ ROOT = HERE.parent
 DIST = HERE / "dist"
 CELLS = HERE / "dist" / "cells"
 PAYLOAD = HERE / "payload-build"
-LOADER_SOURCE = HERE / "loader.c"
-AUTHENTICODE_PAD_SOURCE = HERE / "authenticode-pad.S"
-AUTHENTICODE_PREPARE_SOURCE = HERE / "prepare-authenticode.py"
-VERSION_RESOURCE_SOURCE = HERE / "ape-version.rc"
+# v0.2.27: the cosmocc polyglot lane is retired; loader.c and its pad/rc
+# companions are frozen history (see loader/README.md). The live launcher is
+# loader/com-rs (Rust), whose identity is the packed .com manifest itself.
+LAUNCHER_SOURCES = [HERE / "com-rs" / "src" / "lib.rs"]
 
 
 def sha256(path: Path) -> str:
@@ -135,45 +135,6 @@ def payload_digests(expected_version: str) -> dict[str, dict[str, object]]:
     return out
 
 
-def authenticode_layout(path: Path, expected_version: str) -> dict[str, int | bool | str]:
-    raw = path.read_bytes()
-    pe = struct.unpack_from("<I", raw, 0x3C)[0]
-    optional = pe + 24
-    optional_size = struct.unpack_from("<H", raw, pe + 20)[0]
-    directories = struct.unpack_from("<I", raw, optional + 108)[0]
-    resource_rva, resource_size = struct.unpack_from("<II", raw, optional + 128)
-    security_offset, security_size = struct.unpack_from("<II", raw, optional + 144)
-    ready = optional_size == 0xF0 and directories == 16
-    if not ready or security_offset or security_size or not resource_rva or not resource_size:
-        raise SystemExit("unsigned APE lacks VERSIONINFO or an empty Authenticode Security Directory")
-    table = pe + 24 + optional_size
-    resource_offset = None
-    sections = struct.unpack_from("<H", raw, pe + 6)[0]
-    for index in range(sections):
-        entry = table + index * 40
-        virtual_size, virtual_address, raw_size, raw_offset = struct.unpack_from("<IIII", raw, entry + 8)
-        if virtual_address <= resource_rva < virtual_address + max(virtual_size, raw_size):
-            resource_offset = raw_offset + resource_rva - virtual_address
-            break
-    if resource_offset is None or resource_offset + resource_size > len(raw):
-        raise SystemExit("APE VERSIONINFO Resource Directory is outside PE sections")
-    resource = raw[resource_offset : resource_offset + resource_size]
-    for value in ("ProductName", "MiniCon", "ProductVersion", expected_version):
-        if value.encode("utf-16le") not in resource:
-            raise SystemExit(f"APE VERSIONINFO lacks {value}")
-    return {
-        "ready": ready,
-        "optional_header_bytes": optional_size,
-        "data_directory_count": directories,
-        "security_file_offset": security_offset,
-        "security_bytes": security_size,
-        "resource_rva": resource_rva,
-        "resource_bytes": resource_size,
-        "product_name": "MiniCon",
-        "product_version": expected_version,
-    }
-
-
 def rust_com_digests() -> dict[str, dict[str, object]]:
     """Per-cell Rust-launcher artifacts (loader/dist/rust): the v0.2.27
     single-file assets. Every present artifact must carry the container table
@@ -200,41 +161,44 @@ def rust_com_digests() -> dict[str, dict[str, object]]:
     return out
 
 
+def launcher_source_digests() -> dict[str, str]:
+    return {path.name: sha256(path) for path in LAUNCHER_SOURCES if path.is_file()}
+
+
 def main() -> None:
-    com = DIST / "minicon.com"
-    if not com.is_file():
-        raise SystemExit("missing dist/minicon.com")
-    com_sha = sha256(com)
-    (DIST / "minicon.com.sha256").write_text(com_sha + "\n")
+    rust_dir = DIST / "rust"
+    if not (rust_dir / "manifest.json").is_file():
+        raise SystemExit("missing dist/rust/manifest.json (run pack-rust-all.sh)")
+    coms = rust_com_digests()
+    if len(coms) < 6:
+        raise SystemExit(f"expected at least six .com artifacts, found {len(coms)}")
+    primary = coms.get("minicon-win-x86_64.com")
+    if not primary:
+        raise SystemExit("missing the primary minicon-win-x86_64.com artifact")
     ident = source_identity()
     version = product_version()
     receipt = {
-        "schema": 2,
+        "schema": 3,
         "product_version": version,
         "source_sha": ident["source_sha"],
         "source_dirty": ident["source_dirty"],
         "source_tree_digest": ident["source_tree_digest"],
-        "minicon_com_sha256": com_sha,
-        "minicon_com_bytes": com.stat().st_size,
+        "minicon_com_sha256": primary["sha256"],
+        "minicon_com_bytes": primary["bytes"],
         "delivery_profiles": {
             "windows": "windows-release",
             "linux": "release",
             "macos": "release-fast",
         },
-        "loader_source_sha256": sha256(LOADER_SOURCE),
-        "authenticode_pad_source_sha256": sha256(AUTHENTICODE_PAD_SOURCE),
-        "authenticode_prepare_source_sha256": sha256(AUTHENTICODE_PREPARE_SOURCE),
-        "version_resource_source_sha256": sha256(VERSION_RESOURCE_SOURCE),
-        "authenticode": authenticode_layout(com, version),
+        "launcher_sources": launcher_source_digests(),
         "tools": {
             "rustc": cmd("rustc", "--version"),
             "zig": cmd("zig", "version"),
             "cargo_zigbuild": cmd("cargo-zigbuild", "--version") or cmd("cargo", "zigbuild", "--version"),
             "cargo_xwin": cmd("cargo", "xwin", "--version"),
-            "cosmocc": cmd("cosmocc", "--version"),
         },
         "payloads": payload_digests(version),
-        "rust_coms": rust_com_digests(),
+        "rust_coms": coms,
     }
     empty = [k for k, v in receipt["tools"].items() if not v]
     if empty:
@@ -245,7 +209,7 @@ def main() -> None:
         raise SystemExit(f"payload set {sorted(receipt['payloads'])}")
     (DIST / "build-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     print(json.dumps({
-        "minicon_com_sha256": com_sha,
+        "minicon_com_sha256": primary["sha256"],
         "source_sha": receipt["source_sha"],
         "source_dirty": receipt["source_dirty"],
         "source_tree_digest": receipt["source_tree_digest"],

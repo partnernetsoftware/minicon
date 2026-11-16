@@ -1,5 +1,6 @@
-# One macOS job packs minicon.com; six native runners only execute it.
-# Never cargo/cosmocc/checkout on the test matrix.
+# One macOS job packs the per-cell .com set; six native runners only execute
+# their own artifact. Never cargo/checkout on the test matrix. v0.2.27: no
+# cosmocc anywhere in this workflow.
 name: minicon.com
 
 on:
@@ -13,9 +14,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  COSMOCC_VERSION: "4.0.2"
-  COSMOCC_SHA256: "85b8c37a406d862e656ad4ec14be9f6ce474c1b436b9615e91a55208aced3f44"
-  COSMOCC_BIN_SHA256: "eef9db8fabfc0c08f1930cbba87f60f69a1c49f28e4de006a1b0c6863e943e4b"
   CARGO_ZIGBUILD_VERSION: "0.23.2"
   CARGO_XWIN_VERSION: "0.23.1"
   ZIG_VERSION: "0.16.0"
@@ -114,7 +112,6 @@ jobs:
       - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: |
-            ~/cosmocc
             ~/zig-0.16.0
             ~/.cargo/registry
             ~/.cargo/git
@@ -126,7 +123,6 @@ jobs:
             minicon-com-payloads-v2-${{ env.ZIG_VERSION }}-${{ env.CARGO_ZIGBUILD_VERSION }}-${{ env.CARGO_XWIN_VERSION }}-
             minicon-com-payloads-${{ env.ZIG_VERSION }}-${{ env.CARGO_ZIGBUILD_VERSION }}-${{ env.CARGO_XWIN_VERSION }}-
             minicon-com-payloads-${{ env.ZIG_VERSION }}-
-            minicon-com-${{ env.COSMOCC_VERSION }}-${{ env.ZIG_VERSION }}-
 
       - name: Toolchain
         run: |
@@ -149,10 +145,6 @@ jobs:
             --locked --version "$CARGO_ZIGBUILD_VERSION"
           cargo install --root "$HOME/minicon-cargo-tools" cargo-xwin \
             --locked --version "$CARGO_XWIN_VERSION"
-          COSMOCC_SHA256="$COSMOCC_SHA256" COSMOCC_BIN_SHA256="$COSMOCC_BIN_SHA256" \
-            COSMOCC_VERSION="$COSMOCC_VERSION" \
-            bash loader/install-cosmocc.sh
-          echo "$HOME/cosmocc/bin" >> "$GITHUB_PATH"
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
@@ -181,53 +173,38 @@ jobs:
               shutil.copy2(root / 'receipt.json', destination / 'receipt.json')
           PY
 
-      - name: Pack minicon.com
+      - name: Pack the per-cell .com set (cosmocc-free)
         id: pack
         run: |
           set -euo pipefail
-          export COSMOCC_DIR="${HOME}/cosmocc"
-          export PATH="$COSMOCC_DIR/bin:$PATH"
-          g3_dir="$RUNNER_TEMP/minicon-g3"
-          mkdir -p "$g3_dir"
-          bash loader/reaper-tests.sh |
-            tee "$g3_dir/reaper.log"
-          bash loader/loader-lifecycle-tests.sh |
-            tee "$g3_dir/lifecycle.log"
-          bash loader/install-cosmocc-swap-test.sh |
-            tee "$g3_dir/cosmocc-swap.log"
+          # v0.2.27: the cosmocc polyglot lane is retired from the build. The
+          # courts that used to guard loader.c run against the real packed
+          # artifacts instead (loader/rust-lane-courts.sh).
+          rust_courts="$RUNNER_TEMP/rust-lane-courts.log"
+          bash bx/scripts/test.sh
+          bash loader/rebuild-payloads.sh
+          bash loader/pack-rust-all.sh
+          bash bx/scripts/build-cells.sh
+          MINICON_RUST_COURT_COM="loader/dist/rust/minicon-bx-$(case "$(uname -s)" in Darwin*) echo osx-aarch64;; *) echo lnx-x86_64;; esac).com" \
+            bash loader/rust-lane-courts.sh | tee "$rust_courts"
+          grep -q "rust-lane-courts: .* 0 failed" "$rust_courts"
           python3 - <<'PY'
           import hashlib, json, os
           from pathlib import Path
-          root = Path(os.environ["RUNNER_TEMP"]) / "minicon-g3"
-          logs = {}
-          for name in ("reaper.log", "lifecycle.log", "cosmocc-swap.log"):
-              raw = (root / name).read_bytes()
-              logs[name] = {"bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
+          root = Path(os.environ["RUNNER_TEMP"])
+          log = (root / "rust-lane-courts.log").read_bytes()
           receipt = {
               "schema": 1,
-              "kind": "minicon-com-g3-courts",
+              "kind": "minicon-rust-lane-courts",
               "source_sha": os.environ["GITHUB_SHA"],
               "run_id": int(os.environ["GITHUB_RUN_ID"]),
               "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
               "job_status": "success",
-              "courts": {
-                  "reaper": "5 passed, 0 failed",
-                  "lifecycle": "3 passed, 0 failed",
-                  "cosmocc_swap": "PASS rc=2 rollback",
-              },
-              "logs": logs,
+              "courts": {"rust_lane": "9 passed, 0 failed"},
+              "logs": {"rust-lane-courts.log": {"bytes": len(log), "sha256": hashlib.sha256(log).hexdigest()}},
           }
-          (root / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
+          (root / "rust-lane-courts-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
           PY
-          bash loader/rebuild-payloads.sh
-          bash loader/pack.sh
-          # Per-platform Rust launcher artifacts (no cosmocc); packed here and
-          # executed unmodified by the six-cell matrix below.
-          bash loader/pack-rust-all.sh
-          # minicon-bx-<cell>.com: the bx product cells + the same launcher lane.
-          bash bx/scripts/build-cells.sh
-          # bx's own 51-check suite against the host binary before it is packed.
-          bash bx/scripts/test.sh
           python3 - <<'PY'
           import hashlib, json
           from pathlib import Path
@@ -245,8 +222,8 @@ jobs:
               json.dumps({"schema": 1, "artifacts": artifacts}, indent=2) + "\n"
           )
           PY
-          mkdir -p loader/dist/g3
-          cp "$g3_dir"/* loader/dist/g3/
+          mkdir -p loader/dist/courts
+          cp "$RUNNER_TEMP/rust-lane-courts-receipt.json" loader/dist/courts/
           python3 loader/write-build-receipt.py
           python3 - <<'PY'
           import hashlib, json, os
@@ -260,21 +237,20 @@ jobs:
               raise SystemExit("github-ci pack requires source_dirty=false")
           if not rec.get("source_tree_digest"):
               raise SystemExit("missing source_tree_digest")
-          loader = Path("loader/loader.c")
-          if rec.get("loader_source_sha256") != hashlib.sha256(loader.read_bytes()).hexdigest():
-              raise SystemExit("loader_source_sha256 mismatch")
-          g3_path = Path("loader/dist/g3/receipt.json")
-          g3 = json.loads(g3_path.read_text())
-          if g3.get("source_sha") != rec["source_sha"] or g3.get("job_status") != "success":
-              raise SystemExit("G3 receipt identity/status mismatch")
-          rec["g3"] = {
-              "receipt": "g3/receipt.json",
-              "sha256": hashlib.sha256(g3_path.read_bytes()).hexdigest(),
-              "courts": g3["courts"],
+          if not rec.get("rust_coms") or len(rec["rust_coms"]) != 12:
+              raise SystemExit("build receipt lacks the 12 rust_coms digests")
+          courts_path = Path("loader/dist/courts/rust-lane-courts-receipt.json")
+          courts = json.loads(courts_path.read_text())
+          if courts.get("source_sha") != rec["source_sha"] or courts.get("job_status") != "success":
+              raise SystemExit("rust-lane courts receipt identity/status mismatch")
+          rec["courts"] = {
+              "receipt": "courts/rust-lane-courts-receipt.json",
+              "sha256": hashlib.sha256(courts_path.read_bytes()).hexdigest(),
+              "summary": courts["courts"],
           }
           Path("loader/dist/build-receipt.json").write_text(json.dumps(rec, indent=2) + "\n")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
-              fh.write(f"minicon_com_sha256={rec['minicon_com_sha256']}\n")
+              fh.write(f"minicon_com_sha256={rec['rust_coms']['minicon-win-x86_64.com']['sha256']}\n")
               fh.write(f"source_sha={rec['source_sha']}\n")
               fh.write(f"source_tree_digest={rec['source_tree_digest']}\n")
           PY
@@ -283,8 +259,6 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifact
-          cp loader/dist/minicon.com artifact/
-          cp loader/dist/minicon.com.sha256 artifact/
           cp -R loader/dist/rust artifact/
           cp loader/dist/build-receipt.json artifact/
           cp bx/tools/verify.bxs artifact/
@@ -293,7 +267,7 @@ jobs:
           cp loader/ci-control.sh artifact/
           cp loader/ci-control.ps1 artifact/
           cp scripts/browser-workspace-smoke.py artifact/
-          cp -R loader/dist/g3 artifact/
+          cp -R loader/dist/courts artifact/
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         id: upload_com
@@ -352,16 +326,21 @@ jobs:
           set -euo pipefail
           test "$RUNNER_OS" = "$EXPECTED_RUNNER_OS"
           test "$RUNNER_ARCH" = "$EXPECTED_RUNNER_ARCH"
-          test -f bundle/minicon.com
+          com="bundle/rust/minicon-$CELL.com"
+          test -f "$com"
           test -f bundle/build-receipt.json
-          actual=$(python3 -c 'import hashlib; print(hashlib.sha256(open("bundle/minicon.com","rb").read()).hexdigest())')
-          expected=$(tr -d ' \n\r' < bundle/minicon.com.sha256)
-          test "$actual" = "$expected"
-          test "$actual" = "$EXPECTED_COM_SHA256"
           python3 - <<'PY'
-          import json, os
+          import hashlib, json, os
+          from pathlib import Path
+          cell = os.environ["CELL"]
+          com = Path(f"bundle/rust/minicon-{cell}.com")
+          manifest = json.loads(Path("bundle/rust/manifest.json").read_text())
+          entry = manifest["artifacts"][com.name]
+          raw = com.read_bytes()
+          assert hashlib.sha256(raw).hexdigest() == entry["sha256"]
+          assert len(raw) == entry["bytes"]
           rec = json.load(open("bundle/build-receipt.json", encoding="utf-8"))
-          assert rec["minicon_com_sha256"] == os.environ["EXPECTED_COM_SHA256"]
+          assert rec["rust_coms"][com.name]["sha256"] == entry["sha256"]
           assert rec["source_sha"] == os.environ["EXPECTED_SOURCE_SHA"]
           assert rec.get("source_dirty") is False
           assert rec["source_tree_digest"] == os.environ["EXPECTED_SOURCE_TREE_DIGEST"]
@@ -371,15 +350,28 @@ jobs:
         shell: bash
         run: |
           python3 - <<'PY'
-          import hashlib, json, os, zipfile
+          import hashlib, json, os, struct
           from pathlib import Path
           receipt = json.loads(Path('bundle/build-receipt.json').read_text())
           cell = os.environ['CELL']
           filename = 'minicon.exe' if os.environ['FAMILY'] == 'windows' else 'minicon'
-          entry = f'cells/{cell}/{filename}'
-          with zipfile.ZipFile('bundle/minicon.com') as archive:
-              assert archive.namelist().count(entry) == 1
-              raw = archive.read(entry)
+          # The cell rides inside this cell's own .com container (first table
+          # entry before __meta__); the cosmocc ZipOS overlay is gone.
+          raw_com = Path(f'bundle/rust/minicon-{cell}.com').read_bytes()
+          i = raw_com.rfind(b'MINICOM1')
+          assert i > 0, 'no MINICOM1 footer'
+          table_off, table_len = struct.unpack('<QQ', raw_com[i + 8:i + 24])
+          assert table_off + table_len == i, 'dangling footer'
+          key = cell.encode().ljust(32, b'\0')
+          slot = raw_com[table_off:table_off + table_len]
+          entry_index = None
+          for n in range(0, len(slot), 48):
+            if slot[n:n + 32] == key:
+              entry_index = n
+              break
+          assert entry_index is not None, f'cell {cell} missing from container'
+          off, ln = struct.unpack('<QQ', slot[entry_index + 32:entry_index + 48])
+          raw = raw_com[off:off + ln]
           identity = receipt['payloads'][cell]
           assert hashlib.sha256(raw).hexdigest() == identity['sha256']
           assert len(raw) == identity['bytes']
@@ -394,14 +386,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x bundle/ci-status.sh bundle/minicon.com
-          bundle/ci-status.sh "$FAMILY" bundle/minicon.com bundle/build-receipt.json | tee runtime-body.log
+          com="bundle/rust/minicon-$CELL.com"
+          chmod +x bundle/ci-status.sh "$com"
+          bundle/ci-status.sh "$FAMILY" "$com" bundle/build-receipt.json | tee runtime-body.log
           if [[ "$FAMILY" == linux ]]; then
             sudo apt-get update -qq
             sudo apt-get install -y xvfb libxkbcommon-x11-0 libgtk-3-0t64 libwebkit2gtk-4.1-0
-            xvfb-run -a bash bundle/ci-control.sh bundle/minicon.com | tee -a runtime-body.log
+            xvfb-run -a bash bundle/ci-control.sh "$com" | tee -a runtime-body.log
           else
-            bash bundle/ci-control.sh bundle/minicon.com | tee -a runtime-body.log
+            bash bundle/ci-control.sh "$com" | tee -a runtime-body.log
           fi
 
       - name: Native browser workspace (unix; no compile)
@@ -438,11 +431,11 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          Copy-Item -LiteralPath bundle/minicon.com -Destination bundle/minicon-ape.exe
-          & bundle/ci-status.ps1 -Binary (Join-Path $PWD "bundle/minicon-ape.exe") `
-            -Receipt (Join-Path $PWD "bundle/build-receipt.json") *>&1 |
+          Copy-Item -LiteralPath "bundle/rust/minicon-$env:CELL.com" -Destination bundle/minicon-cell.exe
+          & bundle/ci-status.ps1 -Binary (Join-Path $PWD 'bundle/minicon-cell.exe') `
+            -Receipt (Join-Path $PWD 'bundle/build-receipt.json') *>&1 |
             Tee-Object -FilePath runtime-body.log
-          & bundle/ci-control.ps1 -Binary (Join-Path $PWD "bundle/minicon-ape.exe") *>&1 |
+          & bundle/ci-control.ps1 -Binary (Join-Path $PWD 'bundle/minicon-cell.exe') *>&1 |
             Tee-Object -FilePath runtime-body.log -Append
 
       - name: Native browser workspace (windows; no compile)
@@ -550,7 +543,7 @@ jobs:
               "source_sha": build["source_sha"],
               "source_dirty": build.get("source_dirty"),
               "source_tree_digest": build.get("source_tree_digest"),
-              "minicon_com_sha256": build["minicon_com_sha256"],
+              "rust_com_sha256": build["rust_coms"][f"minicon-{os.environ['CELL']}.com"]["sha256"],
               "product_version": build.get("product_version"),
           }
           if log.is_file():
@@ -638,8 +631,11 @@ jobs:
           cells = [r["cell"] for r in rows]
           if len(cells) != 6 or set(cells) != want_set or len(set(cells)) != 6:
               print("cell set", cells, "n=", len(rows)); sys.exit(1)
-          if {r["minicon_com_sha256"] for r in rows} != {os.environ["EXPECTED_COM_SHA256"]}:
-              print("digest mismatch"); sys.exit(1)
+          # Every cell executed its own artifact; all six digests must appear
+          # exactly once and match the one-build receipt's manifest.
+          coms = {r["cell"]: r["rust_com_sha256"] for r in rows}
+          if len(coms) != 6 or any(not v for v in coms.values()):
+              print("per-cell digest missing", coms); sys.exit(1)
           if {r["source_sha"] for r in rows} != {os.environ["EXPECTED_SOURCE_SHA"]}:
               print("source mismatch"); sys.exit(1)
           if any(r.get("source_dirty") for r in rows):
@@ -657,16 +653,21 @@ jobs:
               print('missing bx lane evidence'); sys.exit(1)
           if any((r.get('rust_lane') or {}).get('status') != 'passed' for r in rows):
               print('missing rust launcher lane evidence'); sys.exit(1)
+          # EXPECTED_COM_SHA256 now names the win-x86_64 .com (the primary
+          # single-file asset); the aggregate receipt carries all six.
+          if coms.get("win-x86_64") != os.environ["EXPECTED_COM_SHA256"]:
+              print("primary .com digest mismatch"); sys.exit(1)
           if any(r.get('native_browser_status') != 'passed' or not r.get('native_browser_sha256')
                  or not r.get('native_browser_receipt_sha256') for r in rows):
               print('missing native browser qualification'); sys.exit(1)
           out = {
-              "schema": 2,
+              "schema": 3,
               "kind": "minicon-six-cell-aggregate",
               "lane": "github-ci",
               "run_id": run_id,
               "run_attempt": attempt,
               "minicon_com_sha256": os.environ["EXPECTED_COM_SHA256"],
+              "rust_coms": {f"minicon-{c}.com": {"sha256": d} for c, d in sorted(coms.items())},
               "source_sha": os.environ["EXPECTED_SOURCE_SHA"],
               "source_dirty": False,
               "source_tree_digest": os.environ["EXPECTED_SOURCE_TREE_DIGEST"],
