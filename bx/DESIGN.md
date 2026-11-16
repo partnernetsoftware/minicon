@@ -71,23 +71,24 @@
 
 **迭代是一套统一协议。** `ITER_PREP` 在循环入口把数组/字符串/对象归一化成数组，`for x in …` 因此只有一条实现路径；类型不对时给出明确错误，而不是静默索引一个映射表得到 `null`（这正是 v0.1 的实际缺陷）。键值形式 `for k, v in …` 走 `ITER_KEYS`：对象给键、数组与字符串给下标，值统一用 `src[k]` 取，跨类型只有一条语义。
 
-## 5. 字节码格式（v1）
+## 5. 字节码格式（v2）
 
 小端。所有字符串 = `u32` 长度 + UTF-8 字节。
 
 ```
-0   magic        "BXB\x01"
+0   magic        "BXB\x02"
 4   want_result  u8      eval 模式下保留最后一个表达式值
-5   chunk_count  u32
+5   chunk_count  u32     1 ..= 100 000
     每 chunk:
-      name        str
+      name        str     函数名，`<main>` 是顶层
+      file        str     定义它的源文件（v2 新增；v1 没有这一项）
       arity       u16
       max_slots   u16
       code_len    u32
       code        code_len 字节
-      run_count   u32
+      run_count   u32     行号表 RLE 段数，<= code_len + 1
       runs        每条 { line: u32, count: u32 }
-      const_count u32
+      const_count u32     <= 1 000 000
       consts      每项 { tag: u8, payload }
 ```
 
