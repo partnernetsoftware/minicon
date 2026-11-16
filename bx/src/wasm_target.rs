@@ -267,6 +267,23 @@ impl Checker {
             .ok_or_else(|| "unknown object shape".to_string())
     }
 
+    fn shape_union(&self, left: u32, right: u32) -> Result<u32, String> {
+        let left_keys = self.shape_keys(left)?;
+        let right_keys = self.shape_keys(right)?;
+        let mut keys = left_keys;
+        for key in right_keys {
+            if !keys.contains(&key) {
+                keys.push(key);
+            }
+        }
+        let mut shapes = self.shapes.borrow_mut();
+        if let Some(index) = shapes.iter().position(|shape| shape.keys == keys) {
+            return Ok(index as u32);
+        }
+        shapes.push(Shape { keys });
+        Ok((shapes.len() - 1) as u32)
+    }
+
     fn field_index(&self, shape: u32, key: &str) -> Result<usize, String> {
         let shapes = self.shapes.borrow();
         let shape = shapes
@@ -882,6 +899,14 @@ impl Checker {
                             return Err("wasm target get() default must be an int".to_string());
                         }
                         return Ok(Ty::Int);
+                    }
+                    if name == "merge" && args.len() == 2 {
+                        let left = self.infer(&args[0])?;
+                        let right = self.infer(&args[1])?;
+                        let (Ty::Obj(left_shape), Ty::Obj(right_shape)) = (left, right) else {
+                            return Err("wasm target merge() takes two records".to_string());
+                        };
+                        return Ok(Ty::Obj(self.shape_union(left_shape, right_shape)?));
                     }
                     if name == "str" && args.len() == 1 {
                         let ty = self.infer(&args[0])?;
@@ -4355,6 +4380,45 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Local(0x20, result_tmp));
                         return Ok(Ty::Int);
                     }
+                    if name == "merge" && args.len() == 2 {
+                        let Ty::Obj(union) = self.type_of(expr)? else {
+                            return Err("wasm target merge() takes two records".to_string());
+                        };
+                        let Ty::Obj(left_shape) = self.type_of(&args[0])? else {
+                            return Err("wasm target merge() takes two records".to_string());
+                        };
+                        let Ty::Obj(right_shape) = self.type_of(&args[1])? else {
+                            return Err("wasm target merge() takes two records".to_string());
+                        };
+                        let union_keys = self.checker.shape_keys(union)?;
+                        let left_keys = self.checker.shape_keys(left_shape)?;
+                        let right_keys = self.checker.shape_keys(right_shape)?;
+                        let dest = self.builder.add_local(ValType::I32);
+                        self.emit_alloc_const(8 * union_keys.len() as u32);
+                        self.builder.push(Instr::Local(0x21, dest));
+                        for (index, key) in union_keys.iter().enumerate() {
+                            let (argument, offset) = if let Some(at) =
+                                right_keys.iter().position(|known| known == key)
+                            {
+                                (1usize, 8 * at as u32)
+                            } else {
+                                let at = left_keys
+                                    .iter()
+                                    .position(|known| known == key)
+                                    .ok_or_else(|| "merge key is missing".to_string())?;
+                                (0usize, 8 * at as u32)
+                            };
+                            self.builder.push(Instr::Local(0x20, dest));
+                            self.builder
+                                .push(Instr::Const(0x41, WVal::I32((8 * index) as i32)));
+                            self.builder.push(Instr::Op(0x6a));
+                            self.emit_expr(&args[argument])?;
+                            self.builder.push(Instr::Mem(0x29, 3, offset));
+                            self.builder.push(Instr::Mem(0x37, 3, 0));
+                        }
+                        self.builder.push(Instr::Local(0x20, dest));
+                        return Ok(Ty::Obj(union));
+                    }
                     if name == "str" && args.len() == 1 {
                         let ty = self.type_of(&args[0])?;
                         if ty == Ty::Bool {
@@ -6131,6 +6195,24 @@ mod tests {
         let (numbers, _) = run_with_argv(&source, &[]);
         let _ = std::fs::remove_file(&blocker);
         assert_eq!(numbers, vec![-1]);
+    }
+
+    #[test]
+    fn record_merge() {
+        let (numbers, strings) = run_with_argv(
+            "let o = merge({a: 1, b: 2}, {b: 3, c: 4})\nfor k in keys(o) {\n  print(k)\n}\nprint(o.a)\nprint(o.b)\nprint(o.c)\nprint(join(keys(merge({x: 1}, {y: 2})), \"+\"))",
+            &[],
+        );
+        assert_eq!(numbers, vec![1, 3, 4]);
+        assert_eq!(
+            strings,
+            vec![
+                "a".to_string(),
+                "b".to_string(),
+                "c".to_string(),
+                "x+y".to_string(),
+            ]
+        );
     }
 
     #[test]

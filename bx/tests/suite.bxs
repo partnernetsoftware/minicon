@@ -940,6 +940,16 @@ if (wasmObjb.code == 0 && wasmObjbRun.out == wasmObjbVm.out && wasmObjbRun.out.t
   casesFail += 1
   failures.push("wasm record builtins\n    wasm=" + json(wasmObjbRun.out) + " vm=" + json(wasmObjbVm.out) + " err=" + json(wasmObjbRun.err))
 }
+write(artDir + "/wasm-merge.bxs", 'let o = merge({a: 1, b: 2}, {b: 3, c: 4})\nfor k in keys(o) { print(k) }\nprint(o.a)\nprint(o.b)\nprint(o.c)\nprint(join(keys(merge({x: 1}, {y: 2})), "+"))\n')
+let wasmMerge = exec([BX, "build", "--wasm", artDir + "/wasm-merge.bxs", "-o", artDir + "/wasm-merge.wasm"])
+let wasmMergeRun = exec([BX, "run", artDir + "/wasm-merge.wasm"])
+let wasmMergeVm = exec([BX, "run", artDir + "/wasm-merge.bxs"])
+if (wasmMerge.code == 0 && wasmMergeRun.out == wasmMergeVm.out && wasmMergeRun.out.trim() == "a\nb\nc\n1\n3\n4\nx+y") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm record merge\n    wasm=" + json(wasmMergeRun.out) + " vm=" + json(wasmMergeVm.out) + " err=" + json(wasmMergeRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'fn outer() {\n  let n = 5\n  let f = fn(x) { return x + n }\n  return f(1)\n}\nprint(outer())\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1 && wasmBad.err.contains("cannot capture outer variables")) {
