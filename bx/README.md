@@ -186,7 +186,7 @@ bx run script.wasm                          # 用 bx 自己的解释器执行
 bx check script.wasm                        # 只校验模块
 ```
 
-支持 `let`/赋值/`+ - *`/`print(<int>)`、`print("...")`（含编译期字符串拼接）、整型数组 `[..]` 与 `arr[i]` / `len(arr)`、运行期字符串拼接 `s + t`（`memory.copy`）、定长记录 `{a: 1}` 与 `o.a`、`if/else`/`while`/`for`/`break`/`continue`、用户函数（参数/局部/递归调用）、argv 访问（`argc()`/`arg(i)`）、文件读写（`read_file`/`write_file`）、原生进程（`run`/`capture`）；分配走模块内 bump 堆，不需要 `alloc` 导入：字符串落在**导出线性内存**的数据段里，经 `env.print_utf8(ptr,len)` 输出；闭包、动态键对象、非 int 局部变量等仍未支持，会明确报错。产物可被其它引擎直接执行（node 已验证，含内存读取）。规格与路线见 [PRD 42](../prd/PRD_02_42_bx_wasm_target.md)。
+支持 `let`/赋值/`+ - * / %`/`print(<int>)`、`print("...")`（含编译期字符串拼接）、整型数组 `[..]` 与 `arr[i]` / `len(arr)`、运行期字符串拼接 `s + t`（`memory.copy`）、定长记录 `{a: 1}` 与 `o.a`、`if/else`/`while`/`for`/`break`/`continue`、用户函数（参数/局部/递归调用）、argv 访问（`argc()`/`arg(i)`）、文件读写（`read_file`/`write_file`）、原生进程（`run`/`capture`）；分配走模块内 bump 堆，不需要 `alloc` 导入：字符串落在**导出线性内存**的数据段里，经 `env.print_utf8(ptr,len)` 输出；闭包、动态键对象、非 int 局部变量等仍未支持，会明确报错。产物可被其它引擎直接执行（node 已验证，含内存读取）。规格与路线见 [PRD 42](../prd/PRD_02_42_bx_wasm_target.md)。
 ## 二进制
 
 `.bxb` 是带魔数 `BXB\x02` 的版本化容器：常量池 + 字节码 + 行号表（行程编码）+ 每个 chunk 的来源文件（v1 容器仍可读，来源文件未知）。

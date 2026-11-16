@@ -29,14 +29,15 @@ module should run in a browser once the Web ABI lands.
 ```text
 bx wasm target
 ├── emitter (AST → core wasm)
-│   ├── [v] i64 subset: let / assignment / `+ - *` / print(<int>)
+│   ├── [v] i64 subset: let / assignment / `+ - * / %` / print(<int>)
 │   ├── [v] strings: literals + compile-time `+`, data segments, `print_utf8`
 │   ├── [v] arrays of ints: `[..]`, `arr[i]`, `len(arr)` over the prototype heap
 │   ├── [v] runtime strings: bindings (ptr,len globals), `s + t`, `len(s)`
 │   ├── [v] fixed-layout records `{a: 1, b: 2}` with `o.a` field loads
 │   ├── [v] control flow: `if/else`, `while`, `for`, `break`/`continue`, comparisons
 │   ├── [v] user functions: params, int locals, `return <int>`, calls, recursion
-│   └── [-] closures, non-int locals, nested functions
+│   ├── [v] functions may read/write string, array and record globals
+│   └── [-] closures, non-int params/locals, nested functions
 ├── runtime (standard module execution, own code)
 │   ├── [v] decode + validate (type/import/function/global/export/code)
 │   ├── [v] interpreter: consts, globals, locals, calls, control flow, numeric ops
@@ -102,9 +103,12 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 36 in-tree unit tests cover encoder round-trip, memory/data decoding, UTF-8
+- 40 in-tree unit tests cover encoder round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
-  file I/O, process execution and rejection of unsupported constructs.
+  file I/O, process execution, operator spec mappings and rejection of
+  unsupported constructs. `i64.div_s`/`i64.rem_s` and the six comparison opcodes
+  are asserted against the wasm spec directly, after node cross-checks exposed an
+  off-by-one in the interpreter's `rem`/`le`/`ge` mappings.
 - CLI round-trip (`build --wasm` → `run` → `check`) is covered by the self-hosted
   suite and therefore by the packed six-cell CI lane.
 

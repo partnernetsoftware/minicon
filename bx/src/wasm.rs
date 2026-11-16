@@ -1497,12 +1497,12 @@ fn i32_compare(opcode: u8, a: i32, b: i32) -> bool {
         0x46 => a == b,
         0x47 => a != b,
         0x48 => a < b,
-        0x49 => a <= b,
+        0x49 => (a as u32) < (b as u32),
         0x4a => a > b,
-        0x4b => a >= b,
-        0x4c => (a as u32) < (b as u32),
+        0x4b => (a as u32) > (b as u32),
+        0x4c => a <= b,
         0x4d => (a as u32) <= (b as u32),
-        0x4e => (a as u32) > (b as u32),
+        0x4e => a >= b,
         _ => (a as u32) >= (b as u32),
     }
 }
@@ -1512,12 +1512,12 @@ fn i64_compare(opcode: u8, a: i64, b: i64) -> bool {
         0x51 => a == b,
         0x52 => a != b,
         0x53 => a < b,
-        0x54 => a <= b,
+        0x54 => (a as u64) < (b as u64),
         0x55 => a > b,
-        0x56 => a >= b,
-        0x57 => (a as u64) < (b as u64),
+        0x56 => (a as u64) > (b as u64),
+        0x57 => a <= b,
         0x58 => (a as u64) <= (b as u64),
-        0x59 => (a as u64) > (b as u64),
+        0x59 => a >= b,
         _ => (a as u64) >= (b as u64),
     }
 }
@@ -1527,8 +1527,8 @@ fn f32_compare(opcode: u8, a: f32, b: f32) -> bool {
         0x5b => a == b,
         0x5c => a != b,
         0x5d => a < b,
-        0x5e => a <= b,
-        0x5f => a > b,
+        0x5e => a > b,
+        0x5f => a <= b,
         _ => a >= b,
     }
 }
@@ -1538,8 +1538,8 @@ fn f64_compare(opcode: u8, a: f64, b: f64) -> bool {
         0x61 => a == b,
         0x62 => a != b,
         0x63 => a < b,
-        0x64 => a <= b,
-        0x65 => a > b,
+        0x64 => a > b,
+        0x65 => a <= b,
         _ => a >= b,
     }
 }
@@ -1559,16 +1559,28 @@ fn i32_binop(opcode: u8, a: i32, b: i32) -> Result<i32, String> {
             if b == 0 {
                 return Err("wasm trap: integer divide by zero".to_string());
             }
+            (a as u32).wrapping_div(b as u32) as i32
+        }
+        0x6f => {
+            if b == 0 {
+                return Err("wasm trap: integer divide by zero".to_string());
+            }
             a.wrapping_rem(b)
         }
-        0x6f => a & b,
-        0x70 => a | b,
-        0x71 => a ^ b,
-        0x72 => a.wrapping_shl(b as u32 & 31),
-        0x73 => a.wrapping_shr(b as u32 & 31),
-        0x74 => (a as u32).wrapping_shr(b as u32 & 31) as i32,
-        0x75 => a.rotate_left(b as u32 & 31),
-        0x76 => a.rotate_right(b as u32 & 31),
+        0x70 => {
+            if b == 0 {
+                return Err("wasm trap: integer divide by zero".to_string());
+            }
+            (a as u32).wrapping_rem(b as u32) as i32
+        }
+        0x71 => a & b,
+        0x72 => a | b,
+        0x73 => a ^ b,
+        0x74 => a.wrapping_shl(b as u32 & 31),
+        0x75 => a.wrapping_shr(b as u32 & 31),
+        0x76 => (a as u32).wrapping_shr(b as u32 & 31) as i32,
+        0x77 => a.rotate_left(b as u32 & 31),
+        0x78 => a.rotate_right(b as u32 & 31),
         _ => return Err(format!("unsupported i32 opcode 0x{opcode:02x}")),
     })
 }
@@ -1588,16 +1600,28 @@ fn i64_binop(opcode: u8, a: i64, b: i64) -> Result<i64, String> {
             if b == 0 {
                 return Err("wasm trap: integer divide by zero".to_string());
             }
+            (a as u64).wrapping_div(b as u64) as i64
+        }
+        0x81 => {
+            if b == 0 {
+                return Err("wasm trap: integer divide by zero".to_string());
+            }
             a.wrapping_rem(b)
         }
-        0x81 => a & b,
-        0x82 => a | b,
-        0x83 => a ^ b,
-        0x84 => a.wrapping_shl(b as u32 & 63),
-        0x85 => a.wrapping_shr(b as u32 & 63),
-        0x86 => (a as u64).wrapping_shr(b as u32 & 63) as i64,
-        0x87 => a.rotate_left(b as u32 & 63),
-        0x88 => a.rotate_right(b as u32 & 63),
+        0x82 => {
+            if b == 0 {
+                return Err("wasm trap: integer divide by zero".to_string());
+            }
+            (a as u64).wrapping_rem(b as u64) as i64
+        }
+        0x83 => a & b,
+        0x84 => a | b,
+        0x85 => a ^ b,
+        0x86 => a.wrapping_shl(b as u32 & 63),
+        0x87 => a.wrapping_shr(b as u32 & 63),
+        0x88 => (a as u64).wrapping_shr(b as u32 & 63) as i64,
+        0x89 => a.rotate_left(b as u32 & 63),
+        0x8a => a.rotate_right(b as u32 & 63),
         _ => return Err(format!("unsupported i64 opcode 0x{opcode:02x}")),
     })
 }
@@ -1970,6 +1994,18 @@ mod tests {
         bytes.push(3);
         bytes.push(0);
         assert!(validate(&bytes).is_err());
+    }
+
+    #[test]
+    fn opcode_mappings_follow_the_spec() {
+        assert!(i64_compare(0x57, 5, 5)); // le_s
+        assert!(i64_compare(0x59, 5, 5)); // ge_s
+        assert!(!i64_compare(0x54, 5, 5)); // lt_u is false for equal values
+        assert_eq!(i64_binop(0x7f, 7, 2).unwrap(), 3); // div_s
+        assert_eq!(i64_binop(0x81, 7, 2).unwrap(), 1); // rem_s
+        assert_eq!(i32_binop(0x71, 6, 3).unwrap(), 2); // and
+        assert_eq!(i32_binop(0x74, 1, 3).unwrap(), 8); // shl
+        assert_eq!(i32_compare(0x4c, 3, 3) as i32, 1); // le_s
     }
 
     #[test]

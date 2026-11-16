@@ -141,6 +141,13 @@ write(dir + "/wasm-fn.bxs", 'fn fact(n) {\n  if (n < 2) { return 1 }\n  return n
 write(dir + "/wasm-args.bxs", 'print(argc())\nprint(arg(0))\n')
 write(dir + "/wasm-fs.bxs", 'print(write_file("wasm-fs.txt", "payload"))\nprint(read_file("wasm-fs.txt"))\n')
 write(dir + "/wasm-proc.bxs", 'print(run("echo hi"))\nprint(capture("echo hi"))\n')
+write(dir + "/wasm-cmp.bxs", 'print(7 % 2)\nlet x = 5\nif (x <= 5) { print(10) }\n')
+test("wasm comparisons and modulo", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-cmp.bxs", "-o", dir + "/wasm-cmp.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-cmp.wasm"])
+  assert(ran.code == 0 && ran.out.trim() == "1\n10", "got " + ran.out + " " + ran.err)
+})
 test("wasm native process ABI", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-proc.bxs", "-o", dir + "/wasm-proc.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

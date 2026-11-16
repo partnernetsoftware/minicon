@@ -205,14 +205,7 @@ impl Checker {
                 return Ok(*ty);
             }
             if let Some(binding) = self.env.get(name) {
-                if binding.ty != Ty::Int {
-                    return Err(format!(
-                        "wasm target functions can use int globals only, '{}' is {}",
-                        name,
-                        ty_name(binding.ty)
-                    ));
-                }
-                return Ok(Ty::Int);
+                return Ok(binding.ty);
             }
             return Err(format!("undefined variable '{}'", name));
         }
@@ -250,7 +243,7 @@ impl Checker {
                     )),
                 }
             }
-            Expr::Bin(op @ (BinOp::Sub | BinOp::Mul), left, right) => {
+            Expr::Bin(op @ (BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod), left, right) => {
                 let lt = self.infer(left)?;
                 let rt = self.infer(right)?;
                 if lt != Ty::Int || rt != Ty::Int {
@@ -258,7 +251,7 @@ impl Checker {
                 }
                 Ok(Ty::Int)
             }
-            Expr::Bin(..) => Err("wasm target supports only + - *".to_string()),
+            Expr::Bin(..) => Err("wasm target supports + - * / %".to_string()),
             Expr::Object(fields) => {
                 if fields.is_empty() {
                     return Err("wasm target does not support empty objects yet".to_string());
@@ -740,9 +733,9 @@ impl<'a> Emitter<'a> {
                     BinOp::Eq => 0x51,
                     BinOp::Ne => 0x52,
                     BinOp::Lt => 0x53,
-                    BinOp::Le => 0x54,
+                    BinOp::Le => 0x57,
                     BinOp::Gt => 0x55,
-                    BinOp::Ge => 0x56,
+                    BinOp::Ge => 0x59,
                     _ => return Err("wasm target supports comparison conditions only".to_string()),
                 };
                 self.emit_expr(left)?;
@@ -808,7 +801,9 @@ impl<'a> Emitter<'a> {
                         BinOp::Add => 0x7c,
                         BinOp::Sub => 0x7d,
                         BinOp::Mul => 0x7e,
-                        _ => return Err("wasm target supports only + - *".to_string()),
+                        BinOp::Div => 0x7f,
+                        BinOp::Mod => 0x81,
+                        _ => return Err("wasm target supports + - * / %".to_string()),
                     }));
                     self.emit_store(name)?;
                 }
@@ -938,7 +933,9 @@ impl<'a> Emitter<'a> {
                 let opcode = match op {
                     BinOp::Sub => 0x7d,
                     BinOp::Mul => 0x7e,
-                    _ => return Err("wasm target supports only + - *".to_string()),
+                    BinOp::Div => 0x7f,
+                    BinOp::Mod => 0x81,
+                    _ => return Err("wasm target supports + - * / %".to_string()),
                 };
                 self.builder.push(Instr::Op(opcode));
                 Ok(Ty::Int)
@@ -1206,7 +1203,9 @@ impl<'a> Emitter<'a> {
                     BinOp::Add => 0x7c,
                     BinOp::Sub => 0x7d,
                     BinOp::Mul => 0x7e,
-                    _ => return Err("wasm target supports only + - *".to_string()),
+                    BinOp::Div => 0x7f,
+                    BinOp::Mod => 0x81,
+                    _ => return Err("wasm target supports + - * / %".to_string()),
                 }));
                 self.emit_store(name)?;
                 Ok(())
@@ -1553,6 +1552,31 @@ mod tests {
         let prints =
             run_source("let count = 0\nfn bump() { count += 1 }\nbump()\nbump()\nprint(count)");
         assert_eq!(prints, vec![2]);
+    }
+
+    #[test]
+    fn division_and_remainder() {
+        let prints =
+            run_source("let x = 7\nprint(x / 2)\nprint(x % 2)\nx /= 2\nprint(x)\nx *= 3\nprint(x)");
+        assert_eq!(prints, vec![3, 1, 3, 9]);
+    }
+
+    #[test]
+    fn functions_read_rich_globals() {
+        let (numbers, strings) = run_with_argv(
+            "let s = \"abc\"\nfn show() { print(s) }\nshow()\nlet a = [5, 6]\nfn pick() { return a[1] }\nprint(pick())\nlet o = {a: 9}\nfn field() { return o.a }\nprint(field())",
+            &[],
+        );
+        assert_eq!(numbers, vec![6, 9]);
+        assert_eq!(strings, vec!["abc".to_string()]);
+    }
+
+    #[test]
+    fn comparison_operators_match_wasm() {
+        let prints = run_source(
+            "let x = 5\nif (x <= 5) { print(1) }\nif (x >= 5) { print(2) }\nif (x < 5) { print(3) }\nif (x > 5) { print(4) }\nif (x != 5) { print(5) }",
+        );
+        assert_eq!(prints, vec![1, 2]);
     }
 
     #[test]
