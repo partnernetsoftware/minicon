@@ -758,7 +758,7 @@ fn decode_code_body(r: &mut Reader) -> Result<(Vec<ValType>, Vec<Instr>), String
 }
 
 fn is_supported_numeric_opcode(opcode: u8) -> bool {
-    matches!(opcode, 0x45..=0x8a | 0xa0..=0xa3 | 0xa7 | 0xad | 0xb9)
+    matches!(opcode, 0x45..=0x8a | 0xa0..=0xa3 | 0xa7 | 0xad | 0xb0 | 0xb9)
 }
 
 pub fn decode(bytes: &[u8]) -> Result<Module, String> {
@@ -1570,6 +1570,10 @@ impl<'m, H: Host> Exec<'m, H> {
                 let value = pop_i64(stack)?;
                 stack.push(WVal::I32(value as i32));
             }
+            0xb0 => {
+                let value = pop_f64(stack)?;
+                stack.push(WVal::I64(value as i64));
+            }
             0xb9 => {
                 let value = pop_i64(stack)?;
                 stack.push(WVal::F64(value as f64));
@@ -1922,6 +1926,57 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 };
                 (self.on_str)(&text);
                 Ok(Vec::new())
+            }
+            ("env", "int_to_str") => {
+                let value = match args.first() {
+                    Some(WVal::I64(value)) => *value,
+                    _ => return Err("env.int_to_str expects one i64".to_string()),
+                };
+                let text = value.to_string();
+                let start = self.next_file as usize;
+                let size = 4 + text.len();
+                if start + size > memory.len() {
+                    return Ok(vec![WVal::I32(0)]);
+                }
+                memory[start..start + 4].copy_from_slice(&(text.len() as u32).to_le_bytes());
+                memory[start + 4..start + size].copy_from_slice(text.as_bytes());
+                self.next_file = (start + size + 7) as u32 & !7;
+                Ok(vec![WVal::I32(start as i32)])
+            }
+            ("env", "f64_to_str") => {
+                let value = match args.first() {
+                    Some(WVal::F64(value)) => *value,
+                    _ => return Err("env.f64_to_str expects one f64".to_string()),
+                };
+                let text = if value.is_finite() {
+                    crate::value::fmt_float(value)
+                } else {
+                    "null".to_string()
+                };
+                let start = self.next_file as usize;
+                let size = 4 + text.len();
+                if start + size > memory.len() {
+                    return Ok(vec![WVal::I32(0)]);
+                }
+                memory[start..start + 4].copy_from_slice(&(text.len() as u32).to_le_bytes());
+                memory[start + 4..start + size].copy_from_slice(text.as_bytes());
+                self.next_file = (start + size + 7) as u32 & !7;
+                Ok(vec![WVal::I32(start as i32)])
+            }
+            ("env", "str_to_int") => {
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("env.str_to_int expects (i32 ptr, i32 len)".to_string()),
+                };
+                let bytes = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .ok_or_else(|| "env.str_to_int range is outside memory".to_string())?;
+                let text = String::from_utf8_lossy(bytes);
+                let trimmed = text.trim();
+                match trimmed.parse::<i64>() {
+                    Ok(value) => Ok(vec![WVal::I64(value)]),
+                    Err(_) => Err(format!("cannot convert '{}' to int", trimmed)),
+                }
             }
             ("env", "fmod") => {
                 let (a, b) = match (args.first(), args.get(1)) {

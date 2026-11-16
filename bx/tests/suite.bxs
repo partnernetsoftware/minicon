@@ -714,6 +714,16 @@ if (wasmForin.code == 0 && wasmForinRun.out == wasmForinVm.out && wasmForinRun.o
   casesFail += 1
   failures.push("wasm for-in arrays\n    wasm=" + json(wasmForinRun.out) + " vm=" + json(wasmForinVm.out) + " err=" + json(wasmForinRun.err))
 }
+write(artDir + "/wasm-conv.bxs", 'print(str(42))\nprint(str(3.5))\nprint(int("45"))\nprint(int(3.9))\nlet a = [1, 2, 3]\na.pop()\nprint(len(a))\nlet s = "hello"\nprint(s.len())\nprint(a.len())\nprint("n=" + str(7))\n')
+let wasmConv = exec([BX, "build", "--wasm", artDir + "/wasm-conv.bxs", "-o", artDir + "/wasm-conv.wasm"])
+let wasmConvRun = exec([BX, "run", artDir + "/wasm-conv.wasm"])
+let wasmConvVm = exec([BX, "run", artDir + "/wasm-conv.bxs"])
+if (wasmConv.code == 0 && wasmConvRun.out == wasmConvVm.out && wasmConvRun.out.trim() == "42\n3.5\n45\n3\n2\n5\n2\nn=7") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm str/int conversions, .len and pop\n    wasm=" + json(wasmConvRun.out) + " vm=" + json(wasmConvVm.out) + " err=" + json(wasmConvRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'let f = fn() { return 1 }\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1) {

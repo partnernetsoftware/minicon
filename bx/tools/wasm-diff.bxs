@@ -85,6 +85,10 @@ fn gen() {
   } else {
     lines.push('if (cmp_a == cmp_b) { print(1) } else { print(2) }')
   }
+  lines.push("print(str(" + str(1 + pick(99)) + "))")
+  lines.push("print(int(\"" + str(1 + pick(99)) + "\"))")
+  lines.push("let conv = \"n\" + str(" + str(1 + pick(9)) + ")")
+  lines.push("print(conv.len())")
   lines.push("let it = [1, 2, 3]")
   lines.push("let its = 0")
   lines.push("for iv in it { its = its + iv }")

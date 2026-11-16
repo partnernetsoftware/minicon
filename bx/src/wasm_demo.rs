@@ -69,6 +69,15 @@ function formatFloat(value) {
 }
 let instance = null;
 let nextArg = 65536;
+let nextStr = 262144;
+function writeStringBlock(text) {
+  const bytes = new TextEncoder().encode(text);
+  const start = nextStr;
+  new DataView(instance.exports.memory.buffer).setUint32(start, bytes.length, true);
+  new Uint8Array(instance.exports.memory.buffer, start + 4, bytes.length).set(bytes);
+  nextStr = (start + 4 + bytes.length + 7) & ~7;
+  return start;
+}
 const gl = { width: 0, height: 0, clear: [0, 0, 0, 1], pixels: new Uint8Array(0) };
 const queryArgs = (() => {
   if (typeof process !== "undefined" && Array.isArray(process.argv)) {
@@ -88,6 +97,12 @@ const imports = {
     },
     print_f64: (value) => { emit(formatFloat(value)); },
     fmod: (a, b) => a % b,
+    int_to_str: (value) => writeStringBlock(value.toString()),
+    f64_to_str: (value) => writeStringBlock(formatFloat(value)),
+    str_to_int: (ptr, len) => {
+      const text = new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, ptr, len)).trim();
+      return BigInt(parseInt(text, 10));
+    },
     str_compare: (ap, al, bp, bl) => {
       const bytesA = new Uint8Array(instance.exports.memory.buffer, ap, al);
       const bytesB = new Uint8Array(instance.exports.memory.buffer, bp, bl);

@@ -339,6 +339,22 @@ impl Checker {
                 }
                 Ok(Ty::Obj(self.shape_id(&keys)))
             }
+            Expr::MethodCall(object, key, args, _) => {
+                if key == "len" && args.is_empty() {
+                    let ty = self.infer(object)?;
+                    if matches!(ty, Ty::Str | Ty::Arr) {
+                        return Ok(Ty::Int);
+                    }
+                    return Err(format!(
+                        "wasm target .len() works on strings and arrays, got {}",
+                        ty_name(ty)
+                    ));
+                }
+                Err(format!(
+                    "wasm target does not support the .{} method in expressions yet",
+                    key
+                ))
+            }
             Expr::Member(object, key, _) => {
                 let ty = self.infer(object)?;
                 match ty {
@@ -375,6 +391,7 @@ impl Checker {
                 }
                 Ok(Ty::Int)
             }
+
             Expr::Call(callee, args, _) => {
                 if let Expr::Ident(name) = &**callee {
                     if let Some(sig) = self.fn_sig(name) {
@@ -447,6 +464,19 @@ impl Checker {
                     if name == "gl_png" && args.len() == 1 {
                         if self.infer(&args[0])? != Ty::Str {
                             return Err("wasm target gl_png(path) needs a string".to_string());
+                        }
+                        return Ok(Ty::Int);
+                    }
+                    if name == "str" && args.len() == 1 {
+                        if !is_number(self.infer(&args[0])?) {
+                            return Err("wasm target str() takes a number".to_string());
+                        }
+                        return Ok(Ty::Str);
+                    }
+                    if name == "int" && args.len() == 1 {
+                        let ty = self.infer(&args[0])?;
+                        if !is_number(ty) && ty != Ty::Str {
+                            return Err("wasm target int() takes a number or string".to_string());
                         }
                         return Ok(Ty::Int);
                     }
@@ -658,6 +688,12 @@ impl Checker {
                 if base != Ty::Arr {
                     return Err("wasm target supports .push on arrays only".to_string());
                 }
+                if name == "pop" {
+                    if !args.is_empty() {
+                        return Err("wasm target .pop takes no arguments".to_string());
+                    }
+                    return Ok(());
+                }
                 if name != "push" {
                     return Err(format!(
                         "wasm target does not support the .{} method yet",
@@ -842,7 +878,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 20;
+const IMPORT_COUNT: u32 = 23;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -853,6 +889,9 @@ const WEBGL_CLEAR: u32 = 16;
 const WEBGL_READ_PIXEL: u32 = 17;
 const WEBGL_TO_PNG: u32 = 18;
 const STR_COMPARE: u32 = 19;
+const INT_TO_STR: u32 = 20;
+const F64_TO_STR: u32 = 21;
+const STR_TO_INT: u32 = 22;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -1133,6 +1172,34 @@ impl<'a> Emitter<'a> {
         self.labels.pop();
         self.builder.push(Instr::Op(0x0b));
         self.scoped.pop();
+        Ok(())
+    }
+
+    /// `arr.pop()` statement: shrink the length when the array is not empty
+    /// (bx returns the removed value in an expression; that is not supported yet).
+    fn emit_pop(&mut self, name: &str) -> Result<(), String> {
+        let array_tmp = self.builder.add_local(ValType::I32);
+        self.emit_load(name)?;
+        self.builder.push(Instr::Local(0x21, array_tmp));
+        self.builder.push(Instr::Local(0x20, array_tmp));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+        self.builder.push(Instr::Op(0x4a));
+        self.builder.push(Instr::Block {
+            opcode: 0x04,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x04);
+        self.builder.push(Instr::Local(0x20, array_tmp));
+        self.builder.push(Instr::Local(0x20, array_tmp));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+        self.builder.push(Instr::Op(0x6b));
+        self.builder.push(Instr::Mem(0x36, 2, 0));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
         Ok(())
     }
 
@@ -1529,10 +1596,16 @@ impl<'a> Emitter<'a> {
                 self.builder.push(Instr::Op(0x6a));
                 Ok(())
             }
-            other => Err(format!(
-                "wasm target does not support this string expression yet: {}",
-                expr_kind(other)
-            )),
+            other => {
+                if self.type_of(other)? == Ty::Str {
+                    self.emit_expr(other)?;
+                    return Ok(());
+                }
+                Err(format!(
+                    "wasm target does not support this string expression yet: {}",
+                    expr_kind(other)
+                ))
+            }
         }
     }
 
@@ -1605,6 +1678,7 @@ impl<'a> Emitter<'a> {
                 self.builder.push(Instr::Local(0x20, self.temp(ARR_TMP)));
                 Ok(shape)
             }
+
             Expr::Member(object, key, _) => {
                 let ty = self.type_of(object)?;
                 let Ty::Obj(shape) = ty else {
@@ -1649,6 +1723,34 @@ impl<'a> Emitter<'a> {
                 self.builder.push(Instr::Op(0x6a));
                 self.builder.push(Instr::Mem(0x29, 3, 0));
                 Ok(Ty::Int)
+            }
+            Expr::MethodCall(object, key, args, _) => {
+                if key == "len" && args.is_empty() {
+                    return match self.type_of(object)? {
+                        Ty::Arr => {
+                            self.emit_expr(object)?;
+                            self.builder.push(Instr::Mem(0x28, 2, 0));
+                            self.builder.push(Instr::Op(0xad));
+                            Ok(Ty::Int)
+                        }
+                        Ty::Str => {
+                            self.emit_str(object)?;
+                            self.builder.push(Instr::Local(0x21, ARG_TMP));
+                            self.builder.push(Instr::Op(0x1a));
+                            self.builder.push(Instr::Local(0x20, ARG_TMP));
+                            self.builder.push(Instr::Op(0xad));
+                            Ok(Ty::Int)
+                        }
+                        other => Err(format!(
+                            "wasm target .len() works on strings and arrays, got {}",
+                            ty_name(other)
+                        )),
+                    };
+                }
+                Err(format!(
+                    "wasm target does not support the .{} method in expressions yet",
+                    key
+                ))
             }
             Expr::Call(callee, args, _) => {
                 if let Expr::Ident(name) = &**callee {
@@ -1726,6 +1828,39 @@ impl<'a> Emitter<'a> {
                         self.emit_str(&args[0])?;
                         self.builder.push(Instr::Call(WEBGL_TO_PNG));
                         self.builder.push(Instr::Op(0xad));
+                        return Ok(Ty::Int);
+                    }
+                    if name == "str" && args.len() == 1 {
+                        let ty = self.type_of(&args[0])?;
+                        if ty == Ty::Float {
+                            self.emit_f64(&args[0])?;
+                            self.builder.push(Instr::Call(F64_TO_STR));
+                        } else {
+                            self.emit_expr(&args[0])?;
+                            self.builder.push(Instr::Call(INT_TO_STR));
+                        }
+                        self.builder.push(Instr::Local(0x21, ARG_TMP));
+                        self.builder.push(Instr::Local(0x20, ARG_TMP));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x20, ARG_TMP));
+                        self.builder.push(Instr::Mem(0x28, 2, 0));
+                        return Ok(Ty::Str);
+                    }
+                    if name == "int" && args.len() == 1 {
+                        match self.type_of(&args[0])? {
+                            Ty::Str => {
+                                self.emit_str(&args[0])?;
+                                self.builder.push(Instr::Call(STR_TO_INT));
+                            }
+                            Ty::Float => {
+                                self.emit_f64(&args[0])?;
+                                self.builder.push(Instr::Op(0xb0));
+                            }
+                            _ => {
+                                self.emit_expr(&args[0])?;
+                            }
+                        }
                         return Ok(Ty::Int);
                     }
                     if name == "argc" && args.is_empty() {
@@ -1949,6 +2084,12 @@ impl<'a> Emitter<'a> {
                 let Expr::Ident(array) = &**object else {
                     return Err("wasm target supports .push on array variables only".to_string());
                 };
+                if name == "pop" {
+                    if !args.is_empty() {
+                        return Err("wasm target .pop takes no arguments".to_string());
+                    }
+                    return self.emit_pop(array);
+                }
                 if name != "push" || args.len() != 1 {
                     return Err(format!(
                         "wasm target does not support the .{} method yet",
@@ -2452,6 +2593,9 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
         vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
         vec![ValType::I32],
     );
+    let int_to_str_ty = builder.add_type(vec![ValType::I64], vec![ValType::I32]);
+    let f64_to_str_ty = builder.add_type(vec![ValType::F64], vec![ValType::I32]);
+    let str_to_int_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I64]);
     let start_ty = builder.add_type(vec![], vec![]);
     let mut fn_types: Vec<u32> = Vec::new();
     for decl in &declarations {
@@ -2489,6 +2633,9 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("webgl", "read_pixel", gl_read_pixel_ty);
     builder.import_func("webgl", "to_png", gl_to_png_ty);
     builder.import_func("env", "str_compare", str_compare_ty);
+    builder.import_func("env", "int_to_str", int_to_str_ty);
+    builder.import_func("env", "f64_to_str", f64_to_str_ty);
+    builder.import_func("env", "str_to_int", str_to_int_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -2759,6 +2906,19 @@ mod tests {
         assert_eq!(
             strings,
             vec!["3.5".to_string(), "4.5".to_string(), "2.5".to_string()]
+        );
+    }
+
+    #[test]
+    fn number_string_conversions_and_methods() {
+        let (numbers, strings) = run_with_argv(
+            "print(str(42))\nprint(str(3.5))\nprint(int(\"45\"))\nprint(int(3.9))\nlet a = [1, 2, 3]\na.pop()\nprint(len(a))\nlet s = \"hello\"\nprint(s.len())\nprint(a.len())\nprint(\"n=\" + str(7))",
+            &[],
+        );
+        assert_eq!(numbers, vec![45, 3, 2, 5, 2]);
+        assert_eq!(
+            strings,
+            vec!["42".to_string(), "3.5".to_string(), "n=7".to_string()]
         );
     }
 
