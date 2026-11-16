@@ -58,15 +58,15 @@ Outcome: the shipped single-file artifact is produced by MiniCon's own Rust tool
 │   safe failure: any missing or failed cell artifact fails the job before the six-runner fan-out
 │   dependency: loader/pack-rust-all.sh host matrix; payload rebuild path (rebuild-payloads.sh) unchanged
 │   non-goal: compiling anything on the six execution runners
-├── [_] G27 — switch the release chain to the Rust artifacts
+├── [-] G27 — switch the release chain to the Rust artifacts
 │   invariant: signing catalog, Defender/reputation set, Candidate bundle and Promotion smoke all reference the same per-cell digests; no live path can fall back to the polyglot
-│   evidence: company-signing catalog covers both win .com plus the win cell payloads (their bare .exe still ship in archives); candidate_bundle.py asserts per-file digests and the size ceiling per .com file; release-policy.json reputation assets list the new names; release.yml executes the promoted .com bytes end-to-end
+│   evidence: launcher PE now carries VERSIONINFO (ProductName=MiniCon, ProductVersion=MINICON_COM_VERSION stamped by pack-rust-all.sh; resource rva>0, security (0,0)); a resourced packed .com signs with signtool, reads and executes (2026-11-16); build-receipt gained rust_coms (per-cell digests bound to manifest.json, negative control green). Open: company-signing catalog swap (win .com ×2 + win cell .exe), candidate_bundle/assertions, release-policy.json assets, release.yml promotion smoke, Authenticode preflight MSVC re-expression
 │   safe failure: any stale cosmocc-era reference (name, path, receipt key) in the chain blocks Candidate fail-closed
 │   dependency: L27 signable PE; release-policy.json version/assets edit under owner authority; Authenticode preflight re-expressed for an MSVC-linked launcher PE (16 data directories, valid checksum, VERSIONINFO with the exact product version, empty signable security state) instead of the cosmocc pad numbers
 │   non-goal: weakening signing, scan or size gates to ease the switch
-├── [_] C27 — retire the cosmocc lane without losing its courts
+├── [-] C27 — retire the cosmocc lane without losing its courts
 │   invariant: the repository has no live path that requires cosmocc to produce or qualify a shipped artifact
-│   evidence: G3 courts (reaper/lifecycle/cosmocc-swap) replaced by rust-lane equivalents (extract hygiene, lifecycle, signature-readability courts) that run in CI; loader.c, loader/pack.sh and loader/install-cosmocc.sh archived with history pointers; the workflow installs no cosmocc
+│   evidence: rust-lane courts exist and pass 9/9 on Windows x86_64 (loader/rust-lane-courts.sh: lifecycle-clean-exit, reaper-sweeps-stale/keeps-unrelated, exit 0/1/3/42 verbatim, pipe capture, tamper via broken cell MZ); "court first, delete second" holds — cosmocc G3 courts still live. Open: CI wiring of rust-lane courts, then archive loader.c/pack.sh/install-cosmocc.sh + G3 receipts, PRD 27 APE-join re-owned as frozen history
 │   safe failure: deleting a court before its rust-lane replacement is green is forbidden — court first, delete second
 │   dependency: P27; PRD 27 APE-join section re-owned as frozen history in the same edit
 │   non-goal: rewriting frozen archive histories
