@@ -129,6 +129,9 @@ flowchart LR
   (nested includes do not stack prefixes), a missing include names the file
   that referenced it, and `bx check --json` prints one machine-readable line in
   both outcomes. Suite: 98 checks.
+- 2026-11-16 round 15: chunk names and source files are shared via `Rc<String>`,
+  so a call frame clones pointers instead of allocating two strings; `fib(24)`
+  went from ~137 ms back to ~80 ms with bytecode unchanged. Suite: 108 checks.
 - Open: execution on Linux x86_64/aarch64 and Windows ARM64 belongs to the
   six-runner matrix (`minicon-com.yml`, `bx_lane`), not the Windows host.
 

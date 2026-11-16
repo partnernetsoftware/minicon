@@ -139,26 +139,27 @@ pub fn op_name(o: u8) -> &'static str {
 
 #[derive(Clone, Default)]
 pub struct Chunk {
-    pub name: String,
+    /// Shared with the VM so a call frame does not copy the name.
+    pub name: Rc<String>,
     pub arity: u16,
     pub max_slots: u16,
     pub code: Vec<u8>,
     pub lines: Vec<u32>,
     pub consts: Vec<Value>,
     /// Source file this chunk came from, for runtime error attribution.
-    pub file: String,
+    pub file: Rc<String>,
 }
 
 impl Chunk {
     pub fn new(name: String, arity: u16) -> Chunk {
         Chunk {
-            name,
+            name: Rc::new(name),
             arity,
             max_slots: 0,
             code: Vec::new(),
             lines: Vec::new(),
             consts: Vec::new(),
-            file: String::new(),
+            file: Rc::new(String::new()),
         }
     }
 }
@@ -191,8 +192,8 @@ pub fn encode(chunks: &[Chunk], want_result: bool) -> Vec<u8> {
     out.push(if want_result { 1 } else { 0 });
     put_u32(&mut out, chunks.len() as u32);
     for c in chunks {
-        put_str(&mut out, &c.name);
-        put_str(&mut out, &c.file);
+        put_str(&mut out, c.name.as_str());
+        put_str(&mut out, c.file.as_str());
         put_u16(&mut out, c.arity);
         put_u16(&mut out, c.max_slots);
         put_u32(&mut out, c.code.len() as u32);
@@ -372,13 +373,13 @@ pub fn decode(data: &[u8]) -> Result<(Vec<Chunk>, bool), String> {
             ip += step;
         }
         chunks.push(Chunk {
-            name,
+            name: Rc::new(name),
             arity,
             max_slots,
             code,
             lines,
             consts,
-            file,
+            file: Rc::new(file),
         });
     }
     Ok((chunks, want_result))
@@ -501,7 +502,7 @@ pub fn compile(
             cells: HashSet::new(),
             file,
         };
-        c.cur.file = c.file.clone();
+        c.cur.file = Rc::new(c.file.clone());
         c.compile_stmts(&stmts, keep_last)?;
         c.emit(op::HALT, 0, 0);
         let (fin, _captures) = c.finish();
@@ -1016,7 +1017,7 @@ impl<'a> Compiler<'a> {
             cells: captured_names(body, params),
             file: self.file.clone(),
         };
-        sub.cur.file = sub.file.clone();
+        sub.cur.file = Rc::new(sub.file.clone());
         for p in params {
             let slot = sub.declare_local(p);
             if sub.is_cell(p) {
