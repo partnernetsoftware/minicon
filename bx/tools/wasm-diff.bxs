@@ -78,6 +78,13 @@ fn gen() {
   lines.push("  if (n < 2) { return 1 }")
   lines.push("  return n * fact(n - 1)")
   lines.push("}")
+  lines.push('let cmp_a = "abc" + "d"')
+  lines.push('let cmp_b = "ab" + "c"')
+  if (pick(2) == 0) {
+    lines.push('if (cmp_a < cmp_b) { print(1) } else { print(2) }')
+  } else {
+    lines.push('if (cmp_a == cmp_b) { print(1) } else { print(2) }')
+  }
   lines.push("fn rich() {")
   lines.push("  let a = [4, 5]")
   lines.push("  let s = \"d\"")

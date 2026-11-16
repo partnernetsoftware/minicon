@@ -1930,6 +1930,37 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 };
                 Ok(vec![WVal::F64(a % b)])
             }
+            ("env", "str_compare") => {
+                let read = |value: Option<&WVal>| match value {
+                    Some(WVal::I32(ptr)) => Some(*ptr as usize),
+                    _ => None,
+                };
+                let (ap, al, bp, bl) =
+                    match (
+                        read(args.first()),
+                        read(args.get(1)),
+                        read(args.get(2)),
+                        read(args.get(3)),
+                    ) {
+                        (Some(ap), Some(al), Some(bp), Some(bl)) => (ap, al, bp, bl),
+                        _ => return Err(
+                            "env.str_compare expects (i32 a_ptr, i32 a_len, i32 b_ptr, i32 b_len)"
+                                .to_string(),
+                        ),
+                    };
+                let a = memory
+                    .get(ap..ap.saturating_add(al))
+                    .ok_or_else(|| "env.str_compare a is outside memory".to_string())?;
+                let b = memory
+                    .get(bp..bp.saturating_add(bl))
+                    .ok_or_else(|| "env.str_compare b is outside memory".to_string())?;
+                let order = match a.cmp(b) {
+                    std::cmp::Ordering::Less => -1,
+                    std::cmp::Ordering::Equal => 0,
+                    std::cmp::Ordering::Greater => 1,
+                };
+                Ok(vec![WVal::I32(order)])
+            }
             ("webgl", "create") => {
                 let (width, height) = match (args.first(), args.get(1)) {
                     (Some(WVal::I32(width)), Some(WVal::I32(height))) => {

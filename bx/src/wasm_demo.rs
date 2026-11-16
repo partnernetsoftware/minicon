@@ -88,6 +88,17 @@ const imports = {
     },
     print_f64: (value) => { emit(formatFloat(value)); },
     fmod: (a, b) => a % b,
+    str_compare: (ap, al, bp, bl) => {
+      const bytesA = new Uint8Array(instance.exports.memory.buffer, ap, al);
+      const bytesB = new Uint8Array(instance.exports.memory.buffer, bp, bl);
+      const limit = Math.min(bytesA.length, bytesB.length);
+      for (let i = 0; i < limit; i++) {
+        if (bytesA[i] < bytesB[i]) return -1;
+        if (bytesA[i] > bytesB[i]) return 1;
+      }
+      if (bytesA.length === bytesB.length) return 0;
+      return bytesA.length < bytesB.length ? -1 : 1;
+    },
   },
   bx: {
     argc: () => queryArgs.length,

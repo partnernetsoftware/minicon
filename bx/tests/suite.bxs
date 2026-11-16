@@ -684,6 +684,16 @@ if (wasmRichp.code == 0 && wasmRichpRun.out == wasmRichpVm.out && wasmRichpRun.o
   casesFail += 1
   failures.push("wasm rich function parameters\n    wasm=" + json(wasmRichpRun.out) + " vm=" + json(wasmRichpVm.out) + " err=" + json(wasmRichpRun.err))
 }
+write(artDir + "/wasm-strcmp.bxs", 'let a = "apple"\nlet b = a + "s"\nif (a < b) { print(1) }\nif (a == "apple") { print(2) }\nif (b != a) { print(3) }\nif ("b" >= "b") { print(4) }\nif (b <= a) { print(5) }\nif ("z" > "a") { print(6) }\n')
+let wasmStrcmp = exec([BX, "build", "--wasm", artDir + "/wasm-strcmp.bxs", "-o", artDir + "/wasm-strcmp.wasm"])
+let wasmStrcmpRun = exec([BX, "run", artDir + "/wasm-strcmp.wasm"])
+let wasmStrcmpVm = exec([BX, "run", artDir + "/wasm-strcmp.bxs"])
+if (wasmStrcmp.code == 0 && wasmStrcmpRun.out == wasmStrcmpVm.out && wasmStrcmpRun.out.trim() == "1\n2\n3\n4\n6") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm string comparisons\n    wasm=" + json(wasmStrcmpRun.out) + " vm=" + json(wasmStrcmpVm.out) + " err=" + json(wasmStrcmpRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'let f = fn() { return 1 }\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1) {

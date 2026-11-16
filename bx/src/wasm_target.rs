@@ -498,21 +498,22 @@ impl Checker {
     fn check_cond(&self, expr: &Expr) -> Result<(), String> {
         match expr {
             Expr::Bin(
-                op @ (BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge),
+                BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge,
                 left,
                 right,
             ) => {
-                let _ = op;
-                for side in [left, right] {
-                    let ty = self.infer(side)?;
-                    if !is_number(ty) {
-                        return Err(format!(
-                            "wasm target compares numbers only, got {}",
-                            ty_name(ty)
-                        ));
-                    }
+                let left_ty = self.infer(left)?;
+                let right_ty = self.infer(right)?;
+                if matches!((left_ty, right_ty), (Ty::Str, Ty::Str))
+                    || (is_number(left_ty) && is_number(right_ty))
+                {
+                    return Ok(());
                 }
-                Ok(())
+                Err(format!(
+                    "wasm target compares two numbers or two strings, got {} and {}",
+                    ty_name(left_ty),
+                    ty_name(right_ty)
+                ))
             }
             Expr::Not(inner) => self.check_cond(inner),
             other => Err(format!(
@@ -788,7 +789,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 19;
+const IMPORT_COUNT: u32 = 20;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -798,6 +799,7 @@ const WEBGL_CLEAR_COLOR: u32 = 15;
 const WEBGL_CLEAR: u32 = 16;
 const WEBGL_READ_PIXEL: u32 = 17;
 const WEBGL_TO_PNG: u32 = 18;
+const STR_COMPARE: u32 = 19;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -1116,8 +1118,41 @@ impl<'a> Emitter<'a> {
                 }
                 let lt = self.type_of(left)?;
                 let rt = self.type_of(right)?;
+                if lt == Ty::Str && rt == Ty::Str {
+                    self.emit_str(left)?;
+                    self.emit_str(right)?;
+                    self.builder.push(Instr::Call(STR_COMPARE));
+                    match op {
+                        BinOp::Eq => self.builder.push(Instr::Op(0x45)),
+                        BinOp::Ne => {
+                            self.builder.push(Instr::Op(0x45));
+                            self.builder.push(Instr::Op(0x45));
+                        }
+                        BinOp::Lt => {
+                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                            self.builder.push(Instr::Op(0x48));
+                        }
+                        BinOp::Gt => {
+                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                            self.builder.push(Instr::Op(0x4a));
+                        }
+                        BinOp::Le => {
+                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                            self.builder.push(Instr::Op(0x4c));
+                        }
+                        _ => {
+                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                            self.builder.push(Instr::Op(0x4e));
+                        }
+                    }
+                    return Ok(());
+                }
                 if !is_number(lt) || !is_number(rt) {
-                    return Err("wasm target compares numbers only".to_string());
+                    return Err(format!(
+                        "wasm target compares two numbers or two strings, got {} and {}",
+                        ty_name(lt),
+                        ty_name(rt)
+                    ));
                 }
                 if lt == Ty::Float || rt == Ty::Float {
                     self.emit_f64(left)?;
@@ -2183,6 +2218,10 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let gl_clear_ty = builder.add_type(vec![], vec![]);
     let gl_read_pixel_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
     let gl_to_png_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
+    let str_compare_ty = builder.add_type(
+        vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+        vec![ValType::I32],
+    );
     let start_ty = builder.add_type(vec![], vec![]);
     let mut fn_types: Vec<u32> = Vec::new();
     for decl in &declarations {
@@ -2219,6 +2258,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("webgl", "clear", gl_clear_ty);
     builder.import_func("webgl", "read_pixel", gl_read_pixel_ty);
     builder.import_func("webgl", "to_png", gl_to_png_ty);
+    builder.import_func("env", "str_compare", str_compare_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -2488,6 +2528,16 @@ mod tests {
             strings,
             vec!["3.5".to_string(), "4.5".to_string(), "2.5".to_string()]
         );
+    }
+
+    #[test]
+    fn string_comparisons_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let a = \"apple\"\nlet b = a + \"s\"\nif (a < b) { print(1) }\nif (a == \"apple\") { print(2) }\nif (b != a) { print(3) }\nif (\"b\" >= \"b\") { print(4) }\nif (b <= a) { print(5) }\nif (\"z\" > \"a\") { print(6) }",
+            &[],
+        );
+        assert!(strings.is_empty());
+        assert_eq!(numbers, vec![1, 2, 3, 4, 6]);
     }
 
     #[test]
