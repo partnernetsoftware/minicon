@@ -110,6 +110,9 @@ build_launcher() {
         dir="$COM_RS/target-$cell"
     fi
     echo "[pack-rust-all] launcher $cell -> $target ($kind)"
+    # MINICON_COM_VERSION stamps the launcher's embedded VERSIONINFO so the
+    # signing preflight can assert ProductVersion without reading the payload.
+    export MINICON_COM_VERSION="${MINICON_RUST_VERSION:-$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$ROOT/Cargo.toml" | head -n1)}"
     case "$kind" in
         native)
             CARGO_TARGET_DIR="$dir" cargo build --release --offline \
