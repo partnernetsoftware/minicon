@@ -654,6 +654,16 @@ if (wasmGl.code == 0 && wasmGlRun.code == 0 && wasmGlRun.out.trim() == "42781903
   casesFail += 1
   failures.push("wasm webgl clear + png export\n    build=" + wasmGl.code + " out=" + json(wasmGlRun.out) + " err=" + json(wasmGlRun.err))
 }
+write(artDir + "/wasm-inf.bxs", 'let i = 0\nlet s = 0\nwhile (i < 1) { s = s + 1 }\n')
+let wasmInf = exec([BX, "build", "--wasm", artDir + "/wasm-inf.bxs", "-o", artDir + "/wasm-inf.wasm"])
+let wasmBudget = exec([BX, "run", "--max-steps", "20000", artDir + "/wasm-inf.wasm"])
+let wasmBudgetOk = exec([BX, "run", "--max-steps", "100000", artDir + "/wasm-num.wasm"])
+if (wasmInf.code == 0 && wasmBudget.code == 1 && wasmBudget.err.contains("step budget") && wasmBudgetOk.code == 0) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm step budget stops infinite loops\n    inf=" + wasmInf.code + " budget=" + wasmBudget.code + " ok=" + wasmBudgetOk.code + " err=" + json(wasmBudget.err))
+}
 write(artDir + "/wasm-bad.bxs", 'let f = fn() { return 1 }\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1) {

@@ -182,7 +182,7 @@ let r = patch("src/lib.rs", read(__dir__ + "/fix.diff"))   // -> {ok, path, hunk
 
 ```bash
 bx build --wasm script.bxs -o script.wasm   # 标准 core wasm（\0asm v1）
-bx run script.wasm                          # 用 bx 自己的解释器执行
+bx run script.wasm                          # 用 bx 自己的解释器执行（支持 --max-steps / --timeout 预算）
 bx check script.wasm                        # 只校验模块（--json 输出 imports/exports/functions）
 bx build --wasm --html script.bxs -o demo.html  # 自包含浏览器 demo（内嵌 base64 模块 + 胶水；同目录 .js 可直接用 node 跑）
 ```

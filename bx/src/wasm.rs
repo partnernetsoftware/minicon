@@ -971,6 +971,10 @@ struct Exec<'m, H: Host> {
     depth: usize,
     /// Reused locals vectors to keep wasm calls allocation-light.
     locals_pool: Vec<Vec<WVal>>,
+    /// Executed-instruction budget (0 = unlimited) and optional deadline.
+    steps: u64,
+    max_steps: u64,
+    deadline: Option<std::time::Instant>,
 }
 
 fn pop(stack: &mut Vec<WVal>) -> Result<WVal, String> {
@@ -1028,6 +1032,9 @@ impl<'m, H: Host> Exec<'m, H> {
             host,
             depth: 0,
             locals_pool: Vec::new(),
+            steps: 0,
+            max_steps: 0,
+            deadline: None,
         }
     }
 
@@ -1121,6 +1128,20 @@ impl<'m, H: Host> Exec<'m, H> {
         let mut ip = 0usize;
         let mut returned = false;
         while ip < code.len() {
+            self.steps += 1;
+            if self.max_steps != 0 && self.steps > self.max_steps {
+                return Err(format!(
+                    "wasm step budget exceeded ({} steps)",
+                    self.max_steps
+                ));
+            }
+            if self.steps & 0x3FF == 0 {
+                if let Some(deadline) = self.deadline {
+                    if std::time::Instant::now() >= deadline {
+                        return Err("wasm timeout exceeded".to_string());
+                    }
+                }
+            }
             match &code[ip] {
                 Instr::Op(op) => match *op {
                     0x00 => return Err("wasm unreachable executed".to_string()),
@@ -1710,6 +1731,8 @@ pub fn validate(bytes: &[u8]) -> Result<Module, String> {
 pub fn run_start<F, G>(
     bytes: &[u8],
     argv: &[String],
+    max_steps: u64,
+    timeout_ms: u64,
     mut on_i64: F,
     mut on_str: G,
 ) -> Result<(), String>
@@ -1738,6 +1761,12 @@ where
         .find(|(name, _)| name == "_start")
         .map(|(_, index)| *index)
         .ok_or_else(|| "wasm module has no _start export".to_string())?;
+    exec.max_steps = max_steps;
+    exec.deadline = if timeout_ms > 0 {
+        Some(std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms))
+    } else {
+        None
+    };
     exec.call_func(start, 0)?;
     Ok(())
 }

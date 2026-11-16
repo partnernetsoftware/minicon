@@ -1883,12 +1883,19 @@ pub fn validate(bytes: &[u8]) -> Result<(), String> {
 
 /// Instantiate and run `_start`, forwarding `env.print_i64` / `env.print_utf8`
 /// and exposing `argv` through `bx.argc` / `bx.arg`.
-pub fn execute<F, G>(bytes: &[u8], argv: &[String], on_i64: F, on_str: G) -> Result<(), String>
+pub fn execute<F, G>(
+    bytes: &[u8],
+    argv: &[String],
+    max_steps: u64,
+    timeout_ms: u64,
+    on_i64: F,
+    on_str: G,
+) -> Result<(), String>
 where
     F: FnMut(i64),
     G: FnMut(&str),
 {
-    crate::wasm::run_start(bytes, argv, on_i64, on_str)
+    crate::wasm::run_start(bytes, argv, max_steps, timeout_ms, on_i64, on_str)
 }
 
 #[cfg(test)]
@@ -1903,6 +1910,8 @@ mod tests {
         execute(
             &bytes,
             &[],
+            0,
+            0,
             move |value| {
                 sink.lock().expect("lock").push(value);
             },
@@ -1920,6 +1929,8 @@ mod tests {
         execute(
             &bytes,
             &[],
+            0,
+            0,
             |_value| {},
             move |text| {
                 sink.lock().expect("lock").push(text.to_string());
@@ -1939,6 +1950,8 @@ mod tests {
         execute(
             &bytes,
             argv,
+            0,
+            0,
             move |value| number_sink.lock().expect("lock").push(value),
             move |text| string_sink.lock().expect("lock").push(text.to_string()),
         )
@@ -2151,6 +2164,14 @@ mod tests {
             &bytes[0..8],
             &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
         );
+    }
+
+    #[test]
+    fn step_budget_stops_infinite_loops() {
+        let bytes = compile_to_wasm("let i = 0\nwhile (i < 1) { i = i }").expect("compile");
+        let result = execute(&bytes, &[], 5_000, 0, |_value| {}, |_text| {});
+        let error = result.expect_err("infinite loop must hit the budget");
+        assert!(error.contains("step budget"), "got {error}");
     }
 
     #[test]

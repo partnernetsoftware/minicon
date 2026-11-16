@@ -111,7 +111,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 49 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 50 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -122,6 +122,11 @@ bx wasm target
   suite and therefore by the packed six-cell CI lane.
 - `bx check <module> --json` reports the decoded import/export names and defined
   function count, so agents can introspect a module without a JS toolchain.
+- **Execution budgets**: `bx run --max-steps N --timeout MS script.wasm` applies
+  the same budgets as the native VM path to the wasm interpreter (instruction
+  counter plus a periodic deadline check), so untrusted modules cannot spin
+  forever. The normal-path hot loop adds only a counter increment per
+  instruction; the deadline is sampled every 1024 instructions.
 - **Browser demo**: `bx build --wasm --html script.bxs -o demo.html` writes a
   self-contained page (module embedded as base64) plus a sibling `demo.js`. The
   glue implements the same import namespaces as the native host (`env.print_*`,

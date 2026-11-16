@@ -225,6 +225,8 @@ fn cmd_run(args: Vec<String>) -> i32 {
         return match wasm_target::execute(
             &bytes,
             &wasm_argv,
+            budget.max_steps.unwrap_or(0),
+            budget.timeout_ms.unwrap_or(0),
             |value| println!("{}", value),
             |text| println!("{}", text),
         ) {
