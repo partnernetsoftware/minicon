@@ -519,6 +519,8 @@ jobs:
               echo "unknown command must exit nonzero" >&2
               exit 1
             fi
+            # The bx-native verifier: CLI, check, budgets, stdin, patch, spawn.
+            "$bin" run bx/tools/verify.bxs "$bin"
           } 2>&1 | tee -a bx-lane.log
 
       - name: Receipt

@@ -157,6 +157,10 @@ flowchart LR
   each name constant to its slot once, so hot `GET_GLOBAL`/`SET_GLOBAL` are plain
   array indexes. `loop` 1e6 from ~0.29 s to ~0.22 s, 200k calls to ~66 ms.
   Suite: 108 checks.
+- 2026-11-16 round 22: `bx/tools/verify.bxs` (bx-native, cross-platform) is now
+  part of the CI bx lane; every runner executes its own `minicon-bx-<cell>.com`
+  against the verifier, and launcher detection is behavioural so renamed
+  launchers (`.exe` on Windows) still take the container path.
 - Open: execution on Linux x86_64/aarch64 and Windows ARM64 belongs to the
   six-runner matrix (`minicon-com.yml`, `bx_lane`), not the Windows host.
 

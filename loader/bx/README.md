@@ -57,6 +57,7 @@ cargo build --release --target x86_64-unknown-linux-musl   # 需 RUSTFLAGS=-C li
 | 被 kill 的 launcher 会留下解包文件 | 启动时清扫 24h 前的 `minicon-com-*`；按小时节流，避免每次扫 `%TEMP%` 反而更慢 |
 | 排障只能靠二进制内容 | 新增 `com-pack inspect`：launcher 格式/子系统、cell、metadata 一次看完 |
 
+`minicon-com.yml` 的 bx lane 在六个 runner 上都会跑它：每个 runner 用自己的 `minicon-bx-<cell>.com` 执行 `bx/tools/verify.bxs`，所以跨平台行为由真实执行证明，而不是靠编译成功推断。
 ## bx 原生验证
 
 `bx/tools/verify.bxs` 用 bx 自己跑端到端检查（CLI、`check`、预算、stdin、`patch`、`spawn`、`--com-info`），任何 OS 都能跑，产物还能自检自己：

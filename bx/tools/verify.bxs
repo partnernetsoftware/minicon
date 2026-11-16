@@ -23,11 +23,13 @@ fn expect(name, ok) {
   if (!ok) { failures.push(name) }
 }
 
-if (ends_with(bin, ".com")) {
-  let info = exec([bin, "--com-info"])
-  expect("--com-info names the product", info.code == 0 && info.out.contains("\"product\""))
+// A launcher answers --com-info; a native binary does not. Detect by behaviour,
+// not by the file name, because launchers get renamed to .exe on Windows.
+let info = exec([bin, "--com-info"])
+if (info.code == 0 && info.out.contains("\"product\"")) {
+  expect("--com-info names the product", info.out.contains("\"version\""))
 } else {
-  expect("native binary has no container metadata", exec([bin, "--com-info"]).code != 0)
+  expect("native binary has no container metadata", info.code != 0)
 }
 
 let version = exec([bin, "version"])
