@@ -930,6 +930,16 @@ if (wasmHof.code == 0 && wasmHofRun.out == wasmHofVm.out && wasmHofRun.out.trim(
   casesFail += 1
   failures.push("wasm higher-order array builtins\n    wasm=" + json(wasmHofRun.out) + " vm=" + json(wasmHofVm.out) + " err=" + json(wasmHofRun.err))
 }
+write(artDir + "/wasm-clocap.bxs", 'fn scale_all(base) {\n  let factor = 2\n  return map([1, 2, 3], fn(x) { return x * factor + base })\n}\nfor v in scale_all(10) { print(v) }\nfn keep(base) {\n  let limit = 3\n  return filter([1, 2, 4, 5], fn(x) { return x + base > limit })\n}\nfor v in keep(0) { print(v) }\nfn total(base) {\n  let extra = 5\n  return reduce([1, 2, 3], fn(a, x) { return a + x + extra }, base)\n}\nprint(total(100))\nfor i in range(3) {\n  print(fn() { return i }())\n}\nfn loopy() {\n  for v in [10, 20] {\n    let f = fn() { return v + 1 }\n    print(f())\n  }\n}\nloopy()\n')
+let wasmCloCap = exec([BX, "build", "--wasm", artDir + "/wasm-clocap.bxs", "-o", artDir + "/wasm-clocap.wasm"])
+let wasmCloCapRun = exec([BX, "run", artDir + "/wasm-clocap.wasm"])
+let wasmCloCapVm = exec([BX, "run", artDir + "/wasm-clocap.bxs"])
+if (wasmCloCap.code == 0 && wasmCloCapRun.out == wasmCloCapVm.out && wasmCloCapRun.out.trim() == "12\n14\n16\n4\n5\n121\n0\n1\n2\n11\n21") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm capturing callbacks and loop vars\n    wasm=" + json(wasmCloCapRun.out) + " vm=" + json(wasmCloCapVm.out) + " err=" + json(wasmCloCapRun.err))
+}
 write(artDir + "/wasm-clo.bxs", 'fn adder(n) { return fn(x) { return x + n } }\nlet add2 = adder(2)\nprint(add2(5))\nfn counter() {\n  let n = 0\n  return fn() { n = n + 1; return n }\n}\nlet c = counter()\nprint(c())\nprint(c())\nlet d = counter()\nprint(d())\nprint(c())\nfn compose(f, x) { return f(x) }\nprint(compose(fn(y) { return y * 3 }, 4))\nlet chain = fn(a) { return fn(b) { return a + "|" + b } }\nprint(chain("x")("y"))\n')
 let wasmClo = exec([BX, "build", "--wasm", artDir + "/wasm-clo.bxs", "-o", artDir + "/wasm-clo.wasm"])
 let wasmCloRun = exec([BX, "run", artDir + "/wasm-clo.wasm"])

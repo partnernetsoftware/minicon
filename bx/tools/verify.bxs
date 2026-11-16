@@ -191,6 +191,14 @@ write(dir + "/wasm-hof.bxs", 'for v in map([1, 2], fn(x) { return x + 1 }) { pri
 write(dir + "/wasm-objb.bxs", 'let o = {a: 1}\nfor k in keys(o) { print(k) }\nprint(get(o, "a"))\n')
 write(dir + "/wasm-merge.bxs", 'let o = merge({a: 1}, {b: 2})\nprint(o.a + o.b)\nprint(join(keys(o), "+"))\n')
 write(dir + "/wasm-clo2.bxs", 'fn adder(n) { return fn(x) { return x + n } }\nlet add3 = adder(3)\nprint(add3(4))\nfn counter() { let n = 0; return fn() { n = n + 1; return n } }\nlet c = counter()\nprint(c())\nprint(c())\n')
+write(dir + "/wasm-clocap.bxs", 'fn scale_all(base) {\n  let factor = 2\n  return map([1, 2], fn(x) { return x * factor + base })\n}\nfor v in scale_all(10) { print(v) }\nfor i in range(2) { print(fn() { return i }()) }\n')
+test("wasm capturing callbacks and loop vars", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-clocap.bxs", "-o", dir + "/wasm-clocap.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-clocap.wasm"])
+  let vm = exec([bin, "run", dir + "/wasm-clocap.bxs"])
+  assert(ran.code == 0 && ran.out == vm.out && ran.out.trim() == "12\n14\n0\n1", "wasm=" + json(ran.out) + " vm=" + json(vm.out))
+})
 test("wasm capturing closures", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-clo2.bxs", "-o", dir + "/wasm-clo2.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

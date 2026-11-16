@@ -1,5 +1,4 @@
 //! Experimental `.wasm` target: emit a standard WebAssembly module for a small
-//! Experimental `.wasm` target: emit a standard WebAssembly module for a small
 //! subset of bx, executed by bx's own interpreter (`crate::wasm`). No
 //! third-party wasm crates.
 //!
@@ -2286,6 +2285,38 @@ impl<'a> Emitter<'a> {
     }
 
     /// `for k, v in array { .. }`: index/value locals advanced over the array.
+    /// Allocate a heap cell (once, before a loop) and return its wasm local.
+    fn loop_cell(&mut self, ty: Ty) -> u32 {
+        let size = if ty == Ty::Str { 16 } else { 8 };
+        self.emit_alloc_const(size);
+        let cell = self.builder.add_local(ValType::I32);
+        self.builder.push(Instr::Local(0x21, cell));
+        cell
+    }
+
+    /// Copy a loop temporary into its cell after the per-iteration refresh.
+    fn refresh_loop_cell(&mut self, cell: u32, temp: u32, ty: Ty) {
+        self.builder.push(Instr::Local(0x20, cell));
+        match ty {
+            Ty::Str => {
+                self.builder.push(Instr::Local(0x20, temp));
+                self.builder.push(Instr::Mem(0x36, 2, 0));
+                self.builder.push(Instr::Local(0x20, cell));
+                self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                self.builder.push(Instr::Op(0x6a));
+                self.builder.push(Instr::Local(0x20, temp + 1));
+                self.builder.push(Instr::Mem(0x36, 2, 0));
+            }
+            Ty::Int => {
+                self.builder.push(Instr::Local(0x20, temp));
+                self.builder.push(Instr::Mem(0x37, 3, 0));
+            }
+            _ => {
+                self.builder.push(Instr::Local(0x20, temp));
+                self.builder.push(Instr::Mem(0x36, 2, 0));
+            }
+        }
+    }
     fn emit_for_in(
         &mut self,
         key: &str,
@@ -2317,28 +2348,43 @@ impl<'a> Emitter<'a> {
         };
         let mut scope = HashMap::new();
         let value_tmp = self.builder.add_local(ValType::I64);
+        let value_boxed = self.boxed.contains(value_name);
+        let value_cell = if value_boxed {
+            Some(self.loop_cell(Ty::Int))
+        } else {
+            None
+        };
         scope.insert(
             value_name.to_string(),
             LocalSlot {
                 ty: Ty::Int,
-                slot: value_tmp,
-                boxed: false,
+                slot: value_cell.unwrap_or(value_tmp),
+                boxed: value_boxed,
                 capture: None,
             },
         );
         let key_tmp = key_name.map(|name| {
             let tmp = self.builder.add_local(ValType::I64);
+            let boxed = self.boxed.contains(name);
+            let cell = if boxed {
+                Some(self.loop_cell(Ty::Int))
+            } else {
+                None
+            };
             scope.insert(
                 name.to_string(),
                 LocalSlot {
                     ty: Ty::Int,
-                    slot: tmp,
-                    boxed: false,
+                    slot: cell.unwrap_or(tmp),
+                    boxed,
                     capture: None,
                 },
             );
             tmp
         });
+        let key_boxed = key_name
+            .map(|name| self.boxed.contains(name))
+            .unwrap_or(false);
         self.scoped.push(scope);
         self.emit_expr(iter)?;
         self.builder.push(Instr::Local(0x21, array_tmp));
@@ -2380,6 +2426,20 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Op(0x6a));
         self.builder.push(Instr::Mem(0x29, 3, 0));
         self.builder.push(Instr::Local(0x21, value_tmp));
+        if let (true, Some(cell)) = (value_boxed, value_cell) {
+            self.refresh_loop_cell(cell, value_tmp, Ty::Int);
+        }
+        if key_boxed {
+            if let Some(key_tmp) = key_tmp {
+                if let Some(slot) = self
+                    .scoped
+                    .last()
+                    .and_then(|scope| scope.get(key_name.unwrap()))
+                {
+                    self.refresh_loop_cell(slot.slot, key_tmp, Ty::Int);
+                }
+            }
+        }
         self.push_continue_block();
         for stmt in body {
             self.emit_stmt(stmt)?;
@@ -4081,18 +4141,9 @@ impl<'a> Emitter<'a> {
                             .get(id as usize)
                             .cloned()
                             .ok_or_else(|| "wasm target lost a function literal".to_string())?;
-                        if self
-                            .analysis
-                            .lit_captures
-                            .get(id as usize)
-                            .map(|captures| !captures.is_empty())
-                            .unwrap_or(false)
-                        {
-                            return Err(format!(
-                                "wasm target {}() callbacks cannot capture outer variables yet",
-                                name
-                            ));
-                        }
+                        let cb_env = self.builder.add_local(ValType::I32);
+                        self.emit_expr(&args[1])?;
+                        self.builder.push(Instr::Local(0x21, cb_env));
                         let result_ty = if name == "map" {
                             sig.result.ok_or_else(|| {
                                 "wasm target map() callback returns nothing".to_string()
@@ -4187,7 +4238,7 @@ impl<'a> Emitter<'a> {
                             self.builder.push(Instr::Op(0x6a));
                             self.builder.push(Instr::Op(0x6a));
                             self.builder.push(Instr::Local(0x21, addr_tmp));
-                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                            self.builder.push(Instr::Local(0x20, cb_env));
                             load_elem(self, elem_str);
                             self.builder.push(Instr::Call(sig.index));
                             if result_str {
@@ -4209,7 +4260,7 @@ impl<'a> Emitter<'a> {
                                 self.builder.push(Instr::Mem(0x37, 3, 0));
                             }
                         } else {
-                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                            self.builder.push(Instr::Local(0x20, cb_env));
                             load_elem(self, elem_str);
                             self.builder.push(Instr::Call(sig.index));
                             self.builder.push(Instr::Block {
@@ -4294,18 +4345,9 @@ impl<'a> Emitter<'a> {
                             .get(id as usize)
                             .cloned()
                             .ok_or_else(|| "wasm target lost a function literal".to_string())?;
-                        if self
-                            .analysis
-                            .lit_captures
-                            .get(id as usize)
-                            .map(|captures| !captures.is_empty())
-                            .unwrap_or(false)
-                        {
-                            return Err(
-                                "wasm target reduce() callbacks cannot capture outer variables yet"
-                                    .to_string(),
-                            );
-                        }
+                        let cb_env = self.builder.add_local(ValType::I32);
+                        self.emit_expr(&args[1])?;
+                        self.builder.push(Instr::Local(0x21, cb_env));
                         let arr_tmp = self.builder.add_local(ValType::I32);
                         let idx_tmp = self.builder.add_local(ValType::I64);
                         let acc_tmp = self.builder.add_local(ValType::I64);
@@ -4359,7 +4401,7 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Op(0x53));
                         self.builder.push(Instr::Op(0x45));
                         self.builder.push(Instr::BrIf(1));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                        self.builder.push(Instr::Local(0x20, cb_env));
                         self.builder.push(Instr::Local(0x20, acc_tmp));
                         self.builder.push(Instr::Local(0x20, arr_tmp));
                         self.builder.push(Instr::Local(0x20, idx_tmp));
@@ -5083,18 +5125,9 @@ impl<'a> Emitter<'a> {
                             .get(id as usize)
                             .cloned()
                             .ok_or_else(|| "wasm target lost a function literal".to_string())?;
-                        if self
-                            .analysis
-                            .lit_captures
-                            .get(id as usize)
-                            .map(|captures| !captures.is_empty())
-                            .unwrap_or(false)
-                        {
-                            return Err(
-                                "wasm target each() callbacks cannot capture outer variables yet"
-                                    .to_string(),
-                            );
-                        }
+                        let cb_env = self.builder.add_local(ValType::I32);
+                        self.emit_expr(&args[1])?;
+                        self.builder.push(Instr::Local(0x21, cb_env));
                         let array_tmp = self.builder.add_local(ValType::I32);
                         let index_tmp = self.builder.add_local(ValType::I64);
                         self.emit_expr(&args[0])?;
@@ -5122,7 +5155,7 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Op(0x53));
                         self.builder.push(Instr::Op(0x45));
                         self.builder.push(Instr::BrIf(1));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                        self.builder.push(Instr::Local(0x20, cb_env));
                         self.builder.push(Instr::Local(0x20, array_tmp));
                         self.builder.push(Instr::Local(0x20, index_tmp));
                         self.builder.push(Instr::Op(0xa7));
@@ -5971,12 +6004,16 @@ struct CaptureAnalysis {
     lit_boxed: HashMap<u32, std::collections::HashSet<String>>,
     /// Named-function slot -> names that must live in heap cells.
     fn_boxed: HashMap<usize, std::collections::HashSet<String>>,
+    /// Top-level (start function) loop variables captured by a literal.
+    start_boxed: std::collections::HashSet<String>,
 }
 
 #[derive(Clone)]
 struct FrameBinding {
     ty: Ty,
     loop_var: bool,
+    /// Loop variables over int arrays may be captured (the emitter boxes them).
+    boxable_loop: bool,
 }
 
 struct FrameState {
@@ -6014,6 +6051,7 @@ impl<'a> CaptureWalker<'a> {
                 lit_captures: vec![Vec::new(); literal_count],
                 lit_boxed: HashMap::new(),
                 fn_boxed: HashMap::new(),
+                start_boxed: std::collections::HashSet::new(),
             },
         }
     }
@@ -6212,9 +6250,20 @@ impl<'a> CaptureWalker<'a> {
     }
 
     fn declare(&mut self, name: &str, ty: Ty, loop_var: bool) {
+        self.declare_loop(name, ty, loop_var, false);
+    }
+
+    fn declare_loop(&mut self, name: &str, ty: Ty, loop_var: bool, boxable_loop: bool) {
         let frame = self.frame();
         if let Some(scope) = frame.scopes.last_mut() {
-            scope.insert(name.to_string(), FrameBinding { ty, loop_var });
+            scope.insert(
+                name.to_string(),
+                FrameBinding {
+                    ty,
+                    loop_var,
+                    boxable_loop,
+                },
+            );
         }
     }
 
@@ -6238,8 +6287,10 @@ impl<'a> CaptureWalker<'a> {
         }
         let parent = frame - 1;
         if let Some(binding) = self.binding_in(parent, name) {
-            if binding.loop_var {
-                return Err("wasm target cannot capture a loop variable yet".to_string());
+            if binding.loop_var && !binding.boxable_loop {
+                return Err(
+                    "wasm target can only capture loop variables over int arrays yet".to_string(),
+                );
             }
             self.frames[parent].boxed.insert(name.to_string());
             let ty = binding.ty;
@@ -6285,7 +6336,7 @@ impl<'a> CaptureWalker<'a> {
         if owner == current {
             return Ok(());
         }
-        if self.frames[owner].id == CaptureFrame::Start {
+        if self.frames[owner].id == CaptureFrame::Start && self.globals.contains_key(name) {
             return Ok(());
         }
         for frame in (owner + 1)..=current {
@@ -6372,6 +6423,8 @@ impl<'a> CaptureWalker<'a> {
                     if is_value {
                         self.use_name(name)?;
                     }
+                } else {
+                    self.walk_expr(callee)?;
                 }
                 for arg in args {
                     self.walk_expr(arg)?;
@@ -6470,12 +6523,13 @@ impl<'a> CaptureWalker<'a> {
                     _ => (Ty::Int, Ty::Int),
                 };
                 self.push_scope();
+                let boxable = iter_ty == Ty::Arr;
                 match value {
                     Some(value) => {
-                        self.declare(key, key_ty, true);
-                        self.declare(value, value_ty, true);
+                        self.declare_loop(key, key_ty, true, boxable);
+                        self.declare_loop(value, value_ty, true, boxable);
                     }
-                    None => self.declare(key, value_ty, true),
+                    None => self.declare_loop(key, value_ty, true, boxable),
                 }
                 let result = self.walk_stmts(body);
                 self.pop_scope();
@@ -6505,7 +6559,8 @@ impl<'a> CaptureWalker<'a> {
             }
             self.walk_stmt(stmt)?;
         }
-        self.frames.pop();
+        let start_frame = self.frames.pop().expect("start frame");
+        self.analysis.start_boxed = start_frame.boxed;
         for (slot, (name, params, body)) in declarations.iter().enumerate() {
             let param_tys: Vec<Ty> = self
                 .checker
@@ -6988,7 +7043,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             continue_targets: Vec::new(),
             captures: Vec::new(),
             env_slot: None,
-            boxed: std::collections::HashSet::new(),
+            boxed: analysis.start_boxed.clone(),
             analysis: &analysis,
         };
         for stmt in &stmts {
