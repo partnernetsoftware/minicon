@@ -79,6 +79,7 @@ function writeStringBlock(text) {
   return start;
 }
 const gl = { width: 0, height: 0, clear: [0, 0, 0, 1], pixels: new Uint8Array(0) };
+const maps = [new Map()];
 const queryArgs = (() => {
   if (typeof process !== "undefined" && Array.isArray(process.argv)) {
     return process.argv.slice(2);
@@ -103,6 +104,22 @@ const imports = {
       const text = new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, ptr, len)).trim();
       return BigInt(parseInt(text, 10));
     },
+    map_new: () => { maps.push(new Map()); return maps.length - 1; },
+    map_set: (id, ptr, len, value) => {
+      const key = new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, ptr, len));
+      maps[id].set(key, value);
+      return id;
+    },
+    map_get: (id, ptr, len) => {
+      const key = new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, ptr, len));
+      const value = maps[id] && maps[id].get(key);
+      return value === undefined ? 0n : BigInt(value);
+    },
+    map_has: (id, ptr, len) => {
+      const key = new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, ptr, len));
+      return maps[id] && maps[id].has(key) ? 1 : 0;
+    },
+    map_len: (id) => (maps[id] ? maps[id].size : 0),
     now_ms: () => BigInt(Date.now()),
     sleep_ms: (millis) => {
       const until = Date.now() + Number(millis);

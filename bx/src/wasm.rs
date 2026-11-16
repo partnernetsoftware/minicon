@@ -1754,6 +1754,7 @@ where
             argv: argv.to_vec(),
             next_argv: 65_536,
             next_file: 131_072,
+            next_map: 327_680,
             next_proc: 196_608,
             started: std::time::Instant::now(),
             gl: GlBackend::new(),
@@ -1852,6 +1853,8 @@ struct PrintHost<'a, F: FnMut(i64), G: FnMut(&str)> {
     next_argv: u32,
     /// File contents returned by `bx.read_file` live in the third page.
     next_file: u32,
+    /// Dynamic map blocks live in their own region (page 5 onward).
+    next_map: u32,
     /// `bx.capture` result blocks live in the fourth page.
     next_proc: u32,
     /// Clock origin for `web.performance_now`.
@@ -1977,6 +1980,180 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     Ok(value) => Ok(vec![WVal::I64(value)]),
                     Err(_) => Err(format!("cannot convert '{}' to int", trimmed)),
                 }
+            }
+            ("env", "map_new") => {
+                const MAP_CAPACITY: u32 = 64;
+                let start = self.next_map as usize;
+                let size = 8 + MAP_CAPACITY as usize * 16;
+                if start + size > memory.len() {
+                    return Ok(vec![WVal::I32(0)]);
+                }
+                memory[start..start + 4].copy_from_slice(&0u32.to_le_bytes());
+                memory[start + 4..start + 8].copy_from_slice(&MAP_CAPACITY.to_le_bytes());
+                self.next_map = (start + size + 7) as u32 & !7;
+                Ok(vec![WVal::I32(start as i32)])
+            }
+            ("env", "map_set") => {
+                const MAP_CAPACITY: u32 = 64;
+                let read_i32 = |value: Option<&WVal>| match value {
+                    Some(WVal::I32(ptr)) => Some(*ptr as usize),
+                    _ => None,
+                };
+                let ptr = match read_i32(args.first()) {
+                    Some(ptr) => ptr,
+                    None => {
+                        return Err("env.map_set expects (i32 map, i32 ptr, i32 len, i64 value)"
+                            .to_string())
+                    }
+                };
+                let key_ptr = match read_i32(args.get(1)) {
+                    Some(ptr) => ptr,
+                    None => return Err("env.map_set expects a key pointer".to_string()),
+                };
+                let key_len = match read_i32(args.get(2)) {
+                    Some(len) => len,
+                    None => return Err("env.map_set expects a key length".to_string()),
+                };
+                let value = match args.get(3) {
+                    Some(WVal::I64(value)) => *value,
+                    _ => return Err("env.map_set expects one i64 value".to_string()),
+                };
+                if ptr + 8 + MAP_CAPACITY as usize * 16 > memory.len() {
+                    return Ok(vec![WVal::I32(0)]);
+                }
+                let key = memory
+                    .get(key_ptr..key_ptr.saturating_add(key_len))
+                    .ok_or_else(|| "env.map_set key is outside memory".to_string())?
+                    .to_vec();
+                let count = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+                for entry in 0..count.min(MAP_CAPACITY as usize) {
+                    let at = ptr + 8 + entry * 16;
+                    let existing_ptr =
+                        u32::from_le_bytes(memory[at..at + 4].try_into().unwrap()) as usize;
+                    let existing_len =
+                        u32::from_le_bytes(memory[at + 4..at + 8].try_into().unwrap()) as usize;
+                    let same = existing_len == key.len()
+                        && memory
+                            .get(existing_ptr..existing_ptr + existing_len)
+                            .map(|existing| existing == key.as_slice())
+                            .unwrap_or(false);
+                    if same {
+                        memory[at + 8..at + 16].copy_from_slice(&value.to_le_bytes());
+                        return Ok(vec![WVal::I32(ptr as i32)]);
+                    }
+                }
+                if count >= MAP_CAPACITY as usize {
+                    return Ok(vec![WVal::I32(0)]);
+                }
+                let at = ptr + 8 + count * 16;
+                memory[at..at + 4].copy_from_slice(&(key_ptr as u32).to_le_bytes());
+                memory[at + 4..at + 8].copy_from_slice(&(key_len as u32).to_le_bytes());
+                memory[at + 8..at + 16].copy_from_slice(&value.to_le_bytes());
+                memory[ptr..ptr + 4].copy_from_slice(&((count + 1) as u32).to_le_bytes());
+                Ok(vec![WVal::I32(ptr as i32)])
+            }
+            ("env", "map_get") => {
+                let read_i32 = |value: Option<&WVal>| match value {
+                    Some(WVal::I32(ptr)) => Some(*ptr as usize),
+                    _ => None,
+                };
+                let ptr = match read_i32(args.first()) {
+                    Some(ptr) => ptr,
+                    None => {
+                        return Err("env.map_get expects (i32 map, i32 ptr, i32 len)".to_string())
+                    }
+                };
+                let key_ptr = match read_i32(args.get(1)) {
+                    Some(ptr) => ptr,
+                    None => return Err("env.map_get expects a key pointer".to_string()),
+                };
+                let key_len = match read_i32(args.get(2)) {
+                    Some(len) => len,
+                    None => return Err("env.map_get expects a key length".to_string()),
+                };
+                let key = memory
+                    .get(key_ptr..key_ptr.saturating_add(key_len))
+                    .ok_or_else(|| "env.map_get key is outside memory".to_string())?
+                    .to_vec();
+                let count = if ptr + 4 <= memory.len() {
+                    u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize
+                } else {
+                    return Ok(vec![WVal::I64(0)]);
+                };
+                for entry in 0..count.min(64) {
+                    let at = ptr + 8 + entry * 16;
+                    if at + 16 > memory.len() {
+                        break;
+                    }
+                    let existing_ptr =
+                        u32::from_le_bytes(memory[at..at + 4].try_into().unwrap()) as usize;
+                    let existing_len =
+                        u32::from_le_bytes(memory[at + 4..at + 8].try_into().unwrap()) as usize;
+                    let same = existing_len == key.len()
+                        && memory
+                            .get(existing_ptr..existing_ptr + existing_len)
+                            .map(|existing| existing == key.as_slice())
+                            .unwrap_or(false);
+                    if same {
+                        let value = i64::from_le_bytes(memory[at + 8..at + 16].try_into().unwrap());
+                        return Ok(vec![WVal::I64(value)]);
+                    }
+                }
+                Ok(vec![WVal::I64(0)])
+            }
+            ("env", "map_has") => {
+                let read_i32 = |value: Option<&WVal>| match value {
+                    Some(WVal::I32(ptr)) => Some(*ptr as usize),
+                    _ => None,
+                };
+                let (ptr, key_ptr, key_len) = match (
+                    read_i32(args.first()),
+                    read_i32(args.get(1)),
+                    read_i32(args.get(2)),
+                ) {
+                    (Some(ptr), Some(key_ptr), Some(key_len)) => (ptr, key_ptr, key_len),
+                    _ => return Err("env.map_has expects (i32 map, i32 ptr, i32 len)".to_string()),
+                };
+                let key = memory
+                    .get(key_ptr..key_ptr.saturating_add(key_len))
+                    .ok_or_else(|| "env.map_has key is outside memory".to_string())?
+                    .to_vec();
+                let count = if ptr + 4 <= memory.len() {
+                    u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize
+                } else {
+                    return Ok(vec![WVal::I32(0)]);
+                };
+                for entry in 0..count.min(64) {
+                    let at = ptr + 8 + entry * 16;
+                    if at + 16 > memory.len() {
+                        break;
+                    }
+                    let existing_ptr =
+                        u32::from_le_bytes(memory[at..at + 4].try_into().unwrap()) as usize;
+                    let existing_len =
+                        u32::from_le_bytes(memory[at + 4..at + 8].try_into().unwrap()) as usize;
+                    let same = existing_len == key.len()
+                        && memory
+                            .get(existing_ptr..existing_ptr + existing_len)
+                            .map(|existing| existing == key.as_slice())
+                            .unwrap_or(false);
+                    if same {
+                        return Ok(vec![WVal::I32(1)]);
+                    }
+                }
+                Ok(vec![WVal::I32(0)])
+            }
+            ("env", "map_len") => {
+                let ptr = match args.first() {
+                    Some(WVal::I32(ptr)) => *ptr as usize,
+                    _ => return Err("env.map_len expects one i32 map".to_string()),
+                };
+                let count = if ptr + 4 <= memory.len() {
+                    u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap())
+                } else {
+                    0
+                };
+                Ok(vec![WVal::I32(count as i32)])
             }
             ("env", "now_ms") => {
                 let millis = std::time::SystemTime::now()

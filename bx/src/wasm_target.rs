@@ -21,6 +21,8 @@ enum Ty {
     Arr,
     /// Fixed-layout record; the payload indexes `Checker::shapes`.
     Obj(u32),
+    /// Dynamic string-keyed map (values are ints; wasm-target extension).
+    Map,
 }
 
 fn ty_name(ty: Ty) -> &'static str {
@@ -30,6 +32,7 @@ fn ty_name(ty: Ty) -> &'static str {
         Ty::Str => "string",
         Ty::Arr => "array",
         Ty::Obj(_) => "object",
+        Ty::Map => "map",
     }
 }
 
@@ -48,7 +51,7 @@ fn wasm_types(ty: Ty) -> Vec<ValType> {
         Ty::Int => vec![ValType::I64],
         Ty::Float => vec![ValType::F64],
         Ty::Str => vec![ValType::I32, ValType::I32],
-        Ty::Arr | Ty::Obj(_) => vec![ValType::I32],
+        Ty::Arr | Ty::Obj(_) | Ty::Map => vec![ValType::I32],
     }
 }
 
@@ -467,6 +470,29 @@ impl Checker {
                         }
                         return Ok(Ty::Int);
                     }
+                    if name == "map_new" && args.is_empty() {
+                        return Ok(Ty::Map);
+                    }
+                    if name == "map_get" && args.len() == 2 {
+                        if self.infer(&args[0])? != Ty::Map || self.infer(&args[1])? != Ty::Str {
+                            return Err("wasm target map_get(map, key) needs a map and a string"
+                                .to_string());
+                        }
+                        return Ok(Ty::Int);
+                    }
+                    if name == "map_has" && args.len() == 2 {
+                        if self.infer(&args[0])? != Ty::Map || self.infer(&args[1])? != Ty::Str {
+                            return Err("wasm target map_has(map, key) needs a map and a string"
+                                .to_string());
+                        }
+                        return Ok(Ty::Int);
+                    }
+                    if name == "map_len" && args.len() == 1 {
+                        if self.infer(&args[0])? != Ty::Map {
+                            return Err("wasm target map_len(map) needs a map".to_string());
+                        }
+                        return Ok(Ty::Int);
+                    }
                     if name == "now" && args.is_empty() {
                         return Ok(Ty::Int);
                     }
@@ -608,6 +634,19 @@ impl Checker {
                     return Err("wasm target only supports calls to print()".to_string());
                 };
                 match name.as_str() {
+                    "map_set" => {
+                        if args.len() != 3
+                            || self.infer(&args[0])? != Ty::Map
+                            || self.infer(&args[1])? != Ty::Str
+                            || self.infer(&args[2])? != Ty::Int
+                        {
+                            return Err(
+                                "wasm target map_set(map, key, int) takes a map, a string and an int"
+                                    .to_string(),
+                            );
+                        }
+                        return Ok(());
+                    }
                     "sleep" => {
                         if args.len() != 1 || self.infer(&args[0])? != Ty::Int {
                             return Err("wasm target sleep(ms) takes an int".to_string());
@@ -689,7 +728,7 @@ impl Checker {
                     return Err("wasm target supports print(<value>) with one argument".to_string());
                 }
                 let ty = self.infer(&args[0])?;
-                if ty == Ty::Arr || matches!(ty, Ty::Obj(_)) {
+                if ty == Ty::Arr || matches!(ty, Ty::Obj(_) | Ty::Map) {
                     return Err("wasm target cannot log arrays or objects yet".to_string());
                 }
             }
@@ -908,7 +947,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 29;
+const IMPORT_COUNT: u32 = 34;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -928,6 +967,11 @@ const CWD: u32 = 25;
 const ENV_GET: u32 = 26;
 const MKDIR: u32 = 27;
 const FILE_EXISTS: u32 = 28;
+const MAP_NEW: u32 = 29;
+const MAP_SET: u32 = 30;
+const MAP_GET: u32 = 31;
+const MAP_HAS: u32 = 32;
+const MAP_LEN: u32 = 33;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -1671,7 +1715,9 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Global(0x23, base));
                         self.builder.push(Instr::Global(0x23, base + 1));
                     }
-                    Ty::Int | Ty::Float | Ty::Arr | Ty::Obj(_) => self.push_global(name, false)?,
+                    Ty::Int | Ty::Float | Ty::Arr | Ty::Obj(_) | Ty::Map => {
+                        self.push_global(name, false)?
+                    }
                 }
                 Ok(ty)
             }
@@ -1867,6 +1913,29 @@ impl<'a> Emitter<'a> {
                         return Ok(Ty::Int);
                     }
 
+                    if name == "map_new" && args.is_empty() {
+                        self.builder.push(Instr::Call(MAP_NEW));
+                        return Ok(Ty::Map);
+                    }
+                    if name == "map_get" && args.len() == 2 {
+                        self.emit_expr(&args[0])?;
+                        self.emit_str(&args[1])?;
+                        self.builder.push(Instr::Call(MAP_GET));
+                        return Ok(Ty::Int);
+                    }
+                    if name == "map_has" && args.len() == 2 {
+                        self.emit_expr(&args[0])?;
+                        self.emit_str(&args[1])?;
+                        self.builder.push(Instr::Call(MAP_HAS));
+                        self.builder.push(Instr::Op(0xad));
+                        return Ok(Ty::Int);
+                    }
+                    if name == "map_len" && args.len() == 1 {
+                        self.emit_expr(&args[0])?;
+                        self.builder.push(Instr::Call(MAP_LEN));
+                        self.builder.push(Instr::Op(0xad));
+                        return Ok(Ty::Int);
+                    }
                     if name == "now" && args.is_empty() {
                         self.builder.push(Instr::Call(NOW_MS));
                         return Ok(Ty::Int);
@@ -2019,7 +2088,7 @@ impl<'a> Emitter<'a> {
                             self.builder.add_local(ValType::I32);
                             slot
                         }
-                        Ty::Arr | Ty::Obj(_) => self.builder.add_local(ValType::I32),
+                        Ty::Arr | Ty::Obj(_) | Ty::Map => self.builder.add_local(ValType::I32),
                     };
                     self.locals.insert(name.clone(), LocalSlot { ty, slot });
                     self.emit_store(name)?;
@@ -2091,6 +2160,24 @@ impl<'a> Emitter<'a> {
                     return Ok(());
                 }
                 match name.as_str() {
+                    "map_set" => {
+                        if args.len() != 3
+                            || self.type_of(&args[0])? != Ty::Map
+                            || self.type_of(&args[1])? != Ty::Str
+                            || self.type_of(&args[2])? != Ty::Int
+                        {
+                            return Err(
+                                "wasm target map_set(map, key, int) takes a map, a string and an int"
+                                    .to_string(),
+                            );
+                        }
+                        self.emit_expr(&args[0])?;
+                        self.emit_str(&args[1])?;
+                        self.emit_expr(&args[2])?;
+                        self.builder.push(Instr::Call(MAP_SET));
+                        self.builder.push(Instr::Op(0x1a));
+                        return Ok(());
+                    }
                     "sleep" => {
                         if args.len() != 1 || self.type_of(&args[0])? != Ty::Int {
                             return Err("wasm target sleep(ms) takes an int".to_string());
@@ -2206,7 +2293,7 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Op(0x1a));
                         self.builder.push(Instr::Op(0x1a));
                     }
-                    Ty::Int | Ty::Float | Ty::Arr | Ty::Obj(_) => {
+                    Ty::Int | Ty::Float | Ty::Arr | Ty::Obj(_) | Ty::Map => {
                         self.builder.push(Instr::Op(0x1a))
                     }
                 }
@@ -2688,6 +2775,20 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let f64_to_str_ty = builder.add_type(vec![ValType::F64], vec![ValType::I32]);
     let str_to_int_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I64]);
     let now_ms_ty = builder.add_type(vec![], vec![ValType::I64]);
+    let map_new_ty = builder.add_type(vec![], vec![ValType::I32]);
+    let map_set_ty = builder.add_type(
+        vec![ValType::I32, ValType::I32, ValType::I32, ValType::I64],
+        vec![ValType::I32],
+    );
+    let map_key_ty = builder.add_type(
+        vec![ValType::I32, ValType::I32, ValType::I32],
+        vec![ValType::I64],
+    );
+    let map_has_ty = builder.add_type(
+        vec![ValType::I32, ValType::I32, ValType::I32],
+        vec![ValType::I32],
+    );
+    let map_len_ty = builder.add_type(vec![ValType::I32], vec![ValType::I32]);
     let sleep_ms_ty = builder.add_type(vec![ValType::I64], vec![]);
     let cwd_ty = builder.add_type(vec![], vec![ValType::I32]);
     let env_get_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
@@ -2738,6 +2839,11 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "env_get", env_get_ty);
     builder.import_func("env", "mkdir", mkdir_ty);
     builder.import_func("env", "file_exists", mkdir_ty);
+    builder.import_func("env", "map_new", map_new_ty);
+    builder.import_func("env", "map_set", map_set_ty);
+    builder.import_func("env", "map_get", map_key_ty);
+    builder.import_func("env", "map_has", map_has_ty);
+    builder.import_func("env", "map_len", map_len_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -2749,7 +2855,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                 builder.add_global(ValType::I32, true, WVal::I32(0));
                 builder.add_global(ValType::I32, true, WVal::I32(0));
             }
-            Ty::Obj(_) => builder.add_global(ValType::I32, true, WVal::I32(0)),
+            Ty::Obj(_) | Ty::Map => builder.add_global(ValType::I32, true, WVal::I32(0)),
         }
     }
     let heap = checker.globals_used;
@@ -2822,7 +2928,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                     emitter.builder.push(Instr::Const(0x41, WVal::I32(0)));
                     emitter.builder.push(Instr::Const(0x41, WVal::I32(0)));
                 }
-                Some(Ty::Arr | Ty::Obj(_)) => {
+                Some(Ty::Arr | Ty::Obj(_) | Ty::Map) => {
                     emitter.builder.push(Instr::Const(0x41, WVal::I32(0)))
                 }
                 None => {}
@@ -3009,6 +3115,15 @@ mod tests {
             strings,
             vec!["3.5".to_string(), "4.5".to_string(), "2.5".to_string()]
         );
+    }
+
+    #[test]
+    fn dynamic_maps_work() {
+        let prints = run_source(
+            "let m = map_new()\nmap_set(m, \"a\", 1)\nmap_set(m, \"b\", 2)\nmap_set(m, \"a\", 5)\nprint(map_len(m))\nprint(map_get(m, \"a\") + map_get(m, \"b\"))\nprint(map_has(m, \"a\"))\nprint(map_has(m, \"zz\"))\nprint(map_get(m, \"missing\"))",
+        );
+        assert_eq!(prints, vec![2, 7, 1, 0, 0]);
+        assert!(compile_to_wasm("let m = map_new()\nprint(m)").is_err());
     }
 
     #[test]

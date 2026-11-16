@@ -158,6 +158,13 @@ write(dir + "/wasm-push.bxs", 'let a = [1]\na.push(2)\nprint(len(a))\n')
 write(dir + "/wasm-forin.bxs", 'let a = [1, 2, 3]\nlet s = 0\nfor v in a { s = s + v }\nprint(s)\n')
 write(dir + "/wasm-conv.bxs", 'print(str(42))\nprint(int("7"))\nlet a = [1, 2, 3]\na.pop()\nprint(a.len())\n')
 write(dir + "/wasm-util.bxs", 'let t = now()\nif (t > 0) { print(1) }\nmkdir("util-made")\nprint(file_exists("util-made"))\n')
+write(dir + "/wasm-map.bxs", 'let m = map_new()\nmap_set(m, "a", 3)\nmap_set(m, "b", 4)\nprint(map_len(m))\nprint(map_get(m, "a") + map_get(m, "b"))\n')
+test("wasm dynamic maps", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-map.bxs", "-o", dir + "/wasm-map.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-map.wasm"])
+  assert(ran.code == 0 && ran.out.trim() == "2\n7", "got " + json(ran.out) + " " + ran.err)
+})
 test("wasm native utilities", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-util.bxs", "-o", dir + "/wasm-util.wasm"])
   assert(built.code == 0, "build failed: " + built.err)
