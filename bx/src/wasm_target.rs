@@ -1159,6 +1159,8 @@ struct Emitter<'a> {
     literal_ids: HashMap<usize, u32>,
     /// shape id -> (data-segment base of its key table, key count).
     record_tables: HashMap<u32, (u32, u32)>,
+    /// Labels index that `continue` must branch to (innermost last).
+    continue_targets: Vec<usize>,
 }
 
 impl Emitter<'_> {
@@ -1250,15 +1252,6 @@ impl<'a> Emitter<'a> {
         Err("wasm target has no loop to break out of".to_string())
     }
 
-    fn continue_depth(&self) -> Result<u32, String> {
-        for (depth, kind) in self.labels.iter().rev().enumerate() {
-            if *kind == 0x03 {
-                return Ok(depth as u32);
-            }
-        }
-        Err("wasm target has no loop to continue".to_string())
-    }
-
     fn emit_compound(&mut self, name: &str, op: BinOp, value: &Expr) -> Result<(), String> {
         let target_ty = match self.local_of(name) {
             Some(slot) => slot.ty,
@@ -1318,6 +1311,25 @@ impl<'a> Emitter<'a> {
             ty_name(expected),
             ty_name(actual)
         ))
+    }
+
+    /// Push a continue-target block around a loop body so `continue` can reach
+    /// the post-body step (index increment / for-step) instead of skipping it.
+    fn push_continue_block(&mut self) {
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x02);
+        self.continue_targets.push(self.labels.len() - 1);
+    }
+
+    fn pop_continue_block(&mut self) {
+        self.continue_targets.pop();
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
     }
 
     /// Resolve a callee to (params, result, wasm index) for direct calls.
@@ -1449,9 +1461,11 @@ impl<'a> Emitter<'a> {
             self.builder.push(Instr::Mem(0x29, 3, 0));
             self.builder.push(Instr::Local(0x21, value_slot));
         }
+        self.push_continue_block();
         for stmt in body {
             self.emit_stmt(stmt)?;
         }
+        self.pop_continue_block();
         self.builder.push(Instr::Local(0x20, index_tmp));
         self.builder.push(Instr::Const(0x41, WVal::I32(1)));
         self.builder.push(Instr::Op(0x6a));
@@ -1537,9 +1551,11 @@ impl<'a> Emitter<'a> {
             self.builder.push(Instr::Call(MAP_VALUE_AT));
             self.builder.push(Instr::Local(0x21, value_slot));
         }
+        self.push_continue_block();
         for stmt in body {
             self.emit_stmt(stmt)?;
         }
+        self.pop_continue_block();
         self.builder.push(Instr::Local(0x20, index_tmp));
         self.builder.push(Instr::Const(0x41, WVal::I32(1)));
         self.builder.push(Instr::Op(0x6a));
@@ -1641,9 +1657,11 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Op(0x6a));
         self.builder.push(Instr::Mem(0x29, 3, 0));
         self.builder.push(Instr::Local(0x21, value_tmp));
+        self.push_continue_block();
         for stmt in body {
             self.emit_stmt(stmt)?;
         }
+        self.pop_continue_block();
         self.builder.push(Instr::Local(0x20, index_tmp));
         self.builder.push(Instr::Const(0x42, WVal::I64(1)));
         self.builder.push(Instr::Op(0x7c));
@@ -2031,8 +2049,18 @@ impl<'a> Emitter<'a> {
             self.builder.push(Instr::Op(0x45));
             self.builder.push(Instr::BrIf(1));
         }
+        if step.is_some() {
+            self.push_continue_block();
+        } else {
+            self.continue_targets.push(self.labels.len() - 1);
+        }
         for stmt in body {
             self.emit_stmt(stmt)?;
+        }
+        if step.is_some() {
+            self.pop_continue_block();
+        } else {
+            self.continue_targets.pop();
         }
         if let Some(step) = step {
             match step {
@@ -3031,8 +3059,11 @@ impl<'a> Emitter<'a> {
             }
             Stmt::Fn(..) => Ok(()),
             Stmt::Continue(_) => {
-                let depth = self.continue_depth()?;
-                self.builder.push(Instr::Br(depth));
+                let Some(target) = self.continue_targets.last().copied() else {
+                    return Err("wasm target has no loop to continue".to_string());
+                };
+                let depth = self.labels.len() - 1 - target;
+                self.builder.push(Instr::Br(depth as u32));
                 Ok(())
             }
             other => Err(format!(
@@ -3760,6 +3791,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             scoped: Vec::new(),
             literal_ids: literal_ids.clone(),
             record_tables: HashMap::new(),
+            continue_targets: Vec::new(),
         };
         for stmt in &stmts {
             emitter.emit_stmt(stmt)?;
@@ -3792,6 +3824,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                 scoped: Vec::new(),
                 literal_ids: literal_ids.clone(),
                 record_tables: HashMap::new(),
+                continue_targets: Vec::new(),
             };
             let mut used = 0u32;
             for (param, ty) in decl.params.iter().zip(sig.params.iter()) {
@@ -3848,6 +3881,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                 scoped: Vec::new(),
                 literal_ids: literal_ids.clone(),
                 record_tables: HashMap::new(),
+                continue_targets: Vec::new(),
             };
             let mut used = 0u32;
             for (param, ty) in decl.params.iter().zip(sig.params.iter()) {
@@ -4057,6 +4091,14 @@ mod tests {
             strings,
             vec!["3.5".to_string(), "4.5".to_string(), "2.5".to_string()]
         );
+    }
+
+    #[test]
+    fn continue_reaches_loop_steps() {
+        let prints = run_source(
+            "let sum = 0\nfor v in [1, 2, 3, 4] {\n  if (v == 2) { continue }\n  sum = sum + v\n}\nprint(sum)\nlet acc = 0\nfor (let i = 0; i < 5; i += 1) {\n  if (i % 2 == 0) { continue }\n  acc = acc + i\n}\nprint(acc)\nlet r = {a: 1, b: 2}\nfor k, v in r {\n  if (k == \"b\") { continue }\n  print(v)\n}",
+        );
+        assert_eq!(prints, vec![8, 4, 1]);
     }
 
     #[test]

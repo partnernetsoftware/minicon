@@ -166,6 +166,14 @@ write(dir + "/wasm-bool.bxs", 'let ok = 2 > 1\nif (ok) { print(str(ok)) }\nprint
 write(dir + "/wasm-exists.bxs", 'print(exists("."))\nprint(exists("C:/definitely-missing-bx"))\n')
 write(dir + "/g1.bxs", 'let a = [3, 4]\nlet total = 0\nfor v in a { total = total + v }\nprint(total)\n')
 write(dir + "/wasm-reciter.bxs", 'let o = {a: 1, b: 2}\nfor k, v in o { print(k)\nprint(v) }\nprint("abc".contains("b"))\n')
+write(dir + "/wasm-continue.bxs", 'let sum = 0\nfor v in [1, 2, 3, 4] { if (v == 2) { continue } sum = sum + v }\nprint(sum)\n')
+test("wasm continue", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-continue.bxs", "-o", dir + "/wasm-continue.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-continue.wasm"])
+  let vm = exec([bin, "run", dir + "/wasm-continue.bxs"])
+  assert(ran.code == 0 && ran.out == vm.out && ran.out.trim() == "8", "wasm=" + json(ran.out) + " vm=" + json(vm.out))
+})
 test("wasm record iteration and string methods", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-reciter.bxs", "-o", dir + "/wasm-reciter.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

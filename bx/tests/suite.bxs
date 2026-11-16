@@ -807,6 +807,16 @@ if (wasmReciter.code == 0 && wasmReciterRun.out == wasmReciterVm.out && wasmReci
   casesFail += 1
   failures.push("wasm record iteration and string methods\n    wasm=" + json(wasmReciterRun.out) + " vm=" + json(wasmReciterVm.out) + " err=" + json(wasmReciterRun.err))
 }
+write(artDir + "/wasm-continue.bxs", 'let sum = 0\nfor v in [1, 2, 3, 4] {\n  if (v == 2) { continue }\n  sum = sum + v\n}\nprint(sum)\nlet acc = 0\nfor (let i = 0; i < 5; i += 1) {\n  if (i % 2 == 0) { continue }\n  acc = acc + i\n}\nprint(acc)\nlet r = {a: 1, b: 2}\nfor k, v in r {\n  if (k == "b") { continue }\n  print(v)\n}\n')
+let wasmContinue = exec([BX, "build", "--wasm", artDir + "/wasm-continue.bxs", "-o", artDir + "/wasm-continue.wasm"])
+let wasmContinueRun = exec([BX, "run", artDir + "/wasm-continue.wasm"])
+let wasmContinueVm = exec([BX, "run", artDir + "/wasm-continue.bxs"])
+if (wasmContinue.code == 0 && wasmContinueRun.out == wasmContinueVm.out && wasmContinueRun.out.trim() == "8\n4\n1") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm continue\n    wasm=" + json(wasmContinueRun.out) + " vm=" + json(wasmContinueVm.out) + " err=" + json(wasmContinueRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'fn outer() {\n  let n = 5\n  let f = fn(x) { return x + n }\n  return f(1)\n}\nprint(outer())\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1 && wasmBad.err.contains("cannot capture outer variables")) {

@@ -123,7 +123,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 66 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 67 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -139,6 +139,11 @@ bx wasm target
   `&&`/`||`/`!` through if/else locals, ternary with int/float/bool branches
   (string branches still rejected) and `str(bool)`/`print(bool)` via host
   `env.bool_to_str`.
+- **Loop `continue`**: for-in loops (array/map/record) and `for (…; …; step)`
+  route `continue` through a dedicated block so the index increment / step still
+  runs; previously `continue` branched to the loop header and skipped it
+  (infinite loop on array iteration). Covered by unit, suite, verifier and the
+  differential generator.
 - **Numeric range divergence (documented)**: the VM promotes int arithmetic
   results to Float when the exact result is fractional or `|r| >= 9e15`; the
   wasm subset keeps i64. Values below that threshold agree; the differential
