@@ -185,7 +185,9 @@ jobs:
           bash loader/rebuild-payloads.sh
           bash loader/pack-rust-all.sh
           bash bx/scripts/build-cells.sh
-          MINICON_RUST_COURT_COM="loader/dist/rust/minicon-bx-$(case "$(uname -s)" in Darwin*) echo osx-aarch64;; *) echo lnx-x86_64;; esac).com" \
+          court_cell="lnx-x86_64"
+          if [[ "$(uname -s)" == Darwin* ]]; then court_cell="osx-aarch64"; fi
+          MINICON_RUST_COURT_COM="loader/dist/rust/minicon-bx-$court_cell.com" \
             bash loader/rust-lane-courts.sh | tee "$rust_courts"
           grep -q "rust-lane-courts: .* 0 failed" "$rust_courts"
           python3 - <<'PY'

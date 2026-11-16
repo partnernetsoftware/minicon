@@ -16,6 +16,7 @@ use std::collections::HashMap;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Ty {
     Int,
+    Float,
     Str,
     Arr,
     /// Fixed-layout record; the payload indexes `Checker::shapes`.
@@ -25,10 +26,15 @@ enum Ty {
 fn ty_name(ty: Ty) -> &'static str {
     match ty {
         Ty::Int => "int",
+        Ty::Float => "float",
         Ty::Str => "string",
         Ty::Arr => "array",
         Ty::Obj(_) => "object",
     }
+}
+
+fn is_number(ty: Ty) -> bool {
+    matches!(ty, Ty::Int | Ty::Float)
 }
 
 fn stmt_kind(stmt: &Stmt) -> &'static str {
@@ -207,7 +213,7 @@ impl Checker {
             if let Some(binding) = self.env.get(name) {
                 return Ok(binding.ty);
             }
-            return Err(format!("undefined variable '{}'", name));
+            return Err(format!("undefined variable '{}' (fn_depth={})", name, self.fn_depth));
         }
         self.binding(name).map(|binding| binding.ty)
     }
@@ -215,6 +221,7 @@ impl Checker {
     fn infer(&self, expr: &Expr) -> Result<Ty, String> {
         match expr {
             Expr::Int(_) => Ok(Ty::Int),
+            Expr::Float(_) => Ok(Ty::Float),
             Expr::Str(_) => Ok(Ty::Str),
             Expr::Ident(name) => self.lookup(name),
             Expr::Neg(inner) => {
@@ -227,37 +234,53 @@ impl Checker {
                 }
                 Ok(Ty::Int)
             }
-            Expr::Bin(BinOp::Add, left, right) => {
+            Expr::Bin(op @ (BinOp::Add | BinOp::Sub | BinOp::Mul), left, right) => {
                 let lt = self.infer(left)?;
                 let rt = self.infer(right)?;
-                match (lt, rt) {
-                    (Ty::Str, Ty::Str) => Ok(Ty::Str),
-                    (Ty::Int, Ty::Int) => Ok(Ty::Int),
-                    (Ty::Arr, _) | (_, Ty::Arr) => {
-                        Err("wasm target does not support '+' on arrays yet".to_string())
+                if op == &BinOp::Add && lt == Ty::Str && rt == Ty::Str {
+                    if self.fn_depth > 0 {
+                        return Err(
+                            "wasm target does not support string concatenation inside functions yet"
+                                .to_string(),
+                        );
                     }
+                    return Ok(Ty::Str);
+                }
+                match (lt, rt) {
+                    (Ty::Int, Ty::Int) => Ok(Ty::Int),
+                    (Ty::Int | Ty::Float, Ty::Int | Ty::Float) => Ok(Ty::Float),
+                    (Ty::Arr, _) | (_, Ty::Arr) => Err(format!(
+                        "wasm target does not support {:?} on arrays yet",
+                        op
+                    )),
                     _ => Err(format!(
-                        "wasm target cannot mix {} and {} in '+' yet",
+                        "wasm target cannot mix {} and {} in {:?} yet",
                         ty_name(lt),
-                        ty_name(rt)
+                        ty_name(rt),
+                        op
                     )),
                 }
             }
             Expr::Bin(BinOp::Div, left, right) => {
-                self.infer(left)?;
-                self.infer(right)?;
-                Err("wasm target does not support / yet: bx divides as floats, and float values are not in the wasm subset"
-                    .to_string())
-            }
-            Expr::Bin(op @ (BinOp::Sub | BinOp::Mul | BinOp::Mod), left, right) => {
                 let lt = self.infer(left)?;
                 let rt = self.infer(right)?;
-                if lt != Ty::Int || rt != Ty::Int {
-                    return Err(format!("wasm target supports {:?} on ints only yet", op));
+                if !is_number(lt) || !is_number(rt) {
+                    return Err("wasm target divides numbers only".to_string());
                 }
-                Ok(Ty::Int)
+                Ok(Ty::Float)
             }
-            Expr::Bin(..) => Err("wasm target supports + - * %".to_string()),
+            Expr::Bin(BinOp::Mod, left, right) => {
+                let lt = self.infer(left)?;
+                let rt = self.infer(right)?;
+                if !is_number(lt) || !is_number(rt) {
+                    return Err("wasm target takes % of numbers only".to_string());
+                }
+                if lt == Ty::Int && rt == Ty::Int {
+                    Ok(Ty::Int)
+                } else {
+                    Ok(Ty::Float)
+                }
+            }            Expr::Bin(..) => Err("wasm target supports + - * / %".to_string()),
             Expr::Object(fields) => {
                 if fields.is_empty() {
                     return Err("wasm target does not support empty objects yet".to_string());
@@ -641,8 +664,8 @@ const ALLOC_TMP: u32 = 6;
 const ARG_TMP: u32 = 7;
 
 /// Imported host functions: print_i64, print_utf8, argc, arg, read_file, write_file,
-/// run, capture.
-const IMPORT_COUNT: u32 = 8;
+/// run, capture, print_f64, fmod.
+const IMPORT_COUNT: u32 = 10;
 
 struct Emitter<'a> {
     checker: &'a Checker,
@@ -727,6 +750,89 @@ impl<'a> Emitter<'a> {
         Err("wasm target has no loop to continue".to_string())
     }
 
+    fn type_of(&self, expr: &Expr) -> Result<Ty, String> {
+        match expr {
+            Expr::Ident(name) => {
+                if self.local_of(name).is_some() {
+                    return Ok(Ty::Int);
+                }
+                self.checker.infer(expr)
+            }
+            _ => self.checker.infer(expr),
+        }
+    }
+
+    fn emit_f64(&mut self, expr: &Expr) -> Result<(), String> {
+        let ty = self.emit_expr(expr)?;
+        match ty {
+            Ty::Int => {
+                self.builder.push(Instr::Op(0xb9));
+                Ok(())
+            }
+            Ty::Float => Ok(()),
+            other => Err(format!(
+                "wasm target needs a number here, got {}",
+                ty_name(other)
+            )),
+        }
+    }
+
+    fn emit_numeric(&mut self, op: BinOp, left: &Expr, right: &Expr) -> Result<Ty, String> {
+        let lt = self.type_of(left)?;
+        let rt = self.type_of(right)?;
+        if !is_number(lt) || !is_number(rt) {
+            return Err(format!(
+                "wasm target does not support {:?} on {} yet",
+                op,
+                ty_name(if !is_number(lt) { lt } else { rt })
+            ));
+        }
+        let both_int = lt == Ty::Int && rt == Ty::Int;
+        match op {
+            BinOp::Div => {
+                self.emit_f64(left)?;
+                self.emit_f64(right)?;
+                self.builder.push(Instr::Op(0xa3));
+                Ok(Ty::Float)
+            }
+            BinOp::Mod if !both_int => {
+                self.emit_f64(left)?;
+                self.emit_f64(right)?;
+                self.builder.push(Instr::Call(9));
+                Ok(Ty::Float)
+            }
+            BinOp::Mod => {
+                self.emit_expr(left)?;
+                self.emit_expr(right)?;
+                self.builder.push(Instr::Op(0x81));
+                Ok(Ty::Int)
+            }
+            BinOp::Add | BinOp::Sub | BinOp::Mul => {
+                if both_int {
+                    self.emit_expr(left)?;
+                    self.emit_expr(right)?;
+                    let opcode = match op {
+                        BinOp::Add => 0x7c,
+                        BinOp::Sub => 0x7d,
+                        _ => 0x7e,
+                    };
+                    self.builder.push(Instr::Op(opcode));
+                    Ok(Ty::Int)
+                } else {
+                    self.emit_f64(left)?;
+                    self.emit_f64(right)?;
+                    let opcode = match op {
+                        BinOp::Add => 0xa0,
+                        BinOp::Sub => 0xa1,
+                        _ => 0xa2,
+                    };
+                    self.builder.push(Instr::Op(opcode));
+                    Ok(Ty::Float)
+                }
+            }
+            other => Err(format!("wasm target does not support {:?} here", other)),
+        }
+    }
     fn emit_cond(&mut self, expr: &Expr) -> Result<(), String> {
         match expr {
             Expr::Not(inner) => {
@@ -735,14 +841,39 @@ impl<'a> Emitter<'a> {
                 Ok(())
             }
             Expr::Bin(op, left, right) => {
+                let cmp = matches!(
+                    op,
+                    BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge
+                );
+                if !cmp {
+                    return Err("wasm target supports comparison conditions only".to_string());
+                }
+                let lt = self.type_of(left)?;
+                let rt = self.type_of(right)?;
+                if !is_number(lt) || !is_number(rt) {
+                    return Err("wasm target compares numbers only".to_string());
+                }
+                if lt == Ty::Float || rt == Ty::Float {
+                    self.emit_f64(left)?;
+                    self.emit_f64(right)?;
+                    let opcode = match op {
+                        BinOp::Eq => 0x61,
+                        BinOp::Ne => 0x62,
+                        BinOp::Lt => 0x63,
+                        BinOp::Gt => 0x64,
+                        BinOp::Le => 0x65,
+                        _ => 0x66,
+                    };
+                    self.builder.push(Instr::Op(opcode));
+                    return Ok(());
+                }
                 let opcode = match op {
                     BinOp::Eq => 0x51,
                     BinOp::Ne => 0x52,
                     BinOp::Lt => 0x53,
                     BinOp::Le => 0x57,
                     BinOp::Gt => 0x55,
-                    BinOp::Ge => 0x59,
-                    _ => return Err("wasm target supports comparison conditions only".to_string()),
+                    _ => 0x59,
                 };
                 self.emit_expr(left)?;
                 self.emit_expr(right)?;
@@ -755,7 +886,6 @@ impl<'a> Emitter<'a> {
             )),
         }
     }
-
     fn emit_while(
         &mut self,
         cond: Option<&Expr>,
@@ -900,7 +1030,10 @@ impl<'a> Emitter<'a> {
                 self.builder.push(Instr::Const(0x42, WVal::I64(*value)));
                 Ok(Ty::Int)
             }
-            Expr::Ident(name) => {
+            Expr::Float(value) => {
+                self.builder.push(Instr::Const(0x44, WVal::F64(*value)));
+                Ok(Ty::Float)
+            }            Expr::Ident(name) => {
                 if let Some(index) = self.local_of(name) {
                     self.builder.push(Instr::Local(0x20, index));
                     return Ok(Ty::Int);
@@ -912,7 +1045,7 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Global(0x23, base));
                         self.builder.push(Instr::Global(0x23, base + 1));
                     }
-                    Ty::Int | Ty::Arr | Ty::Obj(_) => self.push_global(name, false)?,
+                    Ty::Int | Ty::Float | Ty::Arr | Ty::Obj(_) => self.push_global(name, false)?,
                 }
                 Ok(ty)
             }
@@ -927,24 +1060,9 @@ impl<'a> Emitter<'a> {
                     self.emit_str(expr)?;
                     return Ok(Ty::Str);
                 }
-                self.emit_expr(left)?;
-                self.emit_expr(right)?;
-                self.builder.push(Instr::Op(0x7c));
-                Ok(Ty::Int)
+                self.emit_numeric(BinOp::Add, left, right)
             }
-            Expr::Bin(op, left, right) => {
-                self.emit_expr(left)?;
-                self.emit_expr(right)?;
-                let opcode = match op {
-                    BinOp::Sub => 0x7d,
-                    BinOp::Mul => 0x7e,
-                    BinOp::Mod => 0x81,
-                    _ => return Err("wasm target supports + - * %".to_string()),
-                };
-                self.builder.push(Instr::Op(opcode));
-                Ok(Ty::Int)
-            }
-            Expr::Object(fields) => {
+            Expr::Bin(op, left, right) => self.emit_numeric(*op, left, right),            Expr::Object(fields) => {
                 let ty = self.checker.infer(expr)?;
                 let Ty::Obj(shape) = ty else {
                     return Err("wasm target object type mismatch".to_string());
@@ -1221,7 +1339,9 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Op(0x1a));
                         self.builder.push(Instr::Op(0x1a));
                     }
-                    Ty::Int | Ty::Arr | Ty::Obj(_) => self.builder.push(Instr::Op(0x1a)),
+                    Ty::Int | Ty::Float | Ty::Arr | Ty::Obj(_) => {
+                            self.builder.push(Instr::Op(0x1a))
+                        }
                 }
                 Ok(())
             }
@@ -1329,6 +1449,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     );
     let run_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
     let capture_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
+    let print_f64_ty = builder.add_type(vec![ValType::F64], vec![]);
+    let fmod_ty = builder.add_type(vec![ValType::F64, ValType::F64], vec![ValType::F64]);
     let start_ty = builder.add_type(vec![], vec![]);
     let mut fn_types: Vec<u32> = Vec::new();
     for (_, decl) in &declarations {
@@ -1348,11 +1470,14 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("bx", "write_file", write_file_ty);
     builder.import_func("bx", "run", run_ty);
     builder.import_func("bx", "capture", capture_ty);
+    builder.import_func("env", "print_f64", print_f64_ty);
+    builder.import_func("env", "fmod", fmod_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
         match ty {
             Ty::Int => builder.add_global(ValType::I64, true, WVal::I64(0)),
+            Ty::Float => builder.add_global(ValType::F64, true, WVal::F64(0.0)),
             Ty::Arr => builder.add_global(ValType::I32, true, WVal::I32(0)),
             Ty::Str => {
                 builder.add_global(ValType::I32, true, WVal::I32(0));

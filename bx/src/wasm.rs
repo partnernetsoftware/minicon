@@ -758,7 +758,7 @@ fn decode_code_body(r: &mut Reader) -> Result<(Vec<ValType>, Vec<Instr>), String
 }
 
 fn is_supported_numeric_opcode(opcode: u8) -> bool {
-    matches!(opcode, 0x45..=0x8a | 0xa7 | 0xad)
+    matches!(opcode, 0x45..=0x8a | 0xa0..=0xa3 | 0xa7 | 0xad | 0xb9)
 }
 
 pub fn decode(bytes: &[u8]) -> Result<Module, String> {
@@ -1478,9 +1478,24 @@ impl<'m, H: Host> Exec<'m, H> {
                 let a = pop_i64(stack)?;
                 stack.push(WVal::I64(i64_binop(opcode, a, b)?));
             }
+            0xa0..=0xa3 => {
+                let b = pop_f64(stack)?;
+                let a = pop_f64(stack)?;
+                let value = match opcode {
+                    0xa0 => a + b,
+                    0xa1 => a - b,
+                    0xa2 => a * b,
+                    _ => a / b,
+                };
+                stack.push(WVal::F64(value));
+            }
             0xa7 => {
                 let value = pop_i64(stack)?;
                 stack.push(WVal::I32(value as i32));
+            }
+            0xb9 => {
+                let value = pop_i64(stack)?;
+                stack.push(WVal::F64(value as f64));
             }
             0xad => {
                 let value = pop_i32(stack)?;
@@ -1753,6 +1768,27 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 Ok(Vec::new())
             }
             ("bx", "argc") => Ok(vec![WVal::I32(self.argv.len() as i32)]),
+            ("env", "print_f64") => {
+                let value = match args.first() {
+                    Some(WVal::F64(value)) => *value,
+                    _ => return Err("env.print_f64 expects one f64".to_string()),
+                };
+                // Match the VM: finite floats use fmt_float, others print null.
+                let text = if value.is_finite() {
+                    crate::value::fmt_float(value)
+                } else {
+                    "null".to_string()
+                };
+                (self.on_str)(&text);
+                Ok(Vec::new())
+            }
+            ("env", "fmod") => {
+                let (a, b) = match (args.first(), args.get(1)) {
+                    (Some(WVal::F64(a)), Some(WVal::F64(b))) => (*a, *b),
+                    _ => return Err("env.fmod expects two f64 values".to_string()),
+                };
+                Ok(vec![WVal::F64(a % b)])
+            }
             ("bx", "run") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {
                     (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
