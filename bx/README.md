@@ -28,6 +28,7 @@ bx 的自身启动已经低到**低于这台机器的进程创建地板**（16 m
 ```powershell
 cd bx
 cargo build --release
+cargo test --release         # 容器编解码、patch、JSON、比较等纯逻辑的单元测试
 # 产物：target\release\bx.exe
 ```
 
@@ -220,7 +221,7 @@ bx 以独立 workspace 住在 `bx/`（`Cargo.toml` 里的空 `[workspace]`），
 MiniCon 的 workspace members，终端二进制里也没有 bx 代码。
 
 ```bash
-bash bx/scripts/test.sh      # 宿主构建 + 51 项自测
+bash bx/scripts/test.sh      # 宿主构建 + 14 项 Rust 单元测试 + 119 项自测
 bash bx/scripts/build-cells.sh   # 出每平台产物（宿主感知）
 ```
 

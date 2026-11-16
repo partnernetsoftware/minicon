@@ -171,6 +171,10 @@ flowchart LR
 - 2026-11-16 round 24: `bx/tools/verify.bxs` is written as `test()` blocks, so
   `bx test tools/verify.bxs <artifact>` owns reporting and exit code; the CI bx
   lane and the suite both call it that way (16 tests on every runner).
+- 2026-11-16 round 25: 14 Rust unit tests cover the container codec (round-trip,
+  bad magic), patch parsing/application (multi-hunk, mismatch, CRLF), JSON and VM
+  comparison/len; `bx/scripts/test.sh` runs them before the self-hosted suite, so
+  the CI build job runs both.
 - Open: execution on Linux x86_64/aarch64 and Windows ARM64 belongs to the
   six-runner matrix (`minicon-com.yml`, `bx_lane`), not the Windows host.
 

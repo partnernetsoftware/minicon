@@ -1587,3 +1587,50 @@ fn error_is_located(e: &str) -> bool {
         None => false,
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::value::Value;
+
+    fn sample_chunk() -> Chunk {
+        let mut chunk = Chunk::new("sample".to_string(), 1);
+        chunk.file = Rc::new("lib.bxs".to_string());
+        chunk.max_slots = 2;
+        chunk.code = vec![op::GET_LOCAL, 0, 0, 0, 0, op::RET];
+        chunk.lines = vec![3, 3, 3, 3, 3, 3];
+        chunk.consts = vec![Value::Int(7), Value::Str(Rc::new("name".to_string()))];
+        chunk
+    }
+
+    #[test]
+    fn container_roundtrip_keeps_name_file_and_code() {
+        let bytes = encode(&[sample_chunk()], true);
+        let (chunks, want) = decode(&bytes).expect("decode");
+        assert!(want);
+        assert_eq!(chunks.len(), 1);
+        let decoded = &chunks[0];
+        assert_eq!(decoded.name.as_str(), "sample");
+        assert_eq!(decoded.file.as_str(), "lib.bxs");
+        assert_eq!(decoded.arity, 1);
+        assert_eq!(decoded.max_slots, 2);
+        assert_eq!(decoded.code, sample_chunk().code);
+        assert_eq!(decoded.lines, sample_chunk().lines);
+        assert_eq!(decoded.consts.len(), 2);
+        assert_eq!(decoded.consts[0].to_json(), "7");
+    }
+
+    #[test]
+    fn decode_rejects_a_bad_magic() {
+        assert!(decode(b"BXB").is_err());
+        assert!(decode(b"nope!").is_err());
+    }
+
+    #[test]
+    fn operand_bits_match_encodings() {
+        assert!(has_operand(op::GET_GLOBAL));
+        assert!(has_operand(op::SET_LOCAL));
+        assert!(!has_operand(op::ADD));
+        assert!(!has_operand(op::RET));
+        assert!(!has_operand(200));
+    }
+}

@@ -1,10 +1,12 @@
 #!/bin/bash
-# bx's own regression suite: build the host binary, then run the 51 checks on it.
+# bx's own regression: Rust unit tests for the pure pieces, then the self-hosted
+# suite (119 checks) through the freshly built binary.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-cargo build --release
+cargo build --release --offline
+cargo test --release --offline
 
 BIN="$ROOT/target/release/bx"
 if [[ -f "$BIN.exe" ]]; then BIN="$BIN.exe"; fi

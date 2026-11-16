@@ -241,3 +241,26 @@ impl<'a> JsonParser<'a> {
         }
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_nested_json() {
+        let value = parse(r#"{"a": [1, 2.5, "x"], "b": {"c": true}}"#).expect("parse");
+        assert_eq!(value.to_json(), r#"{"a":[1,2.5,"x"],"b":{"c":true}}"#);
+    }
+
+    #[test]
+    fn parses_escapes_and_unicode() {
+        let value = parse(r#""a\"b\n""#).expect("parse");
+        assert_eq!(value.to_json(), r#""a\"b\n""#);
+    }
+
+    #[test]
+    fn rejects_trailing_data_and_truncation() {
+        assert!(parse("{} trailing").is_err());
+        assert!(parse("{").is_err());
+        assert!(parse(r#"{"a":}"#).is_err());
+    }
+}

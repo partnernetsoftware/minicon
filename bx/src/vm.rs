@@ -932,3 +932,51 @@ impl Drop for Vm {
         }
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compare_orders_numbers_and_strings() {
+        assert_eq!(
+            compare(&Value::Int(1), &Value::Int(2)),
+            Ok(std::cmp::Ordering::Less)
+        );
+        assert_eq!(
+            compare(&Value::Float(1.5), &Value::Int(1)),
+            Ok(std::cmp::Ordering::Greater)
+        );
+        assert_eq!(
+            compare(&str_val("a".to_string()), &str_val("b".to_string())),
+            Ok(std::cmp::Ordering::Less)
+        );
+    }
+
+    #[test]
+    fn len_of_counts_arrays_strings_and_objects() {
+        assert_eq!(
+            len_of(&array_val(vec![Value::Int(1), Value::Int(2)])),
+            Ok(2)
+        );
+        assert_eq!(len_of(&str_val("abc".to_string())), Ok(3));
+        assert!(len_of(&Value::Null).is_err());
+    }
+
+    #[test]
+    fn global_slot_cache_reuses_the_same_slot() {
+        let mut chunk = Chunk::new("<main>".to_string(), 0);
+        chunk.consts = vec![str_val("x".to_string())];
+        let mut vm = Vm::new(
+            vec![chunk],
+            "<test>".to_string(),
+            Vec::new(),
+            ".".to_string(),
+        );
+        let first = vm.global_slot(0, 0).expect("slot");
+        vm.globals[first] = Value::Int(41);
+        vm.global_defined[first] = true;
+        let second = vm.global_slot(0, 0).expect("slot");
+        assert_eq!(first, second);
+        assert!(vm.get_global("x").is_some());
+    }
+}

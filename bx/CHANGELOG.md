@@ -30,7 +30,7 @@
 
 - 容器升级到 `BXB\x02`（每个 chunk 记录来源文件，v1 仍可读）。
 - `bx/tools/verify.bxs`：16 项跨平台端到端验证，CI 每个 runner 用自己的产物跑。
-- 自托管套件 119 项；`.com` 产物级 selftest 31 项。
+- 自托管套件 119 项；14 项 Rust 单元测试（容器编解码、patch、JSON、VM 比较）；`.com` 产物级 selftest 31 项。
 
 **性能**
 

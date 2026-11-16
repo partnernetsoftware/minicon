@@ -2158,3 +2158,52 @@ fn b_test(vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
     }
     Ok(Value::Null)
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn apply(diff: &str, original: &str) -> Result<String, String> {
+        let hunks = parse_patch(diff)?;
+        apply_patch(original, &hunks)
+    }
+
+    #[test]
+    fn patch_applies_a_single_hunk() {
+        let diff = "--- a/t\n+++ b/t\n@@ -1,3 +1,4 @@\n alpha\n-beta\n+beta2\n+delta\n gamma\n";
+        assert_eq!(
+            apply(diff, "alpha\nbeta\ngamma\n").expect("apply"),
+            "alpha\nbeta2\ndelta\ngamma\n"
+        );
+    }
+
+    #[test]
+    fn patch_applies_multiple_hunks() {
+        let original = "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\n";
+        let diff = "--- a/t\n+++ b/t\n@@ -1,3 +1,3 @@\n line1\n-line2\n+LINE2\n line3\n@@ -9,2 +9,3 @@\n line9\n+line9b\n line10\n";
+        let patched = apply(diff, original).expect("apply");
+        assert!(patched.contains("LINE2"));
+        assert!(patched.contains("line9b"));
+        assert!(patched.contains("line10"));
+    }
+
+    #[test]
+    fn patch_rejects_a_context_mismatch() {
+        let diff = "--- a/t\n+++ b/t\n@@ -1,2 +1,2 @@\n one\n-TWO\n+two\n";
+        assert!(apply(diff, "one\ntwo\n").is_err());
+    }
+
+    #[test]
+    fn patch_preserves_crlf() {
+        let diff = "--- a/t\n+++ b/t\n@@ -1,2 +1,2 @@\n a\n-b\n+B\n";
+        assert_eq!(apply(diff, "a\r\nb\r\n").expect("apply"), "a\r\nB\r\n");
+    }
+
+    #[test]
+    fn split_cmdline_handles_quotes() {
+        assert_eq!(
+            split_cmdline("git commit -m \"two words\""),
+            vec!["git", "commit", "-m", "two words"]
+        );
+        assert_eq!(split_cmdline("a  b"), vec!["a", "b"]);
+    }
+}
