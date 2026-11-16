@@ -432,7 +432,7 @@ fn b_map(vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
     let items = a.borrow().clone();
     let mut out = Vec::with_capacity(items.len());
     for it in items {
-        out.push(vm.call_value(f.clone(), vec![it], 0)?);
+        out.push(vm.call_value1(f.clone(), it)?);
     }
     Ok(array_val(out))
 }
@@ -443,7 +443,7 @@ fn b_filter(vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
     let items = a.borrow().clone();
     let mut out = Vec::new();
     for it in items {
-        let keep = vm.call_value(f.clone(), vec![it.clone()], 0)?;
+        let keep = vm.call_value1(f.clone(), it.clone())?;
         if keep.truthy() {
             out.push(it);
         }
@@ -456,7 +456,7 @@ fn b_each(vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
     let f = arg(args, 1)?.clone();
     let items = a.borrow().clone();
     for it in items {
-        vm.call_value(f.clone(), vec![it], 0)?;
+        vm.call_value1(f.clone(), it)?;
     }
     Ok(Value::Null)
 }
@@ -474,7 +474,7 @@ fn b_reduce(vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
         }
     };
     for it in items.iter().skip(start) {
-        acc = vm.call_value(f.clone(), vec![acc, it.clone()], 0)?;
+        acc = vm.call_value2(f.clone(), acc, it.clone())?;
     }
     Ok(acc)
 }
@@ -498,7 +498,7 @@ fn b_sort(vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
             if err.is_some() {
                 return std::cmp::Ordering::Equal;
             }
-            match vm.call_value(f.clone(), vec![x.clone(), y.clone()], 0) {
+            match vm.call_value2(f.clone(), x.clone(), y.clone()) {
                 Ok(Value::Int(i)) => i.cmp(&0),
                 Ok(Value::Float(v)) => v.partial_cmp(&0.0).unwrap_or(std::cmp::Ordering::Equal),
                 Ok(other) => {

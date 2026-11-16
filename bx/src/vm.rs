@@ -86,6 +86,30 @@ impl Vm {
         }
     }
 
+    /// One-argument callback fast path: the value is pushed on the operand stack
+    /// and drained into the new frame, so per-item callbacks allocate nothing.
+    pub fn call_value1(&mut self, callee: Value, arg: Value) -> Result<Value, String> {
+        match callee {
+            Value::Func(f) => {
+                self.stack.push(arg);
+                self.run_frame(f.chunk, f.upvalues.clone(), FrameArgs::Stack(1))
+            }
+            other => self.call_value(other, vec![arg], 0),
+        }
+    }
+
+    /// Two-argument callback fast path (`reduce`, comparators).
+    pub fn call_value2(&mut self, callee: Value, a: Value, b: Value) -> Result<Value, String> {
+        match callee {
+            Value::Func(f) => {
+                self.stack.push(a);
+                self.stack.push(b);
+                self.run_frame(f.chunk, f.upvalues.clone(), FrameArgs::Stack(2))
+            }
+            other => self.call_value(other, vec![a, b], 0),
+        }
+    }
+
     #[allow(dead_code)]
     pub fn get_global(&self, name: &str) -> Option<Value> {
         self.globals.get(name).cloned()

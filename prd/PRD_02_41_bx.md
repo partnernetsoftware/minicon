@@ -138,6 +138,10 @@ flowchart LR
 - 2026-11-16 round 17: the CALL fast path drains arguments straight from the
   operand stack into the new frame instead of `split_off`-ing a Vec; `fib(24)` is
   now ~56 ms (from ~137 ms before the allocation work began). Suite: 108 checks.
+- 2026-11-16 round 18: builtin callbacks (`map`/`filter`/`each`/`reduce`/`sort`)
+  push their arguments on the operand stack via `call_value1`/`call_value2`, so
+  per-element `Vec`s are gone; 200k `map` callbacks went from ~46 ms to ~29 ms.
+  Suite: 108 checks.
 - Open: execution on Linux x86_64/aarch64 and Windows ARM64 belongs to the
   six-runner matrix (`minicon-com.yml`, `bx_lane`), not the Windows host.
 

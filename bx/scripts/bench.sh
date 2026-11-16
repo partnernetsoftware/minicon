@@ -16,7 +16,7 @@ if [[ -z "$BIN" ]]; then
     [[ -f "$BIN.exe" ]] && BIN="$BIN.exe"
 fi
 echo "bench: $BIN (runs=$RUNS)"
-for case in fib loop calls; do
+for case in fib loop calls map; do
     times=()
     for ((i = 0; i < RUNS; i++)); do
         times+=("$("$BIN" run "$ROOT/tests/bench/$case.bxs")")
