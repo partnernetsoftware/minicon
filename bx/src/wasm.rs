@@ -114,6 +114,8 @@ pub enum Instr {
     },
     /// Memory access: opcode, alignment hint, static offset.
     Mem(u8, u32, u32),
+    /// `memory.copy` (bulk memory): dst, src, len on the stack.
+    MemoryCopy,
     Br(u32),
     BrIf(u32),
     BrTable(Box<[u32]>, u32),
@@ -202,6 +204,12 @@ fn encode_instr(out: &mut Vec<u8>, instr: &Instr) {
             out.push(*op);
             uleb(out, *align as u64);
             uleb(out, *offset as u64);
+        }
+        Instr::MemoryCopy => {
+            out.push(0xfc);
+            uleb(out, 0x0a);
+            out.push(0x00);
+            out.push(0x00);
         }
         Instr::Br(depth) => {
             out.push(0x0c);
@@ -666,6 +674,18 @@ fn decode_code_body(r: &mut Reader) -> Result<(Vec<ValType>, Vec<Instr>), String
                 let offset = r.uleb()? as u32;
                 instrs.push(Instr::Mem(opcode, align, offset));
             }
+            0xfc => {
+                let sub = r.uleb()?;
+                match sub {
+                    0x0a => {
+                        if r.u8()? != 0 || r.u8()? != 0 {
+                            return Err("memory.copy must target memories 0 and 0".to_string());
+                        }
+                        instrs.push(Instr::MemoryCopy);
+                    }
+                    other => return Err(format!("unsupported bulk memory opcode {other}")),
+                }
+            }
             0x20..=0x22 => {
                 let index = r.uleb()? as u32;
                 instrs.push(Instr::Local(opcode, index));
@@ -1089,6 +1109,21 @@ impl<'m, H: Host> Exec<'m, H> {
                 },
                 Instr::Const(_, value) => self.stack.push(*value),
                 Instr::Mem(op, align, offset) => self.exec_mem(*op, *align, *offset)?,
+                Instr::MemoryCopy => {
+                    let len = pop_i32(&mut self.stack)? as usize;
+                    let src = pop_i32(&mut self.stack)? as usize;
+                    let dst = pop_i32(&mut self.stack)? as usize;
+                    let end_src = src
+                        .checked_add(len)
+                        .ok_or_else(|| "memory.copy source overflow".to_string())?;
+                    let end_dst = dst
+                        .checked_add(len)
+                        .ok_or_else(|| "memory.copy destination overflow".to_string())?;
+                    if end_src > self.memory.len() || end_dst > self.memory.len() {
+                        return Err("memory.copy out of bounds".to_string());
+                    }
+                    self.memory.copy_within(src..end_src, dst);
+                }
                 Instr::Call(index) => {
                     let index = *index;
                     let type_index = self.function_type(index)?;

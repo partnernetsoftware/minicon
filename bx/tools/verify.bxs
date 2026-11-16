@@ -134,6 +134,13 @@ test("wasm arrays use the prototype allocator", fn() {
   let ran = exec([bin, "run", dir + "/wasm-arr.wasm"])
   assert(ran.code == 0 && ran.out.trim() == "40\n3", "got " + ran.out + " " + ran.err)
 })
+write(dir + "/wasm-strap.bxs", 'let s = "hello "\nlet t = s + "wasm"\nprint(t)\nprint(len(t))\n')
+test("wasm runtime strings concatenate", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-strap.bxs", "-o", dir + "/wasm-strap.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-strap.wasm"])
+  assert(ran.code == 0 && ran.out.trim() == "hello wasm\n10", "got " + ran.out + " " + ran.err)
+})
 test("language smoke (closures, pairs, interpolation)", fn() {
   let out = exec([bin, "eval", 'fn make() { let n = 0; return fn() { n = n + 1; return n } } let c = make(); c(); c(); let s = ""; for k, v in {a: 1} { s = k + str(v) }; s + " " + str(c())'])
   assert(out.code == 0 && out.out.trim() == "a1 3", "got " + out.out + " " + out.err)

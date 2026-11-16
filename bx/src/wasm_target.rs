@@ -2,8 +2,8 @@
 //! subset of bx, executed by bx's own interpreter (`crate::wasm`). No
 //! third-party wasm crates.
 //!
-//! Current subset: i64 numbers (`let`/assignment/`+ - *`), compilation-time
-//! string literals (data segments, `env.print_utf8`), and integer arrays
+//! Current subset: i64 numbers (`let`/assignment/`+ - *`), strings (literals,
+//! bindings and runtime concatenation over linear memory), and integer arrays
 //! `[a, b, c]` with `arr[i]` / `len(arr)` backed by the prototype `env.alloc`
 //! bump allocator. Everything else is rejected explicitly.
 
@@ -19,7 +19,7 @@ enum Ty {
     Arr,
 }
 
-fn print_ty(ty: Ty) -> &'static str {
+fn ty_name(ty: Ty) -> &'static str {
     match ty {
         Ty::Int => "int",
         Ty::Str => "string",
@@ -70,12 +70,14 @@ fn expr_kind(expr: &Expr) -> &'static str {
 
 struct Binding {
     ty: Ty,
-    index: u32,
+    /// First global index; a string binding owns two slots (ptr, len).
+    base: u32,
 }
 
 struct Checker {
     env: HashMap<String, Binding>,
     order: Vec<String>,
+    globals_used: u32,
 }
 
 impl Checker {
@@ -83,34 +85,32 @@ impl Checker {
         Checker {
             env: HashMap::new(),
             order: Vec::new(),
+            globals_used: 0,
         }
     }
 
-    fn declare(&mut self, name: &str, ty: Ty) -> Result<u32, String> {
+    fn declare(&mut self, name: &str, ty: Ty) -> Result<(), String> {
         if self.env.contains_key(name) {
             return Err(format!(
                 "wasm target does not support redeclaring '{}'",
                 name
             ));
         }
-        let index = self.order.len() as u32;
-        self.env.insert(name.to_string(), Binding { ty, index });
+        let base = self.globals_used;
+        self.globals_used += if ty == Ty::Str { 2 } else { 1 };
+        self.env.insert(name.to_string(), Binding { ty, base });
         self.order.push(name.to_string());
-        Ok(index)
+        Ok(())
+    }
+
+    fn binding(&self, name: &str) -> Result<&Binding, String> {
+        self.env
+            .get(name)
+            .ok_or_else(|| format!("undefined variable '{}'", name))
     }
 
     fn lookup(&self, name: &str) -> Result<Ty, String> {
-        self.env
-            .get(name)
-            .map(|binding| binding.ty)
-            .ok_or_else(|| format!("undefined variable '{}'", name))
-    }
-
-    fn index_of(&self, name: &str) -> Result<u32, String> {
-        self.env
-            .get(name)
-            .map(|binding| binding.index)
-            .ok_or_else(|| format!("undefined variable '{}'", name))
+        self.binding(name).map(|binding| binding.ty)
     }
 
     fn infer(&self, expr: &Expr) -> Result<Ty, String> {
@@ -123,37 +123,43 @@ impl Checker {
                 if ty != Ty::Int {
                     return Err(format!(
                         "wasm target supports arithmetic on ints only, got {}",
-                        print_ty(ty)
+                        ty_name(ty)
                     ));
                 }
                 Ok(Ty::Int)
             }
-            Expr::Bin(op @ (BinOp::Add | BinOp::Sub | BinOp::Mul), left, right) => {
+            Expr::Bin(BinOp::Add, left, right) => {
                 let lt = self.infer(left)?;
                 let rt = self.infer(right)?;
-                if lt == Ty::Str || rt == Ty::Str {
-                    // String concatenation is only allowed directly inside
-                    // print(), where it can be folded at compile time.
-                    return Err(
-                        "wasm target supports string '+' only inside print() for now".to_string(),
-                    );
+                match (lt, rt) {
+                    (Ty::Str, Ty::Str) => Ok(Ty::Str),
+                    (Ty::Int, Ty::Int) => Ok(Ty::Int),
+                    (Ty::Arr, _) | (_, Ty::Arr) => {
+                        Err("wasm target does not support '+' on arrays yet".to_string())
+                    }
+                    _ => Err(format!(
+                        "wasm target cannot mix {} and {} in '+' yet",
+                        ty_name(lt),
+                        ty_name(rt)
+                    )),
                 }
+            }
+            Expr::Bin(op @ (BinOp::Sub | BinOp::Mul), left, right) => {
+                let lt = self.infer(left)?;
+                let rt = self.infer(right)?;
                 if lt != Ty::Int || rt != Ty::Int {
-                    return Err(format!(
-                        "wasm target does not support {:?} on {} values yet",
-                        op,
-                        print_ty(if lt != Ty::Int { lt } else { rt })
-                    ));
+                    return Err(format!("wasm target supports {:?} on ints only yet", op));
                 }
                 Ok(Ty::Int)
             }
+            Expr::Bin(..) => Err("wasm target supports only + - *".to_string()),
             Expr::Array(items) => {
                 for item in items {
                     let ty = self.infer(item)?;
                     if ty != Ty::Int {
                         return Err(format!(
                             "wasm target supports arrays of ints only, got {}",
-                            print_ty(ty)
+                            ty_name(ty)
                         ));
                     }
                 }
@@ -173,10 +179,12 @@ impl Checker {
             Expr::Call(callee, args, _) => {
                 if let Expr::Ident(name) = &**callee {
                     if name == "len" && args.len() == 1 {
-                        let ty = self.infer(&args[0])?;
-                        if ty == Ty::Arr {
-                            return Ok(Ty::Int);
-                        }
+                        return match self.infer(&args[0])? {
+                            Ty::Arr | Ty::Str => Ok(Ty::Int),
+                            other => {
+                                Err(format!("wasm target cannot take len of {}", ty_name(other)))
+                            }
+                        };
                     }
                 }
                 Err(format!(
@@ -198,12 +206,6 @@ impl Checker {
                     Some(expr) => self.infer(expr)?,
                     None => Ty::Int,
                 };
-                if ty == Ty::Str {
-                    return Err(
-                        "wasm target cannot bind runtime strings yet; print them directly"
-                            .to_string(),
-                    );
-                }
                 self.declare(name, ty)?;
             }
             Stmt::Expr(Expr::Assign(target, value, _), _) => {
@@ -216,8 +218,8 @@ impl Checker {
                     return Err(format!(
                         "wasm target requires stable types: '{}' is {}, assigned {}",
                         name,
-                        print_ty(expected),
-                        print_ty(actual)
+                        ty_name(expected),
+                        ty_name(actual)
                     ));
                 }
             }
@@ -234,14 +236,9 @@ impl Checker {
                 if args.len() != 1 {
                     return Err("wasm target supports print(<value>) with one argument".to_string());
                 }
-                if string_value(&args[0]).is_none() {
-                    let ty = self.infer(&args[0])?;
-                    if ty != Ty::Int {
-                        return Err(format!(
-                            "wasm target cannot print {} values yet",
-                            print_ty(ty)
-                        ));
-                    }
+                let ty = self.infer(&args[0])?;
+                if ty == Ty::Arr {
+                    return Err("wasm target cannot print arrays yet".to_string());
                 }
             }
             Stmt::Expr(expr, _) => {
@@ -269,33 +266,100 @@ fn string_value(expr: &Expr) -> Option<String> {
     }
 }
 
+/// Local slots used by the emitted body: 0 = array temporary, 1..=5 = string
+/// concatenation temporaries (ptr_a, len_a, ptr_b, len_b, dst).
+const ARR_TMP: u32 = 0;
+const PTR_A: u32 = 1;
+const LEN_A: u32 = 2;
+const PTR_B: u32 = 3;
+const LEN_B: u32 = 4;
+const DST: u32 = 5;
+
 struct Emitter<'a> {
     checker: &'a Checker,
     builder: &'a mut Builder,
-    local: u32,
 }
 
 impl<'a> Emitter<'a> {
     fn push_global(&mut self, name: &str, set: bool) -> Result<(), String> {
-        let index = self.checker.index_of(name)?;
+        let index = self.checker.binding(name)?.base;
         self.builder
             .push(Instr::Global(if set { 0x24 } else { 0x23 }, index));
         Ok(())
     }
 
+    /// Push an integer string address/length pair for a string expression.
+    fn emit_str(&mut self, expr: &Expr) -> Result<(), String> {
+        if let Some(text) = string_value(expr) {
+            let offset = self.builder.add_data(text.as_bytes());
+            self.builder
+                .push(Instr::Const(0x41, WVal::I32(offset as i32)));
+            self.builder
+                .push(Instr::Const(0x41, WVal::I32(text.len() as i32)));
+            return Ok(());
+        }
+        match expr {
+            Expr::Ident(name) => {
+                let base = self.checker.binding(name)?.base;
+                self.builder.push(Instr::Global(0x23, base));
+                self.builder.push(Instr::Global(0x23, base + 1));
+                Ok(())
+            }
+            Expr::Bin(BinOp::Add, left, right) => {
+                self.emit_str(left)?;
+                self.builder.push(Instr::Local(0x21, LEN_A));
+                self.builder.push(Instr::Local(0x21, PTR_A));
+                self.emit_str(right)?;
+                self.builder.push(Instr::Local(0x21, LEN_B));
+                self.builder.push(Instr::Local(0x21, PTR_B));
+                self.builder.push(Instr::Local(0x20, LEN_A));
+                self.builder.push(Instr::Local(0x20, LEN_B));
+                self.builder.push(Instr::Op(0x6a));
+                self.builder.push(Instr::Call(2));
+                self.builder.push(Instr::Local(0x21, DST));
+                self.builder.push(Instr::Local(0x20, DST));
+                self.builder.push(Instr::Local(0x20, PTR_A));
+                self.builder.push(Instr::Local(0x20, LEN_A));
+                self.builder.push(Instr::MemoryCopy);
+                self.builder.push(Instr::Local(0x20, DST));
+                self.builder.push(Instr::Local(0x20, LEN_A));
+                self.builder.push(Instr::Op(0x6a));
+                self.builder.push(Instr::Local(0x20, PTR_B));
+                self.builder.push(Instr::Local(0x20, LEN_B));
+                self.builder.push(Instr::MemoryCopy);
+                self.builder.push(Instr::Local(0x20, DST));
+                self.builder.push(Instr::Local(0x20, LEN_A));
+                self.builder.push(Instr::Local(0x20, LEN_B));
+                self.builder.push(Instr::Op(0x6a));
+                Ok(())
+            }
+            other => Err(format!(
+                "wasm target does not support this string expression yet: {}",
+                expr_kind(other)
+            )),
+        }
+    }
+
     fn emit_expr(&mut self, expr: &Expr) -> Result<Ty, String> {
+        if string_value(expr).is_some() {
+            self.emit_str(expr)?;
+            return Ok(Ty::Str);
+        }
         match expr {
             Expr::Int(value) => {
                 self.builder.push(Instr::Const(0x42, WVal::I64(*value)));
                 Ok(Ty::Int)
             }
-            Expr::Str(_) => Err("wasm target string values need print() context".to_string()),
             Expr::Ident(name) => {
                 let ty = self.checker.lookup(name)?;
-                if ty == Ty::Str {
-                    return Err("wasm target cannot use runtime strings yet".to_string());
+                match ty {
+                    Ty::Str => {
+                        let base = self.checker.binding(name)?.base;
+                        self.builder.push(Instr::Global(0x23, base));
+                        self.builder.push(Instr::Global(0x23, base + 1));
+                    }
+                    Ty::Int | Ty::Arr => self.push_global(name, false)?,
                 }
-                self.push_global(name, false)?;
                 Ok(ty)
             }
             Expr::Neg(inner) => {
@@ -304,11 +368,21 @@ impl<'a> Emitter<'a> {
                 self.builder.push(Instr::Op(0x7d));
                 Ok(Ty::Int)
             }
+            Expr::Bin(BinOp::Add, left, right) => {
+                let lt = self.checker.infer(left)?;
+                if lt == Ty::Str {
+                    self.emit_str(expr)?;
+                    return Ok(Ty::Str);
+                }
+                self.emit_expr(left)?;
+                self.emit_expr(right)?;
+                self.builder.push(Instr::Op(0x7c));
+                Ok(Ty::Int)
+            }
             Expr::Bin(op, left, right) => {
                 self.emit_expr(left)?;
                 self.emit_expr(right)?;
                 let opcode = match op {
-                    BinOp::Add => 0x7c,
                     BinOp::Sub => 0x7d,
                     BinOp::Mul => 0x7e,
                     _ => return Err("wasm target supports only + - *".to_string()),
@@ -322,20 +396,20 @@ impl<'a> Emitter<'a> {
                 self.builder
                     .push(Instr::Const(0x41, WVal::I32(size as i32)));
                 self.builder.push(Instr::Call(2));
-                self.builder.push(Instr::Local(0x21, self.local));
-                self.builder.push(Instr::Local(0x20, self.local));
+                self.builder.push(Instr::Local(0x21, ARR_TMP));
+                self.builder.push(Instr::Local(0x20, ARR_TMP));
                 self.builder
                     .push(Instr::Const(0x41, WVal::I32(count as i32)));
                 self.builder.push(Instr::Mem(0x36, 2, 0));
                 for (index, item) in items.iter().enumerate() {
-                    self.builder.push(Instr::Local(0x20, self.local));
+                    self.builder.push(Instr::Local(0x20, ARR_TMP));
                     self.builder
                         .push(Instr::Const(0x41, WVal::I32((4 + 8 * index as u32) as i32)));
                     self.builder.push(Instr::Op(0x6a));
                     self.emit_expr(item)?;
                     self.builder.push(Instr::Mem(0x37, 3, 0));
                 }
-                self.builder.push(Instr::Local(0x20, self.local));
+                self.builder.push(Instr::Local(0x20, ARR_TMP));
                 Ok(Ty::Arr)
             }
             Expr::Index(array, index, _) => {
@@ -353,10 +427,32 @@ impl<'a> Emitter<'a> {
             Expr::Call(callee, args, _) => {
                 if let Expr::Ident(name) = &**callee {
                     if name == "len" && args.len() == 1 {
-                        self.emit_expr(&args[0])?;
-                        self.builder.push(Instr::Mem(0x28, 2, 0));
-                        self.builder.push(Instr::Op(0xad));
-                        return Ok(Ty::Int);
+                        match self.checker.infer(&args[0])? {
+                            Ty::Arr => {
+                                self.emit_expr(&args[0])?;
+                                self.builder.push(Instr::Mem(0x28, 2, 0));
+                                self.builder.push(Instr::Op(0xad));
+                                return Ok(Ty::Int);
+                            }
+                            Ty::Str => {
+                                let Expr::Ident(var) = &args[0] else {
+                                    return Err(
+                                        "wasm target supports len() of string variables only"
+                                            .to_string(),
+                                    );
+                                };
+                                let base = self.checker.binding(var)?.base;
+                                self.builder.push(Instr::Global(0x23, base + 1));
+                                self.builder.push(Instr::Op(0xad));
+                                return Ok(Ty::Int);
+                            }
+                            other => {
+                                return Err(format!(
+                                    "wasm target cannot take len of {}",
+                                    ty_name(other)
+                                ))
+                            }
+                        }
                     }
                 }
                 Err("wasm target does not support this call yet".to_string())
@@ -371,20 +467,35 @@ impl<'a> Emitter<'a> {
     fn emit_stmt(&mut self, stmt: &Stmt) -> Result<(), String> {
         match stmt {
             Stmt::Let(name, init, _) => {
-                match init {
-                    Some(expr) => {
-                        self.emit_expr(expr)?;
+                let ty = match init {
+                    Some(expr) => self.emit_expr(expr)?,
+                    None => {
+                        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                        Ty::Int
                     }
-                    None => self.builder.push(Instr::Const(0x42, WVal::I64(0))),
+                };
+                let base = self.checker.binding(name)?.base;
+                if ty == Ty::Str {
+                    self.builder.push(Instr::Global(0x24, base + 1));
+                    self.builder.push(Instr::Global(0x24, base));
+                } else {
+                    self.builder.push(Instr::Global(0x24, base));
                 }
-                self.push_global(name, true)
+                Ok(())
             }
             Stmt::Expr(Expr::Assign(target, value, _), _) => {
                 let Expr::Ident(name) = &**target else {
                     return Err("wasm target supports assignment to a global name only".to_string());
                 };
-                self.emit_expr(value)?;
-                self.push_global(name, true)
+                let ty = self.emit_expr(value)?;
+                let base = self.checker.binding(name)?.base;
+                if ty == Ty::Str {
+                    self.builder.push(Instr::Global(0x24, base + 1));
+                    self.builder.push(Instr::Global(0x24, base));
+                } else {
+                    self.builder.push(Instr::Global(0x24, base));
+                }
+                Ok(())
             }
             Stmt::Expr(Expr::Call(callee, args, _), _) => {
                 let Expr::Ident(name) = &**callee else {
@@ -393,27 +504,24 @@ impl<'a> Emitter<'a> {
                 if name != "print" || args.len() != 1 {
                     return Err("wasm target supports print(<value>) with one argument".to_string());
                 }
-                if let Some(text) = string_value(&args[0]) {
-                    let offset = self.builder.add_data(text.as_bytes());
-                    self.builder
-                        .push(Instr::Const(0x41, WVal::I32(offset as i32)));
-                    self.builder
-                        .push(Instr::Const(0x41, WVal::I32(text.len() as i32)));
+                let ty = self.emit_expr(&args[0])?;
+                if ty == Ty::Str {
                     self.builder.push(Instr::Call(1));
-                    return Ok(());
+                } else {
+                    self.builder.push(Instr::Call(0));
+                    self.builder.push(Instr::Op(0x1a));
                 }
-                self.emit_expr(&args[0])?;
-                self.builder.push(Instr::Call(0));
-                self.builder.push(Instr::Op(0x1a));
                 Ok(())
             }
             Stmt::Expr(expr, _) => {
-                self.emit_expr(expr)?;
-                let ty = self.checker.infer(expr)?;
+                let ty = self.emit_expr(expr)?;
                 match ty {
-                    Ty::Int => self.builder.push(Instr::Op(0x1a)),
-                    Ty::Arr => self.builder.push(Instr::Op(0x1a)),
-                    Ty::Str => return Err("wasm target cannot use runtime strings yet".to_string()),
+                    Ty::Str => {
+                        // Drop both halves of the pointer/length pair.
+                        self.builder.push(Instr::Op(0x1a));
+                        self.builder.push(Instr::Op(0x1a));
+                    }
+                    Ty::Int | Ty::Arr => self.builder.push(Instr::Op(0x1a)),
                 }
                 Ok(())
             }
@@ -447,16 +555,20 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
         match ty {
             Ty::Int => builder.add_global(ValType::I64, true, WVal::I64(0)),
             Ty::Arr => builder.add_global(ValType::I32, true, WVal::I32(0)),
-            Ty::Str => return Err("wasm target cannot bind runtime strings yet".to_string()),
+            Ty::Str => {
+                builder.add_global(ValType::I32, true, WVal::I32(0));
+                builder.add_global(ValType::I32, true, WVal::I32(0));
+            }
         }
     }
     builder.set_body_type(start_ty);
-    let local = builder.add_local(ValType::I32);
+    for _ in 0..6 {
+        builder.add_local(ValType::I32);
+    }
     {
         let mut emitter = Emitter {
             checker: &checker,
             builder: &mut builder,
-            local,
         };
         for stmt in &stmts {
             emitter.emit_stmt(stmt)?;
@@ -500,6 +612,22 @@ mod tests {
         out
     }
 
+    fn run_strings(source: &str) -> Vec<String> {
+        let bytes = compile_to_wasm(source).expect("compile");
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let sink = seen.clone();
+        execute(
+            &bytes,
+            |_value| {},
+            move |text| {
+                sink.lock().expect("lock").push(text.to_string());
+            },
+        )
+        .expect("execute");
+        let out = seen.lock().expect("lock").clone();
+        out
+    }
+
     #[test]
     fn numeric_script_prints_in_order() {
         let prints = run_source("let x = 2\nprint(x + 3)\nx = x * 2\nprint(x)\nprint(-x + 1)");
@@ -513,6 +641,12 @@ mod tests {
     }
 
     #[test]
+    fn runtime_strings_concatenate() {
+        let prints = run_strings("let s = \"ab\"\nlet t = s + \"cd\"\nprint(t + s)\nprint(len(t))");
+        assert_eq!(prints, vec!["abcdab".to_string()]);
+    }
+
+    #[test]
     fn module_is_standard_wasm() {
         let bytes = compile_to_wasm("print(7)").expect("compile");
         assert_eq!(&bytes[0..4], b"\0asm");
@@ -521,25 +655,15 @@ mod tests {
 
     #[test]
     fn strings_print_through_memory() {
-        let bytes = compile_to_wasm("print(\"ab\" + \"cd\")").expect("compile");
-        let seen = Arc::new(Mutex::new(Vec::new()));
-        let sink = seen.clone();
-        execute(
-            &bytes,
-            |_value| {},
-            move |text| {
-                sink.lock().expect("lock").push(text.to_string());
-            },
-        )
-        .expect("execute");
-        assert_eq!(*seen.lock().expect("lock"), vec!["abcd".to_string()]);
+        let prints = run_strings("print(\"ab\" + \"cd\")");
+        assert_eq!(prints, vec!["abcd".to_string()]);
     }
 
     #[test]
     fn unsupported_constructs_are_rejected() {
         assert!(compile_to_wasm("fn f() { return 1 }").is_err());
         assert!(compile_to_wasm("print(unknown)").is_err());
-        assert!(compile_to_wasm("let s = \"x\"\nprint(s)").is_err());
         assert!(compile_to_wasm("let a = [1, \"x\"]").is_err());
+        assert!(compile_to_wasm("let o = {}\nprint(o)").is_err());
     }
 }

@@ -518,6 +518,15 @@ if (wasmStr.code == 0 && wasmStrRun.code == 0 && wasmStrRun.out.trim() == "hello
   casesFail += 1
   failures.push("wasm strings through linear memory\n    build=" + wasmStr.code + " out=" + json(wasmStrRun.out) + " err=" + json(wasmStrRun.err))
 }
+write(artDir + "/wasm-strap.bxs", 'let s = "hello "\nlet t = s + "wasm"\nprint(t)\nprint(len(t))\n')
+let wasmStrap = exec([BX, "build", "--wasm", artDir + "/wasm-strap.bxs", "-o", artDir + "/wasm-strap.wasm"])
+let wasmStrapRun = exec([BX, "run", artDir + "/wasm-strap.wasm"])
+if (wasmStrap.code == 0 && wasmStrapRun.code == 0 && wasmStrapRun.out.trim() == "hello wasm\n10") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm runtime string concat\n    build=" + wasmStrap.code + " out=" + json(wasmStrapRun.out) + " err=" + json(wasmStrapRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'fn unsupported() { return 1 }\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1) {

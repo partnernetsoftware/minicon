@@ -31,12 +31,14 @@ bx wasm target
 ├── emitter (AST → core wasm)
 │   ├── [v] i64 subset: let / assignment / `+ - *` / print(<int>)
 │   ├── [v] strings: literals + compile-time `+`, data segments, `print_utf8`
-│   └── [v] arrays of ints: `[..]`, `arr[i]`, `len(arr)` over the prototype heap
+│   ├── [v] arrays of ints: `[..]`, `arr[i]`, `len(arr)` over the prototype heap
+│   └── [v] runtime strings: bindings (ptr,len globals), `s + t`, `len(s)`
 ├── runtime (standard module execution, own code)
 │   ├── [v] decode + validate (type/import/function/global/export/code)
 │   ├── [v] interpreter: consts, globals, locals, calls, control flow, numeric ops
 │   ├── [v] linear memory + active data segments + exported `memory`
 │   ├── [v] i32/i64/f32/f64 loads+stores, memory ops for arrays
+│   ├── [v] bulk `memory.copy` for runtime string concatenation
 │   └── [-] table sections, full conversions, float arithmetic
 ├── host ABI (web-shaped)
 │   ├── [v] prototype imports: `env.print_i64`, `env.print_utf8(ptr,len)`
@@ -96,7 +98,7 @@ bx wasm target
 |---|---|---|
 | M0 | this spec + decision record | `[v]` |
 | M1 | numeric vertical slice: emit → run → `check`, node cross-check | `[v]` |
-| M2 | data model: strings, arrays, objects in linear memory | `[-]` (strings and int arrays done: data segments, exported memory, `env.alloc` bump heap prototype, `arr[i]`/`len`; in-module heap, objects and runtime strings next) |
+| M2 | data model: strings, arrays, objects in linear memory | `[-]` (strings incl. runtime concat, int arrays done: data segments, exported memory, `env.alloc` bump heap prototype, `arr[i]`/`len`, `memory.copy`; in-module heap and objects next) |
 | M3 | functions, closures, control flow compiled to wasm | `[_]` |
 | M4 | builtins + native process ABI (`bx.*`), default target flip | `[_]` |
 | M5 | `web.*` + `webgl.*` ABI, software backend, browser demo | `[_]` |
