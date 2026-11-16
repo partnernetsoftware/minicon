@@ -128,6 +128,15 @@ exec("dir", {shell: true, stdin: "y\n", max: 1048576})
 ## 可执行脚本
 
 首行写 `#!/usr/bin/env bx` 即可在 Unix 上直接 `./script.bxs`：解析器把这一行抹成空格，行号不偏移，`bx check`/`build` 一视同仁。
+
+## 结构化编辑
+
+`patch(path, diff)` 应用 unified diff，是 agent 自迭代时改代码的原子原语：任一 hunk 上下文不匹配就报错，**文件保持原样**：
+
+```js
+let r = patch("src/lib.rs", read(__dir__ + "/fix.diff"))   // -> {ok, path, hunks, bytes}
+```
+
 ## 性能基线
 
 `bash bx/scripts/bench.sh` 用脚本内部的 `now()` 计时（不含进程启动），`--com <minicon-bx-*.com>` 可测同一组用例的打包产物。本机参考值：
@@ -141,7 +150,7 @@ exec("dir", {shell: true, stdin: "y\n", max: 1048576})
 闭包/捕获支持让调用路径慢约 8–15%：两边 `dis` 出来的字节码逐条一致，差异在 VM 实现（把 upvalue 传参绕开只能回收约 9%）。继续优化需要 profiler，而不是猜。
 ## 二进制
 
-`.bxb` 是带魔数 `BXB\x01` 的版本化容器：常量池 + 字节码 + 行号表（行程编码）。
+`.bxb` 是带魔数 `BXB\x02` 的版本化容器：常量池 + 字节码 + 行号表（行程编码）+ 每个 chunk 的来源文件（v1 容器仍可读，来源文件未知）。
 
 ```powershell
 bx build script.bxs          # -> script.bxb，可分发、跨机器执行

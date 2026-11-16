@@ -1397,6 +1397,12 @@ pub static BUILTINS: &[Builtin] = &[
         f: b_append,
     },
     Builtin {
+        name: "patch",
+        sig: "patch(path, diff)",
+        doc: "apply a unified diff to a text file; nothing is written when a hunk does not match",
+        f: b_patch,
+    },
+    Builtin {
         name: "exists",
         sig: "exists(path)",
         doc: "path existence test",
@@ -1481,3 +1487,155 @@ pub static BUILTINS: &[Builtin] = &[
         f: b_dirname,
     },
 ];
+// ---------------------------------------------------------------------------
+// unified diff application: the structured edit primitive for self-iteration
+// ---------------------------------------------------------------------------
+
+struct PatchHunk {
+    old_start: usize,
+    ops: Vec<(char, String)>,
+}
+
+fn parse_patch(diff: &str) -> Result<Vec<PatchHunk>, String> {
+    let mut hunks: Vec<PatchHunk> = Vec::new();
+    let mut current: Option<PatchHunk> = None;
+    let raw_lines: Vec<&str> = diff.split('\n').collect();
+    for (raw_index, raw) in raw_lines.iter().enumerate() {
+        let line = raw.trim_end_matches('\r');
+        // The final newline of the diff file leaves an empty tail element.
+        if line.is_empty() && raw_index + 1 == raw_lines.len() {
+            continue;
+        }
+        if line.starts_with("@@") {
+            if let Some(hunk) = current.take() {
+                hunks.push(hunk);
+            }
+            let old_start =
+                parse_hunk_old_start(line).ok_or_else(|| format!("bad hunk header '{}'", line))?;
+            current = Some(PatchHunk {
+                old_start,
+                ops: Vec::new(),
+            });
+            continue;
+        }
+        if line.starts_with("--- ") || line.starts_with("+++ ") || line.starts_with("diff ") {
+            continue;
+        }
+        if line.starts_with("\\ No newline") {
+            continue;
+        }
+        let Some(hunk) = current.as_mut() else {
+            continue;
+        };
+        let (op, text) = if let Some(rest) = line.strip_prefix('+') {
+            ('+', rest.to_string())
+        } else if let Some(rest) = line.strip_prefix('-') {
+            ('-', rest.to_string())
+        } else if let Some(rest) = line.strip_prefix(' ') {
+            (' ', rest.to_string())
+        } else if line.is_empty() {
+            (' ', String::new())
+        } else {
+            return Err(format!("unsupported diff line '{}'", line));
+        };
+        hunk.ops.push((op, text));
+    }
+    if let Some(hunk) = current.take() {
+        hunks.push(hunk);
+    }
+    Ok(hunks)
+}
+
+fn parse_hunk_old_start(header: &str) -> Option<usize> {
+    let rest = header.strip_prefix("@@ -")?;
+    rest.split([',', ' ']).next()?.parse::<usize>().ok()
+}
+
+fn apply_patch(original: &str, hunks: &[PatchHunk]) -> Result<String, String> {
+    let eol = if original.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    let had_trailing = original.ends_with('\n');
+    let mut lines: Vec<String> = original
+        .split('\n')
+        .map(|line| line.trim_end_matches('\r').to_string())
+        .collect();
+    if had_trailing {
+        lines.pop();
+    }
+
+    let mut out: Vec<String> = Vec::new();
+    let mut cursor = 0usize;
+    for (index, hunk) in hunks.iter().enumerate() {
+        let start = hunk.old_start.saturating_sub(1);
+        if start < cursor {
+            return Err(format!("hunk {} overlaps the previous hunk", index + 1));
+        }
+        if start > lines.len() {
+            return Err(format!(
+                "hunk {} starts past the end of the file (line {})",
+                index + 1,
+                start + 1
+            ));
+        }
+        out.extend_from_slice(&lines[cursor..start]);
+        cursor = start;
+        for (op, text) in &hunk.ops {
+            match op {
+                '+' => out.push(text.clone()),
+                ' ' | '-' => {
+                    let actual = lines.get(cursor);
+                    if actual != Some(text) {
+                        return Err(format!(
+                            "hunk {}: context mismatch at line {} (expected {:?})",
+                            index + 1,
+                            cursor + 1,
+                            text
+                        ));
+                    }
+                    if *op == ' ' {
+                        out.push(text.clone());
+                    }
+                    cursor += 1;
+                }
+                _ => {}
+            }
+        }
+    }
+    out.extend_from_slice(&lines[cursor..]);
+    let mut result = out.join(eol);
+    if had_trailing {
+        result.push_str(eol);
+    }
+    Ok(result)
+}
+
+fn b_patch(_vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
+    let path = s_arg(args, 0)?;
+    let diff = match arg(args, 1)? {
+        Value::Str(text) => text.to_string(),
+        other => other.display(),
+    };
+    let original =
+        fs::read_to_string(&path).map_err(|e| format!("cannot read '{}': {}", path, e))?;
+    let hunks = parse_patch(&diff)?;
+    if hunks.is_empty() {
+        return Err("diff contains no hunks".to_string());
+    }
+    let updated = apply_patch(&original, &hunks)?;
+    // Publish only a fully applied patch; a rejected hunk leaves the file alone.
+    let tmp = format!("{}.bxpatch-{}", path, std::process::id());
+    fs::write(&tmp, updated.as_bytes()).map_err(|e| format!("cannot write '{}': {}", tmp, e))?;
+    if let Err(e) = fs::rename(&tmp, &path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(format!("cannot replace '{}': {}", path, e));
+    }
+    let mut out = BTreeMap::new();
+    out.insert("ok".to_string(), Value::Bool(true));
+    out.insert("path".to_string(), str_val(path));
+    out.insert("hunks".to_string(), Value::Int(hunks.len() as i64));
+    out.insert("bytes".to_string(), Value::Int(updated.len() as i64));
+    Ok(object_val(out))
+}

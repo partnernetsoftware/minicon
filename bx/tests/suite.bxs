@@ -336,6 +336,38 @@ if (sbErr.code == 1 && sbErr.err.contains("(3)")) {
   casesFail += 1
   failures.push("shebang keeps line numbers\n    stderr=" + json(sbErr.err.trim()))
 }
+// patch(path, diff): structured edits for self-iteration, atomic on failure
+let pTarget = artDir + "/patch-target.txt"
+let pRunner = artDir + "/patch-run.bxs"
+write(pRunner, 'print(json(patch(argv[0], read(argv[1]))))\n')
+write(pTarget, "alpha\nbeta\ngamma\n")
+write(artDir + "/patch.diff", "--- a/patch-target.txt\n+++ b/patch-target.txt\n@@ -1,3 +1,4 @@\n alpha\n-beta\n+beta2\n+delta\n gamma\n")
+let pOk = exec([BX, "run", pRunner, pTarget, artDir + "/patch.diff"])
+if (pOk.code == 0 && read(pTarget) == "alpha\nbeta2\ndelta\ngamma\n") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("patch applies a unified diff\n    out=" + json(pOk.out.trim()) + " file=" + json(read(pTarget)))
+}
+write(pTarget, "one\ntwo\nthree\n")
+write(artDir + "/patch-bad.diff", "--- a/patch-target.txt\n+++ b/patch-target.txt\n@@ -1,2 +1,2 @@\n one\n-TWO\n+two\n")
+let pBad = exec([BX, "run", pRunner, pTarget, artDir + "/patch-bad.diff"])
+if (pBad.code == 1 && pBad.err.contains("hunk 1") && read(pTarget) == "one\ntwo\nthree\n") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("a rejected hunk leaves the file untouched\n    err=" + json(pBad.err.trim()) + " file=" + json(read(pTarget)))
+}
+write(pTarget, "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\n")
+write(artDir + "/patch-multi.diff", "--- a/patch-target.txt\n+++ b/patch-target.txt\n@@ -1,3 +1,3 @@\n line1\n-line2\n+LINE2\n line3\n@@ -9,2 +9,3 @@\n line9\n+line9b\n line10\n")
+let pMulti = exec([BX, "run", pRunner, pTarget, artDir + "/patch-multi.diff"])
+let pMultiText = read(pTarget)
+if (pMulti.code == 0 && pMultiText.contains("LINE2") && pMultiText.contains("line9b")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("patch applies multiple hunks\n    out=" + json(pMulti.out.trim()) + " file=" + json(pMultiText))
+}
 
 // closures capture the enclosing function's visible locals by value
 check("closure factory", "15", ["eval", "fn adder(n) { return fn(x) { return x + n } } let f = adder(10); f(5)"])
