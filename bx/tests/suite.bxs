@@ -261,6 +261,52 @@ if (drained.code == 0 && drained.out.trim() == "x|") {
   casesFail += 1
   failures.push("a drained stdin reads as empty\n    out=" + json(drained.out))
 }
+// include diagnostics and machine-readable check output
+write(artDir + "/jgood.bxs", 'print(1)\n')
+let jgood = exec([BX, "check", "--json", artDir + "/jgood.bxs"])
+let jgoodObj = parse(jgood.out)
+if (jgood.code == 0 && jgoodObj.ok == true && jgoodObj.chunks >= 1) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("check --json reports success\n    out=" + json(jgood.out.trim()) + " code=" + jgood.code)
+}
+write(artDir + "/jbad.bxs", 'fn f( {\n')
+let jbad = exec([BX, "check", "--json", artDir + "/jbad.bxs"])
+let jbadObj = parse(jbad.out)
+if (jbad.code == 1 && jbadObj.ok == false && len(jbadObj.error) > 0) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("check --json reports failure\n    out=" + json(jbad.out.trim()))
+}
+write(artDir + "/inc-lib.bxs", 'break\n')
+write(artDir + "/inc-main.bxs", 'use "inc-lib.bxs"\n')
+let incErr = exec([BX, "check", artDir + "/inc-main.bxs"])
+if (incErr.code == 1 && incErr.err.contains("inc-lib.bxs")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("include errors name the include file\n    stderr=" + json(incErr.err.trim()))
+}
+write(artDir + "/nested-c.bxs", 'break\n')
+write(artDir + "/nested-b.bxs", 'use "nested-c.bxs"\n')
+write(artDir + "/nested-a.bxs", 'use "nested-b.bxs"\n')
+let nestedErr = exec([BX, "check", artDir + "/nested-a.bxs"])
+if (nestedErr.code == 1 && nestedErr.err.contains("nested-c.bxs") && len(nestedErr.err.split(".bxs")) == 2) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("nested includes do not stack prefixes\n    stderr=" + json(nestedErr.err.trim()))
+}
+write(artDir + "/inc-missing.bxs", 'use "no-such-file.bxs"\n')
+let missingInc = exec([BX, "check", artDir + "/inc-missing.bxs"])
+if (missingInc.code == 1 && missingInc.err.contains("inc-missing.bxs")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("missing include names the referencing file\n    stderr=" + json(missingInc.err.trim()))
+}
 
 // closures capture the enclosing function's visible locals by value
 check("closure factory", "15", ["eval", "fn adder(n) { return fn(x) { return x + n } } let f = adder(10); f(5)"])

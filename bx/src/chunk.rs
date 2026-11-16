@@ -457,7 +457,12 @@ struct LoopCtx {
     conts: Vec<usize>,
 }
 
-pub fn compile(src: &str, base_dir: PathBuf, keep_last: bool) -> Result<Vec<Chunk>, String> {
+pub fn compile(
+    src: &str,
+    base_dir: PathBuf,
+    file: String,
+    keep_last: bool,
+) -> Result<Vec<Chunk>, String> {
     let stmts = crate::parser::parse(src)?;
     let mut chunks: Vec<Chunk> = vec![Chunk::default()];
     {
@@ -476,6 +481,7 @@ pub fn compile(src: &str, base_dir: PathBuf, keep_last: bool) -> Result<Vec<Chun
             include_stack: Vec::new(),
             captures: Vec::new(),
             cells: HashSet::new(),
+            file,
         };
         c.compile_stmts(&stmts, keep_last)?;
         c.emit(op::HALT, 0, 0);
@@ -511,6 +517,8 @@ struct Compiler<'a> {
     captures: Vec<(String, CaptureSource)>,
     /// Locals that a nested function uses; only these are boxed.
     cells: HashSet<String>,
+    /// File currently being compiled, for error attribution across `use`.
+    file: String,
 }
 
 impl<'a> Compiler<'a> {
@@ -922,22 +930,40 @@ impl<'a> Compiler<'a> {
                 };
                 let canon = fs::canonicalize(&full).unwrap_or_else(|_| full.clone());
                 if self.include_stack.contains(&canon) {
-                    return Err(format!("line {}: circular use of '{}'", line, path));
+                    return Err(format!(
+                        "{}: line {}: circular use of '{}'",
+                        self.file, line, path
+                    ));
                 }
                 let src = fs::read_to_string(&canon).map_err(|e| {
-                    format!("line {}: cannot read '{}': {}", line, full.display(), e)
+                    format!(
+                        "{}: line {}: cannot read '{}': {}",
+                        self.file,
+                        line,
+                        full.display(),
+                        e
+                    )
                 })?;
                 let stmts =
                     crate::parser::parse(&src).map_err(|e| format!("{}: {}", full.display(), e))?;
                 let saved_dir = self.base_dir.clone();
-                if let Some(parent) = canon.parent() {
+                let saved_file = std::mem::take(&mut self.file);
+                self.file = full.display().to_string();
+                if let Some(parent) = full.parent() {
                     self.base_dir = parent.to_path_buf();
                 }
                 self.include_stack.push(canon);
                 let r = self.compile_stmts(&stmts, false);
                 self.include_stack.pop();
                 self.base_dir = saved_dir;
-                r?;
+                self.file = saved_file;
+                if let Err(e) = r {
+                    return Err(if error_is_located(&e) {
+                        e
+                    } else {
+                        format!("{}: {}", full.display(), e)
+                    });
+                }
             }
         }
         Ok(())
@@ -969,6 +995,7 @@ impl<'a> Compiler<'a> {
             include_stack: self.include_stack.clone(),
             captures: inherited,
             cells: captured_names(body, params),
+            file: self.file.clone(),
         };
         for p in params {
             let slot = sub.declare_local(p);
@@ -1244,7 +1271,7 @@ pub fn compile_file(path: &Path, keep_last: bool) -> Result<Vec<Chunk>, String> 
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
-    compile(&src, base, keep_last)
+    compile(&src, base, path.display().to_string(), keep_last)
 }
 
 /// Everything a nested function may see: the creator's locals (as cells) plus
@@ -1524,5 +1551,18 @@ fn collect_all_idents_expr(e: &Expr, out: &mut HashSet<String>) {
             collect_all_idents_stmts(body, out);
         }
         _ => {}
+    }
+}
+/// True when an error already starts with a file location, so a nested `use`
+/// does not stack `outer.bxs: inner.bxs: line N` prefixes.
+fn error_is_located(e: &str) -> bool {
+    match e.split_once(": ") {
+        Some((head, _)) => {
+            head.ends_with(".bxs")
+                || head.ends_with(".bxb")
+                || head.contains('/')
+                || head.contains('\\')
+        }
+        None => false,
     }
 }

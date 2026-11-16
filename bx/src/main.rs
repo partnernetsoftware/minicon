@@ -84,7 +84,7 @@ usage
   bx eval [--max-steps N] [--timeout MS] "<source>"          evaluate and print
   bx build <script.bxs> [-o out.bxb]         compile source to bytecode
   bx dis <script.bxs|out.bxb>                disassemble bytecode
-  bx check <script.bxs|script.bxb>           compile only (no execution)
+  bx check [--json] <script.bxs|script.bxb>  compile only (no execution)
   bx help [builtin]                          this text, or one builtin's contract
   bx version
 
@@ -165,6 +165,24 @@ fn parse_budget(mut args: Vec<String>) -> Result<Budget, String> {
     })
 }
 
+fn json_quote(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('"');
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 fn cmd_run(args: Vec<String>) -> i32 {
     let budget = match parse_budget(args) {
         Ok(v) => v,
@@ -239,7 +257,7 @@ fn cmd_eval(args: Vec<String>) -> i32 {
         src = buf;
     }
     let base = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let chunks = match chunk::compile(&src, base, true) {
+    let chunks = match chunk::compile(&src, base, "<eval>".to_string(), true) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("bx: {}", e);
@@ -304,7 +322,7 @@ fn cmd_build(args: Vec<String>) -> i32 {
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
-    let chunks = match chunk::compile(&src, base, false) {
+    let chunks = match chunk::compile(&src, base, input.clone(), false) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("bx: {}: {}", input, e);
@@ -332,25 +350,51 @@ fn cmd_build(args: Vec<String>) -> i32 {
 }
 
 /// Compile without executing: validation for agents that want to gate a run.
+/// `--json` prints one machine-readable line on stdout in both outcomes.
 fn cmd_check(args: Vec<String>) -> i32 {
-    if args.is_empty() {
+    let mut json_mode = false;
+    let mut rest: Vec<String> = Vec::new();
+    for a in args {
+        if a == "--json" {
+            json_mode = true;
+        } else {
+            rest.push(a);
+        }
+    }
+    if rest.is_empty() {
         eprintln!("bx check: missing script path");
         return 2;
     }
-    let path = Path::new(&args[0]);
+    let path = Path::new(&rest[0]);
     match load_program(path, false) {
         Ok((chunks, name)) => {
             let chunks_n = chunks.len();
-            println!(
-                "ok {} ({} chunk{})",
-                name,
-                chunks_n,
-                if chunks_n == 1 { "" } else { "s" }
-            );
+            if json_mode {
+                println!(
+                    "{{\"ok\":true,\"file\":{},\"chunks\":{}}}",
+                    json_quote(&name),
+                    chunks_n
+                );
+            } else {
+                println!(
+                    "ok {} ({} chunk{})",
+                    name,
+                    chunks_n,
+                    if chunks_n == 1 { "" } else { "s" }
+                );
+            }
             0
         }
         Err(e) => {
-            eprintln!("bx: {}", e);
+            if json_mode {
+                println!(
+                    "{{\"ok\":false,\"file\":{},\"error\":{}}}",
+                    json_quote(&rest[0]),
+                    json_quote(&e)
+                );
+            } else {
+                eprintln!("bx: {}", e);
+            }
             1
         }
     }
@@ -403,7 +447,7 @@ fn load_program(path: &Path, keep_last: bool) -> Result<(Vec<Chunk>, String), St
             .read_to_string(&mut src)
             .map_err(|e| format!("cannot read stdin: {}", e))?;
         let base = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let chunks = chunk::compile(&src, base, keep_last)?;
+        let chunks = chunk::compile(&src, base, "<stdin>".to_string(), keep_last)?;
         return Ok((chunks, "<stdin>".to_string()));
     }
 
@@ -430,7 +474,7 @@ fn load_program(path: &Path, keep_last: bool) -> Result<(Vec<Chunk>, String), St
             .parent()
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| PathBuf::from("."));
-        let chunks = chunk::compile(&src, base, keep_last)?;
+        let chunks = chunk::compile(&src, base, path.display().to_string(), keep_last)?;
         let bytes = chunk::encode(&chunks, keep_last);
         let _ = fs::create_dir_all(&dir);
         let _ = fs::write(&cpath, bytes);
@@ -441,7 +485,7 @@ fn load_program(path: &Path, keep_last: bool) -> Result<(Vec<Chunk>, String), St
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
-    let chunks = chunk::compile(&src, base, keep_last)?;
+    let chunks = chunk::compile(&src, base, path.display().to_string(), keep_last)?;
     Ok((chunks, name))
 }
 
