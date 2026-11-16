@@ -152,3 +152,28 @@ bx dis script.bxb
 - 资源上限：调用深度 220，步数 `BX_MAX_STEPS`（默认 10 亿），`exec` 输出 8 MB。
 
 详细的架构、字节码布局、指令表与取舍记录见 [DESIGN.md](DESIGN.md)。
+
+## minicon 集成
+
+bx 以独立 workspace 住在 `bx/`（`Cargo.toml` 里的空 `[workspace]`），不进入
+MiniCon 的 workspace members，终端二进制里也没有 bx 代码。
+
+```bash
+bash bx/scripts/test.sh      # 宿主构建 + 51 项自测
+bash bx/scripts/build-cells.sh   # 出每平台产物（宿主感知）
+```
+
+`build-cells.sh` 能做什么取决于宿主：
+
+| 宿主 | 可出 |
+|---|---|
+| Windows | win-x86_64（原生）、win-aarch64（cargo-xwin + lld-link）、lnx-x86_64 / lnx-aarch64（rust-lld 自包含 musl） |
+| macOS | osx-*（原生）、lnx-*（cargo-zigbuild）、win-*（cargo-xwin） |
+| Linux | lnx-*（原生）、win-*（cargo-xwin） |
+
+产物落在 `loader/dist/rust/minicon-bx-<cell>.com`；壳与容器协议见
+[`loader/bx/README.md`](../../loader/bx/README.md)。
+
+CI：`minicon-com.yml` 的 build job 跑同一脚本并写 `manifest.json`，六个原生
+runner 各执行自己那份（`version`、`eval "6*7"`=42、未知命令非零），receipt 记
+`bx_lane`，aggregate 要求六格齐全。

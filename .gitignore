@@ -26,3 +26,5 @@ loader/bx/cells/lnx-x86_64/minicon
 loader/com-rs/target-win-x86_64/
 bx/cells/win-x86_64/bx.exe
 bx/cells/win-aarch64/bx.exe
+bx/cells/lnx-x86_64/bx
+bx/cells/lnx-aarch64/bx
