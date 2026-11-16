@@ -60,7 +60,7 @@ cargo build --release --target x86_64-unknown-linux-musl   # 需 RUSTFLAGS=-C li
 `minicon-com.yml` 的 bx lane 在六个 runner 上都会跑它：每个 runner 用自己的 `minicon-bx-<cell>.com` 执行 `bx/tools/verify.bxs`，所以跨平台行为由真实执行证明，而不是靠编译成功推断。
 ## bx 原生验证
 
-`bx/tools/verify.bxs` 用 bx 自己跑端到端检查（CLI、`check`、预算、stdin、`patch`、`spawn`、`--com-info`），任何 OS 都能跑，产物还能自检自己：
+`bx/tools/verify.bxs` 用 bx 自己跑端到端检查（CLI、`check`/`dis`、预算、stdin、`patch`、`spawn`、`--com-info`、`.bxb` 往返、include 归属、闭包/键值迭代冒烟），任何 OS 都能跑，产物还能自检自己：
 
 ```bash
 bx run tools/verify.bxs <bx 或 minicon-bx-*.com>

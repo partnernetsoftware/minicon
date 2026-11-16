@@ -161,6 +161,10 @@ flowchart LR
   part of the CI bx lane; every runner executes its own `minicon-bx-<cell>.com`
   against the verifier, and launcher detection is behavioural so renamed
   launchers (`.exe` on Windows) still take the container path.
+- 2026-11-16 round 23: the bx-native verifier grew to 16 checks, adding `.bxb`
+  round-trip, include error attribution (compile and runtime), and a language
+  smoke for closures/pair iteration/interpolation; it passes against the native
+  binary, the packed `.com`, and a renamed launcher.
 - Open: execution on Linux x86_64/aarch64 and Windows ARM64 belongs to the
   six-runner matrix (`minicon-com.yml`, `bx_lane`), not the Windows host.
 
