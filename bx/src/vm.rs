@@ -4,7 +4,10 @@ use std::collections::BTreeMap;
 use crate::builtins;
 use crate::chunk::{has_operand, op, Chunk};
 use crate::value::{array_val, object_val, str_val, FuncRef, Value};
+use std::process::{Child, ChildStdin};
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 
 const MAX_DEPTH: usize = 220;
 
@@ -15,8 +18,20 @@ enum FrameArgs {
     Stack(usize),
 }
 
+/// A background process started by `spawn()`, with its output streamed into
+/// shared buffers by reader threads.
+pub struct Spawned {
+    pub child: Child,
+    pub out: Arc<Mutex<Vec<u8>>>,
+    pub err: Arc<Mutex<Vec<u8>>>,
+    pub readers: Vec<JoinHandle<()>>,
+    pub stdin: Option<ChildStdin>,
+}
+
 pub struct Vm {
     pub chunks: Vec<Chunk>,
+    pub(crate) children: BTreeMap<u64, Spawned>,
+    next_child: u64,
     globals: Vec<Value>,
     global_names: std::collections::HashMap<String, usize>,
     global_labels: Vec<String>,
@@ -47,6 +62,8 @@ impl Vm {
             .collect();
         let mut machine = Vm {
             chunks,
+            children: BTreeMap::new(),
+            next_child: 1,
             globals: Vec::new(),
             global_names: std::collections::HashMap::new(),
             global_labels: Vec::new(),
@@ -167,6 +184,17 @@ impl Vm {
             }
             other => self.call_value(other, vec![a, b], 0),
         }
+    }
+
+    pub fn spawn_register(&mut self, spawned: Spawned) -> u64 {
+        let id = self.next_child;
+        self.next_child += 1;
+        self.children.insert(id, spawned);
+        id
+    }
+
+    pub fn spawn_child(&mut self, id: u64) -> Option<&mut Spawned> {
+        self.children.get_mut(&id)
     }
 
     #[allow(dead_code)]
@@ -883,5 +911,17 @@ pub fn index_set(obj: &Value, idx: &Value, val: Value) -> Result<(), String> {
         }
         Value::Str(_) => Err("strings are immutable".to_string()),
         other => Err(format!("cannot assign into {}", other.type_name())),
+    }
+}
+impl Drop for Vm {
+    fn drop(&mut self) {
+        // A script that forgot a handle must not leave a process behind.
+        for (_, mut spawned) in std::mem::take(&mut self.children) {
+            let _ = spawned.child.kill();
+            let _ = spawned.child.wait();
+            for reader in spawned.readers.drain(..) {
+                let _ = reader.join();
+            }
+        }
     }
 }

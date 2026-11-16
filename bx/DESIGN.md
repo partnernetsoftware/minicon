@@ -105,6 +105,7 @@
 **全局名解析成槽位下标。** 全局存 `Vec<Value>`，名字只在首次解析时查表；每个 chunk 的每个名字常量都有缓存（`global_cache[chunk][const] = slot`），所以热循环里 `GET_GLOBAL`/`SET_GLOBAL` 就是一次数组索引。此前还有 FNV 哈希表与 String 克隆两步，`loop` 1e6 从 ~1.14 s 一路降到 ~0.22 s。
 **全局名用 FNV 哈希，且不在热路径上复制。** `GET_GLOBAL`/`SET_GLOBAL` 直接借常量池里的名字；`SET_GLOBAL` 先 `get_mut` 原地更新，只有新增绑定才 `to_string()`。此前每次全局读写都克隆一个 `String`，`loop` 1e6 光这里就占了大头：~1.14 s → ~0.29 s。
 **全局名用 FNV 哈希。** 顶层 `let` 是全局，热循环每轮要查多次名字；`BTreeMap` 的字符串比较比查找本身还贵，换成 FNV-1a 的 `HashMap` 后 `loop` 从 ~1.14 s 降到 ~0.85 s，`calls` 从 ~205 ms 降到 ~173 ms。
+**长进程是句柄，不是一次等待。** `spawn` 返回 `{id, pid}`，后台线程把 stdout/stderr 持续读进共享缓冲；`spawn_poll` 增量取、`spawn_wait` 等结束、`spawn_write`/`spawn_close` 管 stdin、`spawn_kill` 终止。VM 退出时 `Drop` 会杀掉所有未回收的子进程，避免遗留孤儿。
 **大输出可以直接落文件。** `exec(..., {stdout: path, stderr: path})` 把子进程的流直接接到文件，绕开 8 MB 的内存捕获上限；此时结果里的 `out`/`err` 为空串，退出码与超时语义不变。
 **内建回调也走栈。** `map`/`filter`/`each`/`reduce`/`sort` 通过 `call_value1`/`call_value2` 把参数压到操作数栈再入帧，省掉每个元素的 `Vec`；20 万次 `map` 因此从 ~46 ms 降到 ~29 ms。
 **CALL 不再为参数分配 Vec。** 参数本来就压在操作数栈上，`run_frame` 直接从栈 `drain` 进新帧槽；callee 用下标 `remove` 取出（参数个数很小，移位成本低于分配）。内建调用仍需要一个 `Vec`，因为内建函数签名要 `&[Value]`。

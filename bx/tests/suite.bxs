@@ -415,6 +415,41 @@ if (redirectedErr.code == 0 && redirectedErr.err == "" && read(errFile).trim() =
   casesFail += 1
   failures.push("exec redirects stderr to a file\n    err=" + json(redirectedErr.err) + " file=" + json(read(errFile)))
 }
+// spawn: background processes with incremental output, stdin and kill
+write(artDir + "/spawn-wait.bxs", 'let h = spawn([argv[0], "eval", "print(1 + 1)"])\nprint(json(spawn_wait(h.id)))\n')
+let sw = exec([BX, "run", artDir + "/spawn-wait.bxs", BX])
+let swr = parse(sw.out)
+if (sw.code == 0 && swr.code == 0 && swr.out.trim() == "2") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("spawn_wait collects the output\n    out=" + json(sw.out.trim()) + " err=" + json(sw.err.trim()))
+}
+write(artDir + "/spawn-poll.bxs", 'let h = spawn([argv[0], "eval", "sleep(200); print(2)"])\nlet p = spawn_poll(h.id)\nlet r = spawn_wait(h.id)\nprint(json([p.running, r.out.trim()]))\n')
+let sp = parse(exec([BX, "run", artDir + "/spawn-poll.bxs", BX]).out)
+if (sp[0] == true && sp[1] == "2") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("spawn_poll reports a running child\n    got=" + json(sp))
+}
+write(artDir + "/spawn-echo.bxs", 'print(read("-").trim().upper())\n')
+write(artDir + "/spawn-stdin.bxs", 'let h = spawn([argv[0], "run", argv[1]])\nspawn_write(h.id, "hi")\nspawn_close(h.id)\nlet r = spawn_wait(h.id)\nprint(r.out.trim())\n')
+let sin = (exec([BX, "run", artDir + "/spawn-stdin.bxs", BX, artDir + "/spawn-echo.bxs"]).out).trim()
+if (sin == "HI") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("spawn_write feeds stdin\n    got=" + json(sin))
+}
+write(artDir + "/spawn-kill.bxs", 'let h = spawn([argv[0], "eval", "sleep(4000)"])\nsleep(50)\nlet r = spawn_kill(h.id)\nprint(json(r.running))\n')
+if ((exec([BX, "run", artDir + "/spawn-kill.bxs", BX]).out).trim() == "false") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("spawn_kill ends the child")
+}
+checkTrue("unknown spawn handle is an error", ["eval", 'attempt(fn() { spawn_wait(999) }).error.contains("unknown spawn handle")'])
 
 // closures capture the enclosing function's visible locals by value
 check("closure factory", "15", ["eval", "fn adder(n) { return fn(x) { return x + n } } let f = adder(10); f(5)"])

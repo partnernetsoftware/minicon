@@ -126,6 +126,12 @@ exec("dir", {shell: true, stdin: "y\n", max: 1048576})
 exec(["cargo", "build"], {stdout: "build.log", stderr: "build.err"})   // 大输出直接落文件
 exec_all([["git", "status"], ["git", "diff"]], {cwd: "/repo"})
 // -> [result, result]：顺序与输入一致，最多 8 个并发，单个失败不影响其他
+
+let h = spawn(["git", "log", "--oneline"])
+let first = spawn_poll(h.id)        // {running, code, out, err}，增量读取
+let rest = spawn_wait(h.id)         // 等它结束并收完输出
+spawn_write(h.id, "y\n"); spawn_close(h.id)   // stdin 写/关（EOF）
+spawn_kill(h.id)                    // 终止并收集剩余输出
 ```
 
 默认 120 s 超时、8 MB 输出上限，超时返回 `code: -1, timeout: true`，stdout/stderr 用独立线程排空，不会因管道写满而死锁。

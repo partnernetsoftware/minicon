@@ -7,7 +7,10 @@ use std::time::{Duration, Instant, SystemTime};
 
 use crate::json;
 use crate::value::{array_val, object_val, str_val, Value};
-use crate::vm::{compare, len_of, Vm};
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
+
+use crate::vm::{compare, len_of, Spawned, Vm};
 
 pub struct Builtin {
     pub name: &'static str,
@@ -719,7 +722,7 @@ fn drain(mut r: impl Read, cap: usize) -> Vec<u8> {
     out
 }
 
-fn run_process(program: &str, argv: &[String], opts: &ExecOpts) -> Result<Value, String> {
+fn command_for(program: &str, argv: &[String], opts: &ExecOpts) -> Command {
     let mut cmd = if opts.shell {
         let mut line = program.to_string();
         for a in argv {
@@ -751,6 +754,18 @@ fn run_process(program: &str, argv: &[String], opts: &ExecOpts) -> Result<Value,
         c
     };
 
+    if let Some(d) = &opts.cwd {
+        cmd.current_dir(d);
+    }
+    for (k, v) in &opts.env {
+        cmd.env(k, v);
+    }
+    cmd
+}
+
+fn run_process(program: &str, argv: &[String], opts: &ExecOpts) -> Result<Value, String> {
+    let mut cmd = command_for(program, argv, opts);
+
     // A redirected stream goes straight to a file, so large output never has to
     // fit in the 8 MB capture buffer.
     match &opts.stdout_file {
@@ -778,12 +793,6 @@ fn run_process(program: &str, argv: &[String], opts: &ExecOpts) -> Result<Value,
     } else {
         Stdio::null()
     });
-    if let Some(d) = &opts.cwd {
-        cmd.current_dir(d);
-    }
-    for (k, v) in &opts.env {
-        cmd.env(k, v);
-    }
 
     let start = Instant::now();
     let mut child = cmd
@@ -1564,6 +1573,42 @@ pub static BUILTINS: &[Builtin] = &[
         f: b_exec_all,
     },
     Builtin {
+        name: "spawn",
+        sig: "spawn(command, options?)",
+        doc: "start a background process; returns {id, pid} for spawn_poll/spawn_wait",
+        f: b_spawn,
+    },
+    Builtin {
+        name: "spawn_poll",
+        sig: "spawn_poll(id)",
+        doc: "non-blocking check: {running, code, out, err}; drains new output",
+        f: b_spawn_poll,
+    },
+    Builtin {
+        name: "spawn_wait",
+        sig: "spawn_wait(id, timeout_ms?)",
+        doc: "wait for a spawned process, returning {running, timeout, code, out, err}",
+        f: b_spawn_wait,
+    },
+    Builtin {
+        name: "spawn_write",
+        sig: "spawn_write(id, text)",
+        doc: "write text to a spawned process stdin; false when it has no pipe",
+        f: b_spawn_write,
+    },
+    Builtin {
+        name: "spawn_kill",
+        sig: "spawn_kill(id)",
+        doc: "kill a spawned process and collect the rest of its output",
+        f: b_spawn_kill,
+    },
+    Builtin {
+        name: "spawn_close",
+        sig: "spawn_close(id)",
+        doc: "close a spawned process stdin (EOF); false when it had no pipe",
+        f: b_spawn_close,
+    },
+    Builtin {
         name: "which",
         sig: "which(name)",
         doc: "resolve a program on PATH",
@@ -1829,4 +1874,267 @@ fn b_patch(_vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
     out.insert("hunks".to_string(), Value::Int(hunks.len() as i64));
     out.insert("bytes".to_string(), Value::Int(updated.len() as i64));
     Ok(object_val(out))
+}
+// ---------------------------------------------------------------------------
+// spawn: a background process whose streams are read incrementally
+// ---------------------------------------------------------------------------
+
+fn command_parts(item: &Value, label: &str) -> Result<(String, Vec<String>), String> {
+    match item {
+        Value::Str(command) => {
+            let mut parts = split_cmdline(command);
+            if parts.is_empty() {
+                return Err(format!("{} got an empty command", label));
+            }
+            let program = parts.remove(0);
+            Ok((program, parts))
+        }
+        Value::Array(list) => {
+            let items = list.borrow().clone();
+            if items.is_empty() {
+                return Err(format!("{} got an empty argv array", label));
+            }
+            Ok((
+                items[0].display(),
+                items[1..].iter().map(|v| v.display()).collect(),
+            ))
+        }
+        other => Err(format!(
+            "{} needs a command string or argv array, got {}",
+            label,
+            other.type_name()
+        )),
+    }
+}
+
+fn spawn_reader(
+    mut stream: impl Read + Send + 'static,
+    buffer: Arc<Mutex<Vec<u8>>>,
+) -> JoinHandle<()> {
+    std::thread::spawn(move || {
+        let mut chunk = [0u8; 8192];
+        loop {
+            match stream.read(&mut chunk) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    if let Ok(mut guard) = buffer.lock() {
+                        guard.extend_from_slice(&chunk[..n]);
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn take_buffer(buffer: &Arc<Mutex<Vec<u8>>>) -> String {
+    match buffer.lock() {
+        Ok(mut guard) => String::from_utf8_lossy(&std::mem::take(&mut *guard)).to_string(),
+        Err(_) => String::new(),
+    }
+}
+
+fn spawn_result(
+    code: Option<i32>,
+    out: String,
+    err: String,
+    running: bool,
+    timeout: bool,
+) -> Value {
+    let mut res = BTreeMap::new();
+    res.insert("code".to_string(), Value::Int(code.unwrap_or(-1) as i64));
+    res.insert(
+        "ok".to_string(),
+        Value::Bool(code == Some(0) && !timeout && !running),
+    );
+    res.insert("out".to_string(), str_val(out));
+    res.insert("err".to_string(), str_val(err));
+    res.insert("running".to_string(), Value::Bool(running));
+    res.insert("timeout".to_string(), Value::Bool(timeout));
+    object_val(res)
+}
+
+fn spawn_id(args: &[Value], label: &str) -> Result<u64, String> {
+    arg(args, 0)?
+        .to_num()
+        .map(|n| n as u64)
+        .ok_or_else(|| format!("{} needs a handle id", label))
+}
+
+fn b_spawn(vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
+    let opts = exec_opts(args, false)?;
+    let (program, argv) = if opts.shell {
+        match arg(args, 0)? {
+            Value::Str(command) => (command.to_string(), Vec::new()),
+            other => {
+                return Err(format!(
+                    "spawn() with shell needs a command string, got {}",
+                    other.type_name()
+                ))
+            }
+        }
+    } else {
+        command_parts(arg(args, 0)?, "spawn()")?
+    };
+    let mut cmd = command_for(&program, &argv, &opts);
+    cmd.stdin(Stdio::piped());
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("cannot spawn '{}': {}", program, e))?;
+    let pid = child.id() as i64;
+    let out = Arc::new(Mutex::new(Vec::new()));
+    let err = Arc::new(Mutex::new(Vec::new()));
+    let mut readers = Vec::new();
+    if let Some(stream) = child.stdout.take() {
+        readers.push(spawn_reader(stream, out.clone()));
+    }
+    if let Some(stream) = child.stderr.take() {
+        readers.push(spawn_reader(stream, err.clone()));
+    }
+    let mut stdin = child.stdin.take();
+    if let (Some(pipe), Some(data)) = (stdin.as_mut(), opts.stdin.clone()) {
+        let _ = pipe.write_all(&data);
+    }
+    let id = vm.spawn_register(Spawned {
+        child,
+        out,
+        err,
+        readers,
+        stdin,
+    });
+    let mut res = BTreeMap::new();
+    res.insert("id".to_string(), Value::Int(id as i64));
+    res.insert("pid".to_string(), Value::Int(pid));
+    Ok(object_val(res))
+}
+
+fn b_spawn_poll(vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
+    let id = spawn_id(args, "spawn_poll()")?;
+    let exited = {
+        let spawned = vm
+            .spawn_child(id)
+            .ok_or_else(|| format!("unknown spawn handle {}", id))?;
+        match spawned.child.try_wait() {
+            Ok(Some(status)) => Some(status),
+            Ok(None) => None,
+            Err(e) => return Err(format!("spawn_poll() failed: {}", e)),
+        }
+    };
+    match exited {
+        Some(status) => {
+            let mut spawned = vm
+                .children
+                .remove(&id)
+                .ok_or_else(|| format!("unknown spawn handle {}", id))?;
+            let out = take_buffer(&spawned.out);
+            let err = take_buffer(&spawned.err);
+            for reader in spawned.readers.drain(..) {
+                let _ = reader.join();
+            }
+            let out = format!("{}{}", out, take_buffer(&spawned.out));
+            let err = format!("{}{}", err, take_buffer(&spawned.err));
+            Ok(spawn_result(status.code(), out, err, false, false))
+        }
+        None => {
+            let spawned = vm
+                .spawn_child(id)
+                .ok_or_else(|| format!("unknown spawn handle {}", id))?;
+            let out = take_buffer(&spawned.out);
+            let err = take_buffer(&spawned.err);
+            Ok(spawn_result(None, out, err, true, false))
+        }
+    }
+}
+
+fn b_spawn_wait(vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
+    let id = spawn_id(args, "spawn_wait()")?;
+    let timeout_ms = if args.len() > 1 {
+        args[1].to_num().unwrap_or(30_000.0).max(1.0) as u64
+    } else {
+        30_000
+    };
+    let start = Instant::now();
+    let status = loop {
+        let exited = {
+            let spawned = vm
+                .spawn_child(id)
+                .ok_or_else(|| format!("unknown spawn handle {}", id))?;
+            match spawned.child.try_wait() {
+                Ok(Some(status)) => Some(status),
+                Ok(None) => None,
+                Err(e) => return Err(format!("spawn_wait() failed: {}", e)),
+            }
+        };
+        if let Some(status) = exited {
+            break status;
+        }
+        if start.elapsed() >= Duration::from_millis(timeout_ms) {
+            let spawned = vm
+                .spawn_child(id)
+                .ok_or_else(|| format!("unknown spawn handle {}", id))?;
+            let out = take_buffer(&spawned.out);
+            let err = take_buffer(&spawned.err);
+            return Ok(spawn_result(None, out, err, true, true));
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    };
+    let mut spawned = vm
+        .children
+        .remove(&id)
+        .ok_or_else(|| format!("unknown spawn handle {}", id))?;
+    for reader in spawned.readers.drain(..) {
+        let _ = reader.join();
+    }
+    let out = take_buffer(&spawned.out);
+    let err = take_buffer(&spawned.err);
+    Ok(spawn_result(status.code(), out, err, false, false))
+}
+
+fn b_spawn_write(vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
+    let id = spawn_id(args, "spawn_write()")?;
+    let data = arg(args, 1)?.display();
+    let spawned = vm
+        .spawn_child(id)
+        .ok_or_else(|| format!("unknown spawn handle {}", id))?;
+    match spawned.stdin.as_mut() {
+        Some(pipe) => {
+            pipe.write_all(data.as_bytes())
+                .map_err(|e| format!("spawn_write() failed: {}", e))?;
+            let _ = pipe.flush();
+            Ok(Value::Bool(true))
+        }
+        None => Ok(Value::Bool(false)),
+    }
+}
+
+fn b_spawn_kill(vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
+    let id = spawn_id(args, "spawn_kill()")?;
+    let mut spawned = vm
+        .children
+        .remove(&id)
+        .ok_or_else(|| format!("unknown spawn handle {}", id))?;
+    let _ = spawned.child.kill();
+    let status = spawned.child.wait().ok();
+    for reader in spawned.readers.drain(..) {
+        let _ = reader.join();
+    }
+    let out = take_buffer(&spawned.out);
+    let err = take_buffer(&spawned.err);
+    Ok(spawn_result(
+        status.and_then(|s| s.code()),
+        out,
+        err,
+        false,
+        false,
+    ))
+}
+fn b_spawn_close(vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
+    let id = spawn_id(args, "spawn_close()")?;
+    let spawned = vm
+        .spawn_child(id)
+        .ok_or_else(|| format!("unknown spawn handle {}", id))?;
+    // Dropping the pipe sends EOF, which a child reading stdin waits for.
+    let had_pipe = spawned.stdin.take().is_some();
+    Ok(Value::Bool(had_pipe))
 }
