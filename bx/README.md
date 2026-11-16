@@ -121,6 +121,9 @@ exec("git status")                                  // 字符串按引号规则�
 exec(["git", "status"], {cwd: "/repo", timeout: 5000})
 exec("dir", {shell: true, stdin: "y\n", max: 1048576})
 // -> {code: 0, ok: true, out: "...", err: "", ms: 21, timeout: false}
+
+exec_all([["git", "status"], ["git", "diff"]], {cwd: "/repo"})
+// -> [result, result]：顺序与输入一致，最多 8 个并发，单个失败不影响其他
 ```
 
 默认 120 s 超时、8 MB 输出上限，超时返回 `code: -1, timeout: true`，stdout/stderr 用独立线程排空，不会因管道写满而死锁。

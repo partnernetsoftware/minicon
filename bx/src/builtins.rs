@@ -637,6 +637,7 @@ fn b_max(_vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
 // processes: the binary primitive
 // ---------------------------------------------------------------------------
 
+#[derive(Clone)]
 struct ExecOpts {
     timeout_ms: u64,
     cwd: Option<String>,
@@ -827,35 +828,189 @@ fn run_process(program: &str, argv: &[String], opts: &ExecOpts) -> Result<Value,
     Ok(object_val(res))
 }
 
-fn b_exec(_vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
-    let opts = exec_opts(args, false)?;
-    match arg(args, 0)? {
+fn exec_one(item: &Value, opts: &ExecOpts, label: &str) -> Result<Value, String> {
+    match item {
         Value::Str(s) => {
             if opts.shell {
-                run_process(s.as_str(), &[], &opts)
+                run_process(s.as_str(), &[], opts)
             } else {
                 let mut parts = split_cmdline(s);
                 if parts.is_empty() {
-                    return Err("exec() got an empty command".to_string());
+                    return Err(format!("{} got an empty command", label));
                 }
                 let program = parts.remove(0);
-                run_process(&program, &parts, &opts)
+                run_process(&program, &parts, opts)
             }
         }
         Value::Array(a) => {
             let items = a.borrow().clone();
             if items.is_empty() {
-                return Err("exec() got an empty argv array".to_string());
+                return Err(format!("{} got an empty argv array", label));
             }
             let program = items[0].display();
             let rest: Vec<String> = items[1..].iter().map(|v| v.display()).collect();
-            run_process(&program, &rest, &opts)
+            run_process(&program, &rest, opts)
         }
         other => Err(format!(
-            "exec() needs a command string or argv array, got {}",
+            "{} needs a command string or argv array, got {}",
+            label,
             other.type_name()
         )),
     }
+}
+
+fn exec_failure(err: String) -> Value {
+    let mut res = BTreeMap::new();
+    res.insert("code".to_string(), Value::Int(-1));
+    res.insert("ok".to_string(), Value::Bool(false));
+    res.insert("out".to_string(), str_val(String::new()));
+    res.insert("err".to_string(), str_val(err));
+    res.insert("ms".to_string(), Value::Int(0));
+    res.insert("timeout".to_string(), Value::Bool(false));
+    object_val(res)
+}
+
+fn b_exec(_vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
+    let opts = exec_opts(args, false)?;
+    exec_one(arg(args, 0)?, &opts, "exec()")
+}
+
+/// A plain-data copy of one exec result, so it can cross a worker boundary
+/// (`Value` holds `Rc`s and is not `Send`).
+struct ExecOutcome {
+    code: i64,
+    ok: bool,
+    out: String,
+    err: String,
+    ms: i64,
+    timeout: bool,
+}
+
+fn extract_outcome(value: Value) -> ExecOutcome {
+    let mut outcome = ExecOutcome {
+        code: -1,
+        ok: false,
+        out: String::new(),
+        err: String::new(),
+        ms: 0,
+        timeout: false,
+    };
+    if let Value::Object(map) = &value {
+        let map = map.borrow();
+        if let Some(Value::Int(code)) = map.get("code") {
+            outcome.code = *code;
+        }
+        if let Some(Value::Bool(ok)) = map.get("ok") {
+            outcome.ok = *ok;
+        }
+        if let Some(Value::Str(out)) = map.get("out") {
+            outcome.out = out.to_string();
+        }
+        if let Some(Value::Str(err)) = map.get("err") {
+            outcome.err = err.to_string();
+        }
+        if let Some(Value::Int(ms)) = map.get("ms") {
+            outcome.ms = *ms;
+        }
+        if let Some(Value::Bool(timeout)) = map.get("timeout") {
+            outcome.timeout = *timeout;
+        }
+    }
+    outcome
+}
+
+fn outcome_value(outcome: ExecOutcome) -> Value {
+    let mut res = BTreeMap::new();
+    res.insert("code".to_string(), Value::Int(outcome.code));
+    res.insert("ok".to_string(), Value::Bool(outcome.ok));
+    res.insert("out".to_string(), str_val(outcome.out));
+    res.insert("err".to_string(), str_val(outcome.err));
+    res.insert("ms".to_string(), Value::Int(outcome.ms));
+    res.insert("timeout".to_string(), Value::Bool(outcome.timeout));
+    object_val(res)
+}
+
+/// Run several commands at once (batches of eight) and keep the input order in
+/// the result array. Each command keeps its own timeout; a spawn failure becomes
+/// a failed result entry instead of aborting the whole batch.
+fn b_exec_all(_vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
+    let opts = exec_opts(args, false)?;
+    let list = as_array(arg(args, 0)?, "exec_all() argument")?;
+    let items: Vec<Value> = list.borrow().clone();
+    if items.is_empty() {
+        return Ok(array_val(Vec::new()));
+    }
+    // Resolve each command on the main thread; workers only carry plain strings.
+    let mut commands: Vec<Result<(String, Vec<String>), String>> = Vec::with_capacity(items.len());
+    for item in &items {
+        commands.push(match item {
+            Value::Str(s) => {
+                if opts.shell {
+                    Ok((s.to_string(), Vec::new()))
+                } else {
+                    let mut parts = split_cmdline(s);
+                    if parts.is_empty() {
+                        Err("exec_all() got an empty command".to_string())
+                    } else {
+                        let program = parts.remove(0);
+                        Ok((program, parts))
+                    }
+                }
+            }
+            Value::Array(a) => {
+                let values = a.borrow().clone();
+                if values.is_empty() {
+                    Err("exec_all() got an empty argv array".to_string())
+                } else {
+                    let program = values[0].display();
+                    let rest: Vec<String> = values[1..].iter().map(|v| v.display()).collect();
+                    Ok((program, rest))
+                }
+            }
+            other => Err(format!(
+                "exec_all() needs a command string or argv array, got {}",
+                other.type_name()
+            )),
+        });
+    }
+
+    let mut results: Vec<Value> = Vec::with_capacity(commands.len());
+    const BATCH: usize = 8;
+    for start in (0..commands.len()).step_by(BATCH) {
+        let end = (start + BATCH).min(commands.len());
+        let batch = &commands[start..end];
+        let mut part: Vec<Value> = Vec::with_capacity(batch.len());
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = batch
+                .iter()
+                .map(|command| {
+                    let options = opts.clone();
+                    match command {
+                        Ok((program, argv)) => {
+                            let program = program.clone();
+                            let argv = argv.clone();
+                            scope.spawn(move || {
+                                run_process(&program, &argv, &options).map(extract_outcome)
+                            })
+                        }
+                        Err(message) => {
+                            let message = message.clone();
+                            scope.spawn(move || Err(message))
+                        }
+                    }
+                })
+                .collect();
+            for handle in handles {
+                part.push(match handle.join() {
+                    Ok(Ok(outcome)) => outcome_value(outcome),
+                    Ok(Err(message)) => exec_failure(message),
+                    Err(_) => exec_failure("exec_all() worker thread panicked".to_string()),
+                });
+            }
+        });
+        results.extend(part);
+    }
+    Ok(array_val(results))
 }
 
 fn b_sh(_vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
@@ -1371,6 +1526,12 @@ pub static BUILTINS: &[Builtin] = &[
         sig: "sh(cmd, opts?)",
         doc: "run a command through the system shell",
         f: b_sh,
+    },
+    Builtin {
+        name: "exec_all",
+        sig: "exec_all([...], options?)",
+        doc: "run commands concurrently (up to eight at a time); results keep the input order",
+        f: b_exec_all,
     },
     Builtin {
         name: "which",

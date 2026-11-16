@@ -29,7 +29,7 @@ bx — binary scripting surface
 │   ├── [v] four cells packed locally: {win,lnx} × {x86_64,aarch64}
 │   └── [-] six-cell execution evidence (CI `bx_lane`)
 └── qualification
-    ├── [v] 105-check suite passes through the packed win-x86_64 artifact
+    ├── [v] 108-check suite passes through the packed win-x86_64 artifact
     └── [-] the same suite on the five remaining runners
 ```
 
@@ -68,7 +68,7 @@ flowchart LR
 - `minicon-bx-win-x86_64.com`: `version` → `bx 0.1.0`; `eval "6*7"` → `42`;
   `exit(3)` → `3` (verbatim, not `(128+3)<<8`); a parent `exec` captures
   `[0,"42\n"]`.
-- `BX_BIN=minicon-bx-win-x86_64.com bx run bx/tests/suite.bxs` → **PASS 105
+- `BX_BIN=minicon-bx-win-x86_64.com bx run bx/tests/suite.bxs` → **PASS 108
   checks** (ternary, interpolation and its escape, CLI flags, stdin, argv with
   spaces/unicode, and include-aware cache invalidation).
 - 2026-11-16 review pass: the container now carries `__meta__` metadata

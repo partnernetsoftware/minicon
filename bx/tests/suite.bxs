@@ -368,6 +368,30 @@ if (pMulti.code == 0 && pMultiText.contains("LINE2") && pMultiText.contains("lin
   casesFail += 1
   failures.push("patch applies multiple hunks\n    out=" + json(pMulti.out.trim()) + " file=" + json(pMultiText))
 }
+// exec_all runs commands concurrently and keeps the input order
+let pairAll = exec_all([[BX, "eval", "1+1"], [BX, "eval", "2+2"]])
+if (len(pairAll) == 2 && pairAll[0].out.trim() == "2" && pairAll[1].out.trim() == "4") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("exec_all keeps the input order\n    got=" + json(pairAll))
+}
+let mixedAll = exec_all([[BX, "eval", "3+3"], ["definitely-not-a-command-xyz"]])
+if (mixedAll[0].code == 0 && mixedAll[1].ok == false && len(mixedAll[1].err) > 0) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("exec_all isolates a failed command\n    got=" + json([mixedAll[0].code, mixedAll[1].ok]))
+}
+let allStart = now()
+let slowAll = exec_all([[BX, "eval", "sleep(400); 1"], [BX, "eval", "sleep(400); 2"]])
+let allWall = now() - allStart
+if (slowAll[0].code == 0 && slowAll[1].code == 0 && allWall < 700) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("exec_all runs concurrently\n    wall=" + allWall + "ms codes=" + json([slowAll[0].code, slowAll[1].code]))
+}
 
 // closures capture the enclosing function's visible locals by value
 check("closure factory", "15", ["eval", "fn adder(n) { return fn(x) { return x + n } } let f = adder(10); f(5)"])
