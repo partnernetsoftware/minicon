@@ -123,7 +123,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 69 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 70 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -139,6 +139,12 @@ bx wasm target
   `&&`/`||`/`!` through if/else locals, ternary with int/float/bool branches
   (string branches still rejected) and `str(bool)`/`print(bool)` via host
   `env.bool_to_str`.
+- **Bool ordering**: `true == false`, `false < true` and friends compile through
+  the same i32 comparison opcodes; bool conditions and bool expressions share
+  one emission path.
+- **Empty string needles**: `.contains("")` / `.starts_with("")` /
+  `.ends_with("")` are true even for an empty haystack; the host previously
+  panicked on `str::windows(0)`.
 - **Runtime boundary aborts**: array indexing is bounds-checked (`index out of
   bounds`), integer/float division by zero aborts with `division by zero` (same
   message as the VM), and modulo by zero aborts with `modulo by zero`. The VM

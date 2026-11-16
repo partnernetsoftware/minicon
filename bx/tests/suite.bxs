@@ -843,6 +843,16 @@ if (wasmOob.code == 0 && wasmOobRun.code == 1 && wasmOobRun.err.contains("index 
   casesFail += 1
   failures.push("wasm runtime boundary aborts\n    oob=" + wasmOobRun.code + "/" + json(wasmOobRun.err) + " div0=" + wasmDiv0Run.code + "/" + json(wasmDiv0Run.err) + " mod0=" + wasmMod0Run.code + "/" + json(wasmMod0Run.err))
 }
+write(artDir + "/wasm-edge2.bxs", 'print(true == false)\nprint(true != false)\nprint(false < true)\nprint("".contains(""))\nprint("".starts_with(""))\nprint("abc".contains(""))\nprint(0.1 + 0.2)\nprint(-7.5 % 2)\nprint(int("  -42  "))\nlet e = []\ne.push(5)\nprint(len(e))\ne.pop()\ne.pop()\nprint(len(e))\n')
+let wasmEdge2 = exec([BX, "build", "--wasm", artDir + "/wasm-edge2.bxs", "-o", artDir + "/wasm-edge2.wasm"])
+let wasmEdge2Run = exec([BX, "run", artDir + "/wasm-edge2.wasm"])
+let wasmEdge2Vm = exec([BX, "run", artDir + "/wasm-edge2.bxs"])
+if (wasmEdge2.code == 0 && wasmEdge2Run.out == wasmEdge2Vm.out && wasmEdge2Run.out.trim() == "false\ntrue\ntrue\ntrue\ntrue\ntrue\n0.30000000000000004\n-1.5\n-42\n1\n0") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm bool/empty-string edges\n    wasm=" + json(wasmEdge2Run.out) + " vm=" + json(wasmEdge2Vm.out) + " err=" + json(wasmEdge2Run.err))
+}
 write(artDir + "/wasm-bad.bxs", 'fn outer() {\n  let n = 5\n  let f = fn(x) { return x + n }\n  return f(1)\n}\nprint(outer())\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1 && wasmBad.err.contains("cannot capture outer variables")) {

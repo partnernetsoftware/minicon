@@ -28,6 +28,7 @@
 
 **实验性 wasm 目标**
 
+- 修复 bool 值比较（`true == false`、`false < true`）在条件里缺失的类型错误；修复空 needle 字符串方法（`"".contains("")`）导致宿主 panic 的问题。`
 - 运行时边界：数组索引越界、整数/浮点除零、取模零会以明确消息中止（`index out of bounds` / `division by zero` / `modulo by zero`），避免此前内存越界读/NaN 静默错误；VM 的 null 语义按已知分歧记录。`
 - 修复作用域循环变量出现在调用实参里（如 `k + ":" + str(v)`）时的「undefined variable」构建错误：emitter 的 type_of 自行解析内建调用返回类型。`
 - 修复 `continue` 在 for-in/for 中跳过步进的问题：循环体包一层 continue 目标块，索引自增与 for-step 始终执行。`

@@ -2049,6 +2049,20 @@ impl<'a> Emitter<'a> {
                 }
                 let lt = self.type_of(left)?;
                 let rt = self.type_of(right)?;
+                if lt == Ty::Bool && rt == Ty::Bool {
+                    self.emit_expr(left)?;
+                    self.emit_expr(right)?;
+                    let opcode = match op {
+                        BinOp::Eq => 0x46,
+                        BinOp::Ne => 0x47,
+                        BinOp::Lt => 0x48,
+                        BinOp::Gt => 0x4a,
+                        BinOp::Le => 0x4c,
+                        _ => 0x4e,
+                    };
+                    self.builder.push(Instr::Op(opcode));
+                    return Ok(());
+                }
                 if lt == Ty::Str && rt == Ty::Str {
                     self.emit_str(left)?;
                     self.emit_str(right)?;
@@ -4218,6 +4232,26 @@ mod tests {
         assert_eq!(
             strings,
             vec!["3.5".to_string(), "4.5".to_string(), "2.5".to_string()]
+        );
+    }
+
+    #[test]
+    fn bool_comparisons_and_empty_string_tests() {
+        let (numbers, strings) = run_with_argv(
+            "print(true == false)\nprint(true != false)\nprint(false < true)\nprint(\"\".contains(\"\"))\nprint(\"\".starts_with(\"\"))\nprint(\"abc\".contains(\"\"))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec![
+                "false".to_string(),
+                "true".to_string(),
+                "true".to_string(),
+                "true".to_string(),
+                "true".to_string(),
+                "true".to_string(),
+            ]
         );
     }
 

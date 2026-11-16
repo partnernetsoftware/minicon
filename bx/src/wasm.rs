@@ -1963,7 +1963,13 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     .get(np..np.saturating_add(nl))
                     .ok_or_else(|| "env.str_test needle is outside memory".to_string())?;
                 let found = match mode {
-                    0 => hay.windows(needle.len()).any(|window| window == needle),
+                    0 => {
+                        if needle.is_empty() {
+                            true
+                        } else {
+                            hay.windows(needle.len()).any(|window| window == needle)
+                        }
+                    }
                     1 => hay.starts_with(needle),
                     2 => hay.ends_with(needle),
                     _ => return Err("env.str_test mode must be 0-2".to_string()),
