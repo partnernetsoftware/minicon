@@ -19,8 +19,10 @@ module should run in a browser once the Web ABI lands.
 - The emitted artifact is a standard module (`\0asm`, version 1), not a
   bx-private container. Provenance moves to a sidecar/metadata only if a later
   milestone needs it.
-- `.bxb` is now the **legacy** path. The default target flips to `.wasm` after
-  M4; `.bxb` is removed after the feature matrix is green.
+- `.bxb` is now the **legacy** path. The default flip, its parity gates and the
+  `.bxb` retirement are owned by
+  [PRD_02_43_bx_wasm_migration.md](PRD_02_43_bx_wasm_migration.md); this module
+  only supplies the backend and its feature evidence.
 - Host imports are **web-shaped**, not WASI: the ABI mirrors browser surface
   names so one module can serve both native and browser hosts.
 
@@ -117,7 +119,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 63 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 64 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -145,8 +147,8 @@ bx wasm target
   region; `for k, v in map` walks entries in insertion order (single-variable
   `for k in map` yields keys); the browser glue backs them with JS `Map`.
 - **Process utilities** (native + browser stubs): `now()`, `sleep(ms)`,
-  `cwd()`, `env(name)`, `mkdir(path)`, plus the wasm-only `file_exists(path)`
-  (Int, because the VM's boolean `exists()` predates the subset's value model).
+  `cwd()`, `env(name)`, `mkdir(path)`, `exists(path)` (Bool, matching the VM),
+  plus the wasm-only `file_exists(path)` (Int, kept for the earlier rounds).
 - **Conversions and methods**: `str(number)` / `int(string|number)` (host
   `int_to_str`/`f64_to_str`/`str_to_int`, VM-identical formatting), `.len()` on
   strings and arrays, and statement-level `arr.pop()` (length shrink; the removed

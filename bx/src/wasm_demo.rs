@@ -137,7 +137,20 @@ const imports = {
     cwd: () => writeStringBlock(typeof process !== "undefined" ? process.cwd() : "/"),
     env_get: () => writeStringBlock(typeof process !== "undefined" ? (process.env.PATH || "") : ""),
     mkdir: () => -1,
-    file_exists: () => 0,
+    file_exists: (ptr, len) => {
+      try {
+        if (typeof process !== "undefined" && process.versions && process.versions.node) {
+          const path = new TextDecoder("utf-8").decode(
+            new Uint8Array(instance.exports.memory.buffer, ptr, len),
+          );
+          const fs = require("fs");
+          return fs.existsSync(path) ? 1 : 0;
+        }
+      } catch (error) {
+        return 0;
+      }
+      return 0;
+    },
     str_compare: (ap, al, bp, bl) => {
       const bytesA = new Uint8Array(instance.exports.memory.buffer, ap, al);
       const bytesB = new Uint8Array(instance.exports.memory.buffer, bp, bl);

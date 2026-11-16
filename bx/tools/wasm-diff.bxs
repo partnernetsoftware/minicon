@@ -89,6 +89,8 @@ fn gen() {
   lines.push("print(int(\"" + str(1 + pick(99)) + "\"))")
   lines.push("let conv = \"n\" + str(" + str(1 + pick(9)) + ")")
   lines.push("print(conv.len())")
+  lines.push("print(exists(\".\"))")
+  lines.push("print(!exists(\".\"))")
   lines.push("let bool_a = " + str(1 + pick(9)) + " < " + str(1 + pick(9)))
   lines.push("print(bool_a)")
   lines.push("let bool_b = bool_a && (" + str(1 + pick(9)) + " == " + str(1 + pick(9)) + ")")

@@ -771,6 +771,16 @@ if (wasmBool.code == 0 && wasmBoolRun.out == wasmBoolVm.out && wasmBoolRun.out.t
   casesFail += 1
   failures.push("wasm bool values\n    wasm=" + json(wasmBoolRun.out) + " vm=" + json(wasmBoolVm.out) + " err=" + json(wasmBoolRun.err))
 }
+write(artDir + "/wasm-exists.bxs", 'print(exists("."))\nprint(exists(".."))\nprint(exists("C:/definitely-missing-bx"))\nif (exists(".")) { print(1) }\nprint(!exists("C:/definitely-missing-bx"))\n')
+let wasmExists = exec([BX, "build", "--wasm", artDir + "/wasm-exists.bxs", "-o", artDir + "/wasm-exists.wasm"])
+let wasmExistsRun = exec([BX, "run", artDir + "/wasm-exists.wasm"], { cwd: artDir })
+let wasmExistsVm = exec([BX, "run", artDir + "/wasm-exists.bxs"], { cwd: artDir })
+if (wasmExists.code == 0 && wasmExistsRun.out == wasmExistsVm.out && wasmExistsRun.out.trim() == "true\ntrue\nfalse\n1\ntrue") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm exists()\n    wasm=" + json(wasmExistsRun.out) + " vm=" + json(wasmExistsVm.out) + " err=" + json(wasmExistsRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'fn outer() {\n  let n = 5\n  let f = fn(x) { return x + n }\n  return f(1)\n}\nprint(outer())\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1 && wasmBad.err.contains("cannot capture outer variables")) {

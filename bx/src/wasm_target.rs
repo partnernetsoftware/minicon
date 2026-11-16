@@ -610,6 +610,12 @@ impl Checker {
                         }
                         return Ok(Ty::Str);
                     }
+                    if name == "exists" && args.len() == 1 {
+                        if self.infer(&args[0])? != Ty::Str {
+                            return Err("wasm target exists(path) needs a string".to_string());
+                        }
+                        return Ok(Ty::Bool);
+                    }
                     if name == "file_exists" && args.len() == 1 {
                         if self.infer(&args[0])? != Ty::Str {
                             return Err("wasm target file_exists(path) needs a string".to_string());
@@ -2399,6 +2405,15 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Mem(0x28, 2, 0));
                         return Ok(Ty::Str);
                     }
+
+                    if name == "exists" && args.len() == 1 {
+                        if self.type_of(&args[0])? != Ty::Str {
+                            return Err("wasm target exists(path) needs a string".to_string());
+                        }
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Call(FILE_EXISTS));
+                        return Ok(Ty::Bool);
+                    }
                     if name == "file_exists" && args.len() == 1 {
                         if self.type_of(&args[0])? != Ty::Str {
                             return Err("wasm target file_exists(path) needs a string".to_string());
@@ -3867,6 +3882,16 @@ mod tests {
             strings,
             vec!["3.5".to_string(), "4.5".to_string(), "2.5".to_string()]
         );
+    }
+
+    #[test]
+    fn exists_returns_a_bool() {
+        let (numbers, strings) = run_with_argv(
+            "print(exists(\".\"))\nprint(exists(\"..\"))\nif (exists(\".\")) { print(1) }",
+            &[],
+        );
+        assert_eq!(numbers, vec![1]);
+        assert_eq!(strings, vec!["true".to_string(), "true".to_string()]);
     }
 
     #[test]
