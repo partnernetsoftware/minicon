@@ -83,11 +83,23 @@ struct Shape {
     keys: Vec<String>,
 }
 
+#[derive(Clone, Copy)]
+struct FnSig {
+    params: usize,
+    returns: bool,
+    /// Index in the wasm function index space (imports first).
+    index: u32,
+}
+
 struct Checker {
     env: HashMap<String, Binding>,
     order: Vec<String>,
     globals_used: u32,
     shapes: RefCell<Vec<Shape>>,
+    fns: HashMap<String, FnSig>,
+    /// Overlay for the function body currently being checked.
+    local_scope: HashMap<String, Ty>,
+    fn_depth: usize,
 }
 
 impl Checker {
@@ -97,7 +109,51 @@ impl Checker {
             order: Vec::new(),
             globals_used: 0,
             shapes: RefCell::new(Vec::new()),
+            fns: HashMap::new(),
+            local_scope: HashMap::new(),
+            fn_depth: 0,
         }
+    }
+
+    fn declare_fn(&mut self, name: &str, params: usize, returns: bool) -> Result<(), String> {
+        if self.fns.contains_key(name) {
+            return Err(format!(
+                "wasm target does not support redeclaring function '{}'",
+                name
+            ));
+        }
+        if self.env.contains_key(name) {
+            return Err(format!(
+                "wasm target name '{}' is already a value binding",
+                name
+            ));
+        }
+        // imports (2) + start (1) + previously declared user functions.
+        let index = 3 + self.fns.len() as u32;
+        self.fns.insert(
+            name.to_string(),
+            FnSig {
+                params,
+                returns,
+                index,
+            },
+        );
+        Ok(())
+    }
+
+    fn fn_sig(&self, name: &str) -> Option<FnSig> {
+        self.fns.get(name).copied()
+    }
+
+    fn declare_let(&mut self, name: &str, ty: Ty) -> Result<(), String> {
+        if self.fn_depth > 0 {
+            if ty != Ty::Int {
+                return Err("wasm target functions support int locals only".to_string());
+            }
+            self.local_scope.insert(name.to_string(), ty);
+            return Ok(());
+        }
+        self.declare(name, ty)
     }
 
     fn shape_id(&self, keys: &[String]) -> u32 {
@@ -144,6 +200,22 @@ impl Checker {
     }
 
     fn lookup(&self, name: &str) -> Result<Ty, String> {
+        if self.fn_depth > 0 {
+            if let Some(ty) = self.local_scope.get(name) {
+                return Ok(*ty);
+            }
+            if let Some(binding) = self.env.get(name) {
+                if binding.ty != Ty::Int {
+                    return Err(format!(
+                        "wasm target functions can use int globals only, '{}' is {}",
+                        name,
+                        ty_name(binding.ty)
+                    ));
+                }
+                return Ok(Ty::Int);
+            }
+            return Err(format!("undefined variable '{}'", name));
+        }
         self.binding(name).map(|binding| binding.ty)
     }
 
@@ -245,6 +317,28 @@ impl Checker {
             }
             Expr::Call(callee, args, _) => {
                 if let Expr::Ident(name) = &**callee {
+                    if let Some(sig) = self.fn_sig(name) {
+                        if !sig.returns {
+                            return Err(format!(
+                                "wasm target function '{}' returns no value",
+                                name
+                            ));
+                        }
+                        if args.len() != sig.params {
+                            return Err(format!(
+                                "wasm target function '{}' takes {} arguments",
+                                name, sig.params
+                            ));
+                        }
+                        for arg in args {
+                            if self.infer(arg)? != Ty::Int {
+                                return Err(
+                                    "wasm target function arguments must be ints".to_string()
+                                );
+                            }
+                        }
+                        return Ok(Ty::Int);
+                    }
                     if name == "len" && args.len() == 1 {
                         return match self.infer(&args[0])? {
                             Ty::Arr | Ty::Str => Ok(Ty::Int),
@@ -264,6 +358,24 @@ impl Checker {
                 expr_kind(other)
             )),
         }
+    }
+
+    fn check_fn_body(&mut self, params: &[String], body: &[Stmt]) -> Result<(), String> {
+        let saved_scope = std::mem::take(&mut self.local_scope);
+        let saved_depth = self.fn_depth;
+        self.fn_depth += 1;
+        for param in params {
+            self.local_scope.insert(param.clone(), Ty::Int);
+        }
+        let outcome = (|| -> Result<(), String> {
+            for stmt in body {
+                self.check_stmt(stmt)?;
+            }
+            Ok(())
+        })();
+        self.local_scope = saved_scope;
+        self.fn_depth = saved_depth;
+        outcome
     }
 
     fn check_cond(&self, expr: &Expr) -> Result<(), String> {
@@ -300,7 +412,7 @@ impl Checker {
                     Some(expr) => self.infer(expr)?,
                     None => Ty::Int,
                 };
-                self.declare(name, ty)?;
+                self.declare_let(name, ty)?;
             }
             Stmt::Expr(Expr::Assign(target, value, _), _) => {
                 let Expr::Ident(name) = &**target else {
@@ -333,6 +445,28 @@ impl Checker {
                 let ty = self.infer(&args[0])?;
                 if ty == Ty::Arr {
                     return Err("wasm target cannot print arrays yet".to_string());
+                }
+            }
+            Stmt::Expr(Expr::Call(callee, args, _), _) => {
+                let Expr::Ident(name) = &**callee else {
+                    return Err("wasm target only supports calls to print()".to_string());
+                };
+                let Some(sig) = self.fn_sig(name) else {
+                    return Err(format!(
+                        "wasm target does not support calling '{}' yet",
+                        name
+                    ));
+                };
+                if args.len() != sig.params {
+                    return Err(format!(
+                        "wasm target function '{}' takes {} arguments",
+                        name, sig.params
+                    ));
+                }
+                for arg in args {
+                    if self.infer(arg)? != Ty::Int {
+                        return Err("wasm target function arguments must be ints".to_string());
+                    }
                 }
             }
             Stmt::Expr(Expr::Compound(target, _op, value, _), _) => {
@@ -410,6 +544,28 @@ impl Checker {
                 }
             }
             Stmt::Break(_) | Stmt::Continue(_) => {}
+            Stmt::Return(expr, _) => {
+                if self.fn_depth == 0 {
+                    return Err("wasm target has no function to return from".to_string());
+                }
+                if let Some(value) = expr {
+                    if self.infer(value)? != Ty::Int {
+                        return Err("wasm target returns ints only".to_string());
+                    }
+                }
+            }
+            Stmt::Fn(name, params, body, _) => {
+                if self.fn_depth > 0 {
+                    return Err("wasm target does not support nested functions".to_string());
+                }
+                let returns = body
+                    .iter()
+                    .any(|stmt| matches!(stmt, Stmt::Return(Some(_), _)));
+                if self.fn_sig(name).is_none() {
+                    self.declare_fn(name, params.len(), returns)?;
+                }
+                self.check_fn_body(params, body)?;
+            }
             other => {
                 return Err(format!(
                     "wasm target does not support this statement yet: {}",
@@ -449,6 +605,9 @@ struct Emitter<'a> {
     heap: u32,
     /// Structured-control stack: 0x02 block (loop exit), 0x03 loop, 0x04 if.
     labels: Vec<u8>,
+    /// Wasm local slots while emitting a user function body.
+    locals: HashMap<String, u32>,
+    fn_mode: bool,
 }
 
 impl<'a> Emitter<'a> {
@@ -478,6 +637,30 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Local(0x20, ALLOC_TMP));
         self.builder.push(Instr::Op(0x6a));
         self.builder.push(Instr::Global(0x24, self.heap));
+    }
+
+    fn local_of(&self, name: &str) -> Option<u32> {
+        if self.fn_mode {
+            self.locals.get(name).copied()
+        } else {
+            None
+        }
+    }
+
+    fn emit_load(&mut self, name: &str) -> Result<(), String> {
+        match self.local_of(name) {
+            Some(index) => self.builder.push(Instr::Local(0x20, index)),
+            None => self.push_global(name, false)?,
+        }
+        Ok(())
+    }
+
+    fn emit_store(&mut self, name: &str) -> Result<(), String> {
+        match self.local_of(name) {
+            Some(index) => self.builder.push(Instr::Local(0x21, index)),
+            None => self.store_ident(name)?,
+        }
+        Ok(())
     }
 
     fn break_depth(&self) -> Result<u32, String> {
@@ -564,7 +747,7 @@ impl<'a> Emitter<'a> {
                         );
                     };
                     self.emit_expr(value)?;
-                    self.store_ident(name)?;
+                    self.emit_store(name)?;
                 }
                 Expr::Compound(target, op, value, _) => {
                     let Expr::Ident(name) = &**target else {
@@ -572,7 +755,7 @@ impl<'a> Emitter<'a> {
                             "wasm target supports compound assignment to a global only".to_string()
                         );
                     };
-                    self.push_global(name, false)?;
+                    self.emit_load(name)?;
                     self.emit_expr(value)?;
                     self.builder.push(Instr::Op(match op {
                         BinOp::Add => 0x7c,
@@ -580,7 +763,7 @@ impl<'a> Emitter<'a> {
                         BinOp::Mul => 0x7e,
                         _ => return Err("wasm target supports only + - *".to_string()),
                     }));
-                    self.store_ident(name)?;
+                    self.emit_store(name)?;
                 }
                 other => {
                     self.emit_expr(other)?;
@@ -671,6 +854,10 @@ impl<'a> Emitter<'a> {
                 Ok(Ty::Int)
             }
             Expr::Ident(name) => {
+                if let Some(index) = self.local_of(name) {
+                    self.builder.push(Instr::Local(0x20, index));
+                    return Ok(Ty::Int);
+                }
                 let ty = self.checker.lookup(name)?;
                 match ty {
                     Ty::Str => {
@@ -773,6 +960,25 @@ impl<'a> Emitter<'a> {
             }
             Expr::Call(callee, args, _) => {
                 if let Expr::Ident(name) = &**callee {
+                    if let Some(sig) = self.checker.fn_sig(name) {
+                        if !sig.returns {
+                            return Err(format!(
+                                "wasm target function '{}' returns no value",
+                                name
+                            ));
+                        }
+                        if args.len() != sig.params {
+                            return Err(format!(
+                                "wasm target function '{}' takes {} arguments",
+                                name, sig.params
+                            ));
+                        }
+                        for arg in args {
+                            self.emit_expr(arg)?;
+                        }
+                        self.builder.push(Instr::Call(sig.index));
+                        return Ok(Ty::Int);
+                    }
                     if name == "len" && args.len() == 1 {
                         match self.checker.infer(&args[0])? {
                             Ty::Arr => {
@@ -821,6 +1027,15 @@ impl<'a> Emitter<'a> {
                         Ty::Int
                     }
                 };
+                if self.fn_mode {
+                    if ty != Ty::Int {
+                        return Err("wasm target functions support int locals only".to_string());
+                    }
+                    let index = self.builder.add_local(ValType::I64);
+                    self.builder.push(Instr::Local(0x21, index));
+                    self.locals.insert(name.clone(), index);
+                    return Ok(());
+                }
                 let base = self.checker.binding(name)?.base;
                 if ty == Ty::Str {
                     self.builder.push(Instr::Global(0x24, base + 1));
@@ -835,6 +1050,10 @@ impl<'a> Emitter<'a> {
                     return Err("wasm target supports assignment to a global name only".to_string());
                 };
                 let ty = self.emit_expr(value)?;
+                if self.local_of(name).is_some() {
+                    self.emit_store(name)?;
+                    return Ok(());
+                }
                 let base = self.checker.binding(name)?.base;
                 if ty == Ty::Str {
                     self.builder.push(Instr::Global(0x24, base + 1));
@@ -848,6 +1067,22 @@ impl<'a> Emitter<'a> {
                 let Expr::Ident(name) = &**callee else {
                     return Err("wasm target only supports calls to print()".to_string());
                 };
+                if let Some(sig) = self.checker.fn_sig(name) {
+                    if args.len() != sig.params {
+                        return Err(format!(
+                            "wasm target function '{}' takes {} arguments",
+                            name, sig.params
+                        ));
+                    }
+                    for arg in args {
+                        self.emit_expr(arg)?;
+                    }
+                    self.builder.push(Instr::Call(sig.index));
+                    if sig.returns {
+                        self.builder.push(Instr::Op(0x1a));
+                    }
+                    return Ok(());
+                }
                 if name != "print" || args.len() != 1 {
                     return Err("wasm target supports print(<value>) with one argument".to_string());
                 }
@@ -866,7 +1101,7 @@ impl<'a> Emitter<'a> {
                         "wasm target supports compound assignment to a global only".to_string()
                     );
                 };
-                self.push_global(name, false)?;
+                self.emit_load(name)?;
                 self.emit_expr(value)?;
                 self.builder.push(Instr::Op(match op {
                     BinOp::Add => 0x7c,
@@ -874,7 +1109,7 @@ impl<'a> Emitter<'a> {
                     BinOp::Mul => 0x7e,
                     _ => return Err("wasm target supports only + - *".to_string()),
                 }));
-                self.store_ident(name)?;
+                self.emit_store(name)?;
                 Ok(())
             }
             Stmt::Expr(expr, _) => {
@@ -929,6 +1164,14 @@ impl<'a> Emitter<'a> {
                 self.builder.push(Instr::Br(depth));
                 Ok(())
             }
+            Stmt::Return(expr, _) => {
+                if let Some(expr) = expr {
+                    self.emit_expr(expr)?;
+                }
+                self.builder.push(Instr::Op(0x0f));
+                Ok(())
+            }
+            Stmt::Fn(..) => Ok(()),
             Stmt::Continue(_) => {
                 let depth = self.continue_depth()?;
                 self.builder.push(Instr::Br(depth));
@@ -944,8 +1187,31 @@ impl<'a> Emitter<'a> {
 
 /// Compile bx source to a standard WebAssembly module (current subset only).
 pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
+    struct FnDecl {
+        params: Vec<String>,
+        body: Vec<Stmt>,
+        returns: bool,
+    }
+
     let stmts = crate::parser::parse(source)?;
     let mut checker = Checker::new();
+    let mut declarations: Vec<(String, FnDecl)> = Vec::new();
+    for stmt in &stmts {
+        if let Stmt::Fn(name, params, body, _) = stmt {
+            let returns = body
+                .iter()
+                .any(|stmt| matches!(stmt, Stmt::Return(Some(_), _)));
+            checker.declare_fn(name, params.len(), returns)?;
+            declarations.push((
+                name.clone(),
+                FnDecl {
+                    params: params.clone(),
+                    body: body.clone(),
+                    returns,
+                },
+            ));
+        }
+    }
     for stmt in &stmts {
         checker.check_stmt(stmt)?;
     }
@@ -954,6 +1220,16 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let print_i64_ty = builder.add_type(vec![ValType::I64], vec![ValType::I64]);
     let print_utf8_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![]);
     let start_ty = builder.add_type(vec![], vec![]);
+    let mut fn_types: Vec<u32> = Vec::new();
+    for (_, decl) in &declarations {
+        let params = vec![ValType::I64; decl.params.len()];
+        let results = if decl.returns {
+            vec![ValType::I64]
+        } else {
+            Vec::new()
+        };
+        fn_types.push(builder.add_type(params, results));
+    }
     builder.import_func("env", "print_i64", print_i64_ty);
     builder.import_func("env", "print_utf8", print_utf8_ty);
     builder.enable_memory(1);
@@ -969,10 +1245,10 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             Ty::Obj(_) => builder.add_global(ValType::I32, true, WVal::I32(0)),
         }
     }
-    // Module-internal bump heap; strings, arrays and records allocate from it.
     let heap = checker.globals_used;
     builder.add_global(ValType::I32, true, WVal::I32(8192));
-    builder.set_body_type(start_ty);
+
+    builder.begin_function(start_ty);
     for _ in 0..7 {
         builder.add_local(ValType::I32);
     }
@@ -982,14 +1258,38 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             builder: &mut builder,
             heap,
             labels: Vec::new(),
+            locals: HashMap::new(),
+            fn_mode: false,
         };
         for stmt in &stmts {
             emitter.emit_stmt(stmt)?;
         }
     }
+
+    for (index, (_, decl)) in declarations.iter().enumerate() {
+        builder.begin_function(fn_types[index]);
+        {
+            let mut emitter = Emitter {
+                checker: &checker,
+                builder: &mut builder,
+                heap,
+                labels: Vec::new(),
+                locals: HashMap::new(),
+                fn_mode: true,
+            };
+            for (slot, param) in decl.params.iter().enumerate() {
+                emitter.locals.insert(param.clone(), slot as u32);
+            }
+            for stmt in &decl.body {
+                emitter.emit_stmt(stmt)?;
+            }
+            if decl.returns {
+                emitter.builder.push(Instr::Const(0x42, WVal::I64(0)));
+            }
+        }
+    }
     builder.finish("_start")
 }
-
 /// Parse and validate a module without running it.
 pub fn validate(bytes: &[u8]) -> Result<(), String> {
     crate::wasm::validate(bytes).map(|_| ())

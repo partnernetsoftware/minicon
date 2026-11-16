@@ -230,14 +230,23 @@ fn encode_instr(out: &mut Vec<u8>, instr: &Instr) {
     }
 }
 
-/// Minimal module builder: types, imported functions, globals, one defined
-/// function and its export. Enough for the bx wasm target's current subset.
+#[derive(Clone, Debug)]
+pub struct FuncDef {
+    pub type_index: u32,
+    pub locals: Vec<ValType>,
+    pub body: Vec<Instr>,
+}
+
+/// Minimal module builder: types, imported functions, globals, a start function
+/// plus zero or more user functions, and the `_start` export.
 pub struct Builder {
     types: Vec<FuncType>,
     imports: Vec<Import>,
     globals: Vec<GlobalDef>,
     body: Vec<Instr>,
     body_type: Option<u32>,
+    params: usize,
+    functions: Vec<FuncDef>,
     locals: Vec<ValType>,
     memory_min_pages: u32,
     export_memory: bool,
@@ -253,6 +262,8 @@ impl Builder {
             globals: Vec::new(),
             body: Vec::new(),
             body_type: None,
+            params: 0,
+            functions: Vec::new(),
             locals: Vec::new(),
             memory_min_pages: 0,
             export_memory: false,
@@ -298,23 +309,48 @@ impl Builder {
         self.globals.push(GlobalDef { ty, mutable, init });
     }
 
-    pub fn set_body_type(&mut self, type_index: u32) {
-        self.body_type = Some(type_index);
+    fn flush_pending(&mut self) {
+        if let Some(type_index) = self.body_type.take() {
+            self.functions.push(FuncDef {
+                type_index,
+                locals: std::mem::take(&mut self.locals),
+                body: std::mem::take(&mut self.body),
+            });
+        }
     }
 
-    /// Append one typed local to the function body; returns its index (after
-    /// the parameters, which this builder keeps empty).
+    /// Begin a new defined function; returns its index in the function index
+    /// space (imports come first, so index = imports.len() + functions.len()).
+    pub fn begin_function(&mut self, type_index: u32) -> usize {
+        self.flush_pending();
+        let param_count = self
+            .types
+            .get(type_index as usize)
+            .map(|ty| ty.params.len())
+            .unwrap_or(0);
+        self.params = param_count;
+        self.body_type = Some(type_index);
+        self.locals.clear();
+        self.body.clear();
+        self.functions.len()
+    }
+
+    /// Append one typed local to the current function; returns its index after
+    /// the parameters.
     pub fn add_local(&mut self, ty: ValType) -> u32 {
         self.locals.push(ty);
-        (self.locals.len() - 1) as u32
+        (self.params + self.locals.len() - 1) as u32
     }
 
     pub fn push(&mut self, instr: Instr) {
         self.body.push(instr);
     }
 
-    pub fn finish(&self, export_name: &str) -> Result<Vec<u8>, String> {
-        let body_type = self.body_type.ok_or("no function body type set")?;
+    pub fn finish(&mut self, export_name: &str) -> Result<Vec<u8>, String> {
+        self.flush_pending();
+        if self.functions.is_empty() {
+            return Err("no start function was defined".to_string());
+        }
         let mut out = Vec::new();
         out.extend_from_slice(b"\0asm");
         out.extend_from_slice(&1u32.to_le_bytes());
@@ -347,8 +383,10 @@ impl Builder {
         push_section(&mut out, 2, &section);
 
         let mut section = Vec::new();
-        uleb(&mut section, 1);
-        uleb(&mut section, body_type as u64);
+        uleb(&mut section, self.functions.len() as u64);
+        for function in &self.functions {
+            uleb(&mut section, function.type_index as u64);
+        }
         push_section(&mut out, 3, &section);
 
         // memory section (id 5): one memory, min pages only
@@ -401,20 +439,22 @@ impl Builder {
         }
         push_section(&mut out, 7, &section);
 
-        let mut body = Vec::new();
-        uleb(&mut body, self.locals.len() as u64);
-        for local in &self.locals {
-            uleb(&mut body, 1);
-            body.push(local.code());
-        }
-        for instr in &self.body {
-            encode_instr(&mut body, instr);
-        }
-        body.push(0x0b);
         let mut section = Vec::new();
-        uleb(&mut section, 1);
-        uleb(&mut section, body.len() as u64);
-        section.extend_from_slice(&body);
+        uleb(&mut section, self.functions.len() as u64);
+        for function in &self.functions {
+            let mut body = Vec::new();
+            uleb(&mut body, function.locals.len() as u64);
+            for local in &function.locals {
+                uleb(&mut body, 1);
+                body.push(local.code());
+            }
+            for instr in &function.body {
+                encode_instr(&mut body, instr);
+            }
+            body.push(0x0b);
+            uleb(&mut section, body.len() as u64);
+            section.extend_from_slice(&body);
+        }
         push_section(&mut out, 10, &section);
 
         // data section (id 11): active segments into memory 0
@@ -1747,7 +1787,7 @@ mod tests {
         let start_ty = builder.add_type(vec![], vec![]);
         builder.import_func("env", "print_i64", print_ty);
         builder.add_global(ValType::I64, true, WVal::I64(0));
-        builder.set_body_type(start_ty);
+        builder.begin_function(start_ty);
         builder.push(Instr::Const(0x42, WVal::I64(20)));
         builder.push(Instr::Const(0x42, WVal::I64(22)));
         builder.push(Instr::Op(0x7c));
@@ -1768,7 +1808,7 @@ mod tests {
         builder.import_func("env", "print_utf8", print_ty);
         builder.enable_memory(1);
         let offset = builder.add_data("héllo".as_bytes());
-        builder.set_body_type(start_ty);
+        builder.begin_function(start_ty);
         builder.push(Instr::Const(0x41, WVal::I32(offset as i32)));
         builder.push(Instr::Const(0x41, WVal::I32("héllo".len() as i32)));
         builder.push(Instr::Call(0));
@@ -1792,7 +1832,7 @@ mod tests {
         let print_ty = builder.add_type(vec![ValType::I64], vec![ValType::I64]);
         let start_ty = builder.add_type(vec![], vec![]);
         builder.import_func("env", "print_i64", print_ty);
-        builder.set_body_type(start_ty);
+        builder.begin_function(start_ty);
         builder.push(Instr::Const(0x42, WVal::I64(7)));
         builder.push(Instr::Const(0x42, WVal::I64(2)));
         builder.push(Instr::Const(0x42, WVal::I64(3)));

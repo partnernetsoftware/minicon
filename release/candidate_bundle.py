@@ -170,22 +170,20 @@ def require_macos_identity(macos: dict | None, macos_mode: str, source: str, ver
 
 
 def require_g3(build: dict, g3: dict, g3_path: Path, source: str) -> None:
-    if g3.get("schema") != 1 or g3.get("kind") != "minicon-com-g3-courts":
-        raise ValueError("unsupported G3 receipt")
+    """The pack courts: v0.2.27 schema-3 receipts carry the rust-lane courts
+    (kind minicon-rust-lane-courts); older g3 cosmocc receipts are history."""
+    if g3.get("schema") != 1 or g3.get("kind") != "minicon-rust-lane-courts":
+        raise ValueError("unsupported pack-courts receipt")
     if g3.get("source_sha") != source or g3.get("job_status") != "success":
-        raise ValueError("G3 receipt identity/status mismatch")
-    expected = {
-        "reaper": "5 passed, 0 failed",
-        "lifecycle": "3 passed, 0 failed",
-        "cosmocc_swap": "PASS rc=2 rollback",
-    }
+        raise ValueError("pack-courts receipt identity/status mismatch")
+    expected = {"rust_lane": "9 passed, 0 failed"}
     if g3.get("courts") != expected:
-        raise ValueError("G3 court set/result mismatch")
-    bound = build.get("g3")
+        raise ValueError("pack-court set/result mismatch")
+    bound = build.get("courts")
     if not isinstance(bound, dict) or bound.get("sha256") != sha256(g3_path):
-        raise ValueError("build/G3 receipt digest mismatch")
-    if bound.get("courts") != expected:
-        raise ValueError("build/G3 court summary mismatch")
+        raise ValueError("build/pack-courts receipt digest mismatch")
+    if bound.get("summary") != expected:
+        raise ValueError("build/pack-court summary mismatch")
 
 
 def seal(args: argparse.Namespace) -> None:
@@ -467,11 +465,8 @@ def self_test() -> None:
         g3_path = root / "g3-receipt.json"
         output = root / "candidate-manifest.json"
         g3_path.write_text(json.dumps({
-            "schema": 1, "kind": "minicon-com-g3-courts", "source_sha": source,
-            "job_status": "success", "courts": {
-                "reaper": "5 passed, 0 failed", "lifecycle": "3 passed, 0 failed",
-                "cosmocc_swap": "PASS rc=2 rollback",
-            },
+            "schema": 1, "kind": "minicon-rust-lane-courts", "source_sha": source,
+            "job_status": "success", "courts": {"rust_lane": "9 passed, 0 failed"},
         }))
         unsigned_com_shas = {
             name: hashlib.sha256(f"unsigned-{name}".encode()).hexdigest()
@@ -485,10 +480,7 @@ def self_test() -> None:
                         "bytes": len(f"unsigned-{name}")}
                 for name in RUST_COM_CELLS
             },
-            "g3": {"sha256": sha256(g3_path), "courts": {
-                "reaper": "5 passed, 0 failed", "lifecycle": "3 passed, 0 failed",
-                "cosmocc_swap": "PASS rc=2 rollback",
-            }},
+            "courts": {"sha256": sha256(g3_path), "summary": {"rust_lane": "9 passed, 0 failed"}},
         }))
         signing_path.write_text(json.dumps({
             "kind": "minicon-trusted-signing", "source_sha": source,

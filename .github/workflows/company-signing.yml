@@ -169,7 +169,7 @@ jobs:
           Copy-Item upstream/com/rust/minicon-lnx-aarch64.com signed/minicon-lnx-aarch64.com
           Copy-Item upstream/com/build-receipt.json signed/build-receipt.json
           Copy-Item upstream/com/rust/manifest.json signed/rust-manifest.json
-          Copy-Item upstream/com/g3 signed/g3 -Recurse
+          Copy-Item upstream/com/courts signed/courts -Recurse
           Copy-Item upstream/aggregate/aggregate-receipt.json signed/unsigned-aggregate-receipt.json
           Copy-Item upstream/native/cells/* signed/cells -Recurse
           Copy-Item loader/ci-status.sh signed/

@@ -373,7 +373,7 @@ jobs:
             done
           fi
           cp upstream/source/build-receipt.json upstream/build-receipt.json
-          cp upstream/source/g3/receipt.json upstream/g3-receipt.json
+          cp upstream/source/courts/rust-lane-courts-receipt.json upstream/g3-receipt.json
           if [[ -f upstream/source/signing-receipt.json ]]; then
             cp upstream/source/signing-receipt.json upstream/signing-receipt.json
           fi
