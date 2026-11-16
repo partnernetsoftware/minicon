@@ -30,7 +30,38 @@ TARGET_ROOT="${MINICON_RUST_TARGET_DIR:-}"
 VERSION="${MINICON_RUST_VERSION:-}"
 SOURCE_SHA="${MINICON_RUST_SOURCE_SHA:-}"
 
-[[ -d "$CELLS" ]] || { echo "missing cells dir: $CELLS (run loader/pack.sh first)" >&2; exit 2; }
+# Cells come pre-staged from loader/pack.sh's convention (loader/dist/cells).
+# v0.2.27 removed pack.sh from the live path, so when the directory is absent
+# stage it straight from payload-build (rebuild-payloads.sh's output layout).
+if [[ ! -d "$CELLS" ]]; then
+    PB="${MINICON_PAYLOAD_BUILD:-$ROOT/loader/payload-build}"
+    if [[ -d "$PB" ]]; then
+        echo "[pack-rust-all] staging cells from $PB"
+        for cell in lnx-x86_64 lnx-aarch64 win-x86_64 win-aarch64 osx-x86_64 osx-aarch64; do
+            target=""
+            leaf="minicon"
+            case "$cell" in
+                lnx-x86_64) target="x86_64-unknown-linux-gnu" ;;
+                lnx-aarch64) target="aarch64-unknown-linux-gnu" ;;
+                win-x86_64) target="x86_64-pc-windows-msvc"; leaf="minicon.exe" ;;
+                win-aarch64) target="aarch64-pc-windows-msvc"; leaf="minicon.exe" ;;
+                osx-x86_64) target="x86_64-apple-darwin" ;;
+                osx-aarch64) target="aarch64-apple-darwin" ;;
+            esac
+            case "$cell" in
+                win-*) src="$PB/$cell/$target/windows-release/$leaf" ;;
+                osx-*) src="$PB/$cell/$target/release-fast/$leaf" ;;
+                *) src="$PB/$cell/$target/release/$leaf" ;;
+            esac
+            [[ -f "$src" ]] || { echo "missing payload for $cell: $src (run loader/rebuild-payloads.sh)" >&2; exit 2; }
+            mkdir -p "$CELLS/$cell"
+            cp "$src" "$CELLS/$cell/$leaf"
+        done
+    else
+        echo "missing cells dir: $CELLS and no payload-build at $PB (run loader/rebuild-payloads.sh)" >&2
+        exit 2
+    fi
+fi
 mkdir -p "$OUT"
 
 case "$(uname -s)" in
