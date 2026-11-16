@@ -37,6 +37,14 @@ $shape = & $packer inspect $com 2>&1 | Out-String
 Check "inspect names the launcher" ($shape -match 'launcher : PE') "inspect: $shape"
 Check "inspect lists the cell" ($shape -match 'cell\s+: win-x86_64') "inspect: $shape"
 Check "inspect shows metadata" ($shape -match 'metadata : \{') "inspect: $shape"
+# `--com-info` is answered by the launcher itself, without running a payload
+$infoOut = (& $com --com-info 2>&1 | Out-String).Trim()
+Check "launcher answers --com-info" ($infoOut -match '"product":"minicon-bx"' -and $infoOut -match '"version":"\d+\.\d+\.\d+"') "out=<$infoOut>"
+$argScript = Join-Path $env:TEMP "minicon-bx-args.bxs"
+Set-Content -Path $argScript -Value 'print(json(argv))' -Encoding ascii
+$passthrough = (& $com run $argScript --com-info 2>&1 | Out-String).Trim()
+Check "--com-info after the script reaches argv" ($passthrough -match '\["--com-info"\]') "out=<$passthrough>"
+Remove-Item $argScript -Force -ErrorAction SilentlyContinue
 
 # A killed launcher can leave an extract behind; the next run sweeps only old ones.
 $tempDir = [IO.Path]::GetTempPath()

@@ -57,6 +57,9 @@ cargo build --release --target x86_64-unknown-linux-musl   # 需 RUSTFLAGS=-C li
 | 被 kill 的 launcher 会留下解包文件 | 启动时清扫 24h 前的 `minicon-com-*`；按小时节流，避免每次扫 `%TEMP%` 反而更慢 |
 | 排障只能靠二进制内容 | 新增 `com-pack inspect`：launcher 格式/子系统、cell、metadata 一次看完 |
 
+## `--com-info`
+
+打包产物自描述：`minicon-bx.com --com-info` 由 launcher 直接输出容器里的 metadata（product / cell / version / source_sha），不解包、不执行 payload，exit 0。只有**第一个参数**会被拦截，脚本自己的 `--com-info` 仍会进 `argv`。
 ## 产物与覆盖矩阵
 
 | 产物 | 壳 | cell 字节 | 总字节 | 实跑 |

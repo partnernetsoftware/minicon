@@ -27,6 +27,31 @@ fn run() -> Result<i32, String> {
     let argv: Vec<std::ffi::OsString> = std::env::args_os().collect();
     let exe = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
     let table = minicon_com_rs::read_table(&exe)?;
+
+    // `--com-info` is answered by the launcher itself: it identifies the packed
+    // artifact without unpacking or running a payload. Only the first argument
+    // counts, so a script's own `--com-info` still reaches the payload.
+    if argv.get(1).map(|a| a == "--com-info").unwrap_or(false) {
+        match table.iter().find(|e| e.key == "__meta__") {
+            Some(meta) => {
+                let mut src = std::fs::File::open(&exe).map_err(|e| format!("open self: {e}"))?;
+                src.seek(SeekFrom::Start(meta.offset))
+                    .map_err(|e| format!("seek metadata: {e}"))?;
+                let mut raw = vec![0u8; meta.len as usize];
+                src.read_exact(&mut raw)
+                    .map_err(|e| format!("read metadata: {e}"))?;
+                let mut out = std::io::stdout();
+                out.write_all(&raw)
+                    .map_err(|e| format!("write metadata: {e}"))?;
+                out.write_all(b"\n")
+                    .map_err(|e| format!("write metadata: {e}"))?;
+                out.flush().map_err(|e| format!("write metadata: {e}"))?;
+            }
+            None => println!("{{\"product\":null}}"),
+        }
+        return Ok(0);
+    }
+
     let host = minicon_com_rs::host_key();
 
     let entry = table.iter().find(|e| e.key == host).ok_or_else(|| {
