@@ -123,7 +123,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 71 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 72 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -139,6 +139,11 @@ bx wasm target
   `&&`/`||`/`!` through if/else locals, ternary with int/float/bool branches
   (string branches still rejected) and `str(bool)`/`print(bool)` via host
   `env.bool_to_str`.
+- **Explicit IO/map failures**: `read_file(missing)` aborts with a `cannot read`
+  message (same shape as the VM's `read`), `write_file` returns `0`/`-1`
+  (sign-extended via `i64.extend_i32_s`, now decoded as 0xac), and maps reject
+  failures instead of degrading silently: `map is full (64 entries)`,
+  `map allocation failed`, `map is not initialized`.
 - **Indexing**: `arr[i]` supports negative indices (counted from the end) and
   float indices (truncated), matching the VM; `str[i]` returns the i-th Unicode
   character as a one-character string via host `env.str_char_at`; out-of-range

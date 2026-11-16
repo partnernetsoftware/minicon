@@ -101,6 +101,7 @@ Legend: `[v]` supported and covered by evidence, `[-]` missing but planned,
 | errors | `attempt`, throwing conversion errors surfaced | `[v]` | `[-]` | gap |
 | native | argv/arg, read_file/write_file, run/capture | `[v]` | `[v]` | suite + verifier |
 | native | now/sleep/cwd/env/mkdir/file_exists/exists | `[v]` | `[v]` | suite + verifier |
+| native | read_file/write_file failure reporting | `[v]` | `[v]` (explicit errors, 0/-1 status) | unit + suite + verifier |
 | host | web console/performance, WebGL clear/pixel/png | `[v]` | `[v]` | suite + node |
 | runtime | --max-steps / --timeout budgets | `[v]` | `[v]` | suite + unit |
 | tooling | `bx check --json` introspection, `--html` demo | `[v]` | `[v]` | suite |
