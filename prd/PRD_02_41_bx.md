@@ -142,6 +142,10 @@ flowchart LR
   push their arguments on the operand stack via `call_value1`/`call_value2`, so
   per-element `Vec`s are gone; 200k `map` callbacks went from ~46 ms to ~29 ms.
   Suite: 108 checks.
+- 2026-11-16 round 19: global names live in an FNV-1a `HashMap` instead of a
+  `BTreeMap`; top-level `let` is a global, so hot loops pay this lookup. `loop`
+  1e6 from ~1.14 s to ~0.85 s, 200k calls from ~205 ms to ~173 ms. Suite: 108
+  checks.
 - Open: execution on Linux x86_64/aarch64 and Windows ARM64 belongs to the
   six-runner matrix (`minicon-com.yml`, `bx_lane`), not the Windows host.
 

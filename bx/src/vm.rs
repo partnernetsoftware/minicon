@@ -15,9 +15,28 @@ enum FrameArgs {
     Stack(usize),
 }
 
+/// FNV-1a: global-name lookups are hot and the names are short, so SipHash is
+/// more work than the lookup itself.
+#[derive(Default)]
+pub struct FnvHasher(u64);
+
+impl std::hash::Hasher for FnvHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        for byte in bytes {
+            self.0 ^= *byte as u64;
+            self.0 = self.0.wrapping_mul(0x100_0000_01b3);
+        }
+    }
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
+pub type GlobalMap = std::collections::HashMap<String, Value, std::hash::BuildHasherDefault<FnvHasher>>;
+
 pub struct Vm {
     pub chunks: Vec<Chunk>,
-    pub globals: BTreeMap<String, Value>,
+    pub globals: GlobalMap,
     pub stack: Vec<Value>,
     pub script_name: String,
     depth: usize,
@@ -36,7 +55,7 @@ impl Vm {
         argv: Vec<Value>,
         script_dir: String,
     ) -> Vm {
-        let mut globals: BTreeMap<String, Value> = BTreeMap::new();
+        let mut globals = GlobalMap::default();
         for b in builtins::BUILTINS {
             globals.insert(b.name.to_string(), Value::Builtin(b.name));
         }
