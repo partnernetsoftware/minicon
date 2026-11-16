@@ -607,6 +607,13 @@ if (wasmFlt.code == 0 && wasmFltRun.code == 0 && wasmFltRun.out == wasmFltVm.out
   casesFail += 1
   failures.push("wasm floats match the VM\n    wasm=" + json(wasmFltRun.out) + " vm=" + json(wasmFltVm.out))
 }
+let wasmJson = exec([BX, "check", artDir + "/wasm-num.wasm", "--json"])
+if (wasmJson.code == 0 && wasmJson.out.contains("\"imports\"") && wasmJson.out.contains("_start") && wasmJson.out.contains("\"functions\"")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm check --json exposes imports/exports\n    out=" + json(wasmJson.out))
+}
 write(artDir + "/wasm-bad.bxs", 'let f = fn() { return 1 }\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1) {

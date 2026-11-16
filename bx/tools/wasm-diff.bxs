@@ -71,6 +71,21 @@ fn expr(vars) {
 fn gen() {
   let vars = []
   let lines = []
+  lines.push("fn helper0(a, b) {")
+  lines.push("  return a * 2 + b - 1")
+  lines.push("}")
+  lines.push("fn fact(n) {")
+  lines.push("  if (n < 2) { return 1 }")
+  lines.push("  return n * fact(n - 1)")
+  lines.push("}")
+  lines.push("print(helper0(" + str(1 + pick(9)) + ", " + str(1 + pick(9)) + "))")
+  lines.push("print(fact(" + str(1 + pick(5)) + "))")
+  if (pick(2) == 0) {
+    lines.push("print(helper0(2, 3) + 0.5)")
+  }
+  if (pick(3) == 0) {
+    lines.push("print(\"differential-ok\")")
+  }
   let vars_count = 2 + pick(3)
   for (let i = 0; i < vars_count; i += 1) {
     let name = "v" + str(i)

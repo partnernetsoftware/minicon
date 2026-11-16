@@ -101,7 +101,8 @@ bx wasm target
   precedence and rejection of unsupported constructs; the whole crate suite is
   part of `bx/scripts/test.sh`.
 - **Differential testing**: `bx/tools/wasm-diff.bxs` generates seeded random programs
-  from the shared numeric subset (now including float literals and `/`) and runs each one through both the bx VM and the wasm
+  from the shared numeric subset (including float literals, `/`, user functions and
+  recursion) and runs each one through both the bx VM and the wasm
   backend; stdout and exit codes must match byte-for-byte. The suite runs 15 cases
   and the verifier 8; a 100-case local run passes. This is what caught the VM/floats
   divergence: bx's `/` is float division, so the wasm target now rejects `/` with a
@@ -110,7 +111,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 41 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 42 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -119,6 +120,8 @@ bx wasm target
   off-by-one in the interpreter's `rem`/`le`/`ge` mappings.
 - CLI round-trip (`build --wasm` → `run` → `check`) is covered by the self-hosted
   suite and therefore by the packed six-cell CI lane.
+- `bx check <module> --json` reports the decoded import/export names and defined
+  function count, so agents can introspect a module without a JS toolchain.
 
 ## Non-goals
 

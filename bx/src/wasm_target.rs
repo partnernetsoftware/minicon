@@ -1634,7 +1634,33 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     }
     builder.finish("_start")
 }
-/// Parse and validate a module without running it.
+/// Summary of a decoded wasm module, for `bx check --json`.
+pub struct WasmInfo {
+    pub imports: Vec<String>,
+    pub exports: Vec<String>,
+    pub defined_functions: usize,
+}
+
+/// Decode a module and summarise its imports/exports for tooling.
+pub fn inspect(bytes: &[u8]) -> Result<WasmInfo, String> {
+    let module = crate::wasm::validate(bytes)?;
+    Ok(WasmInfo {
+        imports: module
+            .imports
+            .iter()
+            .map(|import| format!("{}.{}", import.module, import.name))
+            .collect(),
+        exports: module
+            .exports
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect(),
+        defined_functions: module.funcs.len(),
+    })
+}
+
+/// Parse and validate a module without running it (used by the module tests).
+#[cfg(test)]
 pub fn validate(bytes: &[u8]) -> Result<(), String> {
     crate::wasm::validate(bytes).map(|_| ())
 }
@@ -1852,6 +1878,19 @@ mod tests {
     fn records_are_fixed_layout_objects() {
         let prints = run_source("let o = {a: 10, b: 20}\nprint(o.a + o.b)");
         assert_eq!(prints, vec![30]);
+    }
+
+    #[test]
+    fn modules_are_deterministic_and_inspectable() {
+        let source = "let x = 7\nfn double(n) { return n * 2 }\nprint(double(x))";
+        let first = compile_to_wasm(source).expect("compile");
+        let second = compile_to_wasm(source).expect("compile again");
+        assert_eq!(first, second, "compilation must be deterministic");
+        let info = inspect(&first).expect("inspect");
+        assert!(info.imports.contains(&"env.print_i64".to_string()));
+        assert!(info.imports.contains(&"bx.argc".to_string()));
+        assert_eq!(info.exports, vec!["_start".to_string()]);
+        assert_eq!(info.defined_functions, 2);
     }
 
     #[test]

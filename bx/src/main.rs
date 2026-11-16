@@ -488,16 +488,36 @@ fn cmd_check(args: Vec<String>) -> i32 {
     if rest[0].to_ascii_lowercase().ends_with(".wasm") {
         let outcome = fs::read(&rest[0])
             .map_err(|e| format!("cannot read '{}': {}", rest[0], e))
-            .and_then(|bytes| wasm_target::validate(&bytes));
+            .and_then(|bytes| wasm_target::inspect(&bytes));
         return match outcome {
-            Ok(()) => {
+            Ok(info) => {
                 if json_mode {
+                    let imports = info
+                        .imports
+                        .iter()
+                        .map(|name| json_quote(name))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    let exports = info
+                        .exports
+                        .iter()
+                        .map(|name| json_quote(name))
+                        .collect::<Vec<_>>()
+                        .join(",");
                     println!(
-                        "{{\"ok\":true,\"file\":{},\"target\":\"wasm\"}}",
-                        json_quote(&rest[0])
+                        "{{\"ok\":true,\"file\":{},\"target\":\"wasm\",\"imports\":[{}],\"exports\":[{}],\"functions\":{}}}",
+                        json_quote(&rest[0]),
+                        imports,
+                        exports,
+                        info.defined_functions
                     );
                 } else {
-                    println!("ok {} (wasm module)", rest[0]);
+                    println!(
+                        "ok {} (wasm module, {} imports, {} exports)",
+                        rest[0],
+                        info.imports.len(),
+                        info.exports.len()
+                    );
                 }
                 0
             }
