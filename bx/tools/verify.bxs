@@ -135,6 +135,13 @@ test("wasm arrays use the prototype allocator", fn() {
   assert(ran.code == 0 && ran.out.trim() == "40\n3", "got " + ran.out + " " + ran.err)
 })
 write(dir + "/wasm-strap.bxs", 'let s = "hello "\nlet t = s + "wasm"\nprint(t)\nprint(len(t))\n')
+write(dir + "/wasm-rec.bxs", 'let o = {a: 10, b: 20}\nprint(o.a + o.b)\n')
+test("wasm records use the in-module heap", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-rec.bxs", "-o", dir + "/wasm-rec.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-rec.wasm"])
+  assert(ran.code == 0 && ran.out.trim() == "30", "got " + ran.out + " " + ran.err)
+})
 test("wasm runtime strings concatenate", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-strap.bxs", "-o", dir + "/wasm-strap.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

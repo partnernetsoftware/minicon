@@ -527,6 +527,15 @@ if (wasmStrap.code == 0 && wasmStrapRun.code == 0 && wasmStrapRun.out.trim() == 
   casesFail += 1
   failures.push("wasm runtime string concat\n    build=" + wasmStrap.code + " out=" + json(wasmStrapRun.out) + " err=" + json(wasmStrapRun.err))
 }
+write(artDir + "/wasm-rec.bxs", 'let o = {a: 10, b: 20}\nprint(o.a + o.b)\nlet a = [1, 2, 3]\nprint(a[1])\nlet s = "x"\nprint(s + "y")\n')
+let wasmRec = exec([BX, "build", "--wasm", artDir + "/wasm-rec.bxs", "-o", artDir + "/wasm-rec.wasm"])
+let wasmRecRun = exec([BX, "run", artDir + "/wasm-rec.wasm"])
+if (wasmRec.code == 0 && wasmRecRun.code == 0 && wasmRecRun.out.trim() == "30\n2\nxy") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm records + in-module heap\n    build=" + wasmRec.code + " out=" + json(wasmRecRun.out) + " err=" + json(wasmRecRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'fn unsupported() { return 1 }\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1) {

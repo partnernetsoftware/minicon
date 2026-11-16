@@ -9,6 +9,7 @@
 
 use crate::ast::{BinOp, Expr, Stmt};
 use crate::wasm::{Builder, Instr, ValType, WVal};
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 /// Static type of a value in the wasm subset.
@@ -17,6 +18,8 @@ enum Ty {
     Int,
     Str,
     Arr,
+    /// Fixed-layout record; the payload indexes `Checker::shapes`.
+    Obj(u32),
 }
 
 fn ty_name(ty: Ty) -> &'static str {
@@ -24,6 +27,7 @@ fn ty_name(ty: Ty) -> &'static str {
         Ty::Int => "int",
         Ty::Str => "string",
         Ty::Arr => "array",
+        Ty::Obj(_) => "object",
     }
 }
 
@@ -74,10 +78,16 @@ struct Binding {
     base: u32,
 }
 
+#[derive(Clone, Debug)]
+struct Shape {
+    keys: Vec<String>,
+}
+
 struct Checker {
     env: HashMap<String, Binding>,
     order: Vec<String>,
     globals_used: u32,
+    shapes: RefCell<Vec<Shape>>,
 }
 
 impl Checker {
@@ -86,7 +96,31 @@ impl Checker {
             env: HashMap::new(),
             order: Vec::new(),
             globals_used: 0,
+            shapes: RefCell::new(Vec::new()),
         }
+    }
+
+    fn shape_id(&self, keys: &[String]) -> u32 {
+        let mut shapes = self.shapes.borrow_mut();
+        if let Some(index) = shapes.iter().position(|shape| shape.keys == keys) {
+            return index as u32;
+        }
+        shapes.push(Shape {
+            keys: keys.to_vec(),
+        });
+        (shapes.len() - 1) as u32
+    }
+
+    fn field_index(&self, shape: u32, key: &str) -> Result<usize, String> {
+        let shapes = self.shapes.borrow();
+        let shape = shapes
+            .get(shape as usize)
+            .ok_or_else(|| "unknown object shape".to_string())?;
+        shape
+            .keys
+            .iter()
+            .position(|known| known == key)
+            .ok_or_else(|| format!("object has no field '{}'", key))
     }
 
     fn declare(&mut self, name: &str, ty: Ty) -> Result<(), String> {
@@ -153,6 +187,39 @@ impl Checker {
                 Ok(Ty::Int)
             }
             Expr::Bin(..) => Err("wasm target supports only + - *".to_string()),
+            Expr::Object(fields) => {
+                if fields.is_empty() {
+                    return Err("wasm target does not support empty objects yet".to_string());
+                }
+                let mut keys: Vec<String> = Vec::new();
+                for (key, value) in fields {
+                    if keys.iter().any(|seen| seen == key) {
+                        return Err(format!("duplicate object key '{}'", key));
+                    }
+                    let ty = self.infer(value)?;
+                    if ty != Ty::Int {
+                        return Err(format!(
+                            "wasm target supports int object fields only, got {}",
+                            ty_name(ty)
+                        ));
+                    }
+                    keys.push(key.clone());
+                }
+                Ok(Ty::Obj(self.shape_id(&keys)))
+            }
+            Expr::Member(object, key, _) => {
+                let ty = self.infer(object)?;
+                match ty {
+                    Ty::Obj(shape) => {
+                        self.field_index(shape, key)?;
+                        Ok(Ty::Int)
+                    }
+                    other => Err(format!(
+                        "wasm target can read fields of objects only, got {}",
+                        ty_name(other)
+                    )),
+                }
+            }
             Expr::Array(items) => {
                 for item in items {
                     let ty = self.infer(item)?;
@@ -274,10 +341,13 @@ const LEN_A: u32 = 2;
 const PTR_B: u32 = 3;
 const LEN_B: u32 = 4;
 const DST: u32 = 5;
+const ALLOC_TMP: u32 = 6;
 
 struct Emitter<'a> {
     checker: &'a Checker,
     builder: &'a mut Builder,
+    /// Index of the bump-allocator global (module-internal heap).
+    heap: u32,
 }
 
 impl<'a> Emitter<'a> {
@@ -286,6 +356,27 @@ impl<'a> Emitter<'a> {
         self.builder
             .push(Instr::Global(if set { 0x24 } else { 0x23 }, index));
         Ok(())
+    }
+
+    /// Bump-allocate `size` constant bytes: leaves the old heap pointer on the
+    /// stack. The heap lives in a mutable module global, so no host import.
+    fn emit_alloc_const(&mut self, size: u32) {
+        self.builder.push(Instr::Global(0x23, self.heap));
+        self.builder.push(Instr::Global(0x23, self.heap));
+        self.builder
+            .push(Instr::Const(0x41, WVal::I32(size as i32)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Global(0x24, self.heap));
+    }
+
+    /// Bump-allocate `size` bytes where the size is already the top stack value.
+    fn emit_alloc_dynamic(&mut self) {
+        self.builder.push(Instr::Local(0x21, ALLOC_TMP));
+        self.builder.push(Instr::Global(0x23, self.heap));
+        self.builder.push(Instr::Global(0x23, self.heap));
+        self.builder.push(Instr::Local(0x20, ALLOC_TMP));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Global(0x24, self.heap));
     }
 
     /// Push an integer string address/length pair for a string expression.
@@ -315,7 +406,7 @@ impl<'a> Emitter<'a> {
                 self.builder.push(Instr::Local(0x20, LEN_A));
                 self.builder.push(Instr::Local(0x20, LEN_B));
                 self.builder.push(Instr::Op(0x6a));
-                self.builder.push(Instr::Call(2));
+                self.emit_alloc_dynamic();
                 self.builder.push(Instr::Local(0x21, DST));
                 self.builder.push(Instr::Local(0x20, DST));
                 self.builder.push(Instr::Local(0x20, PTR_A));
@@ -358,7 +449,7 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Global(0x23, base));
                         self.builder.push(Instr::Global(0x23, base + 1));
                     }
-                    Ty::Int | Ty::Arr => self.push_global(name, false)?,
+                    Ty::Int | Ty::Arr | Ty::Obj(_) => self.push_global(name, false)?,
                 }
                 Ok(ty)
             }
@@ -390,12 +481,39 @@ impl<'a> Emitter<'a> {
                 self.builder.push(Instr::Op(opcode));
                 Ok(Ty::Int)
             }
+            Expr::Object(fields) => {
+                let ty = self.checker.infer(expr)?;
+                let Ty::Obj(shape) = ty else {
+                    return Err("wasm target object type mismatch".to_string());
+                };
+                let size = 8 * fields.len() as u32;
+                self.emit_alloc_const(size);
+                self.builder.push(Instr::Local(0x21, ARR_TMP));
+                for (index, (_, value)) in fields.iter().enumerate() {
+                    self.builder.push(Instr::Local(0x20, ARR_TMP));
+                    self.emit_expr(value)?;
+                    self.builder.push(Instr::Mem(0x37, 3, (8 * index) as u32));
+                }
+                self.builder.push(Instr::Local(0x20, ARR_TMP));
+                Ok(Ty::Obj(shape))
+            }
+            Expr::Member(object, key, _) => {
+                let ty = self.checker.infer(object)?;
+                let Ty::Obj(shape) = ty else {
+                    return Err(format!(
+                        "wasm target can read fields of objects only, got {}",
+                        ty_name(ty)
+                    ));
+                };
+                let index = self.checker.field_index(shape, key)?;
+                self.emit_expr(object)?;
+                self.builder.push(Instr::Mem(0x29, 3, (8 * index) as u32));
+                Ok(Ty::Int)
+            }
             Expr::Array(items) => {
                 let count = items.len() as u32;
                 let size = 4 + 8 * count;
-                self.builder
-                    .push(Instr::Const(0x41, WVal::I32(size as i32)));
-                self.builder.push(Instr::Call(2));
+                self.emit_alloc_const(size);
                 self.builder.push(Instr::Local(0x21, ARR_TMP));
                 self.builder.push(Instr::Local(0x20, ARR_TMP));
                 self.builder
@@ -521,7 +639,7 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Op(0x1a));
                         self.builder.push(Instr::Op(0x1a));
                     }
-                    Ty::Int | Ty::Arr => self.builder.push(Instr::Op(0x1a)),
+                    Ty::Int | Ty::Arr | Ty::Obj(_) => self.builder.push(Instr::Op(0x1a)),
                 }
                 Ok(())
             }
@@ -544,11 +662,9 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let mut builder = Builder::new();
     let print_i64_ty = builder.add_type(vec![ValType::I64], vec![ValType::I64]);
     let print_utf8_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![]);
-    let alloc_ty = builder.add_type(vec![ValType::I32], vec![ValType::I32]);
     let start_ty = builder.add_type(vec![], vec![]);
     builder.import_func("env", "print_i64", print_i64_ty);
     builder.import_func("env", "print_utf8", print_utf8_ty);
-    builder.import_func("env", "alloc", alloc_ty);
     builder.enable_memory(1);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -559,16 +675,21 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                 builder.add_global(ValType::I32, true, WVal::I32(0));
                 builder.add_global(ValType::I32, true, WVal::I32(0));
             }
+            Ty::Obj(_) => builder.add_global(ValType::I32, true, WVal::I32(0)),
         }
     }
+    // Module-internal bump heap; strings, arrays and records allocate from it.
+    let heap = checker.globals_used;
+    builder.add_global(ValType::I32, true, WVal::I32(8192));
     builder.set_body_type(start_ty);
-    for _ in 0..6 {
+    for _ in 0..7 {
         builder.add_local(ValType::I32);
     }
     {
         let mut emitter = Emitter {
             checker: &checker,
             builder: &mut builder,
+            heap,
         };
         for stmt in &stmts {
             emitter.emit_stmt(stmt)?;
@@ -644,6 +765,12 @@ mod tests {
     fn runtime_strings_concatenate() {
         let prints = run_strings("let s = \"ab\"\nlet t = s + \"cd\"\nprint(t + s)\nprint(len(t))");
         assert_eq!(prints, vec!["abcdab".to_string()]);
+    }
+
+    #[test]
+    fn records_are_fixed_layout_objects() {
+        let prints = run_source("let o = {a: 10, b: 20}\nprint(o.a + o.b)");
+        assert_eq!(prints, vec![30]);
     }
 
     #[test]
