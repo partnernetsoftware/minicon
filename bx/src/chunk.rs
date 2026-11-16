@@ -145,6 +145,8 @@ pub struct Chunk {
     pub code: Vec<u8>,
     pub lines: Vec<u32>,
     pub consts: Vec<Value>,
+    /// Source file this chunk came from, for runtime error attribution.
+    pub file: String,
 }
 
 impl Chunk {
@@ -156,6 +158,7 @@ impl Chunk {
             code: Vec::new(),
             lines: Vec::new(),
             consts: Vec::new(),
+            file: String::new(),
         }
     }
 }
@@ -164,7 +167,9 @@ impl Chunk {
 // binary container
 // ---------------------------------------------------------------------------
 
-const MAGIC: &[u8; 4] = b"BXB\x01";
+/// v2 adds the per-chunk source file; v1 files still decode (file unknown).
+const MAGIC: &[u8; 4] = b"BXB\x02";
+const MAGIC_V1: &[u8; 4] = b"BXB\x01";
 
 fn put_u32(out: &mut Vec<u8>, v: u32) {
     out.extend_from_slice(&v.to_le_bytes());
@@ -187,6 +192,7 @@ pub fn encode(chunks: &[Chunk], want_result: bool) -> Vec<u8> {
     put_u32(&mut out, chunks.len() as u32);
     for c in chunks {
         put_str(&mut out, &c.name);
+        put_str(&mut out, &c.file);
         put_u16(&mut out, c.arity);
         put_u16(&mut out, c.max_slots);
         put_u32(&mut out, c.code.len() as u32);
@@ -304,9 +310,10 @@ impl<'a> Reader<'a> {
 }
 
 pub fn decode(data: &[u8]) -> Result<(Vec<Chunk>, bool), String> {
-    if data.len() < 9 || &data[0..4] != MAGIC {
+    if data.len() < 9 || (&data[0..4] != MAGIC && &data[0..4] != MAGIC_V1) {
         return Err("not a bx bytecode file (bad magic)".to_string());
     }
+    let format = data[3];
     let mut r = Reader { buf: data, pos: 4 };
     let want_result = r.u8()? != 0;
     let nchunks = r.u32()? as usize;
@@ -316,6 +323,11 @@ pub fn decode(data: &[u8]) -> Result<(Vec<Chunk>, bool), String> {
     let mut chunks = Vec::with_capacity(nchunks);
     for _ in 0..nchunks {
         let name = r.string()?;
+        let file = if format >= 2 {
+            r.string()?
+        } else {
+            String::new()
+        };
         let arity = r.u16()?;
         let max_slots = r.u16()?;
         let clen = r.u32()? as usize;
@@ -366,6 +378,7 @@ pub fn decode(data: &[u8]) -> Result<(Vec<Chunk>, bool), String> {
             code,
             lines,
             consts,
+            file,
         });
     }
     Ok((chunks, want_result))
@@ -390,9 +403,14 @@ fn decode_const(r: &mut Reader) -> Result<Value, String> {
 pub fn disasm(chunks: &[Chunk]) -> String {
     let mut out = String::new();
     for (ci, c) in chunks.iter().enumerate() {
+        let origin = if c.file.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}]", c.file)
+        };
         out.push_str(&format!(
-            "\n== chunk {} '{}' arity={} slots={} ==\n",
-            ci, c.name, c.arity, c.max_slots
+            "\n== chunk {} '{}' arity={} slots={}{} ==\n",
+            ci, c.name, c.arity, c.max_slots, origin
         ));
         for (i, v) in c.consts.iter().enumerate() {
             out.push_str(&format!("  const[{}] = {}\n", i, v.to_json()));
@@ -483,6 +501,7 @@ pub fn compile(
             cells: HashSet::new(),
             file,
         };
+        c.cur.file = c.file.clone();
         c.compile_stmts(&stmts, keep_last)?;
         c.emit(op::HALT, 0, 0);
         let (fin, _captures) = c.finish();
@@ -997,6 +1016,7 @@ impl<'a> Compiler<'a> {
             cells: captured_names(body, params),
             file: self.file.clone(),
         };
+        sub.cur.file = sub.file.clone();
         for p in params {
             let slot = sub.declare_local(p);
             if sub.is_cell(p) {

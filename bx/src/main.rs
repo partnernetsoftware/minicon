@@ -539,6 +539,8 @@ fn hash_bytes(h: &mut u64, bytes: &[u8]) {
 fn cache_key(path: &Path, src: &str) -> String {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     hash_bytes(&mut h, VERSION.as_bytes());
+    // Bytecode layout changes must not be served from an older cache entry.
+    hash_bytes(&mut h, b"\0bxb2\0");
     hash_bytes(&mut h, b"\0source\0");
     hash_bytes(&mut h, src.as_bytes());
     let base = path

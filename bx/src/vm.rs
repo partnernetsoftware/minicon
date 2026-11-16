@@ -96,6 +96,7 @@ impl Vm {
             return Err(format!("call depth exceeded ({} frames)", MAX_DEPTH));
         }
         let chunk_name = self.chunks[ci].name.clone();
+        let chunk_file = self.chunks[ci].file.clone();
         let arity = self.chunks[ci].arity as usize;
         let nslots = (self.chunks[ci].max_slots as usize).max(arity).max(1);
         let mut slots = vec![Value::Null; nslots];
@@ -157,11 +158,18 @@ impl Vm {
                     } else {
                         format!(" in {}()", chunk_name)
                     };
+                    // Source file of the chunk, when it is not the main script.
+                    let origin = if !chunk_file.is_empty() && chunk_file != self.script_name {
+                        format!(" [{}]", chunk_file)
+                    } else {
+                        String::new()
+                    };
                     break Err(format!(
-                        "{}({}){}: {}",
+                        "{}({}){}{}: {}",
                         self.script_name,
                         line,
                         context,
+                        origin,
                         format!($($t)*)
                     ))
                 }};

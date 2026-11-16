@@ -307,6 +307,24 @@ if (missingInc.code == 1 && missingInc.err.contains("inc-missing.bxs")) {
   casesFail += 1
   failures.push("missing include names the referencing file\n    stderr=" + json(missingInc.err.trim()))
 }
+// runtime errors name the include file that defined the failing function
+write(artDir + "/rt-lib.bxs", 'fn boom() {\n  return missing_var\n}\n')
+write(artDir + "/rt-main.bxs", 'use "rt-lib.bxs"\nboom()\n')
+let rtErr = exec([BX, "run", artDir + "/rt-main.bxs"])
+if (rtErr.code == 1 && rtErr.err.contains("in boom()") && rtErr.err.contains("rt-lib.bxs")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("runtime errors name the include file\n    stderr=" + json(rtErr.err.trim()))
+}
+let rtBuild = exec([BX, "build", artDir + "/rt-main.bxs", "-o", artDir + "/rt-main.bxb"])
+let rtBxb = exec([BX, "run", artDir + "/rt-main.bxb"])
+if (rtBuild.code == 0 && rtBxb.code == 1 && rtBxb.err.contains("rt-lib.bxs") && rtBxb.err.contains("boom")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("bytecode keeps the defining file\n    build=" + rtBuild.code + " run=" + rtBxb.code + " stderr=" + json(rtBxb.err.trim()))
+}
 
 // closures capture the enclosing function's visible locals by value
 check("closure factory", "15", ["eval", "fn adder(n) { return fn(x) { return x + n } } let f = adder(10); f(5)"])

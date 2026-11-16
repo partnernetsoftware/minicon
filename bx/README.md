@@ -95,7 +95,7 @@ JS 风格，语句以换行或 `;` 结束。
 ### 错误处理
 
 bx 没有 `try/catch` 语法——运行时错误就是一次栈展开。要兜底时用 `attempt`，失败变成值而不是进程退出：
-运行时错误的位置带上**出错函数名**：`<script>(3) in inner(): undefined variable 'x'`，闭包是 `in <lambda>()`；顶层错误不带函数段。上下文只拼一次，不会出现重复的 `location: location:` 前缀。
+运行时错误的位置带上**出错函数名**与**定义文件**：`<script>(3) in inner() [lib.bxs]: undefined variable 'x'`，闭包是 `in <lambda>()`；顶层错误不带函数段。上下文只拼一次，不会出现重复的 `location: location:` 前缀。
 
 ```js
 let r = attempt(fn() { return 1 / 0 })
