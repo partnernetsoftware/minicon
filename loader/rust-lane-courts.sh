@@ -18,7 +18,9 @@ COM="${MINICON_RUST_COURT_COM:-}"
 if [[ -z "$COM" ]]; then
     for candidate in \
         "$HERE/dist/rust/minicon-bx-win-x86_64.com" \
-        "$HERE/dist/rust/minicon-bx-lnx-x86_64.com"; do
+        "$HERE/dist/rust/minicon-bx-lnx-x86_64.com" \
+        "$HERE/dist/rust/minicon-bx-osx-x86_64.com" \
+        "$HERE/dist/rust/minicon-bx-osx-aarch64.com"; do
         if [[ -f "$candidate" ]]; then COM="$candidate"; break; fi
     done
 fi
@@ -83,11 +85,15 @@ if [[ -e "$fresh" ]]; then ok reaper-keeps-unrelated; else bad "reaper removed a
 rm -f "$fresh"
 
 # --- exit parity through the launcher (bx's eval makes a portable probe).
+# Pick this host's own cell: any host that packed artifacts can run its own.
 if [[ "$WIN" == 1 ]]; then
-    probe_com="$HERE/dist/rust/minicon-bx-win-x86_64.com"
+    cell="win-x86_64"
+elif [[ "$(uname -s)" == Darwin* ]]; then
+    cell="osx-$(uname -m | sed 's/arm64/aarch64/; s/x86_64/x86_64/')"
 else
-    probe_com="$HERE/dist/rust/minicon-bx-lnx-x86_64.com"
+    cell="lnx-x86_64"
 fi
+probe_com="$HERE/dist/rust/minicon-bx-$cell.com"
 if [[ -n "$probe_com" && -f "$probe_com" ]]; then
     for expected in 0 1 3 42; do
         set +e
