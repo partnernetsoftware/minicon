@@ -581,7 +581,7 @@ if (wasmProc.code == 0 && wasmProcRun.code == 0 && wasmProcRun.out.contains("0")
   casesFail += 1
   failures.push("wasm native process ABI\n    build=" + wasmProc.code + " out=" + json(wasmProcRun.out) + " err=" + json(wasmProcRun.err))
 }
-write(artDir + "/wasm-cmp.bxs", 'print(7 % 2)\nprint(7 / 2)\nlet x = 5\nif (x <= 5) { print(10) }\nif (x >= 5) { print(20) }\nif (x < 5) { print(30) }\n')
+write(artDir + "/wasm-cmp.bxs", 'print(7 % 2)\nprint(43 % 10)\nlet x = 5\nif (x <= 5) { print(10) }\nif (x >= 5) { print(20) }\nif (x < 5) { print(30) }\n')
 let wasmCmp = exec([BX, "build", "--wasm", artDir + "/wasm-cmp.bxs", "-o", artDir + "/wasm-cmp.wasm"])
 let wasmCmpRun = exec([BX, "run", artDir + "/wasm-cmp.wasm"])
 if (wasmCmp.code == 0 && wasmCmpRun.code == 0 && wasmCmpRun.out.trim() == "1\n3\n10\n20") {
@@ -589,6 +589,13 @@ if (wasmCmp.code == 0 && wasmCmpRun.code == 0 && wasmCmpRun.out.trim() == "1\n3\
 } else {
   casesFail += 1
   failures.push("wasm comparisons and modulo\n    build=" + wasmCmp.code + " out=" + json(wasmCmpRun.out) + " err=" + json(wasmCmpRun.err))
+}
+let wasmDiff = exec([BX, "run", __dir__ + "/../tools/wasm-diff.bxs", BX, "15"])
+if (wasmDiff.code == 0 && wasmDiff.out.contains("PASS 15 differential cases")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm-vs-VM differential cases\n    out=" + json(wasmDiff.out) + " err=" + json(wasmDiff.err))
 }
 write(artDir + "/wasm-bad.bxs", 'let f = fn() { return 1 }\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])

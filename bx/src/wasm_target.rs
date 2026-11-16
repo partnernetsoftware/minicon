@@ -243,7 +243,13 @@ impl Checker {
                     )),
                 }
             }
-            Expr::Bin(op @ (BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod), left, right) => {
+            Expr::Bin(BinOp::Div, left, right) => {
+                self.infer(left)?;
+                self.infer(right)?;
+                Err("wasm target does not support / yet: bx divides as floats, and float values are not in the wasm subset"
+                    .to_string())
+            }
+            Expr::Bin(op @ (BinOp::Sub | BinOp::Mul | BinOp::Mod), left, right) => {
                 let lt = self.infer(left)?;
                 let rt = self.infer(right)?;
                 if lt != Ty::Int || rt != Ty::Int {
@@ -251,7 +257,7 @@ impl Checker {
                 }
                 Ok(Ty::Int)
             }
-            Expr::Bin(..) => Err("wasm target supports + - * / %".to_string()),
+            Expr::Bin(..) => Err("wasm target supports + - * %".to_string()),
             Expr::Object(fields) => {
                 if fields.is_empty() {
                     return Err("wasm target does not support empty objects yet".to_string());
@@ -801,9 +807,8 @@ impl<'a> Emitter<'a> {
                         BinOp::Add => 0x7c,
                         BinOp::Sub => 0x7d,
                         BinOp::Mul => 0x7e,
-                        BinOp::Div => 0x7f,
                         BinOp::Mod => 0x81,
-                        _ => return Err("wasm target supports + - * / %".to_string()),
+                        _ => return Err("wasm target supports + - * %".to_string()),
                     }));
                     self.emit_store(name)?;
                 }
@@ -933,9 +938,8 @@ impl<'a> Emitter<'a> {
                 let opcode = match op {
                     BinOp::Sub => 0x7d,
                     BinOp::Mul => 0x7e,
-                    BinOp::Div => 0x7f,
                     BinOp::Mod => 0x81,
-                    _ => return Err("wasm target supports + - * / %".to_string()),
+                    _ => return Err("wasm target supports + - * %".to_string()),
                 };
                 self.builder.push(Instr::Op(opcode));
                 Ok(Ty::Int)
@@ -1203,9 +1207,8 @@ impl<'a> Emitter<'a> {
                     BinOp::Add => 0x7c,
                     BinOp::Sub => 0x7d,
                     BinOp::Mul => 0x7e,
-                    BinOp::Div => 0x7f,
                     BinOp::Mod => 0x81,
-                    _ => return Err("wasm target supports + - * / %".to_string()),
+                    _ => return Err("wasm target supports + - * %".to_string()),
                 }));
                 self.emit_store(name)?;
                 Ok(())
@@ -1555,12 +1558,6 @@ mod tests {
     }
 
     #[test]
-    fn division_and_remainder() {
-        let prints =
-            run_source("let x = 7\nprint(x / 2)\nprint(x % 2)\nx /= 2\nprint(x)\nx *= 3\nprint(x)");
-        assert_eq!(prints, vec![3, 1, 3, 9]);
-    }
-
     #[test]
     fn functions_read_rich_globals() {
         let (numbers, strings) = run_with_argv(

@@ -142,6 +142,10 @@ write(dir + "/wasm-args.bxs", 'print(argc())\nprint(arg(0))\n')
 write(dir + "/wasm-fs.bxs", 'print(write_file("wasm-fs.txt", "payload"))\nprint(read_file("wasm-fs.txt"))\n')
 write(dir + "/wasm-proc.bxs", 'print(run("echo hi"))\nprint(capture("echo hi"))\n')
 write(dir + "/wasm-cmp.bxs", 'print(7 % 2)\nlet x = 5\nif (x <= 5) { print(10) }\n')
+test("wasm backend matches the VM on generated programs", fn() {
+  let out = exec([bin, "run", __dir__ + "/wasm-diff.bxs", bin, "8"])
+  assert(out.code == 0 && out.out.contains("PASS 8 differential cases"), "got " + out.out + " " + out.err)
+})
 test("wasm comparisons and modulo", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-cmp.bxs", "-o", dir + "/wasm-cmp.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

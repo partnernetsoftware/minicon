@@ -29,7 +29,7 @@ module should run in a browser once the Web ABI lands.
 ```text
 bx wasm target
 ├── emitter (AST → core wasm)
-│   ├── [v] i64 subset: let / assignment / `+ - * / %` / print(<int>)
+│   ├── [v] i64 subset: let / assignment / `+ - * %` / print(<int>)
 │   ├── [v] strings: literals + compile-time `+`, data segments, `print_utf8`
 │   ├── [v] arrays of ints: `[..]`, `arr[i]`, `len(arr)` over the prototype heap
 │   ├── [v] runtime strings: bindings (ptr,len globals), `s + t`, `len(s)`
@@ -37,7 +37,8 @@ bx wasm target
 │   ├── [v] control flow: `if/else`, `while`, `for`, `break`/`continue`, comparisons
 │   ├── [v] user functions: params, int locals, `return <int>`, calls, recursion
 │   ├── [v] functions may read/write string, array and record globals
-│   └── [-] closures, non-int params/locals, nested functions
+│   └── [-] float values (`/` is bx-style float division; rejected until floats land),
+│       closures, non-int params/locals, nested functions
 ├── runtime (standard module execution, own code)
 │   ├── [v] decode + validate (type/import/function/global/export/code)
 │   ├── [v] interpreter: consts, globals, locals, calls, control flow, numeric ops
@@ -99,11 +100,18 @@ bx wasm target
 - `cargo test`: the wasm module has unit tests for encoder round-trip, operator
   precedence and rejection of unsupported constructs; the whole crate suite is
   part of `bx/scripts/test.sh`.
+- **Differential testing**: `bx/tools/wasm-diff.bxs` generates seeded random programs
+  from the shared int subset and runs each one through both the bx VM and the wasm
+  backend; stdout and exit codes must match byte-for-byte. The suite runs 15 cases
+  and the verifier 8; a 100-case local run passes. This is what caught the VM/floats
+  divergence: bx's `/` is float division, so the wasm target now rejects `/` with a
+  clear message instead of silently producing integer results.
 - `bx build --wasm` output starts with `\0asm` and is instantiated by **node v24**
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 40 in-tree unit tests cover encoder round-trip, memory/data decoding, UTF-8
+- 40 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+  round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
   unsupported constructs. `i64.div_s`/`i64.rem_s` and the six comparison opcodes

@@ -28,7 +28,7 @@
 
 **实验性 wasm 目标**
 
-- 运算符补齐 `/`、`%` 与比较 `<=`/`>=`；修正解释器比较/位运算 opcode 映射（`rem`、`le`、`ge` 等与 wasm 规范、node 一致）；函数可读写字符串/数组/记录全局。
+- 运算符补齐 `%` 与比较 `<=`/`>=`（`/` 是浮点除法，wasm 侧显式报错而不是给错值）；修正解释器比较/位运算 opcode 映射（`rem`、`le`、`ge` 等与 wasm 规范、node 一致）；函数可读写字符串/数组/记录全局。
 
 - `bx build --wasm` 输出标准 WebAssembly 模块，`bx run *.wasm` 用自研解释器执行；零第三方 wasm 依赖。
 - 覆盖数值子集、字符串（字面量、编译期 `+`）、整型数组（`[..]`、`arr[i]`、`len`）、运行期字符串拼接（`memory.copy`）、定长记录对象（`{a:1}`、`o.a`）、控制流（`if/else`、`while`、`for`、`break`/`continue`）、用户函数（参数、int 局部、返回、递归）、argv 访问（`bx.argc`/`bx.arg`）、文件读写（`bx.read_file`/`bx.write_file`）与原生进程（`bx.run`/`bx.capture`）；分配改用模块内 bump 堆——字符串在线性内存数据段里，数组走原型 `env.alloc` 堆；host ABI 见 PRD 42。

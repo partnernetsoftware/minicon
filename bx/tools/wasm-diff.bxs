@@ -1,0 +1,127 @@
+// Differential tester: the same generated program is run by bx's VM and by the
+// wasm backend, and the two outputs must match byte-for-byte.
+//
+//   bx run tools/wasm-diff.bxs path/to/bx [cases]
+//
+// Only the shared int subset is generated (locals, arithmetic, comparisons,
+// if/else, while, print) so a mismatch always means an implementation bug in
+// one of the two backends rather than an unsupported feature.
+if (len(argv) < 1) {
+  eprint("usage: bx run tools/wasm-diff.bxs <bx-binary-or-com> [cases]\n")
+  exit(2)
+}
+let bin = argv[0]
+let cases = 24
+if (len(argv) > 1) {
+  cases = int(argv[1])
+}
+let tmp = env("TEMP")
+if (tmp == "" || tmp == null) {
+  tmp = env("TMPDIR")
+}
+if (tmp == "" || tmp == null) {
+  tmp = cwd()
+}
+let dir = tmp + "/bx-wasm-diff-" + str(now())
+mkdir(dir)
+
+let seed = 987654321
+fn next() {
+  seed = (seed * 48271) % 2147483647
+  if (seed == 0) {
+    seed = 12345
+  }
+  return seed
+}
+fn pick(n) {
+  return next() % n
+}
+fn atom(vars) {
+  if (len(vars) > 0 && pick(2) == 0) {
+    return vars[pick(len(vars))]
+  }
+  return str(1 + pick(30))
+}
+fn expr(vars) {
+  let text = atom(vars)
+  let ops = 1 + pick(2)
+  for (let i = 0; i < ops; i += 1) {
+    let kind = pick(4)
+    if (kind == 0) {
+      text = text + " + " + atom(vars)
+    }
+    if (kind == 1) {
+      text = text + " - " + atom(vars)
+    }
+    if (kind == 2) {
+      text = text + " * " + atom(vars)
+    }
+    if (kind == 3) {
+      text = text + " % " + str(1 + pick(8))
+    }
+  }
+  return text
+}
+fn gen() {
+  let vars = []
+  let lines = []
+  let vars_count = 2 + pick(3)
+  for (let i = 0; i < vars_count; i += 1) {
+    let name = "v" + str(i)
+    lines.push("let " + name + " = " + expr(vars))
+    vars.push(name)
+  }
+  let prints = 2 + pick(3)
+  for (let i = 0; i < prints; i += 1) {
+    lines.push("print(" + expr(vars) + ")")
+  }
+  let rounds = 1 + pick(4)
+  lines.push("let w = 0")
+  lines.push("while (w < " + str(rounds) + ") {")
+  lines.push("  w += 1")
+  lines.push("  print(w + " + atom(vars) + ")")
+  lines.push("}")
+  if (pick(2) == 0) {
+    lines.push("if (" + atom(vars) + " < " + atom(vars) + ") {")
+    lines.push("  print(" + expr(vars) + ")")
+    lines.push("} else {")
+    lines.push("  print(" + expr(vars) + ")")
+    lines.push("}")
+  }
+  let source = ""
+  for (let i = 0; i < len(lines); i += 1) {
+    source = source + lines[i] + "\n"
+  }
+  return source
+}
+
+let failures = 0
+for (let c = 0; c < cases; c += 1) {
+  let source = gen()
+  let script = dir + "/case-" + str(c) + ".bxs"
+  let module = dir + "/case-" + str(c) + ".wasm"
+  write(script, source)
+  let vm = exec([bin, "run", script])
+  let built = exec([bin, "build", "--wasm", script, "-o", module])
+  if (built.code != 0) {
+    failures += 1
+    eprint("case " + str(c) + ": wasm build failed: " + built.err + "\n--- source ---\n" + source)
+    continue
+  }
+  let wasm = exec([bin, "run", module])
+  if (vm.code != wasm.code || vm.out != wasm.out) {
+    failures += 1
+    eprint(
+      "case " + str(c) + ": VM and wasm disagree\n" +
+      "  vm code/out:   " + str(vm.code) + " " + json(vm.out) + "\n" +
+      "  wasm code/out: " + str(wasm.code) + " " + json(wasm.out) + "\n" +
+      "--- source ---\n" + source
+    )
+  }
+}
+if (failures == 0) {
+  print("PASS " + str(cases) + " differential cases\n")
+  exit(0)
+}
+print("FAIL " + str(failures) + " of " + str(cases) + " differential cases\n")
+exit(1)
