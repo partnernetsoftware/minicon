@@ -572,6 +572,15 @@ if (wasmFs.code == 0 && wasmFsRun.code == 0 && wasmFsRun.out.trim() == "0\npaylo
   casesFail += 1
   failures.push("wasm filesystem ABI\n    build=" + wasmFs.code + " out=" + json(wasmFsRun.out) + " err=" + json(wasmFsRun.err))
 }
+write(artDir + "/wasm-proc.bxs", 'print(run("echo hi"))\nprint(capture("echo hi"))\n')
+let wasmProc = exec([BX, "build", "--wasm", artDir + "/wasm-proc.bxs", "-o", artDir + "/wasm-proc.wasm"])
+let wasmProcRun = exec([BX, "run", artDir + "/wasm-proc.wasm"])
+if (wasmProc.code == 0 && wasmProcRun.code == 0 && wasmProcRun.out.contains("0") && wasmProcRun.out.contains("hi")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm native process ABI\n    build=" + wasmProc.code + " out=" + json(wasmProcRun.out) + " err=" + json(wasmProcRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'let f = fn() { return 1 }\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1) {

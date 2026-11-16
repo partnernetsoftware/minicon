@@ -49,6 +49,7 @@ bx wasm target
 │   ├── [v] module-internal bump heap (mutable global, starts at 8192) — no `alloc` import
 │   ├── [v] argv: `bx.argc()` / `bx.arg(i)` (length-prefixed UTF-8 in page 2)
 │   ├── [v] files: `bx.read_file` / `bx.write_file` (contents in page 3)
+│   ├── [v] native processes: `bx.run` (inherited stdio) / `bx.capture` (stdout in page 4)
 │   └── [-] `web.console.*`, `web.performance.*`, `bx.*` native process, `webgl.*`
 └── delivery
     ├── [v] `bx build --wasm`, `bx run <file.wasm>`, `bx check <file.wasm>`
@@ -71,6 +72,12 @@ bx wasm target
   returns a pointer to `[len][bytes]` in the third page (0 on failure);
   `bx.write_file(path_ptr, path_len, data_ptr, data_len) -> i32` returns 0 on
   success, -1 on failure. Paths and data are UTF-8 byte ranges in memory.
+- **Processes** (native extension, `bx.*`): `bx.run(cmd_ptr, cmd_len) -> i32` runs
+  the command line through the platform shell (`cmd /C` on Windows, `sh -c`
+  elsewhere) with inherited stdio and returns its exit code; `bx.capture(...)`
+  does the same with captured stdout and returns a pointer to
+  `[code: i32][len: u32][bytes]` in the fourth page. Language builtins:
+  `run(cmd)` and `capture(cmd)`.
   - `web.*` — console / performance / timers first, `fetch` later; names follow
     the browser globals so browser and native hosts share one module ABI.
   - `bx.*` — native extensions (process spawning, files, argv). Explicitly
@@ -95,9 +102,9 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 35 in-tree unit tests cover encoder round-trip, memory/data decoding, UTF-8
-  imports, operator precedence, control flow, user functions/recursion, argv and
-  file I/O, and rejection of unsupported constructs.
+- 36 in-tree unit tests cover encoder round-trip, memory/data decoding, UTF-8
+  imports, operator precedence, control flow, user functions/recursion, argv,
+  file I/O, process execution and rejection of unsupported constructs.
 - CLI round-trip (`build --wasm` → `run` → `check`) is covered by the self-hosted
   suite and therefore by the packed six-cell CI lane.
 
@@ -117,6 +124,6 @@ bx wasm target
 | M1 | numeric vertical slice: emit → run → `check`, node cross-check | `[v]` |
 | M2 | data model: strings, arrays, objects in linear memory | `[-]` (strings incl. runtime concat, int arrays, fixed-layout records, in-module bump heap done; dynamic keys, mixed-type fields and growable arrays next) |
 | M3 | functions, closures, control flow compiled to wasm | `[-]` (control flow and user functions/recursion done; closures next) |
-| M4 | builtins + native process ABI (`bx.*`), default target flip | `[-]` (argv and file imports done; native process imports and the default flip next) |
+| M4 | builtins + native process ABI (`bx.*`), default target flip | `[-]` (argv, file and process imports done; default target flip next) |
 | M5 | `web.*` + `webgl.*` ABI, software backend, browser demo | `[_]` |
 | M6 | remove `.bxb` + legacy code paths, six-cell wasm evidence | `[_]` |

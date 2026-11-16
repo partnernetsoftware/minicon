@@ -1632,6 +1632,7 @@ where
             argv: argv.to_vec(),
             next_argv: 65_536,
             next_file: 131_072,
+            next_proc: 196_608,
         },
     );
     let start = module
@@ -1642,6 +1643,22 @@ where
         .ok_or_else(|| "wasm module has no _start export".to_string())?;
     exec.call_func(start, Vec::new())?;
     Ok(())
+}
+
+/// Run one command line through the platform shell, mirroring bx `sh`.
+fn shell_command(line: &str) -> std::process::Command {
+    #[cfg(windows)]
+    {
+        let mut command = std::process::Command::new("cmd");
+        command.arg("/C").arg(line);
+        command
+    }
+    #[cfg(not(windows))]
+    {
+        let mut command = std::process::Command::new("sh");
+        command.arg("-c").arg(line);
+        command
+    }
 }
 
 struct PrintHost<'a, F: FnMut(i64), G: FnMut(&str)> {
@@ -1655,6 +1672,8 @@ struct PrintHost<'a, F: FnMut(i64), G: FnMut(&str)> {
     next_argv: u32,
     /// File contents returned by `bx.read_file` live in the third page.
     next_file: u32,
+    /// `bx.capture` result blocks live in the fourth page.
+    next_proc: u32,
 }
 
 impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
@@ -1710,6 +1729,47 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 Ok(Vec::new())
             }
             ("bx", "argc") => Ok(vec![WVal::I32(self.argv.len() as i32)]),
+            ("bx", "run") => {
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("bx.run expects (i32 ptr, i32 len)".to_string()),
+                };
+                let command = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .ok_or_else(|| "bx.run command is outside memory".to_string())?;
+                let line = String::from_utf8_lossy(command).to_string();
+                let status = shell_command(&line).status();
+                let code = match status {
+                    Ok(status) => status.code().unwrap_or(-1),
+                    Err(_) => -1,
+                };
+                Ok(vec![WVal::I32(code)])
+            }
+            ("bx", "capture") => {
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("bx.capture expects (i32 ptr, i32 len)".to_string()),
+                };
+                let command = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .ok_or_else(|| "bx.capture command is outside memory".to_string())?;
+                let line = String::from_utf8_lossy(command).to_string();
+                let output = shell_command(&line).output();
+                let (code, stdout) = match output {
+                    Ok(output) => (output.status.code().unwrap_or(-1), output.stdout),
+                    Err(_) => (-1, Vec::new()),
+                };
+                let start = self.next_proc as usize;
+                let size = 8 + stdout.len();
+                if start + size > memory.len() {
+                    return Ok(vec![WVal::I32(0)]);
+                }
+                memory[start..start + 4].copy_from_slice(&code.to_le_bytes());
+                memory[start + 4..start + 8].copy_from_slice(&(stdout.len() as u32).to_le_bytes());
+                memory[start + 8..start + size].copy_from_slice(&stdout);
+                self.next_proc = (start + size + 7) as u32 & !7;
+                Ok(vec![WVal::I32(start as i32)])
+            }
             ("bx", "read_file") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {
                     (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),

@@ -140,6 +140,13 @@ write(dir + "/wasm-flow.bxs", 'let i = 0\nlet sum = 0\nwhile (i < 6) {\n  i = i 
 write(dir + "/wasm-fn.bxs", 'fn fact(n) {\n  if (n < 2) { return 1 }\n  return n * fact(n - 1)\n}\nprint(fact(5))\n')
 write(dir + "/wasm-args.bxs", 'print(argc())\nprint(arg(0))\n')
 write(dir + "/wasm-fs.bxs", 'print(write_file("wasm-fs.txt", "payload"))\nprint(read_file("wasm-fs.txt"))\n')
+write(dir + "/wasm-proc.bxs", 'print(run("echo hi"))\nprint(capture("echo hi"))\n')
+test("wasm native process ABI", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-proc.bxs", "-o", dir + "/wasm-proc.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-proc.wasm"])
+  assert(ran.code == 0 && ran.out.contains("0") && ran.out.contains("hi"), "got " + ran.out + " " + ran.err)
+})
 test("wasm filesystem ABI round-trips", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-fs.bxs", "-o", dir + "/wasm-fs.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

@@ -339,6 +339,19 @@ impl Checker {
                         }
                         return Ok(Ty::Int);
                     }
+
+                    if name == "run" && args.len() == 1 {
+                        if self.infer(&args[0])? != Ty::Str {
+                            return Err("wasm target run(cmd) needs a string".to_string());
+                        }
+                        return Ok(Ty::Int);
+                    }
+                    if name == "capture" && args.len() == 1 {
+                        if self.infer(&args[0])? != Ty::Str {
+                            return Err("wasm target capture(cmd) needs a string".to_string());
+                        }
+                        return Ok(Ty::Str);
+                    }
                     if name == "read_file" && args.len() == 1 {
                         if self.infer(&args[0])? != Ty::Str {
                             return Err("wasm target read_file(path) needs a string".to_string());
@@ -628,8 +641,9 @@ const DST: u32 = 5;
 const ALLOC_TMP: u32 = 6;
 const ARG_TMP: u32 = 7;
 
-/// Imported host functions: print_i64, print_utf8, argc, arg, read_file, write_file.
-const IMPORT_COUNT: u32 = 6;
+/// Imported host functions: print_i64, print_utf8, argc, arg, read_file, write_file,
+/// run, capture.
+const IMPORT_COUNT: u32 = 8;
 
 struct Emitter<'a> {
     checker: &'a Checker,
@@ -1011,6 +1025,24 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Call(sig.index));
                         return Ok(Ty::Int);
                     }
+
+                    if name == "run" && args.len() == 1 {
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Call(6));
+                        self.builder.push(Instr::Op(0xad));
+                        return Ok(Ty::Int);
+                    }
+                    if name == "capture" && args.len() == 1 {
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Call(7));
+                        self.builder.push(Instr::Local(0x21, ARG_TMP));
+                        self.builder.push(Instr::Local(0x20, ARG_TMP));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x20, ARG_TMP));
+                        self.builder.push(Instr::Mem(0x28, 2, 4));
+                        return Ok(Ty::Str);
+                    }
                     if name == "read_file" && args.len() == 1 {
                         self.emit_str(&args[0])?;
                         self.builder.push(Instr::Call(4));
@@ -1293,6 +1325,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
         vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
         vec![ValType::I32],
     );
+    let run_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
+    let capture_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
     let start_ty = builder.add_type(vec![], vec![]);
     let mut fn_types: Vec<u32> = Vec::new();
     for (_, decl) in &declarations {
@@ -1310,7 +1344,9 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("bx", "arg", arg_ty);
     builder.import_func("bx", "read_file", read_file_ty);
     builder.import_func("bx", "write_file", write_file_ty);
-    builder.enable_memory(4);
+    builder.import_func("bx", "run", run_ty);
+    builder.import_func("bx", "capture", capture_ty);
+    builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
         match ty {
@@ -1438,6 +1474,16 @@ mod tests {
         let numbers = numbers.lock().expect("lock").clone();
         let strings = strings.lock().expect("lock").clone();
         (numbers, strings)
+    }
+
+    #[test]
+    fn commands_run_through_the_shell() {
+        let (numbers, strings) =
+            run_with_argv("print(run(\"echo hi\"))\nprint(capture(\"echo hi\"))", &[]);
+        assert_eq!(numbers, vec![0]);
+        // Windows' cmd adds CRLF; the ABI passes bytes through untouched.
+        assert_eq!(strings.len(), 1);
+        assert_eq!(strings[0].trim(), "hi");
     }
 
     #[test]
