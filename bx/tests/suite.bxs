@@ -545,7 +545,16 @@ if (wasmFlow.code == 0 && wasmFlowRun.code == 0 && wasmFlowRun.out.trim() == "24
   casesFail += 1
   failures.push("wasm control flow\n    build=" + wasmFlow.code + " out=" + json(wasmFlowRun.out) + " err=" + json(wasmFlowRun.err))
 }
-write(artDir + "/wasm-bad.bxs", 'fn unsupported() { return 1 }\n')
+write(artDir + "/wasm-fn.bxs", 'fn fact(n) {\n  if (n < 2) { return 1 }\n  return n * fact(n - 1)\n}\nprint(fact(5))\nfn sum(n) {\n  let s = 0\n  for (let i = 0; i < n; i += 1) { s += i }\n  return s\n}\nprint(sum(5))\n')
+let wasmFn = exec([BX, "build", "--wasm", artDir + "/wasm-fn.bxs", "-o", artDir + "/wasm-fn.wasm"])
+let wasmFnRun = exec([BX, "run", artDir + "/wasm-fn.wasm"])
+if (wasmFn.code == 0 && wasmFnRun.code == 0 && wasmFnRun.out.trim() == "120\n10") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm user functions and recursion\n    build=" + wasmFn.code + " out=" + json(wasmFnRun.out) + " err=" + json(wasmFnRun.err))
+}
+write(artDir + "/wasm-bad.bxs", 'let f = fn() { return 1 }\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1) {
   casesOk += 1

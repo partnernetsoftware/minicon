@@ -137,6 +137,13 @@ test("wasm arrays use the prototype allocator", fn() {
 write(dir + "/wasm-strap.bxs", 'let s = "hello "\nlet t = s + "wasm"\nprint(t)\nprint(len(t))\n')
 write(dir + "/wasm-rec.bxs", 'let o = {a: 10, b: 20}\nprint(o.a + o.b)\n')
 write(dir + "/wasm-flow.bxs", 'let i = 0\nlet sum = 0\nwhile (i < 6) {\n  i = i + 1\n  sum = sum + i\n}\nprint(sum)\n')
+write(dir + "/wasm-fn.bxs", 'fn fact(n) {\n  if (n < 2) { return 1 }\n  return n * fact(n - 1)\n}\nprint(fact(5))\n')
+test("wasm user functions recurse", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-fn.bxs", "-o", dir + "/wasm-fn.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-fn.wasm"])
+  assert(ran.code == 0 && ran.out.trim() == "120", "got " + ran.out + " " + ran.err)
+})
 test("wasm control flow runs", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-flow.bxs", "-o", dir + "/wasm-flow.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

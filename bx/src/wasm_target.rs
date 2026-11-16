@@ -433,7 +433,20 @@ impl Checker {
                 let Expr::Ident(name) = &**callee else {
                     return Err("wasm target only supports calls to print()".to_string());
                 };
-                if name != "print" {
+                if let Some(sig) = self.fn_sig(name) {
+                    if args.len() != sig.params {
+                        return Err(format!(
+                            "wasm target function '{}' takes {} arguments",
+                            name, sig.params
+                        ));
+                    }
+                    for arg in args {
+                        if self.infer(arg)? != Ty::Int {
+                            return Err("wasm target function arguments must be ints".to_string());
+                        }
+                    }
+                    return Ok(());
+                } else if name != "print" {
                     return Err(format!(
                         "wasm target does not support calling '{}' yet",
                         name
@@ -447,28 +460,7 @@ impl Checker {
                     return Err("wasm target cannot print arrays yet".to_string());
                 }
             }
-            Stmt::Expr(Expr::Call(callee, args, _), _) => {
-                let Expr::Ident(name) = &**callee else {
-                    return Err("wasm target only supports calls to print()".to_string());
-                };
-                let Some(sig) = self.fn_sig(name) else {
-                    return Err(format!(
-                        "wasm target does not support calling '{}' yet",
-                        name
-                    ));
-                };
-                if args.len() != sig.params {
-                    return Err(format!(
-                        "wasm target function '{}' takes {} arguments",
-                        name, sig.params
-                    ));
-                }
-                for arg in args {
-                    if self.infer(arg)? != Ty::Int {
-                        return Err("wasm target function arguments must be ints".to_string());
-                    }
-                }
-            }
+
             Stmt::Expr(Expr::Compound(target, _op, value, _), _) => {
                 let Expr::Ident(name) = &**target else {
                     return Err(
@@ -532,6 +524,20 @@ impl Checker {
                                     ty_name(expected),
                                     ty_name(actual)
                                 ));
+                            }
+                        }
+                        Expr::Compound(target, _op, value, _) => {
+                            let Expr::Ident(name) = &**target else {
+                                return Err(
+                                    "wasm target supports compound assignment to a global only"
+                                        .to_string(),
+                                );
+                            };
+                            if self.lookup(name)? != Ty::Int || self.infer(value)? != Ty::Int {
+                                return Err(
+                                    "wasm target supports compound assignment on ints only"
+                                        .to_string(),
+                                );
                             }
                         }
                         other => {
@@ -876,8 +882,7 @@ impl<'a> Emitter<'a> {
                 Ok(Ty::Int)
             }
             Expr::Bin(BinOp::Add, left, right) => {
-                let lt = self.checker.infer(left)?;
-                if lt == Ty::Str {
+                if !self.fn_mode && self.checker.infer(left)? == Ty::Str {
                     self.emit_str(expr)?;
                     return Ok(Ty::Str);
                 }
@@ -1360,6 +1365,35 @@ mod tests {
     }
 
     #[test]
+    fn user_functions_take_params_and_return() {
+        let prints = run_source("fn add(a, b) { return a + b }\nprint(add(2, 3))");
+        assert_eq!(prints, vec![5]);
+    }
+
+    #[test]
+    fn recursion_works() {
+        let prints = run_source(
+            "fn fact(n) {\n  if (n < 2) { return 1 }\n  return n * fact(n - 1)\n}\nprint(fact(5))",
+        );
+        assert_eq!(prints, vec![120]);
+    }
+
+    #[test]
+    fn functions_compose_with_loops() {
+        let prints = run_source(
+            "fn sum(n) {\n  let s = 0\n  for (let i = 0; i < n; i += 1) { s += i }\n  return s\n}\nprint(sum(5))",
+        );
+        assert_eq!(prints, vec![10]);
+    }
+
+    #[test]
+    fn unit_functions_touch_globals() {
+        let prints =
+            run_source("let count = 0\nfn bump() { count += 1 }\nbump()\nbump()\nprint(count)");
+        assert_eq!(prints, vec![2]);
+    }
+
+    #[test]
     fn loops_and_conditionals() {
         let prints = run_source(
             "let i = 0\nwhile (i < 5) {\n  print(i)\n  i = i + 1\n}\nif (i == 5) { print(100) } else { print(200) }",
@@ -1404,7 +1438,7 @@ mod tests {
 
     #[test]
     fn unsupported_constructs_are_rejected() {
-        assert!(compile_to_wasm("fn f() { return 1 }").is_err());
+        assert!(compile_to_wasm("let f = fn() { return 1 }").is_err());
         assert!(compile_to_wasm("print(unknown)").is_err());
         assert!(compile_to_wasm("let a = [1, \"x\"]").is_err());
         assert!(compile_to_wasm("let o = {}\nprint(o)").is_err());
