@@ -16,6 +16,8 @@ pub struct Vm {
     depth: usize,
     steps_left: u64,
     ticks: u64,
+    /// Reused frame slot buffers, so a call does not allocate a fresh Vec.
+    frame_pool: Vec<Vec<Value>>,
     /// Wall-clock budget; checked every few thousand instructions.
     deadline: Option<std::time::Instant>,
 }
@@ -55,6 +57,7 @@ impl Vm {
             depth: 0,
             steps_left: steps,
             ticks: 0,
+            frame_pool: Vec::new(),
             deadline,
         }
     }
@@ -99,7 +102,9 @@ impl Vm {
         let chunk_file = self.chunks[ci].file.clone();
         let arity = self.chunks[ci].arity as usize;
         let nslots = (self.chunks[ci].max_slots as usize).max(arity).max(1);
-        let mut slots = vec![Value::Null; nslots];
+        let mut slots = self.frame_pool.pop().unwrap_or_default();
+        slots.clear();
+        slots.resize(nslots, Value::Null);
         for (i, a) in args.into_iter().enumerate() {
             if i < slots.len() {
                 slots[i] = a;
@@ -557,6 +562,11 @@ impl Vm {
         };
 
         self.stack.truncate(base);
+        // Recycle the buffer: clearing first drops whatever values it held.
+        slots.clear();
+        if self.frame_pool.len() < 256 {
+            self.frame_pool.push(slots);
+        }
         self.depth -= 1;
         outcome
     }

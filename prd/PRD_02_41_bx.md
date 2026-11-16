@@ -132,6 +132,9 @@ flowchart LR
 - 2026-11-16 round 15: chunk names and source files are shared via `Rc<String>`,
   so a call frame clones pointers instead of allocating two strings; `fib(24)`
   went from ~137 ms back to ~80 ms with bytecode unchanged. Suite: 108 checks.
+- 2026-11-16 round 16: frame slot buffers are recycled through a pool capped at
+  256 (max depth 220), removing the per-call `vec!` allocation; `fib(24)` is now
+  ~71 ms vs ~137 ms at round 21 start. Suite: 108 checks.
 - Open: execution on Linux x86_64/aarch64 and Windows ARM64 belongs to the
   six-runner matrix (`minicon-com.yml`, `bx_lane`), not the Windows host.
 
