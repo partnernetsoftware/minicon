@@ -636,6 +636,15 @@ if (nodeProbe.code == 0) {
     failures.push("wasm browser demo runs under node\n    build=" + demo.code + " out=" + json(demoRun.out) + " err=" + json(demoRun.err))
   }
 }
+write(artDir + "/wasm-web.bxs", 'console_log(42)\nconsole_log("web")\nconsole_log(2.5)\nlet t = performance_now()\nif (t >= 0.0) { print(1) }\n')
+let wasmWeb = exec([BX, "build", "--wasm", artDir + "/wasm-web.bxs", "-o", artDir + "/wasm-web.wasm"])
+let wasmWebRun = exec([BX, "run", artDir + "/wasm-web.wasm"])
+if (wasmWeb.code == 0 && wasmWebRun.code == 0 && wasmWebRun.out.trim() == "42\nweb\n2.5\n1") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm web.* namespace\n    build=" + wasmWeb.code + " out=" + json(wasmWebRun.out) + " err=" + json(wasmWebRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'let f = fn() { return 1 }\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1) {

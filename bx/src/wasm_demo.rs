@@ -105,6 +105,15 @@ const imports = {
     run: () => -1,
     capture: () => 0,
   },
+  web: {
+    console_log_i64: (value) => { emit(value.toString()); },
+    console_log_f64: (value) => { emit(formatFloat(value)); },
+    console_log_utf8: (ptr, len) => {
+      const bytes = new Uint8Array(instance.exports.memory.buffer, ptr, len);
+      emit(new TextDecoder("utf-8").decode(bytes));
+    },
+    performance_now: () => (typeof performance !== "undefined" ? performance.now() : Date.now()),
+  },
 };
 async function main() {
   const bytes = decodeBase64(WASM_BASE64);

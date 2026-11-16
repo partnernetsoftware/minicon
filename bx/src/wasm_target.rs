@@ -380,6 +380,9 @@ impl Checker {
                         }
                         return Ok(Ty::Int);
                     }
+                    if name == "performance_now" && args.is_empty() {
+                        return Ok(Ty::Float);
+                    }
                     if name == "argc" && args.is_empty() {
                         return Ok(Ty::Int);
                     }
@@ -496,7 +499,7 @@ impl Checker {
                         }
                     }
                     return Ok(());
-                } else if name != "print" {
+                } else if name != "print" && name != "console_log" {
                     return Err(format!(
                         "wasm target does not support calling '{}' yet",
                         name
@@ -506,8 +509,8 @@ impl Checker {
                     return Err("wasm target supports print(<value>) with one argument".to_string());
                 }
                 let ty = self.infer(&args[0])?;
-                if ty == Ty::Arr {
-                    return Err("wasm target cannot print arrays yet".to_string());
+                if ty == Ty::Arr || matches!(ty, Ty::Obj(_)) {
+                    return Err("wasm target cannot log arrays or objects yet".to_string());
                 }
             }
 
@@ -669,9 +672,14 @@ const DST: u32 = 5;
 const ALLOC_TMP: u32 = 6;
 const ARG_TMP: u32 = 7;
 
-/// Imported host functions: print_i64, print_utf8, argc, arg, read_file, write_file,
-/// run, capture, print_f64, fmod.
-const IMPORT_COUNT: u32 = 10;
+/// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
+/// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
+/// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
+const IMPORT_COUNT: u32 = 14;
+const WEB_CONSOLE_I64: u32 = 10;
+const WEB_CONSOLE_F64: u32 = 11;
+const WEB_CONSOLE_UTF8: u32 = 12;
+const WEB_PERFORMANCE_NOW: u32 = 13;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -1315,6 +1323,10 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Op(0xad));
                         return Ok(Ty::Int);
                     }
+                    if name == "performance_now" && args.is_empty() {
+                        self.builder.push(Instr::Call(WEB_PERFORMANCE_NOW));
+                        return Ok(Ty::Float);
+                    }
                     if name == "argc" && args.is_empty() {
                         self.builder.push(Instr::Call(2));
                         self.builder.push(Instr::Op(0xad));
@@ -1463,20 +1475,34 @@ impl<'a> Emitter<'a> {
                     }
                     return Ok(());
                 }
-                if name != "print" || args.len() != 1 {
-                    return Err("wasm target supports print(<value>) with one argument".to_string());
+                if (name != "print" && name != "console_log") || args.len() != 1 {
+                    return Err(
+                        "wasm target supports print(<value>) / console_log(<value>) with one argument"
+                            .to_string(),
+                    );
                 }
+                let web = name == "console_log";
                 let ty = self.emit_expr(&args[0])?;
                 match ty {
                     Ty::Str => {
-                        self.builder.push(Instr::Call(1));
+                        self.builder
+                            .push(Instr::Call(if web { WEB_CONSOLE_UTF8 } else { 1 }));
                     }
                     Ty::Float => {
-                        self.builder.push(Instr::Call(8));
+                        self.builder
+                            .push(Instr::Call(if web { WEB_CONSOLE_F64 } else { 8 }));
                     }
                     _ => {
-                        self.builder.push(Instr::Call(0));
-                        self.builder.push(Instr::Op(0x1a));
+                        if web {
+                            self.builder.push(Instr::Call(if ty == Ty::Float {
+                                WEB_CONSOLE_F64
+                            } else {
+                                WEB_CONSOLE_I64
+                            }));
+                        } else {
+                            self.builder.push(Instr::Call(0));
+                            self.builder.push(Instr::Op(0x1a));
+                        }
                     }
                 }
                 Ok(())
@@ -1609,6 +1635,10 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let capture_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
     let print_f64_ty = builder.add_type(vec![ValType::F64], vec![]);
     let fmod_ty = builder.add_type(vec![ValType::F64, ValType::F64], vec![ValType::F64]);
+    let console_i64_ty = builder.add_type(vec![ValType::I64], vec![]);
+    let console_f64_ty = builder.add_type(vec![ValType::F64], vec![]);
+    let console_utf8_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![]);
+    let performance_ty = builder.add_type(vec![], vec![ValType::F64]);
     let start_ty = builder.add_type(vec![], vec![]);
     let mut fn_types: Vec<u32> = Vec::new();
     for (_, decl) in &declarations {
@@ -1630,6 +1660,10 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("bx", "capture", capture_ty);
     builder.import_func("env", "print_f64", print_f64_ty);
     builder.import_func("env", "fmod", fmod_ty);
+    builder.import_func("web", "console_log_i64", console_i64_ty);
+    builder.import_func("web", "console_log_f64", console_f64_ty);
+    builder.import_func("web", "console_log_utf8", console_utf8_ty);
+    builder.import_func("web", "performance_now", performance_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -1975,6 +2009,16 @@ mod tests {
         assert!(info.imports.contains(&"bx.argc".to_string()));
         assert_eq!(info.exports, vec!["_start".to_string()]);
         assert_eq!(info.defined_functions, 2);
+    }
+
+    #[test]
+    fn web_console_and_performance_work() {
+        let (numbers, strings) = run_with_argv(
+            "console_log(42)\nconsole_log(2.5)\nconsole_log(\"hi\")\nlet t = performance_now()\nif (t >= 0.0) { print(1) }",
+            &[],
+        );
+        assert_eq!(numbers, vec![42, 1]);
+        assert_eq!(strings, vec!["2.5".to_string(), "hi".to_string()]);
     }
 
     #[test]

@@ -1728,6 +1728,7 @@ where
             next_argv: 65_536,
             next_file: 131_072,
             next_proc: 196_608,
+            started: std::time::Instant::now(),
         },
     );
     let start = module
@@ -1769,6 +1770,8 @@ struct PrintHost<'a, F: FnMut(i64), G: FnMut(&str)> {
     next_file: u32,
     /// `bx.capture` result blocks live in the fourth page.
     next_proc: u32,
+    /// Clock origin for `web.performance_now`.
+    started: std::time::Instant,
 }
 
 impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
@@ -1844,6 +1847,50 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     _ => return Err("env.fmod expects two f64 values".to_string()),
                 };
                 Ok(vec![WVal::F64(a % b)])
+            }
+            ("web", "console_log_i64") => {
+                let value = match args.first() {
+                    Some(WVal::I64(value)) => *value,
+                    _ => return Err("web.console_log_i64 expects one i64".to_string()),
+                };
+                (self.on_i64)(value);
+                Ok(Vec::new())
+            }
+            ("web", "console_log_f64") => {
+                let value = match args.first() {
+                    Some(WVal::F64(value)) => *value,
+                    _ => return Err("web.console_log_f64 expects one f64".to_string()),
+                };
+                let text = if value.is_finite() {
+                    crate::value::fmt_float(value)
+                } else {
+                    "null".to_string()
+                };
+                (self.on_str)(&text);
+                Ok(Vec::new())
+            }
+            ("web", "console_log_utf8") => {
+                let ptr = match args.first() {
+                    Some(WVal::I32(value)) => *value as usize,
+                    _ => return Err("web.console_log_utf8 expects (i32 ptr, i32 len)".to_string()),
+                };
+                let len = match args.get(1) {
+                    Some(WVal::I32(value)) => *value as usize,
+                    _ => return Err("web.console_log_utf8 expects (i32 ptr, i32 len)".to_string()),
+                };
+                let end = ptr
+                    .checked_add(len)
+                    .ok_or_else(|| "web.console_log_utf8 range overflow".to_string())?;
+                let slice = memory
+                    .get(ptr..end)
+                    .ok_or_else(|| "web.console_log_utf8 range is outside memory".to_string())?;
+                let text = String::from_utf8_lossy(slice).to_string();
+                (self.on_str)(&text);
+                Ok(Vec::new())
+            }
+            ("web", "performance_now") => {
+                let millis = self.started.elapsed().as_secs_f64() * 1000.0;
+                Ok(vec![WVal::F64(millis)])
             }
             ("bx", "run") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {

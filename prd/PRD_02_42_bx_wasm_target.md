@@ -111,7 +111,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 43 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 46 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -154,5 +154,5 @@ bx wasm target
 | M2 | data model: strings, arrays, objects in linear memory | `[-]` (strings incl. runtime concat, int arrays, fixed-layout records, in-module bump heap done; dynamic keys, mixed-type fields and growable arrays next) |
 | M3 | functions, closures, control flow compiled to wasm | `[-]` (control flow, user functions/recursion and float values done; closures next) |
 | M4 | builtins + native process ABI (`bx.*`), default target flip | `[-]` (argv, file and process imports done; default target flip next) |
-| M5 | `web.*` + `webgl.*` ABI, software backend, browser demo | `[-]` (self-contained browser demo generated from any script; `web.*`/`webgl.*` namespaces next) |
+| M5 | `web.*` + `webgl.*` ABI, software backend, browser demo | `[-]` (self-contained browser demo, `web.console_log*`/`web.performance_now` done; `webgl.*` next) |
 | M6 | remove `.bxb` + legacy code paths, six-cell wasm evidence | `[_]` |

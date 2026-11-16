@@ -28,6 +28,7 @@
 
 **实验性 wasm 目标**
 
+- `web.*` 命名空间：`console_log`（int/float/string）与 `performance_now()`，原生 host、demo 胶水与 node 一致。`
 - `bx build --wasm --html` 生成自包含浏览器 demo（base64 模块 + 浏览器/node 双端胶水，node 可直接运行）。`
 - wasm 解释器性能：函数帧独立标签基址（修复“块内调用后跳过块外代码”的 bug）、调用走 locals 池且结果留在操作数栈；fib/loop/calls 均快于原生 VM（`bench.sh --wasm`）。`
 - `bx check <module> --json` 输出 wasm 模块 imports/exports/函数数；差分测试加入用户函数与递归；函数内可用字符串/数组/记录/浮点局部变量（每个函数独立临时槽）。`
