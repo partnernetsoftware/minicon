@@ -6,6 +6,7 @@ mod lexer;
 mod parser;
 mod value;
 mod vm;
+mod wasm_target;
 
 use std::fs;
 use std::io::Read;
@@ -83,7 +84,8 @@ fn print_help() {
         r#"bx {version} - binary scripting for agents
 
 usage
-  bx run [--max-steps N] [--timeout MS] <script> [args...]   execute a script
+  bx run [--max-steps N] [--timeout MS] <script.bxs|.bxb|.wasm> [args...]
+  bx build --wasm <script.bxs> [-o out.wasm]      compile the numeric subset to WebAssembly
   bx eval [--max-steps N] [--timeout MS] "<source>"          evaluate and print
   bx build <script.bxs> [-o out.bxb]         compile source to bytecode
   bx dis <script.bxs|out.bxb>                disassemble bytecode
@@ -207,6 +209,22 @@ fn cmd_run(args: Vec<String>) -> i32 {
         return 2;
     }
     let path = &args[0];
+    if path.to_ascii_lowercase().ends_with(".wasm") {
+        let bytes = match fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                eprintln!("bx: cannot read '{}': {}", path, e);
+                return 1;
+            }
+        };
+        return match wasm_target::execute(&bytes, |value| println!("{}", value)) {
+            Ok(()) => 0,
+            Err(e) => {
+                eprintln!("bx: {}", e);
+                1
+            }
+        };
+    }
     let script_args: Vec<Value> = args[1..].iter().map(|s| str_val(s.clone())).collect();
 
     let (chunks, source_name) = match load_program(Path::new(path), false) {
@@ -287,9 +305,14 @@ fn cmd_eval(args: Vec<String>) -> i32 {
 fn cmd_build(args: Vec<String>) -> i32 {
     let mut input: Option<String> = None;
     let mut output: Option<String> = None;
+    let mut wasm = false;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
+            "--wasm" => {
+                wasm = true;
+                i += 1;
+            }
             "-o" | "--out" => {
                 if i + 1 >= args.len() {
                     eprintln!("bx build: -o needs a path");
@@ -322,6 +345,30 @@ fn cmd_build(args: Vec<String>) -> i32 {
             return 1;
         }
     };
+    if wasm {
+        let bytes = match wasm_target::compile_to_wasm(&src) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                eprintln!("bx: {}", e);
+                return 1;
+            }
+        };
+        let out = output.unwrap_or_else(|| {
+            Path::new(&input)
+                .with_extension("wasm")
+                .to_string_lossy()
+                .into_owned()
+        });
+        if let Some(parent) = Path::new(&out).parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if let Err(e) = fs::write(&out, &bytes) {
+            eprintln!("bx build: cannot write '{}': {}", out, e);
+            return 1;
+        }
+        eprintln!("bx: wrote {} ({} bytes, wasm)", out, bytes.len());
+        return 0;
+    }
     let base = Path::new(&input)
         .parent()
         .map(|p| p.to_path_buf())
@@ -431,6 +478,36 @@ fn cmd_check(args: Vec<String>) -> i32 {
         return 2;
     }
     let path = Path::new(&rest[0]);
+    if rest[0].to_ascii_lowercase().ends_with(".wasm") {
+        let outcome = fs::read(&rest[0])
+            .map_err(|e| format!("cannot read '{}': {}", rest[0], e))
+            .and_then(|bytes| wasm_target::validate(&bytes));
+        return match outcome {
+            Ok(()) => {
+                if json_mode {
+                    println!(
+                        "{{\"ok\":true,\"file\":{},\"target\":\"wasm\"}}",
+                        json_quote(&rest[0])
+                    );
+                } else {
+                    println!("ok {} (wasm module)", rest[0]);
+                }
+                0
+            }
+            Err(e) => {
+                if json_mode {
+                    println!(
+                        "{{\"ok\":false,\"file\":{},\"error\":{}}}",
+                        json_quote(&rest[0]),
+                        json_quote(&e)
+                    );
+                } else {
+                    eprintln!("bx: {}", e);
+                }
+                1
+            }
+        };
+    }
     match load_program(path, false) {
         Ok((chunks, name)) => {
             let chunks_n = chunks.len();

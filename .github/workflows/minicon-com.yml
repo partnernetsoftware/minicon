@@ -475,6 +475,7 @@ jobs:
           fi
           cp "$src" "$bin"
           if [[ "$FAMILY" != "windows" ]]; then chmod +x "$bin"; fi
+          bin="./$bin"
           {
             "$bin" --version
             if "$bin" --definitely-not-a-flag; then
@@ -512,6 +513,7 @@ jobs:
           fi
           cp "$src" "$bin"
           if [[ "$FAMILY" != "windows" ]]; then chmod +x "$bin"; fi
+          bin="./$bin"
           {
             "$bin" version
             test "$("$bin" eval '6*7')" = "42"

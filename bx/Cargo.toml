@@ -16,3 +16,7 @@ strip = true
 
 # Standalone: bx is its own workspace so MiniCon's workspace stays untouched.
 [workspace]
+
+[dependencies]
+wasm-encoder = "0.255"
+wasmi = "0.46"
