@@ -2155,6 +2155,55 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 };
                 Ok(vec![WVal::I32(count as i32)])
             }
+            ("env", "map_key_at") => {
+                let (ptr, index) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(index))) => {
+                        (*ptr as usize, *index as usize)
+                    }
+                    _ => return Err("env.map_key_at expects (i32 map, i32 index)".to_string()),
+                };
+                if ptr + 8 > memory.len() {
+                    return Ok(vec![WVal::I32(0)]);
+                }
+                let count = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+                if index >= count {
+                    return Ok(vec![WVal::I32(0)]);
+                }
+                let at = ptr + 8 + index * 16;
+                let key_ptr = u32::from_le_bytes(memory[at..at + 4].try_into().unwrap()) as usize;
+                let key_len = u32::from_le_bytes(memory[at + 4..at + 8].try_into().unwrap()) as usize;
+                let start = self.next_file as usize;
+                let size = 4 + key_len;
+                if start + size > memory.len() {
+                    return Ok(vec![WVal::I32(0)]);
+                }
+                memory[start..start + 4].copy_from_slice(&(key_len as u32).to_le_bytes());
+                let key = memory
+                    .get(key_ptr..key_ptr + key_len)
+                    .map(|key| key.to_vec())
+                    .unwrap_or_default();
+                memory[start + 4..start + size].copy_from_slice(&key);
+                self.next_file = (start + size + 7) as u32 & !7;
+                Ok(vec![WVal::I32(start as i32)])
+            }
+            ("env", "map_value_at") => {
+                let (ptr, index) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(index))) => {
+                        (*ptr as usize, *index as usize)
+                    }
+                    _ => return Err("env.map_value_at expects (i32 map, i32 index)".to_string()),
+                };
+                if ptr + 8 > memory.len() {
+                    return Ok(vec![WVal::I64(0)]);
+                }
+                let count = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+                if index >= count {
+                    return Ok(vec![WVal::I64(0)]);
+                }
+                let at = ptr + 8 + index * 16;
+                let value = i64::from_le_bytes(memory[at + 8..at + 16].try_into().unwrap());
+                Ok(vec![WVal::I64(value)])
+            }
             ("env", "now_ms") => {
                 let millis = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)

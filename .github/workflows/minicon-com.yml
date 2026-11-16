@@ -263,7 +263,7 @@ jobs:
           mkdir -p artifact
           cp -R loader/dist/rust artifact/
           cp loader/dist/build-receipt.json artifact/
-          cp bx/tools/verify.bxs artifact/
+          cp bx/tools/verify.bxs bx/tools/wasm-diff.bxs artifact/
           cp loader/ci-status.sh artifact/
           cp loader/ci-status.ps1 artifact/
           cp loader/ci-control.sh artifact/
@@ -518,7 +518,8 @@ jobs:
               exit 1
             fi
             # The bx-native verifier: CLI, check, budgets, stdin, patch, spawn.
-            # verify.bxs ships in the bundle; the matrix never checks out.
+            # verify.bxs + wasm-diff.bxs ship in the bundle; the matrix never
+            # checks out, and verify.bxs reaches wasm-diff.bxs via __dir__.
             "$bin" test bundle/verify.bxs "$bin"
           } 2>&1 | tee -a bx-lane.log
 

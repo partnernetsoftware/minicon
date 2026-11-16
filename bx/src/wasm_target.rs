@@ -862,21 +862,31 @@ impl Checker {
             Stmt::Break(_) | Stmt::Continue(_) => {}
             Stmt::ForIn(key, value, iter, body, _) => {
                 let ty = self.infer(iter)?;
-                if ty != Ty::Arr {
-                    return Err(format!(
-                        "wasm target iterates arrays only, got {}",
-                        ty_name(ty)
-                    ));
-                }
                 let mut scope = HashMap::new();
-                let (key_name, value_name) = match value {
-                    Some(value) => (Some(key.clone()), value.clone()),
-                    None => (None, key.clone()),
-                };
-                if let Some(key_name) = key_name {
-                    scope.insert(key_name, Ty::Int);
+                match ty {
+                    Ty::Arr => {
+                        let (key_name, value_name) = match value {
+                            Some(value) => (Some(key.clone()), value.clone()),
+                            None => (None, key.clone()),
+                        };
+                        if let Some(key_name) = key_name {
+                            scope.insert(key_name, Ty::Int);
+                        }
+                        scope.insert(value_name, Ty::Int);
+                    }
+                    Ty::Map => {
+                        scope.insert(key.clone(), Ty::Str);
+                        if let Some(value) = value {
+                            scope.insert(value.clone(), Ty::Int);
+                        }
+                    }
+                    other => {
+                        return Err(format!(
+                            "wasm target iterates arrays and maps only, got {}",
+                            ty_name(other)
+                        ))
+                    }
                 }
-                scope.insert(value_name, Ty::Int);
                 self.scopes.push(scope);
                 let outcome = (|| -> Result<(), String> {
                     for stmt in body {
@@ -947,7 +957,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 34;
+const IMPORT_COUNT: u32 = 36;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -972,6 +982,8 @@ const MAP_SET: u32 = 30;
 const MAP_GET: u32 = 31;
 const MAP_HAS: u32 = 32;
 const MAP_LEN: u32 = 33;
+const MAP_KEY_AT: u32 = 34;
+const MAP_VALUE_AT: u32 = 35;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -1157,6 +1169,100 @@ impl<'a> Emitter<'a> {
         ))
     }
 
+    /// `for k, v in map { .. }`: entry-order key (string) / value (int) locals.
+    fn emit_for_in_map(
+        &mut self,
+        key: &str,
+        value: Option<&str>,
+        iter: &Expr,
+        body: &[Stmt],
+    ) -> Result<(), String> {
+        let map_tmp = self.builder.add_local(ValType::I32);
+        let index_tmp = self.builder.add_local(ValType::I32);
+        let count_tmp = self.builder.add_local(ValType::I32);
+        let key_ptr_tmp = self.builder.add_local(ValType::I32);
+        let mut scope = HashMap::new();
+        let key_slot = self.builder.add_local(ValType::I32);
+        self.builder.add_local(ValType::I32);
+        scope.insert(
+            key.to_string(),
+            LocalSlot {
+                ty: Ty::Str,
+                slot: key_slot,
+            },
+        );
+        let value_slot = value.map(|value| {
+            let slot = self.builder.add_local(ValType::I64);
+            scope.insert(
+                value.to_string(),
+                LocalSlot {
+                    ty: Ty::Int,
+                    slot,
+                },
+            );
+            slot
+        });
+        self.scoped.push(scope);
+        self.emit_expr(iter)?;
+        self.builder.push(Instr::Local(0x21, map_tmp));
+        self.builder.push(Instr::Local(0x20, map_tmp));
+        self.builder.push(Instr::Call(MAP_LEN));
+        self.builder.push(Instr::Local(0x21, count_tmp));
+        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+        self.builder.push(Instr::Local(0x21, index_tmp));
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x02);
+        self.builder.push(Instr::Block {
+            opcode: 0x03,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x03);
+        self.builder.push(Instr::Local(0x20, index_tmp));
+        self.builder.push(Instr::Local(0x20, count_tmp));
+        self.builder.push(Instr::Op(0x48));
+        self.builder.push(Instr::Op(0x45));
+        self.builder.push(Instr::BrIf(1));
+        // key = map_key_at(map, index) -> [len][utf8] block; store ptr+4/len
+        self.builder.push(Instr::Local(0x20, map_tmp));
+        self.builder.push(Instr::Local(0x20, index_tmp));
+        self.builder.push(Instr::Call(MAP_KEY_AT));
+        self.builder.push(Instr::Local(0x21, key_ptr_tmp));
+        self.builder.push(Instr::Local(0x20, key_ptr_tmp));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, key_ptr_tmp));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Local(0x21, key_slot + 1));
+        self.builder.push(Instr::Local(0x21, key_slot));
+        if let Some(value_slot) = value_slot {
+            self.builder.push(Instr::Local(0x20, map_tmp));
+            self.builder.push(Instr::Local(0x20, index_tmp));
+            self.builder.push(Instr::Call(MAP_VALUE_AT));
+            self.builder.push(Instr::Local(0x21, value_slot));
+        }
+        for stmt in body {
+            self.emit_stmt(stmt)?;
+        }
+        self.builder.push(Instr::Local(0x20, index_tmp));
+        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, index_tmp));
+        self.builder.push(Instr::Br(0));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.scoped.pop();
+        Ok(())
+    }
+
     /// `for k, v in array { .. }`: index/value locals advanced over the array.
     fn emit_for_in(
         &mut self,
@@ -1166,9 +1272,12 @@ impl<'a> Emitter<'a> {
         body: &[Stmt],
     ) -> Result<(), String> {
         let iter_ty = self.type_of(iter)?;
+        if iter_ty == Ty::Map {
+            return self.emit_for_in_map(key, value, iter, body);
+        }
         if iter_ty != Ty::Arr {
             return Err(format!(
-                "wasm target iterates arrays only, got {}",
+                "wasm target iterates arrays and maps only, got {}",
                 ty_name(iter_ty)
             ));
         }
@@ -2789,6 +2898,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
         vec![ValType::I32],
     );
     let map_len_ty = builder.add_type(vec![ValType::I32], vec![ValType::I32]);
+    let map_key_at_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
+    let map_value_at_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I64]);
     let sleep_ms_ty = builder.add_type(vec![ValType::I64], vec![]);
     let cwd_ty = builder.add_type(vec![], vec![ValType::I32]);
     let env_get_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
@@ -2844,6 +2955,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "map_get", map_key_ty);
     builder.import_func("env", "map_has", map_has_ty);
     builder.import_func("env", "map_len", map_len_ty);
+    builder.import_func("env", "map_key_at", map_key_at_ty);
+    builder.import_func("env", "map_value_at", map_value_at_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
