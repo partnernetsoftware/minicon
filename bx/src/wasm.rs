@@ -112,6 +112,8 @@ pub enum Instr {
     Else {
         end: usize,
     },
+    /// Memory access: opcode, alignment hint, static offset.
+    Mem(u8, u32, u32),
     Br(u32),
     BrIf(u32),
     BrTable(Box<[u32]>, u32),
@@ -196,6 +198,11 @@ fn encode_instr(out: &mut Vec<u8>, instr: &Instr) {
             out.push(0x40);
         }
         Instr::Else { .. } => out.push(0x05),
+        Instr::Mem(op, align, offset) => {
+            out.push(*op);
+            uleb(out, *align as u64);
+            uleb(out, *offset as u64);
+        }
         Instr::Br(depth) => {
             out.push(0x0c);
             uleb(out, *depth as u64);
@@ -223,6 +230,7 @@ pub struct Builder {
     globals: Vec<GlobalDef>,
     body: Vec<Instr>,
     body_type: Option<u32>,
+    locals: Vec<ValType>,
     memory_min_pages: u32,
     export_memory: bool,
     data: Vec<DataSegment>,
@@ -237,6 +245,7 @@ impl Builder {
             globals: Vec::new(),
             body: Vec::new(),
             body_type: None,
+            locals: Vec::new(),
             memory_min_pages: 0,
             export_memory: false,
             data: Vec::new(),
@@ -283,6 +292,13 @@ impl Builder {
 
     pub fn set_body_type(&mut self, type_index: u32) {
         self.body_type = Some(type_index);
+    }
+
+    /// Append one typed local to the function body; returns its index (after
+    /// the parameters, which this builder keeps empty).
+    pub fn add_local(&mut self, ty: ValType) -> u32 {
+        self.locals.push(ty);
+        (self.locals.len() - 1) as u32
     }
 
     pub fn push(&mut self, instr: Instr) {
@@ -378,7 +394,11 @@ impl Builder {
         push_section(&mut out, 7, &section);
 
         let mut body = Vec::new();
-        uleb(&mut body, 0);
+        uleb(&mut body, self.locals.len() as u64);
+        for local in &self.locals {
+            uleb(&mut body, 1);
+            body.push(local.code());
+        }
         for instr in &self.body {
             encode_instr(&mut body, instr);
         }
@@ -641,6 +661,11 @@ fn decode_code_body(r: &mut Reader) -> Result<(Vec<ValType>, Vec<Instr>), String
                 let index = r.uleb()? as u32;
                 instrs.push(Instr::Call(index));
             }
+            0x28..=0x2b | 0x36..=0x39 => {
+                let align = r.uleb()? as u32;
+                let offset = r.uleb()? as u32;
+                instrs.push(Instr::Mem(opcode, align, offset));
+            }
             0x20..=0x22 => {
                 let index = r.uleb()? as u32;
                 instrs.push(Instr::Local(opcode, index));
@@ -673,7 +698,7 @@ fn decode_code_body(r: &mut Reader) -> Result<(Vec<ValType>, Vec<Instr>), String
 }
 
 fn is_supported_numeric_opcode(opcode: u8) -> bool {
-    matches!(opcode, 0x45..=0x8a)
+    matches!(opcode, 0x45..=0x8a | 0xa7 | 0xad)
 }
 
 pub fn decode(bytes: &[u8]) -> Result<Module, String> {
@@ -1063,6 +1088,7 @@ impl<'m, H: Host> Exec<'m, H> {
                     other => self.exec_numeric(other)?,
                 },
                 Instr::Const(_, value) => self.stack.push(*value),
+                Instr::Mem(op, align, offset) => self.exec_mem(*op, *align, *offset)?,
                 Instr::Call(index) => {
                     let index = *index;
                     let type_index = self.function_type(index)?;
@@ -1187,6 +1213,94 @@ impl<'m, H: Host> Exec<'m, H> {
         }
         Ok(returned.unwrap_or_default())
     }
+    fn exec_mem(&mut self, opcode: u8, _align: u32, offset: u32) -> Result<(), String> {
+        let at = |addr: i32| (addr as usize).saturating_add(offset as usize);
+        match opcode {
+            0x28 => {
+                let addr = pop_i32(&mut self.stack)?;
+                let start = at(addr);
+                let bytes = self
+                    .memory
+                    .get(start..start + 4)
+                    .ok_or_else(|| "wasm i32.load out of bounds".to_string())?;
+                let value = i32::from_le_bytes(bytes.try_into().unwrap());
+                self.stack.push(WVal::I32(value));
+            }
+            0x29 => {
+                let addr = pop_i32(&mut self.stack)?;
+                let start = at(addr);
+                let bytes = self
+                    .memory
+                    .get(start..start + 8)
+                    .ok_or_else(|| "wasm i64.load out of bounds".to_string())?;
+                let value = i64::from_le_bytes(bytes.try_into().unwrap());
+                self.stack.push(WVal::I64(value));
+            }
+            0x2a => {
+                let addr = pop_i32(&mut self.stack)?;
+                let start = at(addr);
+                let bytes = self
+                    .memory
+                    .get(start..start + 4)
+                    .ok_or_else(|| "wasm f32.load out of bounds".to_string())?;
+                let value = f32::from_le_bytes(bytes.try_into().unwrap());
+                self.stack.push(WVal::F32(value));
+            }
+            0x2b => {
+                let addr = pop_i32(&mut self.stack)?;
+                let start = at(addr);
+                let bytes = self
+                    .memory
+                    .get(start..start + 8)
+                    .ok_or_else(|| "wasm f64.load out of bounds".to_string())?;
+                let value = f64::from_le_bytes(bytes.try_into().unwrap());
+                self.stack.push(WVal::F64(value));
+            }
+            0x36 => {
+                let value = pop_i32(&mut self.stack)?;
+                let addr = pop_i32(&mut self.stack)?;
+                let start = at(addr);
+                let slot = self
+                    .memory
+                    .get_mut(start..start + 4)
+                    .ok_or_else(|| "wasm i32.store out of bounds".to_string())?;
+                slot.copy_from_slice(&value.to_le_bytes());
+            }
+            0x37 => {
+                let value = pop_i64(&mut self.stack)?;
+                let addr = pop_i32(&mut self.stack)?;
+                let start = at(addr);
+                let slot = self
+                    .memory
+                    .get_mut(start..start + 8)
+                    .ok_or_else(|| "wasm i64.store out of bounds".to_string())?;
+                slot.copy_from_slice(&value.to_le_bytes());
+            }
+            0x38 => {
+                let value = pop_f32(&mut self.stack)?;
+                let addr = pop_i32(&mut self.stack)?;
+                let start = at(addr);
+                let slot = self
+                    .memory
+                    .get_mut(start..start + 4)
+                    .ok_or_else(|| "wasm f32.store out of bounds".to_string())?;
+                slot.copy_from_slice(&value.to_le_bytes());
+            }
+            0x39 => {
+                let value = pop_f64(&mut self.stack)?;
+                let addr = pop_i32(&mut self.stack)?;
+                let start = at(addr);
+                let slot = self
+                    .memory
+                    .get_mut(start..start + 8)
+                    .ok_or_else(|| "wasm f64.store out of bounds".to_string())?;
+                slot.copy_from_slice(&value.to_le_bytes());
+            }
+            other => return Err(format!("unsupported memory opcode 0x{other:02x}")),
+        }
+        Ok(())
+    }
+
     fn function_type(&self, index: u32) -> Result<u32, String> {
         let import_count = self.module.imports.len() as u32;
         if index < import_count {
@@ -1288,6 +1402,14 @@ impl<'m, H: Host> Exec<'m, H> {
                 let b = pop_i64(stack)?;
                 let a = pop_i64(stack)?;
                 stack.push(WVal::I64(i64_binop(opcode, a, b)?));
+            }
+            0xa7 => {
+                let value = pop_i64(stack)?;
+                stack.push(WVal::I32(value as i32));
+            }
+            0xad => {
+                let value = pop_i32(stack)?;
+                stack.push(WVal::I64(value as u32 as i64));
             }
             other => return Err(format!("unsupported wasm opcode 0x{other:02x}")),
         }
@@ -1426,6 +1548,7 @@ where
         PrintHost {
             on_i64: &mut on_i64,
             on_str: &mut on_str,
+            next_alloc: 8192,
         },
     );
     let start = module
@@ -1441,6 +1564,8 @@ where
 struct PrintHost<'a, F: FnMut(i64), G: FnMut(&str)> {
     on_i64: &'a mut F,
     on_str: &'a mut G,
+    /// Bump allocator for the prototype `env.alloc` import, 8-byte aligned.
+    next_alloc: u32,
 }
 
 impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
@@ -1459,6 +1584,22 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 };
                 (self.on_i64)(value);
                 Ok(vec![WVal::I64(value)])
+            }
+            ("env", "alloc") => {
+                let bytes = match args.first() {
+                    Some(WVal::I32(value)) => *value,
+                    _ => return Err("env.alloc expects one i32".to_string()),
+                };
+                if bytes <= 0 {
+                    return Ok(vec![WVal::I32(0)]);
+                }
+                let start = self.next_alloc;
+                let end = start.saturating_add(bytes as u32);
+                if end as usize > memory.len() {
+                    return Ok(vec![WVal::I32(0)]);
+                }
+                self.next_alloc = (end + 7) & !7;
+                Ok(vec![WVal::I32(start as i32)])
             }
             ("env", "print_utf8") => {
                 let ptr = match args.first() {
@@ -1491,6 +1632,7 @@ mod tests {
     struct Collect {
         numbers: Vec<i64>,
         strings: Vec<String>,
+        next_alloc: u32,
     }
 
     impl Host for Collect {
@@ -1509,6 +1651,22 @@ mod tests {
                     };
                     self.numbers.push(value);
                     Ok(vec![WVal::I64(value)])
+                }
+                ("env", "alloc") => {
+                    let bytes = match args.first() {
+                        Some(WVal::I32(value)) => *value,
+                        _ => return Err("env.alloc expects one i32".to_string()),
+                    };
+                    if bytes <= 0 {
+                        return Ok(vec![WVal::I32(0)]);
+                    }
+                    let start = self.next_alloc;
+                    let end = start.saturating_add(bytes as u32);
+                    if end as usize > memory.len() {
+                        return Ok(vec![WVal::I32(0)]);
+                    }
+                    self.next_alloc = (end + 7) & !7;
+                    Ok(vec![WVal::I32(start as i32)])
                 }
                 ("env", "print_utf8") => {
                     let ptr = match args.first() {
@@ -1538,6 +1696,7 @@ mod tests {
             Collect {
                 numbers: Vec::new(),
                 strings: Vec::new(),
+                next_alloc: 8192,
             },
         );
         exec.call_func(1, Vec::new()).expect("run");

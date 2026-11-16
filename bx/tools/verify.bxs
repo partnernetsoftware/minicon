@@ -127,6 +127,13 @@ test("wasm strings use linear memory", fn() {
   let ran = exec([bin, "run", dir + "/wasm-str.wasm"])
   assert(ran.code == 0 && ran.out.trim() == "hello wasm\n42", "got " + ran.out + " " + ran.err)
 })
+write(dir + "/wasm-arr.bxs", 'let a = [10, 20, 30]\nprint(a[0] + a[2])\nprint(len(a))\n')
+test("wasm arrays use the prototype allocator", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-arr.bxs", "-o", dir + "/wasm-arr.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-arr.wasm"])
+  assert(ran.code == 0 && ran.out.trim() == "40\n3", "got " + ran.out + " " + ran.err)
+})
 test("language smoke (closures, pairs, interpolation)", fn() {
   let out = exec([bin, "eval", 'fn make() { let n = 0; return fn() { n = n + 1; return n } } let c = make(); c(); c(); let s = ""; for k, v in {a: 1} { s = k + str(v) }; s + " " + str(c())'])
   assert(out.code == 0 && out.out.trim() == "a1 3", "got " + out.out + " " + out.err)

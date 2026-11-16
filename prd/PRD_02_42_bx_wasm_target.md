@@ -30,12 +30,14 @@ module should run in a browser once the Web ABI lands.
 bx wasm target
 ├── emitter (AST → core wasm)
 │   ├── [v] i64 subset: let / assignment / `+ - *` / print(<int>)
-│   └── [-] data model: strings, arrays, objects in linear memory
+│   ├── [v] strings: literals + compile-time `+`, data segments, `print_utf8`
+│   └── [v] arrays of ints: `[..]`, `arr[i]`, `len(arr)` over the prototype heap
 ├── runtime (standard module execution, own code)
 │   ├── [v] decode + validate (type/import/function/global/export/code)
 │   ├── [v] interpreter: consts, globals, locals, calls, control flow, numeric ops
 │   ├── [v] linear memory + active data segments + exported `memory`
-│   └── [-] table sections, conversions, float arithmetic
+│   ├── [v] i32/i64/f32/f64 loads+stores, memory ops for arrays
+│   └── [-] table sections, full conversions, float arithmetic
 ├── host ABI (web-shaped)
 │   ├── [v] prototype imports: `env.print_i64`, `env.print_utf8(ptr,len)`
 │   └── [-] `web.console.*`, `web.performance.*`, `bx.*` native process, `webgl.*`
@@ -49,6 +51,8 @@ bx wasm target
 - **Namespaces**
   - `env.print_i64(i64) -> i64` — prototype integer output import (echoes the value).
   - `env.print_utf8(ptr: i32, len: i32)` — UTF-8 out of the linear memory.
+  - `env.alloc(i32 bytes) -> i32` — prototype bump allocator (8192 upward,
+    8-byte aligned); the in-module heap replaces it in M2.2.
   - `web.*` — console / performance / timers first, `fetch` later; names follow
     the browser globals so browser and native hosts share one module ABI.
   - `bx.*` — native extensions (process spawning, files, argv). Explicitly
@@ -92,7 +96,7 @@ bx wasm target
 |---|---|---|
 | M0 | this spec + decision record | `[v]` |
 | M1 | numeric vertical slice: emit → run → `check`, node cross-check | `[v]` |
-| M2 | data model: strings, arrays, objects in linear memory | `[-]` (strings done: literals + compile-time `+`, `env.print_utf8`, exported memory; heap/arrays next) |
+| M2 | data model: strings, arrays, objects in linear memory | `[-]` (strings and int arrays done: data segments, exported memory, `env.alloc` bump heap prototype, `arr[i]`/`len`; in-module heap, objects and runtime strings next) |
 | M3 | functions, closures, control flow compiled to wasm | `[_]` |
 | M4 | builtins + native process ABI (`bx.*`), default target flip | `[_]` |
 | M5 | `web.*` + `webgl.*` ABI, software backend, browser demo | `[_]` |

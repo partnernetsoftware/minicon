@@ -500,6 +500,15 @@ if (wasmCheck.code == 0 && wasmCheck.out.contains("wasm")) {
   casesFail += 1
   failures.push("wasm check validates a module\n    out=" + json(wasmCheck.out))
 }
+write(artDir + "/wasm-arr.bxs", 'let a = [10, 20, 30]\nprint(a[0] + a[2])\nprint(len(a))\n')
+let wasmArr = exec([BX, "build", "--wasm", artDir + "/wasm-arr.bxs", "-o", artDir + "/wasm-arr.wasm"])
+let wasmArrRun = exec([BX, "run", artDir + "/wasm-arr.wasm"])
+if (wasmArr.code == 0 && wasmArrRun.code == 0 && wasmArrRun.out.trim() == "40\n3") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm arrays through linear memory\n    build=" + wasmArr.code + " out=" + json(wasmArrRun.out) + " err=" + json(wasmArrRun.err))
+}
 write(artDir + "/wasm-str.bxs", 'print("hello " + "wasm")\nprint(6 * 7)\n')
 let wasmStr = exec([BX, "build", "--wasm", artDir + "/wasm-str.bxs", "-o", artDir + "/wasm-str.wasm"])
 let wasmStrRun = exec([BX, "run", artDir + "/wasm-str.wasm"])
