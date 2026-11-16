@@ -1856,6 +1856,14 @@ mod tests {
     }
 
     #[test]
+    fn calls_inside_blocks_keep_the_caller_frame() {
+        let prints = run_source(
+            "fn add(a, b) { return a + b }\nlet i = 0\nwhile (i < 3) { i = add(i, 1) }\nprint(i)\nif (i == 3) { print(add(i, 2)) }\nprint(99)",
+        );
+        assert_eq!(prints, vec![3, 5, 99]);
+    }
+
+    #[test]
     fn recursion_works() {
         let prints = run_source(
             "fn fact(n) {\n  if (n < 2) { return 1 }\n  return n * fact(n - 1)\n}\nprint(fact(5))",
@@ -1878,7 +1886,6 @@ mod tests {
         assert_eq!(prints, vec![2]);
     }
 
-    #[test]
     #[test]
     fn functions_support_rich_locals() {
         let (numbers, strings) = run_with_argv(

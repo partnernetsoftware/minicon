@@ -107,6 +107,9 @@ fn gen() {
   lines.push("let w = 0")
   lines.push("while (w < " + str(rounds) + ") {")
   lines.push("  w += 1")
+  if (pick(2) == 0) {
+    lines.push("  print(helper0(w, " + str(1 + pick(5)) + "))")
+  }
   lines.push("  print(w + " + atom(vars) + ")")
   lines.push("}")
   if (pick(2) == 0) {

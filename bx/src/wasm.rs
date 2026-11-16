@@ -969,6 +969,8 @@ struct Exec<'m, H: Host> {
     labels: Vec<Label>,
     host: H,
     depth: usize,
+    /// Reused locals vectors to keep wasm calls allocation-light.
+    locals_pool: Vec<Vec<WVal>>,
 }
 
 fn pop(stack: &mut Vec<WVal>) -> Result<WVal, String> {
@@ -1025,16 +1027,24 @@ impl<'m, H: Host> Exec<'m, H> {
             labels: Vec::new(),
             host,
             depth: 0,
+            locals_pool: Vec::new(),
         }
     }
 
-    fn call_func(&mut self, index: u32, args: Vec<WVal>) -> Result<Vec<WVal>, String> {
+    /// Call a function (import or defined). Arguments are already on the operand
+    /// stack; the callee's results are left there and the count is returned.
+    fn call_func(&mut self, index: u32, arity: usize) -> Result<usize, String> {
         let import_count = self.module.imports.len() as u32;
         if index < import_count {
             let import = &self.module.imports[index as usize];
-            return self
+            let start = self.stack.len() - arity;
+            let args = self.stack.split_off(start);
+            let results = self
                 .host
-                .call(&import.module, &import.name, &args, &mut self.memory);
+                .call(&import.module, &import.name, &args, &mut self.memory)?;
+            let count = results.len();
+            self.stack.extend(results);
+            return Ok(count);
         }
         let func = self
             .module
@@ -1046,70 +1056,70 @@ impl<'m, H: Host> Exec<'m, H> {
             .types
             .get(func.type_index as usize)
             .ok_or_else(|| "function type index out of range".to_string())?;
-        if args.len() != func_type.params.len() {
+        let param_count = func_type.params.len();
+        if arity != param_count {
             return Err(format!(
                 "function expects {} arguments, got {}",
-                func_type.params.len(),
-                args.len()
+                param_count, arity
             ));
         }
-        for (arg, expected) in args.iter().zip(func_type.params.iter()) {
-            if arg.ty() != *expected {
+        let result_count = func_type.results.len();
+        let start = self.stack.len() - arity;
+        let mut locals = self.locals_pool.pop().unwrap_or_default();
+        locals.clear();
+        locals.extend(self.stack.drain(start..));
+        for (slot, expected) in locals.iter().zip(func_type.params.iter()) {
+            if slot.ty() != *expected {
                 return Err(format!(
                     "argument type mismatch: expected {}, got {}",
                     expected.name(),
-                    arg.ty().name()
+                    slot.ty().name()
                 ));
             }
         }
-        let mut locals = args;
-        for local in &func.locals {
+        let local_decls = &func.locals;
+        for local in local_decls {
             locals.push(zero_value(*local));
         }
         self.depth += 1;
         if self.depth > 1024 {
             self.depth -= 1;
+            locals.clear();
+            self.locals_pool.push(locals);
             return Err("wasm call depth exceeded".to_string());
         }
         let base = self.stack.len();
         let code = &func.code;
-        let labels_len = self.labels.len();
+        let label_base = self.labels.len();
         self.labels.push(Label {
             kind: 0x02,
             end: code.len(),
             start: 0,
             height: base,
         });
-        let outcome = self.run_body(code, &mut locals, base);
-        self.labels.truncate(labels_len);
+        let outcome = self.run_body(code, locals.as_mut_slice(), base, label_base, result_count);
+        self.labels.truncate(label_base);
         self.depth -= 1;
+        locals.clear();
+        self.locals_pool.push(locals);
         match outcome {
-            Ok(values) => {
-                let expected = func_type.results.len();
-                if values.len() != expected {
-                    return Err(format!(
-                        "function returned {} values, expected {}",
-                        values.len(),
-                        expected
-                    ));
-                }
-                Ok(values)
-            }
+            Ok(count) => Ok(count),
             Err(error) => {
                 self.stack.truncate(base);
                 Err(error)
             }
         }
     }
-
     fn run_body(
         &mut self,
         code: &[Instr],
         locals: &mut [WVal],
         base: usize,
-    ) -> Result<Vec<WVal>, String> {
+        label_base: usize,
+        result_count: usize,
+    ) -> Result<usize, String> {
         let mut ip = 0usize;
-        let mut returned: Option<Vec<WVal>> = None;
+        let mut returned = false;
         while ip < code.len() {
             match &code[ip] {
                 Instr::Op(op) => match *op {
@@ -1120,8 +1130,13 @@ impl<'m, H: Host> Exec<'m, H> {
                             .labels
                             .pop()
                             .ok_or_else(|| "wasm end without a label".to_string())?;
-                        if self.labels.is_empty() {
-                            returned = Some(self.stack.split_off(label.height.max(base)));
+                        if self.labels.len() == label_base {
+                            let keep = label.height.max(base) + result_count;
+                            if self.stack.len() < keep {
+                                return Err("function finished without its results".to_string());
+                            }
+                            self.stack.truncate(keep);
+                            returned = true;
                             break;
                         }
                         self.stack.truncate(label.height);
@@ -1129,11 +1144,16 @@ impl<'m, H: Host> Exec<'m, H> {
                     0x0f => {
                         let root = self
                             .labels
-                            .first()
+                            .get(label_base)
                             .copied()
                             .ok_or_else(|| "wasm return without a frame".to_string())?;
-                        self.labels.truncate(1);
-                        returned = Some(self.stack.split_off(root.height.max(base)));
+                        self.labels.truncate(label_base + 1);
+                        let keep = root.height.max(base) + result_count;
+                        if self.stack.len() < keep {
+                            return Err("function returned without its results".to_string());
+                        }
+                        self.stack.truncate(keep);
+                        returned = true;
                         break;
                     }
                     0x1a => {
@@ -1171,10 +1191,7 @@ impl<'m, H: Host> Exec<'m, H> {
                     if self.stack.len() < arity {
                         return Err("wasm call argument underflow".to_string());
                     }
-                    let start = self.stack.len() - arity;
-                    let args = self.stack.split_off(start);
-                    let results = self.call_func(index, args)?;
-                    self.stack.extend(results);
+                    self.call_func(index, arity)?;
                 }
                 Instr::Local(op, index) => {
                     let index = *index as usize;
@@ -1244,26 +1261,48 @@ impl<'m, H: Host> Exec<'m, H> {
                     ip = *end;
                     continue;
                 }
-                Instr::Br(depth) => match self.branch(*depth, base)? {
+                Instr::Br(depth) => match self.branch(*depth, base, label_base)? {
                     Some(next) => {
                         ip = next;
                         continue;
                     }
                     None => {
-                        returned = Some(std::mem::take(&mut self.stack));
+                        let root = self.labels.get(label_base).copied().unwrap_or(Label {
+                            kind: 0x02,
+                            end: 0,
+                            start: 0,
+                            height: base,
+                        });
+                        let keep = root.height.max(base) + result_count;
+                        if self.stack.len() < keep {
+                            return Err("function branch without its results".to_string());
+                        }
+                        self.stack.truncate(keep);
+                        returned = true;
                         break;
                     }
                 },
                 Instr::BrIf(depth) => {
                     let cond = pop_i32(&mut self.stack)?;
                     if cond != 0 {
-                        match self.branch(*depth, base)? {
+                        match self.branch(*depth, base, label_base)? {
                             Some(next) => {
                                 ip = next;
                                 continue;
                             }
                             None => {
-                                returned = Some(std::mem::take(&mut self.stack));
+                                let root = self.labels.get(label_base).copied().unwrap_or(Label {
+                                    kind: 0x02,
+                                    end: 0,
+                                    start: 0,
+                                    height: base,
+                                });
+                                let keep = root.height.max(base) + result_count;
+                                if self.stack.len() < keep {
+                                    return Err("function branch without its results".to_string());
+                                }
+                                self.stack.truncate(keep);
+                                returned = true;
                                 break;
                             }
                         }
@@ -1272,13 +1311,24 @@ impl<'m, H: Host> Exec<'m, H> {
                 Instr::BrTable(targets, default) => {
                     let index = pop_i32(&mut self.stack)? as usize;
                     let depth = targets.get(index).copied().unwrap_or(*default);
-                    match self.branch(depth, base)? {
+                    match self.branch(depth, base, label_base)? {
                         Some(next) => {
                             ip = next;
                             continue;
                         }
                         None => {
-                            returned = Some(std::mem::take(&mut self.stack));
+                            let root = self.labels.get(label_base).copied().unwrap_or(Label {
+                                kind: 0x02,
+                                end: 0,
+                                start: 0,
+                                height: base,
+                            });
+                            let keep = root.height.max(base) + result_count;
+                            if self.stack.len() < keep {
+                                return Err("function branch without its results".to_string());
+                            }
+                            self.stack.truncate(keep);
+                            returned = true;
                             break;
                         }
                     }
@@ -1286,7 +1336,8 @@ impl<'m, H: Host> Exec<'m, H> {
             }
             ip += 1;
         }
-        Ok(returned.unwrap_or_default())
+        let _ = returned;
+        Ok(result_count)
     }
     fn exec_mem(&mut self, opcode: u8, _align: u32, offset: u32) -> Result<(), String> {
         let at = |addr: i32| (addr as usize).saturating_add(offset as usize);
@@ -1391,7 +1442,12 @@ impl<'m, H: Host> Exec<'m, H> {
 
     /// Returns `Some(next_ip)` for a branch inside the function, or `None` for a
     /// branch to the function label (a return).
-    fn branch(&mut self, depth: u32, base: usize) -> Result<Option<usize>, String> {
+    fn branch(
+        &mut self,
+        depth: u32,
+        base: usize,
+        label_base: usize,
+    ) -> Result<Option<usize>, String> {
         let depth = depth as usize;
         let target = self
             .labels
@@ -1399,11 +1455,11 @@ impl<'m, H: Host> Exec<'m, H> {
             .checked_sub(1 + depth)
             .ok_or_else(|| "wasm branch depth out of range".to_string())?;
         let label = self.labels[target];
-        self.stack.truncate(label.height.max(base));
-        if target == 0 {
-            self.labels.truncate(1);
+        if target == label_base {
+            self.labels.truncate(label_base);
             return Ok(None);
         }
+        self.stack.truncate(label.height.max(base));
         if label.kind == 0x03 {
             self.labels.truncate(target + 1);
             Ok(Some(label.start))
@@ -1680,7 +1736,7 @@ where
         .find(|(name, _)| name == "_start")
         .map(|(_, index)| *index)
         .ok_or_else(|| "wasm module has no _start export".to_string())?;
-    exec.call_func(start, Vec::new())?;
+    exec.call_func(start, 0)?;
     Ok(())
 }
 
@@ -1980,7 +2036,7 @@ mod tests {
                 next_alloc: 8192,
             },
         );
-        exec.call_func(1, Vec::new()).expect("run");
+        exec.call_func(1, 0).expect("run");
         // Move the host back out of the interpreter.
         let host = exec.host;
         host

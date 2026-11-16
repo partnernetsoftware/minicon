@@ -1,0 +1,9 @@
+// Call-heavy loop: 200k helper calls.
+fn add(a, b) { return a + b }
+let i = 0
+let s = 0
+while (i < 200000) {
+  s = add(s, 1)
+  i = i + 1
+}
+print(s)

@@ -122,6 +122,14 @@ bx wasm target
   suite and therefore by the packed six-cell CI lane.
 - `bx check <module> --json` reports the decoded import/export names and defined
   function count, so agents can introspect a module without a JS toolchain.
+- **Performance** (`bash bx/scripts/bench.sh --wasm`, wall clock, min of 3, this
+  machine): fib 108 ms (VM 131 ms), 1e6-iteration loop 205 ms (VM 358 ms), 200k
+  helper calls 128 ms (VM 184 ms) — the wasm interpreter is now faster than the
+  VM on all three. Two fixes made this possible: function frames keep their own
+  label base (a `return` inside a block previously discarded the caller's labels,
+  which also silently skipped code after the block — caught by the benchmarks),
+  and wasm calls now reuse a locals pool and leave results on the operand stack
+  instead of allocating a `Vec` per call and per return.
 
 ## Non-goals
 

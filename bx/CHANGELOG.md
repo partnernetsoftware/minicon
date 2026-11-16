@@ -28,6 +28,7 @@
 
 **实验性 wasm 目标**
 
+- wasm 解释器性能：函数帧独立标签基址（修复“块内调用后跳过块外代码”的 bug）、调用走 locals 池且结果留在操作数栈；fib/loop/calls 均快于原生 VM（`bench.sh --wasm`）。`
 - `bx check <module> --json` 输出 wasm 模块 imports/exports/函数数；差分测试加入用户函数与递归；函数内可用字符串/数组/记录/浮点局部变量（每个函数独立临时槽）。`
 - 浮点类型：浮点字面量/全局、`/` 浮点除法、混合提升、`env.print_f64` 与 VM 一致的格式化、`env.fmod`；修正解释器比较/位运算 opcode 映射（`rem`、`le`、`ge` 等与 wasm 规范、node 一致）；函数可读写字符串/数组/记录全局。
 

@@ -1,0 +1,8 @@
+// Million-iteration accumulator: loop-heavy, no calls.
+let i = 0
+let s = 0
+while (i < 1000000) {
+  s = s + i
+  i = i + 1
+}
+print(s)
