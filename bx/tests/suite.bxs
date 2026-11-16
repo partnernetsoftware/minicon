@@ -483,6 +483,31 @@ if (tnone.code == 0 && tnone.out.contains("no tests")) {
   casesFail += 1
   failures.push("bx test handles a file without tests\n    out=" + json(tnone.out.trim()) + " code=" + tnone.code)
 }
+// wasm target: numeric subset builds a standard module and runs it
+write(artDir + "/wasm-num.bxs", 'let x = 2\nprint(x + 3)\nx = x * 2\nprint(x)\n')
+let wasmBuild = exec([BX, "build", "--wasm", artDir + "/wasm-num.bxs", "-o", artDir + "/wasm-num.wasm"])
+let wasmRun = exec([BX, "run", artDir + "/wasm-num.wasm"])
+if (wasmBuild.code == 0 && wasmRun.code == 0 && wasmRun.out.trim() == "5\n4") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm build+run\n    build=" + wasmBuild.code + " run=" + wasmRun.code + " out=" + json(wasmRun.out))
+}
+let wasmCheck = exec([BX, "check", artDir + "/wasm-num.wasm"])
+if (wasmCheck.code == 0 && wasmCheck.out.contains("wasm")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm check validates a module\n    out=" + json(wasmCheck.out))
+}
+write(artDir + "/wasm-bad.bxs", 'print("text")\n')
+let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
+if (wasmBad.code == 1) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm target rejects unsupported source\n    code=" + wasmBad.code)
+}
 
 // closures capture the enclosing function's visible locals by value
 check("closure factory", "15", ["eval", "fn adder(n) { return fn(x) { return x + n } } let f = adder(10); f(5)"])

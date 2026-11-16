@@ -176,6 +176,17 @@ let r = patch("src/lib.rs", read(__dir__ + "/fix.diff"))   // -> {ok, path, hunk
 | 20 万次 `map` 回调 | ~30 ms | — |
 
 全局名解析成槽位下标并按 chunk 缓存，热路径不再查哈希表；全局读写也不 clone 名字。调用路径做过四次去分配：chunk 名/来源文件走 `Rc<String>`、帧槽用复用池、`CALL` 参数直接 `drain` 进帧槽、内建回调（`map`/`filter`/`reduce`/`sort`）不再为每个元素构造 `Vec`。`fib(24)` 从 ~137 ms 降到 ~56 ms，20 万次 `map` 从 ~46 ms 降到 ~29 ms；两边 `dis` 字节码逐条一致，继续优化需要 profiler。
+## wasm 目标（实验）
+
+`.bxb` 是自研容器；长期方向是把它换成标准 WebAssembly，由 bx 自己的编码器/解释器实现（无第三方 wasm 库，`cargo tree` 只有 bx）。当前是**数值子集**纵向切片：
+
+```bash
+bx build --wasm script.bxs -o script.wasm   # 标准 core wasm（\0asm v1）
+bx run script.wasm                          # 用 bx 自己的解释器执行
+bx check script.wasm                        # 只校验模块
+```
+
+支持 `let`/赋值/`+ - *`/`print(<int>)`，经 `env.print_i64` 导入输出；字符串、数组、对象、函数等未支持时会明确报错。产物可被其它引擎直接执行（node 已验证）。规格与路线见 [PRD 42](../prd/PRD_02_42_bx_wasm_target.md)。
 ## 二进制
 
 `.bxb` 是带魔数 `BXB\x02` 的版本化容器：常量池 + 字节码 + 行号表（行程编码）+ 每个 chunk 的来源文件（v1 容器仍可读，来源文件未知）。

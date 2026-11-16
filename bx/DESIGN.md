@@ -71,6 +71,9 @@
 
 **迭代是一套统一协议。** `ITER_PREP` 在循环入口把数组/字符串/对象归一化成数组，`for x in …` 因此只有一条实现路径；类型不对时给出明确错误，而不是静默索引一个映射表得到 `null`（这正是 v0.1 的实际缺陷）。键值形式 `for k, v in …` 走 `ITER_KEYS`：对象给键、数组与字符串给下标，值统一用 `src[k]` 取，跨类型只有一条语义。
 
+## 4.5 wasm 目标（实验，长期替代 `.bxb`）
+
+执行格式的长期方向是标准 WebAssembly：`bx build --wasm` 用自研编码器生成 core wasm 模块（`\0asm` v1），`bx run *.wasm` 用自研解码器 + 解释器执行。零依赖不变——`wasm.rs` 只有 bx 自己的代码，`cargo tree` 里没有第三方 wasm crate。host ABI 按 web 形状设计（`web.*` 对应浏览器 API、`webgl.*` 对应 WebGL 1.0、`bx.*` 是原生扩展），细节由 [PRD_02_42_bx_wasm_target.md](../prd/PRD_02_42_bx_wasm_target.md) 拥有；`.bxb` 在 M6 前仍是默认路径。
 ## 5. 字节码格式（v2）
 
 小端。所有字符串 = `u32` 长度 + UTF-8 字节。

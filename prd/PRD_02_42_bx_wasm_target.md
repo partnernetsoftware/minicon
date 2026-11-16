@@ -1,0 +1,94 @@
+# `bx` WebAssembly target (`.wasm`)
+
+Owner of the experimental `.wasm` backend and its host ABI. The goal is to
+replace the private `.bxb` container as the long-term execution format; `.bxb`
+stays as the legacy path until parity is proven.
+
+## Product outcome
+
+bx source compiles to a **standard WebAssembly core module** that any engine can
+run. bx itself executes those modules with its own decoder and interpreter, so
+the product keeps its "one native binary, no runtime install" shape. The same
+module should run in a browser once the Web ABI lands.
+
+## Decision
+
+- Encoder, decoder and interpreter are **in-tree** (`bx/src/wasm.rs`,
+  `bx/src/wasm_target.rs`). `cargo tree` shows only `bx`; no third-party wasm
+  crate is linked, so the zero-dependency claim still holds.
+- The emitted artifact is a standard module (`\0asm`, version 1), not a
+  bx-private container. Provenance moves to a sidecar/metadata only if a later
+  milestone needs it.
+- `.bxb` is now the **legacy** path. The default target flips to `.wasm` after
+  M4; `.bxb` is removed after the feature matrix is green.
+- Host imports are **web-shaped**, not WASI: the ABI mirrors browser surface
+  names so one module can serve both native and browser hosts.
+
+## Tree DAG
+
+```text
+bx wasm target
+├── emitter (AST → core wasm)
+│   ├── [v] i64 subset: let / assignment / `+ - *` / print(<int>)
+│   └── [-] data model: strings, arrays, objects in linear memory
+├── runtime (standard module execution, own code)
+│   ├── [v] decode + validate (type/import/function/global/export/code)
+│   ├── [v] interpreter: consts, globals, locals, calls, control flow, numeric ops
+│   └── [-] memory/table/data sections, conversions, float arithmetic
+├── host ABI (web-shaped)
+│   ├── [v] prototype import: `env.print_i64`
+│   └── [-] `web.console.*`, `web.performance.*`, `bx.*` native process, `webgl.*`
+└── delivery
+    ├── [v] `bx build --wasm`, `bx run <file.wasm>`, `bx check <file.wasm>`
+    └── [-] `--target wasm` default + six-cell evidence + `.bxb` removal
+```
+
+## Host ABI (v0 draft)
+
+- **Namespaces**
+  - `env.print_i64(i64) -> i64` — prototype output import (echoes the value).
+  - `web.*` — console / performance / timers first, `fetch` later; names follow
+    the browser globals so browser and native hosts share one module ABI.
+  - `bx.*` — native extensions (process spawning, files, argv). Explicitly
+    unavailable in a browser; a module that imports them is a native module.
+  - `webgl.*` — WebGL 1.0 method surface, 1:1 with the browser API, i32 handles.
+    Native host: deterministic software backend; browser host: real WebGL through
+    a future JS glue layer.
+- **Memory model**: one linear memory. Numbers are `i64`; strings are
+  `(ptr, len)` UTF-8; arrays/objects live in an in-module heap with
+  `__heap_alloc` / `__heap_free` exports (M2).
+- **Exports**: `_start` is the script entry; `memory` and the heap helpers are
+  exported once the data model lands.
+- **Errors**: a trap aborts the module. bx-side `attempt` maps to status-code
+  returns from imports in M3+.
+
+## Evidence
+
+- `cargo test`: the wasm module has unit tests for encoder round-trip, operator
+  precedence and rejection of unsupported constructs; the whole crate suite is
+  part of `bx/scripts/test.sh`.
+- `bx build --wasm` output starts with `\0asm` and is instantiated by **node v24**
+  (an independent engine), which proves the bytes are standard WebAssembly rather
+  than a bx-private format.
+- CLI round-trip (`build --wasm` → `run` → `check`) is covered by the self-hosted
+  suite and therefore by the packed six-cell CI lane.
+
+## Non-goals
+
+- No WASI: the ABI is web-shaped on purpose.
+- No GC, exceptions, threads, SIMD or reference types in v0.
+- No third-party wasm runtime or encoder.
+- Not claiming the full language before M2/M3 land; the current target rejects
+  unsupported constructs with a clear message.
+
+## Milestones
+
+| Milestone | Content | Status |
+|---|---|---|
+| M0 | this spec + decision record | `[v]` |
+| M1 | numeric vertical slice: emit → run → `check`, node cross-check | `[v]` |
+| M2 | data model: strings, arrays, objects, heap in linear memory | `[-]` |
+| M3 | functions, closures, control flow compiled to wasm | `[_]` |
+| M4 | builtins + native process ABI (`bx.*`), default target flip | `[_]` |
+| M5 | `web.*` + `webgl.*` ABI, software backend, browser demo | `[_]` |
+| M6 | remove `.bxb` + legacy code paths, six-cell wasm evidence | `[_]` |

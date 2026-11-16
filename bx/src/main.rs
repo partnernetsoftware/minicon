@@ -6,6 +6,7 @@ mod lexer;
 mod parser;
 mod value;
 mod vm;
+mod wasm;
 mod wasm_target;
 
 use std::fs;

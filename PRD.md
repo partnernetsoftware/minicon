@@ -79,7 +79,8 @@ MiniCon — one-file local terminal
 │       ├── [-] Native context release and reuse → prd/PRD_02_28_01_browser_context_lifecycle.md
 │       └── product face: Tab / content panel (PRD_02_25); renderer: PRD_02_31
 │           · plan/plan-browser-tabs.md
-├── bx: agent-authored scripts as one portable binary → prd/PRD_02_41_bx.md
+├── bx: agent-authored scripts as one portable binary → prd/PRD_02_41_bx.md│   ├── [v] four cells packed through the Rust launcher lane
+│   └── [-] wasm target (.wasm replaces .bxb; own encoder/interpreter) → prd/PRD_02_42_bx_wasm_target.md
 │   ├── [v] four cells packed through the Rust launcher lane
 │   └── [-] six-cell execution evidence (CI `bx_lane`)
 ├── Qualification and delivery
@@ -216,7 +217,8 @@ flowchart LR
 | Ship portable exact artifacts and control RSS/build cost | [Delivery](prd/PRD_02_27_con_delivery.md) | native artifacts, signatures, scan, Promotion and scoped measurements; no silent weakening |
 | Install native MiniCon from a command line (deferred) | [Native installation](prd/PRD_02_27_01_install.md) | published OS-appropriate bootstrap scripts, verified native bytes and matching README/site instructions |
 | Deferred portable logic / foundry directions | [qjswasm](prd/PRD_02_29_qjswasm_horizon.md), [foundry](prd/PRD_02_30_foundry_horizon.md) | independent complete-product decisions; no current-version implementation claim |
-| Run agent-authored scripts without a Node install | [bx surface](prd/PRD_02_41_bx.md) | per-OS `minicon-bx-<cell>.com`; the 51-check suite passes through the packed win-x86_64 file; Linux/ARM execution is CI's six-runner matrix |
+| Run agent-authored scripts without a Node install | [bx surface](prd/PRD_02_41_bx.md) | per-OS `minicon-bx-<cell>.com`; the 122-check suite passes through the packed win-x86_64 file; Linux/ARM execution is CI's six-runner matrix |
+| Compile to a portable execution format | [bx wasm target](prd/PRD_02_42_bx_wasm_target.md) | standard `.wasm` modules emitted and executed by bx's own encoder/interpreter; no third-party wasm crate; browser ABI designed, parity milestones open |
 
 ## Current frontier
 

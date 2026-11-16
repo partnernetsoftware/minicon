@@ -26,6 +26,11 @@
 - `test(name, fn)` + `bx test <file>`：语言原生测试运行器（汇总与退出码）。
 - `patch(path, diff)`：原子应用 unified diff，上下文不匹配时不写文件。
 
+**实验性 wasm 目标**
+
+- `bx build --wasm` 输出标准 WebAssembly 模块，`bx run *.wasm` 用自研解释器执行；零第三方 wasm 依赖。
+- 当前覆盖数值子集（`let`/赋值/`+ - *`/`print(<int>)`），host ABI 见 PRD 42。
+
 **打包与测试**
 
 - 容器升级到 `BXB\x02`（每个 chunk 记录来源文件，v1 仍可读）。
