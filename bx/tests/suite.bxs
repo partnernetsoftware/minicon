@@ -162,13 +162,19 @@ check("attempt keeps script alive", "still here", ["eval", 'let r = attempt(fn()
 // ---------------------------------------------------------------------------
 
 print("processes")
-check("exec exit code", "3", ["eval", 'exec("cmd /C exit 3").code'])
-check("exec stdout", "hi", ["eval", 'exec(["cmd","/C","echo hi"]).out.trim()'])
-check("exec stderr", "boom", ["eval", 'exec(["cmd","/C","echo boom 1>&2"]).err.trim()'])
-check("exec argv", "a b", ["eval", 'exec(["cmd","/C","echo a b"]).out.trim()'])
-check("exec timeout", "true", ["eval", 'exec(["cmd","/C","ping -n 4 127.0.0.1 > nul"], {timeout: 50}).timeout'])
+// The suite runs on the CI pack host too (macos-15), so process cases use a
+// shell each host actually has: cmd on Windows, sh elsewhere.
+let WIN = env("OS") == "Windows_NT"
+let SH = WIN ? ["cmd", "/C"] : ["sh", "-c"]
+let EXIT3 = WIN ? "cmd /C exit 3" : "sh -c 'exit 3'"
+let SLEEP = WIN ? "ping -n 4 127.0.0.1 > nul" : "sleep 3"
+check("exec exit code", "3", ["eval", 'exec("' + EXIT3 + '").code'])
+check("exec stdout", "hi", ["eval", 'exec([' + json(SH[0]) + ',' + json(SH[1]) + ',"echo hi"]).out.trim()'])
+check("exec stderr", "boom", ["eval", 'exec([' + json(SH[0]) + ',' + json(SH[1]) + ',"echo boom 1>&2"]).err.trim()'])
+check("exec argv", "a b", ["eval", 'exec([' + json(SH[0]) + ',' + json(SH[1]) + ',"echo a b"]).out.trim()'])
+check("exec timeout", "true", ["eval", 'exec([' + json(SH[0]) + ',' + json(SH[1]) + ',' + json(SLEEP) + '], {timeout: 50}).timeout'])
 check("sh", "shell", ["eval", 'sh("echo shell").out.trim()'])
-checkTrue("which finds cmd", ["eval", 'which("cmd") != null'])
+checkTrue("which finds shell", ["eval", 'which(' + json(WIN ? "cmd" : "sh") + ') != null'])
 checkTrue("cwd is a string", ["eval", 'type(cwd()) == "str"'])
 checkTrue("env read", ["eval", "len(env()) > 0"])
 
