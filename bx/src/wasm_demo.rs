@@ -151,6 +151,16 @@ const imports = {
       }
       return 0;
     },
+    str_char_at: (ptr, len, index) => {
+      const text = new TextDecoder("utf-8").decode(
+        new Uint8Array(instance.exports.memory.buffer, ptr, len),
+      );
+      const chars = Array.from(text);
+      let at = index;
+      if (at < 0) at += chars.length;
+      if (at < 0 || at >= chars.length) throw new Error("index out of bounds");
+      return writeStringBlock(chars[at]);
+    },
     panic: (ptr, len) => {
       const text = new TextDecoder("utf-8").decode(
         new Uint8Array(instance.exports.memory.buffer, ptr, len),

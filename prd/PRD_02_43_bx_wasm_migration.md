@@ -85,6 +85,7 @@ Legend: `[v]` supported and covered by evidence, `[-]` missing but planned,
 | values | string literals, concat, compare, len, str/int conversions | `[v]` | `[v]` | unit + differential + node |
 | values | bool, `&&`/`||`/`!`, ternary, str(bool)/print(bool) | `[v]` | `[v]` | unit + differential + node |
 | values | string methods: contains/starts_with/ends_with | `[v]` | `[v]` | unit + differential + node |
+| values | indexing: negative / float arrays, Unicode string chars | `[v]` | `[v]` | unit + differential + node |
 | values | record iteration `for k, v in record` | `[v]` | `[v]` | unit + differential + node |
 | values | numeric range: VM promotes int results ≥9e15 to Float | `[v]` | documented divergence | PRD_02_42 known limitation |
 | runtime | out-of-bounds read / `% 0` / missing value: VM `null` | `[v]` | aborts (`index out of bounds` / `modulo by zero`) | unit + suite + verifier |

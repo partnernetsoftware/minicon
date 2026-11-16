@@ -1930,6 +1930,42 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 (self.on_str)(&text);
                 Ok(Vec::new())
             }
+            ("env", "str_char_at") => {
+                let (ptr, len, index) = match (args.first(), args.get(1), args.get(2)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len)), Some(WVal::I32(index))) => {
+                        (*ptr as usize, *len as usize, *index)
+                    }
+                    _ => {
+                        return Err(
+                            "env.str_char_at expects (i32 ptr, i32 len, i32 index)".to_string()
+                        )
+                    }
+                };
+                let text = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .ok_or_else(|| "env.str_char_at string is outside memory".to_string())?;
+                let chars: Vec<char> = text.chars().collect();
+                let count = chars.len() as i64;
+                let mut at = index as i64;
+                if at < 0 {
+                    at += count;
+                }
+                if at < 0 || at >= count {
+                    return Err("index out of bounds".to_string());
+                }
+                let mut encoded = [0u8; 4];
+                let char_text = chars[at as usize].encode_utf8(&mut encoded);
+                let start = self.next_file as usize;
+                let size = 4 + char_text.len();
+                if start + size > memory.len() {
+                    return Ok(vec![WVal::I32(0)]);
+                }
+                memory[start..start + 4].copy_from_slice(&(char_text.len() as u32).to_le_bytes());
+                memory[start + 4..start + size].copy_from_slice(char_text.as_bytes());
+                self.next_file = (start + size + 7) as u32 & !7;
+                Ok(vec![WVal::I32(start as i32)])
+            }
             ("env", "panic") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {
                     (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),

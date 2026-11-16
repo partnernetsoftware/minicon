@@ -853,6 +853,16 @@ if (wasmEdge2.code == 0 && wasmEdge2Run.out == wasmEdge2Vm.out && wasmEdge2Run.o
   casesFail += 1
   failures.push("wasm bool/empty-string edges\n    wasm=" + json(wasmEdge2Run.out) + " vm=" + json(wasmEdge2Vm.out) + " err=" + json(wasmEdge2Run.err))
 }
+write(artDir + "/wasm-edge3.bxs", 'let a = [10, 20, 30]\nprint(a[-1])\nprint(a[-2])\nprint(a[1.7])\nprint("hello"[0])\nprint("hello"[-1])\nprint("héllo"[1])\nlet r = {a: 1, b: 2, c: 3}\nfor k, v in r { print(k) }\nlet e = []\nprint(len(e))\nfor v in e { print(v) }\nprint("done")\n')
+let wasmEdge3 = exec([BX, "build", "--wasm", artDir + "/wasm-edge3.bxs", "-o", artDir + "/wasm-edge3.wasm"])
+let wasmEdge3Run = exec([BX, "run", artDir + "/wasm-edge3.wasm"])
+let wasmEdge3Vm = exec([BX, "run", artDir + "/wasm-edge3.bxs"])
+if (wasmEdge3.code == 0 && wasmEdge3Run.out == wasmEdge3Vm.out && wasmEdge3Run.out.trim() == "30\n20\n20\nh\no\né\na\nb\nc\n0\ndone") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm negative/string/float indexing\n    wasm=" + json(wasmEdge3Run.out) + " vm=" + json(wasmEdge3Vm.out) + " err=" + json(wasmEdge3Run.err))
+}
 write(artDir + "/wasm-bad.bxs", 'fn outer() {\n  let n = 5\n  let f = fn(x) { return x + n }\n  return f(1)\n}\nprint(outer())\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1 && wasmBad.err.contains("cannot capture outer variables")) {

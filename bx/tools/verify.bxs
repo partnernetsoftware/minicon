@@ -170,6 +170,14 @@ write(dir + "/wasm-continue.bxs", 'let sum = 0\nfor v in [1, 2, 3, 4] { if (v ==
 write(dir + "/wasm-scopedcall.bxs", 'let m = {x: 1}\nfor k, v in m { print(k + ":" + str(v)) }\n')
 write(dir + "/wasm-oob.bxs", 'let a = [1, 2]\nprint(a[5])\n')
 write(dir + "/wasm-edge2.bxs", 'print(true == false)\nprint("".contains(""))\nprint(0.1 + 0.2)\n')
+write(dir + "/wasm-edge3.bxs", 'let a = [10, 20, 30]\nprint(a[-1])\nprint("hello"[0])\nprint("héllo"[1])\n')
+test("wasm negative and string indexing", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-edge3.bxs", "-o", dir + "/wasm-edge3.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-edge3.wasm"])
+  let vm = exec([bin, "run", dir + "/wasm-edge3.bxs"])
+  assert(ran.code == 0 && ran.out == vm.out && ran.out.trim() == "30\nh\né", "wasm=" + json(ran.out) + " vm=" + json(vm.out))
+})
 test("wasm bool and empty-string edges", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-edge2.bxs", "-o", dir + "/wasm-edge2.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

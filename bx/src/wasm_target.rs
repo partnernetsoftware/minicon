@@ -502,14 +502,17 @@ impl Checker {
             }
             Expr::Index(array, index, _) => {
                 let arr_ty = self.infer(array)?;
-                if arr_ty != Ty::Arr {
-                    return Err("wasm target can index arrays only".to_string());
+                if !matches!(arr_ty, Ty::Arr | Ty::Str) {
+                    return Err(format!(
+                        "wasm target indexes arrays and strings only, got {}",
+                        ty_name(arr_ty)
+                    ));
                 }
                 let idx_ty = self.infer(index)?;
-                if idx_ty != Ty::Int {
-                    return Err("wasm target needs an int index".to_string());
+                if !is_number(idx_ty) {
+                    return Err("wasm target needs a numeric index".to_string());
                 }
-                Ok(Ty::Int)
+                Ok(if arr_ty == Ty::Str { Ty::Str } else { Ty::Int })
             }
 
             Expr::Call(callee, args, _) => {
@@ -1102,7 +1105,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 39;
+const IMPORT_COUNT: u32 = 40;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -1132,6 +1135,7 @@ const MAP_VALUE_AT: u32 = 35;
 const BOOL_TO_STR: u32 = 36;
 const STR_TEST: u32 = 37;
 const PANIC: u32 = 38;
+const STR_CHAR_AT: u32 = 39;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -2504,12 +2508,70 @@ impl<'a> Emitter<'a> {
                 Ok(Ty::Arr)
             }
             Expr::Index(array, index, _) => {
+                let array_ty = self.type_of(array)?;
+                if array_ty == Ty::Str {
+                    let ptr_tmp = self.builder.add_local(ValType::I32);
+                    let len_tmp = self.builder.add_local(ValType::I32);
+                    let index_tmp = self.builder.add_local(ValType::I64);
+                    self.emit_str(array)?;
+                    self.builder.push(Instr::Local(0x21, len_tmp));
+                    self.builder.push(Instr::Local(0x21, ptr_tmp));
+                    if self.type_of(index)? == Ty::Float {
+                        self.emit_f64(index)?;
+                        self.builder.push(Instr::Op(0xb0));
+                    } else {
+                        self.emit_expr(index)?;
+                    }
+                    self.builder.push(Instr::Local(0x21, index_tmp));
+                    self.builder.push(Instr::Local(0x20, ptr_tmp));
+                    self.builder.push(Instr::Local(0x20, len_tmp));
+                    self.builder.push(Instr::Local(0x20, index_tmp));
+                    self.builder.push(Instr::Op(0xa7));
+                    self.builder.push(Instr::Call(STR_CHAR_AT));
+                    self.builder.push(Instr::Local(0x21, ptr_tmp));
+                    self.builder.push(Instr::Local(0x20, ptr_tmp));
+                    self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                    self.builder.push(Instr::Op(0x6a));
+                    self.builder.push(Instr::Local(0x20, ptr_tmp));
+                    self.builder.push(Instr::Mem(0x28, 2, 0));
+                    return Ok(Ty::Str);
+                }
+                if array_ty != Ty::Arr {
+                    return Err(format!(
+                        "wasm target indexes arrays and strings only, got {}",
+                        ty_name(array_ty)
+                    ));
+                }
                 let array_tmp = self.builder.add_local(ValType::I32);
                 let index_tmp = self.builder.add_local(ValType::I64);
                 self.emit_expr(array)?;
                 self.builder.push(Instr::Local(0x21, array_tmp));
-                self.emit_expr(index)?;
+                if self.type_of(index)? == Ty::Float {
+                    self.emit_f64(index)?;
+                    self.builder.push(Instr::Op(0xb0));
+                } else {
+                    self.emit_expr(index)?;
+                }
                 self.builder.push(Instr::Local(0x21, index_tmp));
+                // negative indexes count from the end, as in the VM
+                self.builder.push(Instr::Local(0x20, index_tmp));
+                self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                self.builder.push(Instr::Op(0x53));
+                self.builder.push(Instr::Block {
+                    opcode: 0x04,
+                    end: 0,
+                    else_at: 0,
+                    start: 0,
+                });
+                self.labels.push(0x04);
+                self.builder.push(Instr::Local(0x20, index_tmp));
+                self.builder.push(Instr::Local(0x20, array_tmp));
+                self.builder.push(Instr::Mem(0x28, 2, 0));
+                self.builder.push(Instr::Op(0xad));
+                self.builder.push(Instr::Op(0x7c));
+                self.builder.push(Instr::Local(0x21, index_tmp));
+                self.labels.pop();
+                self.builder.push(Instr::Op(0x0b));
                 // bounds check: index < 0 || index >= len
                 self.builder.push(Instr::Local(0x20, index_tmp));
                 self.builder.push(Instr::Const(0x42, WVal::I64(0)));
@@ -3816,6 +3878,10 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let map_value_at_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I64]);
     let bool_to_str_ty = builder.add_type(vec![ValType::I32], vec![ValType::I32]);
     let panic_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![]);
+    let str_char_at_ty = builder.add_type(
+        vec![ValType::I32, ValType::I32, ValType::I32],
+        vec![ValType::I32],
+    );
     let str_test_ty = builder.add_type(
         vec![
             ValType::I32,
@@ -3897,6 +3963,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "bool_to_str", bool_to_str_ty);
     builder.import_func("env", "str_test", str_test_ty);
     builder.import_func("env", "panic", panic_ty);
+    builder.import_func("env", "str_char_at", str_char_at_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -4236,6 +4303,19 @@ mod tests {
     }
 
     #[test]
+    fn indexes_support_negative_float_and_strings() {
+        let (numbers, strings) = run_with_argv(
+            "let a = [10, 20, 30]\nprint(a[-1])\nprint(a[-2])\nprint(a[1.7])\nprint(\"hello\"[0])\nprint(\"hello\"[-1])\nprint(\"héllo\"[1])",
+            &[],
+        );
+        assert_eq!(numbers, vec![30, 20, 20]);
+        assert_eq!(
+            strings,
+            vec!["h".to_string(), "o".to_string(), "é".to_string()]
+        );
+    }
+
+    #[test]
     fn bool_comparisons_and_empty_string_tests() {
         let (numbers, strings) = run_with_argv(
             "print(true == false)\nprint(true != false)\nprint(false < true)\nprint(\"\".contains(\"\"))\nprint(\"\".starts_with(\"\"))\nprint(\"abc\".contains(\"\"))",
@@ -4269,7 +4349,7 @@ mod tests {
         let error = execute(&modulo, &[], 0, 0, |_| {}, |_| {}).unwrap_err();
         assert_eq!(error, "modulo by zero");
 
-        let negative = compile_to_wasm("let a = [1]\nprint(a[-1])").unwrap();
+        let negative = compile_to_wasm("let a = [1]\nprint(a[-5])").unwrap();
         let error = execute(&negative, &[], 0, 0, |_| {}, |_| {}).unwrap_err();
         assert!(error.contains("index out of bounds"), "got {error}");
     }
