@@ -645,6 +645,8 @@ struct ExecOpts {
     stdin: Option<Vec<u8>>,
     shell: bool,
     max_bytes: usize,
+    stdout_file: Option<String>,
+    stderr_file: Option<String>,
 }
 
 fn exec_opts(args: &[Value], shell_default: bool) -> Result<ExecOpts, String> {
@@ -655,6 +657,8 @@ fn exec_opts(args: &[Value], shell_default: bool) -> Result<ExecOpts, String> {
         stdin: None,
         shell: shell_default,
         max_bytes: 8 * 1024 * 1024,
+        stdout_file: None,
+        stderr_file: None,
     };
     if let Some(v) = args.get(1) {
         if matches!(v, Value::Null) {
@@ -681,6 +685,12 @@ fn exec_opts(args: &[Value], shell_default: bool) -> Result<ExecOpts, String> {
         }
         if let Some(Value::Bool(b)) = obj.get("shell") {
             o.shell = *b;
+        }
+        if let Some(Value::Str(path)) = obj.get("stdout") {
+            o.stdout_file = Some(path.to_string());
+        }
+        if let Some(Value::Str(path)) = obj.get("stderr") {
+            o.stderr_file = Some(path.to_string());
         }
         if let Some(m) = obj.get("max") {
             if let Some(n) = m.to_num() {
@@ -741,8 +751,28 @@ fn run_process(program: &str, argv: &[String], opts: &ExecOpts) -> Result<Value,
         c
     };
 
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::piped());
+    // A redirected stream goes straight to a file, so large output never has to
+    // fit in the 8 MB capture buffer.
+    match &opts.stdout_file {
+        Some(path) => {
+            let file =
+                fs::File::create(path).map_err(|e| format!("cannot write '{}': {}", path, e))?;
+            cmd.stdout(Stdio::from(file));
+        }
+        None => {
+            cmd.stdout(Stdio::piped());
+        }
+    }
+    match &opts.stderr_file {
+        Some(path) => {
+            let file =
+                fs::File::create(path).map_err(|e| format!("cannot write '{}': {}", path, e))?;
+            cmd.stderr(Stdio::from(file));
+        }
+        None => {
+            cmd.stderr(Stdio::piped());
+        }
+    }
     cmd.stdin(if opts.stdin.is_some() {
         Stdio::piped()
     } else {

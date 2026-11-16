@@ -398,6 +398,23 @@ if (slowAll[0].code == 0 && slowAll[1].code == 0 && allWall < 700) {
   casesFail += 1
   failures.push("exec_all runs concurrently\n    wall=" + allWall + "ms codes=" + json([slowAll[0].code, slowAll[1].code]))
 }
+// exec can stream a command's output straight to a file
+let outFile = artDir + "/exec-out.txt"
+let errFile = artDir + "/exec-err.txt"
+let redirected = exec([BX, "eval", "print(41 + 1)"], {stdout: outFile})
+if (redirected.code == 0 && redirected.out == "" && read(outFile).trim() == "42") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("exec redirects stdout to a file\n    out=" + json(redirected.out) + " file=" + json(read(outFile)))
+}
+let redirectedErr = exec([BX, "eval", "eprint(\"boom\")"], {stderr: errFile})
+if (redirectedErr.code == 0 && redirectedErr.err == "" && read(errFile).trim() == "boom") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("exec redirects stderr to a file\n    err=" + json(redirectedErr.err) + " file=" + json(read(errFile)))
+}
 
 // closures capture the enclosing function's visible locals by value
 check("closure factory", "15", ["eval", "fn adder(n) { return fn(x) { return x + n } } let f = adder(10); f(5)"])

@@ -123,6 +123,7 @@ exec(["git", "status"], {cwd: "/repo", timeout: 5000})
 exec("dir", {shell: true, stdin: "y\n", max: 1048576})
 // -> {code: 0, ok: true, out: "...", err: "", ms: 21, timeout: false}
 
+exec(["cargo", "build"], {stdout: "build.log", stderr: "build.err"})   // 大输出直接落文件
 exec_all([["git", "status"], ["git", "diff"]], {cwd: "/repo"})
 // -> [result, result]：顺序与输入一致，最多 8 个并发，单个失败不影响其他
 ```
