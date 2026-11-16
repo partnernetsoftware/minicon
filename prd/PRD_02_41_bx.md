@@ -29,7 +29,7 @@ bx — binary scripting surface
 │   ├── [v] four cells packed locally: {win,lnx} × {x86_64,aarch64}
 │   └── [-] six-cell execution evidence (CI `bx_lane`)
 └── qualification
-    ├── [v] 84-check suite passes through the packed win-x86_64 artifact
+    ├── [v] 87-check suite passes through the packed win-x86_64 artifact
     └── [-] the same suite on the five remaining runners
 ```
 
@@ -68,7 +68,7 @@ flowchart LR
 - `minicon-bx-win-x86_64.com`: `version` → `bx 0.1.0`; `eval "6*7"` → `42`;
   `exit(3)` → `3` (verbatim, not `(128+3)<<8`); a parent `exec` captures
   `[0,"42\n"]`.
-- `BX_BIN=minicon-bx-win-x86_64.com bx run bx/tests/suite.bxs` → **PASS 84
+- `BX_BIN=minicon-bx-win-x86_64.com bx run bx/tests/suite.bxs` → **PASS 87
   checks** (ternary, interpolation and its escape, CLI flags, stdin, argv with
   spaces/unicode, and include-aware cache invalidation).
 - 2026-11-16 review pass: the container now carries `__meta__` metadata
@@ -115,6 +115,9 @@ flowchart LR
   (internal timing, packed-artifact mode); bytecode for `fib`/`loop`/`calls` is
   identical to the pre-closure build, and the remaining call-path cost
   (8-15%) is VM-implementation level, documented in the bx README.
+- 2026-11-16 round 10: `bx check <script>` compiles (and caches) without
+  executing, so an agent can gate a run on syntax/compile errors; covered for
+  good, broken and missing files. Suite: 87 checks.
 - Open: execution on Linux x86_64/aarch64 and Windows ARM64 belongs to the
   six-runner matrix (`minicon-com.yml`, `bx_lane`), not the Windows host.
 

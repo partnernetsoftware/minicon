@@ -110,8 +110,6 @@ if (stdinRun.code == 0 && stdinRun.out.trim() == "3") {
 }
 check("argv keeps spaces and unicode", '["a b","ü"]', ["run", __dir__ + "/cases/argv.bxs", "a b", "ü"])
 
-// closures capture the enclosing function's visible locals by value
-check("closure factory", "15", ["eval", "fn adder(n) { return fn(x) { return x + n } } let f = adder(10); f(5)"])
 check("closure captures a local for a callback", "[10,20,30]", ["eval", "fn scale(base) { return map([1,2,3], fn(x) { return x * base }) } scale(10)"])
 check("closure captures parameter and local", "6", ["eval", "fn f(a) { let b = 2; return fn(c) { return a + b + c } } f(1)(3)"])
 check("closure sees later updates", "9", ["eval", "fn f() { let n = 1; let g = fn() { return n }; n = 9; return g() } f()"])
@@ -195,6 +193,35 @@ check("hello example", "hello from bx\n7\n{\"bytes\":2,\"fast\":true}", ["run", 
 
 print("bytecode")
 let artDir = __dir__ + "/../target/bx-tests"
+// `bx check` compiles without executing, and reports where bad source fails
+let checkDir = artDir + "/check"
+mkdir(checkDir)
+write(checkDir + "/run-me.bxs", 'print("EXECUTED")\n')
+let checked = exec([BX, "check", checkDir + "/run-me.bxs"])
+if (checked.code == 0 && checked.out.contains("ok ") && !checked.out.contains("EXECUTED")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("check compiles without running\n    code=" + checked.code + " stdout=" + json(checked.out.trim()) + " stderr=" + json(checked.err.trim()))
+}
+write(checkDir + "/broken.bxs", 'fn f( {\n')
+let broken = exec([BX, "check", checkDir + "/broken.bxs"])
+if (broken.code == 1 && broken.err.contains("line")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("check reports broken source\n    code=" + broken.code + " stderr=" + json(broken.err.trim()))
+}
+let missingCheck = exec([BX, "check", checkDir + "/nope.bxs"])
+if (missingCheck.code == 1) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("check fails on a missing file\n    code=" + missingCheck.code)
+}
+
+// closures capture the enclosing function's visible locals by value
+check("closure factory", "15", ["eval", "fn adder(n) { return fn(x) { return x + n } } let f = adder(10); f(5)"])
 mkdir(artDir)
 let bxb = artDir + "/suite-loops.bxb"
 let built = run(["build", __dir__ + "/cases/loops.bxs", "-o", bxb])

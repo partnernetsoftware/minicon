@@ -40,6 +40,7 @@ bx eval "1 + 2 * 3"
 bx build examples\hello.bxs -o hello.bxb   # 编译成字节码
 bx run hello.bxb                            # 直接执行二进制
 bx dis hello.bxb                            # 反汇编
+bx check script.bxs                        # 只编译不执行，给 agent 当闸门
 bx help exec                                # 单个内建的契约
 bx --version                                # 等价 bx version（-v/-V 亦可）
 bx --help                                   # 等价 bx help

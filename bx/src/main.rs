@@ -50,6 +50,7 @@ fn cli(cmd: String, args: Vec<String>) -> i32 {
         "eval" | "e" => cmd_eval(args),
         "build" => cmd_build(args),
         "dis" | "disasm" => cmd_dis(args),
+        "check" => cmd_check(args),
         "help" | "-h" | "--help" => {
             if let Some(name) = args.first() {
                 print_builtin_help(name);
@@ -83,6 +84,7 @@ usage
   bx eval "<source>"                         evaluate source and print the result
   bx build <script.bxs> [-o out.bxb]         compile source to bytecode
   bx dis <script.bxs|out.bxb>                disassemble bytecode
+  bx check <script.bxs|script.bxb>           compile only (no execution)
   bx help [builtin]                          this text, or one builtin's contract
   bx version
 
@@ -259,6 +261,30 @@ fn cmd_build(args: Vec<String>) -> i32 {
     0
 }
 
+/// Compile without executing: validation for agents that want to gate a run.
+fn cmd_check(args: Vec<String>) -> i32 {
+    if args.is_empty() {
+        eprintln!("bx check: missing script path");
+        return 2;
+    }
+    let path = Path::new(&args[0]);
+    match load_program(path, false) {
+        Ok((chunks, name)) => {
+            let chunks_n = chunks.len();
+            println!(
+                "ok {} ({} chunk{})",
+                name,
+                chunks_n,
+                if chunks_n == 1 { "" } else { "s" }
+            );
+            0
+        }
+        Err(e) => {
+            eprintln!("bx: {}", e);
+            1
+        }
+    }
+}
 fn cmd_dis(args: Vec<String>) -> i32 {
     let path = match args.first() {
         Some(p) => p.clone(),
