@@ -144,6 +144,11 @@ bx wasm target
   `&&`/`||`/`!` through if/else locals, ternary with int/float/bool branches
   (string branches still rejected) and `str(bool)`/`print(bool)` via host
   `env.bool_to_str`.
+- **Loop-condition fast path**: `while`/`for` exit tests over a direct comparison
+  emit the inverse comparison opcode, dropping the trailing `eqz` on every
+  iteration; the interpreter's timeout check short-circuits when no deadline is
+  armed. Measured (wall clock incl. process start, `BX_BENCH_RUNS=9`):
+  fib ≈0.83×, loop ≈0.58×, calls ≈0.78× of the VM's time.
 - **Explicit IO/map failures**: `read_file(missing)` aborts with a `cannot read`
   message (same shape as the VM's `read`), `write_file` returns `0`/`-1`
   (sign-extended via `i64.extend_i32_s`, now decoded as 0xac), and maps reject

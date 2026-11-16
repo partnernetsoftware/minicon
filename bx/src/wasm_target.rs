@@ -2051,84 +2051,7 @@ impl<'a> Emitter<'a> {
                 if !cmp {
                     return Err("wasm target supports comparison conditions only".to_string());
                 }
-                let lt = self.type_of(left)?;
-                let rt = self.type_of(right)?;
-                if lt == Ty::Bool && rt == Ty::Bool {
-                    self.emit_expr(left)?;
-                    self.emit_expr(right)?;
-                    let opcode = match op {
-                        BinOp::Eq => 0x46,
-                        BinOp::Ne => 0x47,
-                        BinOp::Lt => 0x48,
-                        BinOp::Gt => 0x4a,
-                        BinOp::Le => 0x4c,
-                        _ => 0x4e,
-                    };
-                    self.builder.push(Instr::Op(opcode));
-                    return Ok(());
-                }
-                if lt == Ty::Str && rt == Ty::Str {
-                    self.emit_str(left)?;
-                    self.emit_str(right)?;
-                    self.builder.push(Instr::Call(STR_COMPARE));
-                    match op {
-                        BinOp::Eq => self.builder.push(Instr::Op(0x45)),
-                        BinOp::Ne => {
-                            self.builder.push(Instr::Op(0x45));
-                            self.builder.push(Instr::Op(0x45));
-                        }
-                        BinOp::Lt => {
-                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
-                            self.builder.push(Instr::Op(0x48));
-                        }
-                        BinOp::Gt => {
-                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
-                            self.builder.push(Instr::Op(0x4a));
-                        }
-                        BinOp::Le => {
-                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
-                            self.builder.push(Instr::Op(0x4c));
-                        }
-                        _ => {
-                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
-                            self.builder.push(Instr::Op(0x4e));
-                        }
-                    }
-                    return Ok(());
-                }
-                if !is_number(lt) || !is_number(rt) {
-                    return Err(format!(
-                        "wasm target compares two numbers or two strings, got {} and {}",
-                        ty_name(lt),
-                        ty_name(rt)
-                    ));
-                }
-                if lt == Ty::Float || rt == Ty::Float {
-                    self.emit_f64(left)?;
-                    self.emit_f64(right)?;
-                    let opcode = match op {
-                        BinOp::Eq => 0x61,
-                        BinOp::Ne => 0x62,
-                        BinOp::Lt => 0x63,
-                        BinOp::Gt => 0x64,
-                        BinOp::Le => 0x65,
-                        _ => 0x66,
-                    };
-                    self.builder.push(Instr::Op(opcode));
-                    return Ok(());
-                }
-                let opcode = match op {
-                    BinOp::Eq => 0x51,
-                    BinOp::Ne => 0x52,
-                    BinOp::Lt => 0x53,
-                    BinOp::Le => 0x57,
-                    BinOp::Gt => 0x55,
-                    _ => 0x59,
-                };
-                self.emit_expr(left)?;
-                self.emit_expr(right)?;
-                self.builder.push(Instr::Op(opcode));
-                Ok(())
+                self.emit_cmp(*op, left, right)
             }
             other => {
                 if self.type_of(other)? == Ty::Bool {
@@ -2142,6 +2065,115 @@ impl<'a> Emitter<'a> {
             }
         }
     }
+
+    /// Emit a comparison, leaving an i32 bool on the stack.
+    fn emit_cmp(&mut self, op: BinOp, left: &Expr, right: &Expr) -> Result<(), String> {
+        let lt = self.type_of(left)?;
+        let rt = self.type_of(right)?;
+        if lt == Ty::Bool && rt == Ty::Bool {
+            self.emit_expr(left)?;
+            self.emit_expr(right)?;
+            let opcode = match op {
+                BinOp::Eq => 0x46,
+                BinOp::Ne => 0x47,
+                BinOp::Lt => 0x48,
+                BinOp::Gt => 0x4a,
+                BinOp::Le => 0x4c,
+                _ => 0x4e,
+            };
+            self.builder.push(Instr::Op(opcode));
+            return Ok(());
+        }
+        if lt == Ty::Str && rt == Ty::Str {
+            self.emit_str(left)?;
+            self.emit_str(right)?;
+            self.builder.push(Instr::Call(STR_COMPARE));
+            match op {
+                BinOp::Eq => self.builder.push(Instr::Op(0x45)),
+                BinOp::Ne => {
+                    self.builder.push(Instr::Op(0x45));
+                    self.builder.push(Instr::Op(0x45));
+                }
+                BinOp::Lt => {
+                    self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                    self.builder.push(Instr::Op(0x48));
+                }
+                BinOp::Gt => {
+                    self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                    self.builder.push(Instr::Op(0x4a));
+                }
+                BinOp::Le => {
+                    self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                    self.builder.push(Instr::Op(0x4c));
+                }
+                _ => {
+                    self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                    self.builder.push(Instr::Op(0x4e));
+                }
+            }
+            return Ok(());
+        }
+        if !is_number(lt) || !is_number(rt) {
+            return Err(format!(
+                "wasm target compares two numbers or two strings, got {} and {}",
+                ty_name(lt),
+                ty_name(rt)
+            ));
+        }
+        if lt == Ty::Float || rt == Ty::Float {
+            self.emit_f64(left)?;
+            self.emit_f64(right)?;
+            let opcode = match op {
+                BinOp::Eq => 0x61,
+                BinOp::Ne => 0x62,
+                BinOp::Lt => 0x63,
+                BinOp::Gt => 0x64,
+                BinOp::Le => 0x65,
+                _ => 0x66,
+            };
+            self.builder.push(Instr::Op(opcode));
+            return Ok(());
+        }
+        let opcode = match op {
+            BinOp::Eq => 0x51,
+            BinOp::Ne => 0x52,
+            BinOp::Lt => 0x53,
+            BinOp::Le => 0x57,
+            BinOp::Gt => 0x55,
+            _ => 0x59,
+        };
+        self.emit_expr(left)?;
+        self.emit_expr(right)?;
+        self.builder.push(Instr::Op(opcode));
+        Ok(())
+    }
+    /// Emit a loop-exit test: branches out when `cond` is false. Direct
+    /// comparisons use their inverse opcode so the extra `eqz` disappears.
+    fn emit_cond_exit(&mut self, cond: &Expr) -> Result<(), String> {
+        if let Expr::Bin(op, left, right) = cond {
+            if matches!(
+                op,
+                BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge
+            ) {
+                let inverse = match op {
+                    BinOp::Eq => BinOp::Ne,
+                    BinOp::Ne => BinOp::Eq,
+                    BinOp::Lt => BinOp::Ge,
+                    BinOp::Le => BinOp::Gt,
+                    BinOp::Gt => BinOp::Le,
+                    _ => BinOp::Lt,
+                };
+                self.emit_cmp(inverse, left, right)?;
+                self.builder.push(Instr::BrIf(1));
+                return Ok(());
+            }
+        }
+        self.emit_cond(cond)?;
+        self.builder.push(Instr::Op(0x45));
+        self.builder.push(Instr::BrIf(1));
+        Ok(())
+    }
+
     fn emit_while(
         &mut self,
         cond: Option<&Expr>,
@@ -2163,9 +2195,7 @@ impl<'a> Emitter<'a> {
         });
         self.labels.push(0x03);
         if let Some(cond) = cond {
-            self.emit_cond(cond)?;
-            self.builder.push(Instr::Op(0x45));
-            self.builder.push(Instr::BrIf(1));
+            self.emit_cond_exit(cond)?;
         }
         if step.is_some() {
             self.push_continue_block();

@@ -28,6 +28,7 @@
 
 **实验性 wasm 目标**
 
+- 性能：while/for 退出条件直接用反向比较指令（省去每轮 eqz），解释器无 deadline 时跳过超时位测试；bench 更新为 fib ~0.83×、loop ~0.58×、calls ~0.78× VM 耗时。
 - argv 支持空格/Unicode、越界返回空串；capture 返回未 trim 的原始 stdout，结果区不足时报错而非静默空串。
 - IO/映射失败显式化：read_file 缺失文件报 cannot read，write_file 返回 0/-1（签名扩展），映射满/未初始化/分配失败均报错而非静默。
 - 索引对齐 VM：负索引（从末尾计）、浮点索引（截断）、字符串按 Unicode 字符取字符（host `env.str_char_at`）。`

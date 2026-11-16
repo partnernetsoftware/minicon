@@ -1135,7 +1135,7 @@ impl<'m, H: Host> Exec<'m, H> {
                     self.max_steps
                 ));
             }
-            if self.steps & 0x3FF == 0 {
+            if self.deadline.is_some() && self.steps & 0x3FF == 0 {
                 if let Some(deadline) = self.deadline {
                     if std::time::Instant::now() >= deadline {
                         return Err("wasm timeout exceeded".to_string());
