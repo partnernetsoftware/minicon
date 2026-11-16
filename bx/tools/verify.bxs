@@ -157,6 +157,13 @@ write(dir + "/wasm-strcmp.bxs", 'if ("abc" < "abd") { print(1) }\n')
 write(dir + "/wasm-push.bxs", 'let a = [1]\na.push(2)\nprint(len(a))\n')
 write(dir + "/wasm-forin.bxs", 'let a = [1, 2, 3]\nlet s = 0\nfor v in a { s = s + v }\nprint(s)\n')
 write(dir + "/wasm-conv.bxs", 'print(str(42))\nprint(int("7"))\nlet a = [1, 2, 3]\na.pop()\nprint(a.len())\n')
+write(dir + "/wasm-util.bxs", 'let t = now()\nif (t > 0) { print(1) }\nmkdir("util-made")\nprint(file_exists("util-made"))\n')
+test("wasm native utilities", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-util.bxs", "-o", dir + "/wasm-util.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-util.wasm"], { cwd: dir })
+  assert(ran.code == 0 && ran.out.trim() == "1\n1", "got " + json(ran.out) + " " + ran.err)
+})
 test("wasm str/int conversions and pop", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-conv.bxs", "-o", dir + "/wasm-conv.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

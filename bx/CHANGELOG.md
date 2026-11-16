@@ -28,6 +28,7 @@
 
 **实验性 wasm 目标**
 
+- 原生工具：`now()`/`sleep(ms)`/`cwd()`/`env(name)`/`mkdir(path)`/`file_exists(path)`（浏览器胶水提供 stub）。`
 - `str(x)`/`int(x)` 数值字符串互转（格式与 VM 一致）、`.len()` 与语句级 `.pop()`；`for v in` / `for k, v in` 数组遍历（索引/值局部变量按块作用域）；差分测试加入 for-in。`
 - 数组可变：`arr.push(x)`（分配-复制-写回，容量按需增长）；差分测试加入 push。`
 - 字符串比较（`== != < <= > >=`）经 host `str_compare` + i32 比较实现，与 VM 一致；差分测试加入字符串比较。`

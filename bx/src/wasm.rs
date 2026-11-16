@@ -1978,6 +1978,86 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     Err(_) => Err(format!("cannot convert '{}' to int", trimmed)),
                 }
             }
+            ("env", "now_ms") => {
+                let millis = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|duration| duration.as_millis() as i64)
+                    .unwrap_or(0);
+                Ok(vec![WVal::I64(millis)])
+            }
+            ("env", "sleep_ms") => {
+                let millis = match args.first() {
+                    Some(WVal::I64(value)) => *value,
+                    _ => return Err("env.sleep_ms expects one i64".to_string()),
+                };
+                if millis > 0 {
+                    std::thread::sleep(std::time::Duration::from_millis(millis as u64));
+                }
+                Ok(Vec::new())
+            }
+            ("env", "cwd") => {
+                let text = std::env::current_dir()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let start = self.next_file as usize;
+                let size = 4 + text.len();
+                if start + size > memory.len() {
+                    return Ok(vec![WVal::I32(0)]);
+                }
+                memory[start..start + 4].copy_from_slice(&(text.len() as u32).to_le_bytes());
+                memory[start + 4..start + size].copy_from_slice(text.as_bytes());
+                self.next_file = (start + size + 7) as u32 & !7;
+                Ok(vec![WVal::I32(start as i32)])
+            }
+            ("env", "env_get") => {
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("env.env_get expects (i32 ptr, i32 len)".to_string()),
+                };
+                let name = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .ok_or_else(|| "env.env_get name is outside memory".to_string())?;
+                let name = String::from_utf8_lossy(name).to_string();
+                let text = std::env::var(&name).unwrap_or_default();
+                let start = self.next_file as usize;
+                let size = 4 + text.len();
+                if start + size > memory.len() {
+                    return Ok(vec![WVal::I32(0)]);
+                }
+                memory[start..start + 4].copy_from_slice(&(text.len() as u32).to_le_bytes());
+                memory[start + 4..start + size].copy_from_slice(text.as_bytes());
+                self.next_file = (start + size + 7) as u32 & !7;
+                Ok(vec![WVal::I32(start as i32)])
+            }
+            ("env", "mkdir") => {
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("env.mkdir expects (i32 ptr, i32 len)".to_string()),
+                };
+                let path = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .ok_or_else(|| "env.mkdir path is outside memory".to_string())?;
+                let path = String::from_utf8_lossy(path).to_string();
+                let ok = std::fs::create_dir_all(&path).is_ok();
+                Ok(vec![WVal::I32(if ok { 0 } else { -1 })])
+            }
+            ("env", "file_exists") => {
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("env.file_exists expects (i32 ptr, i32 len)".to_string()),
+                };
+                let path = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .ok_or_else(|| "env.file_exists path is outside memory".to_string())?;
+                let path = String::from_utf8_lossy(path);
+                Ok(vec![WVal::I32(
+                    if std::path::Path::new(path.as_ref()).exists() {
+                        1
+                    } else {
+                        0
+                    },
+                )])
+            }
             ("env", "fmod") => {
                 let (a, b) = match (args.first(), args.get(1)) {
                     (Some(WVal::F64(a)), Some(WVal::F64(b))) => (*a, *b),

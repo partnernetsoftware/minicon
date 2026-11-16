@@ -467,6 +467,24 @@ impl Checker {
                         }
                         return Ok(Ty::Int);
                     }
+                    if name == "now" && args.is_empty() {
+                        return Ok(Ty::Int);
+                    }
+                    if name == "cwd" && args.is_empty() {
+                        return Ok(Ty::Str);
+                    }
+                    if name == "env" && args.len() == 1 {
+                        if self.infer(&args[0])? != Ty::Str {
+                            return Err("wasm target env(name) needs a string".to_string());
+                        }
+                        return Ok(Ty::Str);
+                    }
+                    if name == "file_exists" && args.len() == 1 {
+                        if self.infer(&args[0])? != Ty::Str {
+                            return Err("wasm target file_exists(path) needs a string".to_string());
+                        }
+                        return Ok(Ty::Int);
+                    }
                     if name == "str" && args.len() == 1 {
                         if !is_number(self.infer(&args[0])?) {
                             return Err("wasm target str() takes a number".to_string());
@@ -590,6 +608,18 @@ impl Checker {
                     return Err("wasm target only supports calls to print()".to_string());
                 };
                 match name.as_str() {
+                    "sleep" => {
+                        if args.len() != 1 || self.infer(&args[0])? != Ty::Int {
+                            return Err("wasm target sleep(ms) takes an int".to_string());
+                        }
+                        return Ok(());
+                    }
+                    "mkdir" => {
+                        if args.len() != 1 || self.infer(&args[0])? != Ty::Str {
+                            return Err("wasm target mkdir(path) takes a string".to_string());
+                        }
+                        return Ok(());
+                    }
                     "gl_create" => {
                         if args.len() != 2 {
                             return Err("wasm target gl_create(width, height)".to_string());
@@ -878,7 +908,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 23;
+const IMPORT_COUNT: u32 = 29;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -892,6 +922,12 @@ const STR_COMPARE: u32 = 19;
 const INT_TO_STR: u32 = 20;
 const F64_TO_STR: u32 = 21;
 const STR_TO_INT: u32 = 22;
+const NOW_MS: u32 = 23;
+const SLEEP_MS: u32 = 24;
+const CWD: u32 = 25;
+const ENV_GET: u32 = 26;
+const MKDIR: u32 = 27;
+const FILE_EXISTS: u32 = 28;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -1830,6 +1866,44 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Op(0xad));
                         return Ok(Ty::Int);
                     }
+
+                    if name == "now" && args.is_empty() {
+                        self.builder.push(Instr::Call(NOW_MS));
+                        return Ok(Ty::Int);
+                    }
+                    if name == "cwd" && args.is_empty() {
+                        self.builder.push(Instr::Call(CWD));
+                        self.builder.push(Instr::Local(0x21, ARG_TMP));
+                        self.builder.push(Instr::Local(0x20, ARG_TMP));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x20, ARG_TMP));
+                        self.builder.push(Instr::Mem(0x28, 2, 0));
+                        return Ok(Ty::Str);
+                    }
+                    if name == "env" && args.len() == 1 {
+                        if self.type_of(&args[0])? != Ty::Str {
+                            return Err("wasm target env(name) needs a string".to_string());
+                        }
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Call(ENV_GET));
+                        self.builder.push(Instr::Local(0x21, ARG_TMP));
+                        self.builder.push(Instr::Local(0x20, ARG_TMP));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x20, ARG_TMP));
+                        self.builder.push(Instr::Mem(0x28, 2, 0));
+                        return Ok(Ty::Str);
+                    }
+                    if name == "file_exists" && args.len() == 1 {
+                        if self.type_of(&args[0])? != Ty::Str {
+                            return Err("wasm target file_exists(path) needs a string".to_string());
+                        }
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Call(FILE_EXISTS));
+                        self.builder.push(Instr::Op(0xad));
+                        return Ok(Ty::Int);
+                    }
                     if name == "str" && args.len() == 1 {
                         let ty = self.type_of(&args[0])?;
                         if ty == Ty::Float {
@@ -2017,6 +2091,23 @@ impl<'a> Emitter<'a> {
                     return Ok(());
                 }
                 match name.as_str() {
+                    "sleep" => {
+                        if args.len() != 1 || self.type_of(&args[0])? != Ty::Int {
+                            return Err("wasm target sleep(ms) takes an int".to_string());
+                        }
+                        self.emit_expr(&args[0])?;
+                        self.builder.push(Instr::Call(SLEEP_MS));
+                        return Ok(());
+                    }
+                    "mkdir" => {
+                        if args.len() != 1 || self.type_of(&args[0])? != Ty::Str {
+                            return Err("wasm target mkdir(path) takes a string".to_string());
+                        }
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Call(MKDIR));
+                        self.builder.push(Instr::Op(0x1a));
+                        return Ok(());
+                    }
                     "gl_create" => {
                         for arg in args {
                             self.emit_expr(arg)?;
@@ -2596,6 +2687,11 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let int_to_str_ty = builder.add_type(vec![ValType::I64], vec![ValType::I32]);
     let f64_to_str_ty = builder.add_type(vec![ValType::F64], vec![ValType::I32]);
     let str_to_int_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I64]);
+    let now_ms_ty = builder.add_type(vec![], vec![ValType::I64]);
+    let sleep_ms_ty = builder.add_type(vec![ValType::I64], vec![]);
+    let cwd_ty = builder.add_type(vec![], vec![ValType::I32]);
+    let env_get_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
+    let mkdir_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
     let start_ty = builder.add_type(vec![], vec![]);
     let mut fn_types: Vec<u32> = Vec::new();
     for decl in &declarations {
@@ -2636,6 +2732,12 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "int_to_str", int_to_str_ty);
     builder.import_func("env", "f64_to_str", f64_to_str_ty);
     builder.import_func("env", "str_to_int", str_to_int_ty);
+    builder.import_func("env", "now_ms", now_ms_ty);
+    builder.import_func("env", "sleep_ms", sleep_ms_ty);
+    builder.import_func("env", "cwd", cwd_ty);
+    builder.import_func("env", "env_get", env_get_ty);
+    builder.import_func("env", "mkdir", mkdir_ty);
+    builder.import_func("env", "file_exists", mkdir_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -2907,6 +3009,19 @@ mod tests {
             strings,
             vec!["3.5".to_string(), "4.5".to_string(), "2.5".to_string()]
         );
+    }
+
+    #[test]
+    fn process_utilities_work() {
+        let dir = std::env::temp_dir().join(format!("bx-wasm-util-{}", std::process::id()));
+        let made = dir.join("made");
+        let path = made.to_string_lossy().replace('\\', "/");
+        let source = format!(
+            "let t = now()\nif (t > 0) {{ print(1) }}\nlet c = cwd()\nif (c.len() > 0) {{ print(2) }}\nlet p = env(\"PATH\")\nif (p.len() >= 0) {{ print(3) }}\nsleep(1)\nmkdir(\"{path}\")\nprint(file_exists(\"{path}\"))\nprint(file_exists(\"{path}/missing\"))"
+        );
+        let (numbers, _strings) = run_with_argv(&source, &[]);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(numbers, vec![1, 2, 3, 1, 0]);
     }
 
     #[test]

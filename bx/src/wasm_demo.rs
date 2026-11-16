@@ -103,6 +103,15 @@ const imports = {
       const text = new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, ptr, len)).trim();
       return BigInt(parseInt(text, 10));
     },
+    now_ms: () => BigInt(Date.now()),
+    sleep_ms: (millis) => {
+      const until = Date.now() + Number(millis);
+      while (Date.now() < until) { /* busy wait: demos are short */ }
+    },
+    cwd: () => writeStringBlock(typeof process !== "undefined" ? process.cwd() : "/"),
+    env_get: () => writeStringBlock(typeof process !== "undefined" ? (process.env.PATH || "") : ""),
+    mkdir: () => -1,
+    file_exists: () => 0,
     str_compare: (ap, al, bp, bl) => {
       const bytesA = new Uint8Array(instance.exports.memory.buffer, ap, al);
       const bytesB = new Uint8Array(instance.exports.memory.buffer, bp, bl);

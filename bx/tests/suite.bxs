@@ -724,6 +724,15 @@ if (wasmConv.code == 0 && wasmConvRun.out == wasmConvVm.out && wasmConvRun.out.t
   casesFail += 1
   failures.push("wasm str/int conversions, .len and pop\n    wasm=" + json(wasmConvRun.out) + " vm=" + json(wasmConvVm.out) + " err=" + json(wasmConvRun.err))
 }
+write(artDir + "/wasm-util.bxs", 'let t = now()\nif (t > 0) { print(1) }\nlet c = cwd()\nif (c.len() > 0) { print(2) }\nlet p = env("PATH")\nif (p.len() >= 0) { print(3) }\nsleep(1)\nmkdir("util-made")\nprint(file_exists("util-made"))\nprint(file_exists("util-made/missing"))\n')
+let wasmUtil = exec([BX, "build", "--wasm", artDir + "/wasm-util.bxs", "-o", artDir + "/wasm-util.wasm"])
+let wasmUtilRun = exec([BX, "run", artDir + "/wasm-util.wasm"], { cwd: artDir })
+if (wasmUtil.code == 0 && wasmUtilRun.code == 0 && wasmUtilRun.out.trim() == "1\n2\n3\n1\n0") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm native utilities\n    build=" + wasmUtil.code + " out=" + json(wasmUtilRun.out) + " err=" + json(wasmUtilRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'let f = fn() { return 1 }\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1) {
