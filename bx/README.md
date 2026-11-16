@@ -125,6 +125,9 @@ exec("dir", {shell: true, stdin: "y\n", max: 1048576})
 
 默认 120 s 超时、8 MB 输出上限，超时返回 `code: -1, timeout: true`，stdout/stderr 用独立线程排空，不会因管道写满而死锁。
 
+## 可执行脚本
+
+首行写 `#!/usr/bin/env bx` 即可在 Unix 上直接 `./script.bxs`：解析器把这一行抹成空格，行号不偏移，`bx check`/`build` 一视同仁。
 ## 性能基线
 
 `bash bx/scripts/bench.sh` 用脚本内部的 `now()` 计时（不含进程启动），`--com <minicon-bx-*.com>` 可测同一组用例的打包产物。本机参考值：

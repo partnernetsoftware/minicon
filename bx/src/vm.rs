@@ -159,7 +159,10 @@ impl Vm {
                         format!(" in {}()", chunk_name)
                     };
                     // Source file of the chunk, when it is not the main script.
-                    let origin = if !chunk_file.is_empty() && chunk_file != self.script_name {
+                    let origin = if chunk_name != "<main>"
+                        && !chunk_file.is_empty()
+                        && chunk_file != self.script_name
+                    {
                         format!(" [{}]", chunk_file)
                     } else {
                         String::new()

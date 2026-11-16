@@ -325,6 +325,17 @@ if (rtBuild.code == 0 && rtBxb.code == 1 && rtBxb.err.contains("rt-lib.bxs") && 
   casesFail += 1
   failures.push("bytecode keeps the defining file\n    build=" + rtBuild.code + " run=" + rtBxb.code + " stderr=" + json(rtBxb.err.trim()))
 }
+// a leading shebang is ignored, so scripts run directly on Unix
+write(artDir + "/shebang.bxs", '#!/usr/bin/env bx\nprint(41 + 1)\n')
+check("shebang scripts run", "42", ["run", artDir + "/shebang.bxs"])
+write(artDir + "/shebang-line.bxs", '#!/usr/bin/env bx\nlet x = 1\nmissing_after_shebang\n')
+let sbErr = exec([BX, "run", artDir + "/shebang-line.bxs"])
+if (sbErr.code == 1 && sbErr.err.contains("(3)")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("shebang keeps line numbers\n    stderr=" + json(sbErr.err.trim()))
+}
 
 // closures capture the enclosing function's visible locals by value
 check("closure factory", "15", ["eval", "fn adder(n) { return fn(x) { return x + n } } let f = adder(10); f(5)"])

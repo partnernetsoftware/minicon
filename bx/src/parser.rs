@@ -2,9 +2,23 @@ use crate::ast::{BinOp, Expr, Stmt};
 use crate::lexer::{lex, Tok, Tokens};
 
 pub fn parse(src: &str) -> Result<Vec<Stmt>, String> {
-    let toks = lex(src)?;
+    let src = strip_shebang(src);
+    let toks = lex(&src)?;
     let mut p = Parser { toks, pos: 0 };
     p.parse_program()
+}
+
+/// Blank out a leading `#!` line so a script can be executed directly on Unix
+/// (`#!/usr/bin/env bx`). The line keeps its bytes, so line numbers do not move.
+fn strip_shebang(src: &str) -> std::borrow::Cow<'_, str> {
+    if !src.starts_with("#!") {
+        return std::borrow::Cow::Borrowed(src);
+    }
+    let first_end = src.find('\n').unwrap_or(src.len());
+    let mut masked = String::with_capacity(src.len());
+    masked.push_str(&" ".repeat(first_end));
+    masked.push_str(&src[first_end..]);
+    std::borrow::Cow::Owned(masked)
 }
 
 struct Parser {
