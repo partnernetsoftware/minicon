@@ -15,6 +15,9 @@ pub struct Vm {
     pub script_name: String,
     depth: usize,
     steps_left: u64,
+    ticks: u64,
+    /// Wall-clock budget; checked every few thousand instructions.
+    deadline: Option<std::time::Instant>,
 }
 
 impl Vm {
@@ -35,6 +38,15 @@ impl Vm {
             .ok()
             .and_then(|s| s.trim().parse::<u64>().ok())
             .unwrap_or(1_000_000_000);
+        let timeout_ms = std::env::var("BX_TIMEOUT_MS")
+            .ok()
+            .and_then(|s| s.trim().parse::<u64>().ok())
+            .unwrap_or(0);
+        let deadline = if timeout_ms > 0 {
+            Some(std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms))
+        } else {
+            None
+        };
         Vm {
             chunks,
             globals,
@@ -42,6 +54,8 @@ impl Vm {
             script_name,
             depth: 0,
             steps_left: steps,
+            ticks: 0,
+            deadline,
         }
     }
 
@@ -122,9 +136,18 @@ impl Vm {
             self.steps_left = self.steps_left.saturating_sub(1);
             if self.steps_left == 0 {
                 break Err(format!(
-                    "{}: execution step limit exceeded (raise BX_MAX_STEPS)",
+                    "{}: execution step limit exceeded (raise BX_MAX_STEPS or pass --max-steps)",
                     self.script_name
                 ));
+            }
+            self.ticks = self.ticks.wrapping_add(1);
+            if let Some(deadline) = self.deadline {
+                if self.ticks & 0x0FFF == 0 && std::time::Instant::now() >= deadline {
+                    break Err(format!(
+                        "{}: execution timeout exceeded (raise --timeout)",
+                        self.script_name
+                    ));
+                }
             }
 
             macro_rules! fail {

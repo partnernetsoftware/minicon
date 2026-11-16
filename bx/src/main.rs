@@ -80,8 +80,8 @@ fn print_help() {
         r#"bx {version} - binary scripting for agents
 
 usage
-  bx run <script.bxs|script.bxb> [args...]   execute a script
-  bx eval "<source>"                         evaluate source and print the result
+  bx run [--max-steps N] [--timeout MS] <script> [args...]   execute a script
+  bx eval [--max-steps N] [--timeout MS] "<source>"          evaluate and print
   bx build <script.bxs> [-o out.bxb]         compile source to bytecode
   bx dis <script.bxs|out.bxb>                disassemble bytecode
   bx check <script.bxs|script.bxb>           compile only (no execution)
@@ -123,7 +123,63 @@ fn print_builtin_help(name: &str) {
     }
 }
 
+/// Strip leading `--max-steps`/`--timeout` flags before the script or source.
+/// Flags after the script stay in the script's `argv`, so existing callers do
+/// not change meaning.
+struct Budget {
+    args: Vec<String>,
+    max_steps: Option<u64>,
+    timeout_ms: Option<u64>,
+}
+
+fn parse_budget(mut args: Vec<String>) -> Result<Budget, String> {
+    let mut max_steps = None;
+    let mut timeout_ms = None;
+    loop {
+        match args.first().map(String::as_str) {
+            Some("--max-steps") => {
+                let value = args
+                    .get(1)
+                    .ok_or("--max-steps needs a number")?
+                    .parse::<u64>()
+                    .map_err(|_| "--max-steps needs a number")?;
+                max_steps = Some(value);
+                args.drain(0..2);
+            }
+            Some("--timeout") => {
+                let value = args
+                    .get(1)
+                    .ok_or("--timeout needs a number of milliseconds")?
+                    .parse::<u64>()
+                    .map_err(|_| "--timeout needs a number of milliseconds")?;
+                timeout_ms = Some(value);
+                args.drain(0..2);
+            }
+            _ => break,
+        }
+    }
+    Ok(Budget {
+        args,
+        max_steps,
+        timeout_ms,
+    })
+}
+
 fn cmd_run(args: Vec<String>) -> i32 {
+    let budget = match parse_budget(args) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("bx: {}", e);
+            return 2;
+        }
+    };
+    let args = budget.args;
+    if let Some(steps) = budget.max_steps {
+        std::env::set_var("BX_MAX_STEPS", steps.to_string());
+    }
+    if let Some(ms) = budget.timeout_ms {
+        std::env::set_var("BX_TIMEOUT_MS", ms.to_string());
+    }
     if args.is_empty() {
         eprintln!("bx run: missing script path");
         return 2;
@@ -155,6 +211,20 @@ fn cmd_run(args: Vec<String>) -> i32 {
 }
 
 fn cmd_eval(args: Vec<String>) -> i32 {
+    let budget = match parse_budget(args) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("bx: {}", e);
+            return 2;
+        }
+    };
+    let args = budget.args;
+    if let Some(steps) = budget.max_steps {
+        std::env::set_var("BX_MAX_STEPS", steps.to_string());
+    }
+    if let Some(ms) = budget.timeout_ms {
+        std::env::set_var("BX_TIMEOUT_MS", ms.to_string());
+    }
     if args.is_empty() {
         eprintln!("bx eval: missing source");
         return 2;

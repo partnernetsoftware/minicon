@@ -218,7 +218,25 @@ if (missingCheck.code == 1) {
 } else {
   casesFail += 1
   failures.push("check fails on a missing file\n    code=" + missingCheck.code)
+
 }
+// execution budgets: step limit and wall-clock timeout stop runaway scripts
+write(artDir + "/spin.bxs", 'while (true) { }\n')
+let capped = exec([BX, "run", "--max-steps", "200000", artDir + "/spin.bxs"])
+if (capped.code == 1 && capped.err.contains("step limit")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("--max-steps stops a runaway script\n    code=" + capped.code + " stderr=" + json(capped.err.trim()))
+}
+let timed = exec([BX, "run", "--timeout", "120", artDir + "/spin.bxs"])
+if (timed.code == 1 && timed.err.contains("timeout")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("--timeout stops a runaway script\n    code=" + timed.code + " stderr=" + json(timed.err.trim()))
+}
+check("flags after the script stay in argv", '["--max-steps","5"]', ["run", __dir__ + "/cases/argv.bxs", "--max-steps", "5"])
 
 // closures capture the enclosing function's visible locals by value
 check("closure factory", "15", ["eval", "fn adder(n) { return fn(x) { return x + n } } let f = adder(10); f(5)"])
