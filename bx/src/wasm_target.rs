@@ -128,8 +128,8 @@ impl Checker {
                 name
             ));
         }
-        // imports (2) + start (1) + previously declared user functions.
-        let index = 3 + self.fns.len() as u32;
+        // imports + start (1) + previously declared user functions.
+        let index = IMPORT_COUNT + 1 + self.fns.len() as u32;
         self.fns.insert(
             name.to_string(),
             FnSig {
@@ -338,6 +338,15 @@ impl Checker {
                             }
                         }
                         return Ok(Ty::Int);
+                    }
+                    if name == "argc" && args.is_empty() {
+                        return Ok(Ty::Int);
+                    }
+                    if name == "arg" && args.len() == 1 {
+                        if self.infer(&args[0])? != Ty::Int {
+                            return Err("wasm target arg() takes an int index".to_string());
+                        }
+                        return Ok(Ty::Str);
                     }
                     if name == "len" && args.len() == 1 {
                         return match self.infer(&args[0])? {
@@ -603,6 +612,10 @@ const PTR_B: u32 = 3;
 const LEN_B: u32 = 4;
 const DST: u32 = 5;
 const ALLOC_TMP: u32 = 6;
+const ARG_TMP: u32 = 7;
+
+/// Imported host functions: print_i64, print_utf8, argc, arg.
+const IMPORT_COUNT: u32 = 4;
 
 struct Emitter<'a> {
     checker: &'a Checker,
@@ -984,6 +997,23 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Call(sig.index));
                         return Ok(Ty::Int);
                     }
+                    if name == "argc" && args.is_empty() {
+                        self.builder.push(Instr::Call(2));
+                        self.builder.push(Instr::Op(0xad));
+                        return Ok(Ty::Int);
+                    }
+                    if name == "arg" && args.len() == 1 {
+                        self.emit_expr(&args[0])?;
+                        self.builder.push(Instr::Op(0xa7));
+                        self.builder.push(Instr::Call(3));
+                        self.builder.push(Instr::Local(0x21, ARG_TMP));
+                        self.builder.push(Instr::Local(0x20, ARG_TMP));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x20, ARG_TMP));
+                        self.builder.push(Instr::Mem(0x28, 2, 0));
+                        return Ok(Ty::Str);
+                    }
                     if name == "len" && args.len() == 1 {
                         match self.checker.infer(&args[0])? {
                             Ty::Arr => {
@@ -1224,6 +1254,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let mut builder = Builder::new();
     let print_i64_ty = builder.add_type(vec![ValType::I64], vec![ValType::I64]);
     let print_utf8_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![]);
+    let argc_ty = builder.add_type(vec![], vec![ValType::I32]);
+    let arg_ty = builder.add_type(vec![ValType::I32], vec![ValType::I32]);
     let start_ty = builder.add_type(vec![], vec![]);
     let mut fn_types: Vec<u32> = Vec::new();
     for (_, decl) in &declarations {
@@ -1237,7 +1269,9 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     }
     builder.import_func("env", "print_i64", print_i64_ty);
     builder.import_func("env", "print_utf8", print_utf8_ty);
-    builder.enable_memory(1);
+    builder.import_func("bx", "argc", argc_ty);
+    builder.import_func("bx", "arg", arg_ty);
+    builder.enable_memory(2);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
         match ty {
@@ -1254,7 +1288,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.add_global(ValType::I32, true, WVal::I32(8192));
 
     builder.begin_function(start_ty);
-    for _ in 0..7 {
+    for _ in 0..8 {
         builder.add_local(ValType::I32);
     }
     {
@@ -1300,13 +1334,14 @@ pub fn validate(bytes: &[u8]) -> Result<(), String> {
     crate::wasm::validate(bytes).map(|_| ())
 }
 
-/// Instantiate and run `_start`, forwarding `env.print_i64` / `env.print_utf8`.
-pub fn execute<F, G>(bytes: &[u8], on_i64: F, on_str: G) -> Result<(), String>
+/// Instantiate and run `_start`, forwarding `env.print_i64` / `env.print_utf8`
+/// and exposing `argv` through `bx.argc` / `bx.arg`.
+pub fn execute<F, G>(bytes: &[u8], argv: &[String], on_i64: F, on_str: G) -> Result<(), String>
 where
     F: FnMut(i64),
     G: FnMut(&str),
 {
-    crate::wasm::run_start(bytes, on_i64, on_str)
+    crate::wasm::run_start(bytes, argv, on_i64, on_str)
 }
 
 #[cfg(test)]
@@ -1320,6 +1355,7 @@ mod tests {
         let sink = seen.clone();
         execute(
             &bytes,
+            &[],
             move |value| {
                 sink.lock().expect("lock").push(value);
             },
@@ -1336,6 +1372,7 @@ mod tests {
         let sink = seen.clone();
         execute(
             &bytes,
+            &[],
             |_value| {},
             move |text| {
                 sink.lock().expect("lock").push(text.to_string());
@@ -1344,6 +1381,33 @@ mod tests {
         .expect("execute");
         let out = seen.lock().expect("lock").clone();
         out
+    }
+
+    fn run_with_argv(source: &str, argv: &[String]) -> (Vec<i64>, Vec<String>) {
+        let bytes = compile_to_wasm(source).expect("compile");
+        let numbers = Arc::new(Mutex::new(Vec::new()));
+        let strings = Arc::new(Mutex::new(Vec::new()));
+        let number_sink = numbers.clone();
+        let string_sink = strings.clone();
+        execute(
+            &bytes,
+            argv,
+            move |value| number_sink.lock().expect("lock").push(value),
+            move |text| string_sink.lock().expect("lock").push(text.to_string()),
+        )
+        .expect("execute");
+        let numbers = numbers.lock().expect("lock").clone();
+        let strings = strings.lock().expect("lock").clone();
+        (numbers, strings)
+    }
+
+    #[test]
+    fn argv_reaches_the_module() {
+        let argv = vec!["alpha".to_string(), "beta".to_string()];
+        let (numbers, strings) =
+            run_with_argv("print(argc())\nprint(arg(0))\nprint(arg(1))", &argv);
+        assert_eq!(numbers, vec![2]);
+        assert_eq!(strings, vec!["alpha".to_string(), "beta".to_string()]);
     }
 
     #[test]

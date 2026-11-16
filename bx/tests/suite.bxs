@@ -554,6 +554,15 @@ if (wasmFn.code == 0 && wasmFnRun.code == 0 && wasmFnRun.out.trim() == "120\n10"
   casesFail += 1
   failures.push("wasm user functions and recursion\n    build=" + wasmFn.code + " out=" + json(wasmFnRun.out) + " err=" + json(wasmFnRun.err))
 }
+write(artDir + "/wasm-args.bxs", 'print(argc())\nprint(arg(0))\nprint(arg(1))\n')
+let wasmArgs = exec([BX, "build", "--wasm", artDir + "/wasm-args.bxs", "-o", artDir + "/wasm-args.wasm"])
+let wasmArgsRun = exec([BX, "run", artDir + "/wasm-args.wasm", "alpha", "beta"])
+if (wasmArgs.code == 0 && wasmArgsRun.code == 0 && wasmArgsRun.out.trim() == "2\nalpha\nbeta") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm argv ABI\n    build=" + wasmArgs.code + " out=" + json(wasmArgsRun.out) + " err=" + json(wasmArgsRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'let f = fn() { return 1 }\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1) {

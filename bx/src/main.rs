@@ -218,8 +218,10 @@ fn cmd_run(args: Vec<String>) -> i32 {
                 return 1;
             }
         };
+        let wasm_argv: Vec<String> = args[1..].to_vec();
         return match wasm_target::execute(
             &bytes,
+            &wasm_argv,
             |value| println!("{}", value),
             |text| println!("{}", text),
         ) {

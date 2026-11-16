@@ -1612,7 +1612,12 @@ pub fn validate(bytes: &[u8]) -> Result<Module, String> {
 
 /// Run the `_start` export, forwarding `env.print_i64` and `env.print_utf8`
 /// calls to the two sinks.
-pub fn run_start<F, G>(bytes: &[u8], mut on_i64: F, mut on_str: G) -> Result<(), String>
+pub fn run_start<F, G>(
+    bytes: &[u8],
+    argv: &[String],
+    mut on_i64: F,
+    mut on_str: G,
+) -> Result<(), String>
 where
     F: FnMut(i64),
     G: FnMut(&str),
@@ -1624,6 +1629,8 @@ where
             on_i64: &mut on_i64,
             on_str: &mut on_str,
             next_alloc: 8192,
+            argv: argv.to_vec(),
+            next_argv: 65_536,
         },
     );
     let start = module
@@ -1641,6 +1648,10 @@ struct PrintHost<'a, F: FnMut(i64), G: FnMut(&str)> {
     on_str: &'a mut G,
     /// Bump allocator for the prototype `env.alloc` import, 8-byte aligned.
     next_alloc: u32,
+    /// Command-line arguments exposed through `bx.argc` / `bx.arg`.
+    argv: Vec<String>,
+    /// argv strings are written into the second memory page, [len u32][utf8].
+    next_argv: u32,
 }
 
 impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
@@ -1694,6 +1705,27 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 let text = String::from_utf8_lossy(slice).to_string();
                 (self.on_str)(&text);
                 Ok(Vec::new())
+            }
+            ("bx", "argc") => Ok(vec![WVal::I32(self.argv.len() as i32)]),
+            ("bx", "arg") => {
+                let index = match args.first() {
+                    Some(WVal::I32(value)) => *value,
+                    _ => return Err("bx.arg expects one i32".to_string()),
+                };
+                if index < 0 || index as usize >= self.argv.len() {
+                    return Ok(vec![WVal::I32(0)]);
+                }
+                let text = self.argv[index as usize].as_bytes();
+                let size = 4 + text.len();
+                let start = self.next_argv as usize;
+                let end = start + size;
+                if end > memory.len() {
+                    return Ok(vec![WVal::I32(0)]);
+                }
+                memory[start..start + 4].copy_from_slice(&(text.len() as u32).to_le_bytes());
+                memory[start + 4..end].copy_from_slice(text);
+                self.next_argv = end as u32;
+                Ok(vec![WVal::I32(start as i32)])
             }
             _ => Err(format!("unimplemented wasm host import: {module}.{name}")),
         }
