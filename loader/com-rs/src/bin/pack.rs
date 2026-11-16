@@ -441,8 +441,7 @@ fn describe(head: &[u8]) -> String {
             u16::from_le_bytes([head[18], head[19]])
         );
     }
-    if head.len() >= 4 && (&head[0..4] == b"\xcf\xfa\xed\xfe" || &head[0..4] == b"\xce\xfa\xed\xfe")
-    {
+    if head.len() >= 4 && &head[0..4] == b"\xcf\xfa\xed\xfe" {
         return format!(
             "Mach-O cpu 0x{:08x}",
             u32::from_le_bytes([head[4], head[5], head[6], head[7]])

@@ -74,7 +74,8 @@ else
     stale="$stale_dir/payload"
 fi
 echo stale > "$stale"
-touch -d "2 days ago" "$stale" 2>/dev/null || true
+# GNU touch takes -d "2 days ago"; BSD touch only takes absolute dates.
+touch -d "2 days ago" "$stale" 2>/dev/null || touch -t "$(date -v-2d +%Y%m%d%H%M.%S 2>/dev/null || date -d "2 days ago" +%Y%m%d%H%M.%S)" "$stale"
 fresh="$shared_tmp/minicon-com-990100.txt"
 echo fresh > "$fresh"
 stamp="$shared_tmp/minicon-com-reap.stamp"
