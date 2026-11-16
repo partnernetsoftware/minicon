@@ -128,7 +128,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 75 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 76 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -152,6 +152,12 @@ bx wasm target
 - **Record/array writes**: `r.a = v`, `r.a += v`, `xs[i] = v`, `xs[-1] = v` and
   `xs[i] += v` are supported with the same negative-index normalisation and
   bounds checks as reads (`+ - * %` for compound).
+- **String arrays**: `[len][ptr,len]*N` layout; literals of all-string elements
+  type as a string array, element read/write (with negative indexing), `len`,
+  `for i, s in arr`, `split(str, sep)` -> string array, `join(arr, sep)` -> str,
+  and `slice` over strings, int arrays and string arrays (negative bounds clamp
+  like the VM). Allocates from the host string region; browser glue mirrors the
+  same block layout.
 - **Numeric/string/`type()` builtins**: `float`, `abs`, `floor`, `ceil`, `round`
   (lowered to `floor(x±0.5)` so half-away-from-zero matches the VM), `sqrt`,
   `trim`, `upper`, `lower`, `replace`, `index_of`, `repeat` and `type()` (static

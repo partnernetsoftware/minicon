@@ -151,7 +151,69 @@ const imports = {
       }
       return 0;
     },
-    str_trim: (ptr, len) => {
+    str_split: (ptr, len, sepPtr, sepLen) => {
+      const decode = (p, l) => new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, p, l));
+      const text = decode(ptr, len);
+      const sep = decode(sepPtr, sepLen);
+      if (sep.length === 0) throw new Error("wasm target split() needs a non-empty separator");
+      const pieces = text.split(sep);
+      const base = nextStr;
+      const size = 4 + 8 * pieces.length;
+      nextStr = (base + size + 7) & ~7;
+      const view = new DataView(instance.exports.memory.buffer);
+      view.setUint32(base, pieces.length, true);
+      const encoder = new TextEncoder();
+      for (let i = 0; i < pieces.length; i++) {
+        const block = writeStringBlock(pieces[i]);
+        const bytes = encoder.encode(pieces[i]);
+        view.setUint32(base + 4 + i * 8, block + 4, true);
+        view.setUint32(base + 4 + i * 8 + 4, bytes.length, true);
+      }
+      return base;
+    },
+    str_join: (arrayPtr, sepPtr, sepLen) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const decode = (p, l) => new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, p, l));
+      const sep = decode(sepPtr, sepLen);
+      const count = view.getUint32(arrayPtr, true);
+      const pieces = [];
+      for (let i = 0; i < count; i++) {
+        const ptr = view.getUint32(arrayPtr + 4 + i * 8, true);
+        const len = view.getUint32(arrayPtr + 4 + i * 8 + 4, true);
+        pieces.push(decode(ptr, len));
+      }
+      return writeStringBlock(pieces.join(sep));
+    },
+    str_slice: (ptr, len, start, end) => {
+      const text = new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, ptr, len));
+      const chars = Array.from(text);
+      const clamp = (value) => {
+        let at = Number(value);
+        if (at < 0) at += chars.length;
+        return Math.max(0, Math.min(chars.length, at));
+      };
+      return writeStringBlock(chars.slice(clamp(start), clamp(end)).join(""));
+    },
+    arr_slice: (ptr, start, end) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const count = view.getUint32(ptr, true);
+      const clamp = (value) => {
+        let at = Number(value);
+        if (at < 0) at += count;
+        return Math.max(0, Math.min(count, at));
+      };
+      const from = clamp(start);
+      const to = clamp(end);
+      const keep = Math.max(0, to - from);
+      const base = nextStr;
+      const size = 4 + 8 * keep;
+      nextStr = (base + size + 7) & ~7;
+      view.setUint32(base, keep, true);
+      for (let i = 0; i < keep; i++) {
+        view.setBigInt64(base + 4 + i * 8, view.getBigInt64(ptr + 4 + (from + i) * 8, true), true);
+      }
+      return base;
+    },    str_trim: (ptr, len) => {
       const text = new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, ptr, len));
       return writeStringBlock(text.trim());
     },

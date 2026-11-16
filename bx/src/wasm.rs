@@ -1975,6 +1975,166 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 (self.on_str)(&text);
                 Ok(Vec::new())
             }
+            ("env", "str_split") => {
+                let read = |value: Option<&WVal>| match value {
+                    Some(WVal::I32(ptr)) => Some(*ptr as usize),
+                    _ => None,
+                };
+                let (ptr, len, sep_ptr, sep_len) = match (
+                    read(args.first()),
+                    read(args.get(1)),
+                    read(args.get(2)),
+                    read(args.get(3)),
+                ) {
+                    (Some(ptr), Some(len), Some(sp), Some(sl)) => (ptr, len, sp, sl),
+                    _ => return Err("env.str_split expects (i32,i32,i32,i32)".to_string()),
+                };
+                let sep = memory
+                    .get(sep_ptr..sep_ptr.saturating_add(sep_len))
+                    .ok_or_else(|| "env.str_split separator is outside memory".to_string())?;
+                if sep.is_empty() {
+                    return Err("wasm target split() needs a non-empty separator".to_string());
+                }
+                let text = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .ok_or_else(|| "env.str_split string is outside memory".to_string())?;
+                let mut pieces: Vec<(u32, u32)> = Vec::new();
+                let mut cursor = 0usize;
+                while let Some(found) = text[cursor..]
+                    .windows(sep.len())
+                    .position(|window| window == sep)
+                {
+                    pieces.push(((ptr + cursor) as u32, found as u32));
+                    cursor += found + sep.len();
+                }
+                pieces.push(((ptr + cursor) as u32, (text.len() - cursor) as u32));
+                let count = pieces.len() as u32;
+                let size = 4 + 8 * pieces.len();
+                let start = self.next_file as usize;
+                if start + size > memory.len() {
+                    return Err("split result does not fit the memory region".to_string());
+                }
+                memory[start..start + 4].copy_from_slice(&count.to_le_bytes());
+                for (index, (piece_ptr, piece_len)) in pieces.iter().enumerate() {
+                    let at = start + 4 + index * 8;
+                    memory[at..at + 4].copy_from_slice(&piece_ptr.to_le_bytes());
+                    memory[at + 4..at + 8].copy_from_slice(&piece_len.to_le_bytes());
+                }
+                self.next_file = (start + size + 7) as u32 & !7;
+                Ok(vec![WVal::I32(start as i32)])
+            }
+            ("env", "str_join") => {
+                let read = |value: Option<&WVal>| match value {
+                    Some(WVal::I32(ptr)) => Some(*ptr as usize),
+                    _ => None,
+                };
+                let (array_ptr, sep_ptr, sep_len) =
+                    match (read(args.first()), read(args.get(1)), read(args.get(2))) {
+                        (Some(array), Some(sp), Some(sl)) => (array, sp, sl),
+                        _ => {
+                            return Err(
+                                "env.str_join expects (i32 array, i32 ptr, i32 len)".to_string()
+                            )
+                        }
+                    };
+                let sep = memory
+                    .get(sep_ptr..sep_ptr.saturating_add(sep_len))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .ok_or_else(|| "env.str_join separator is outside memory".to_string())?;
+                if array_ptr + 4 > memory.len() {
+                    return Err("env.str_join array is outside memory".to_string());
+                }
+                let count =
+                    u32::from_le_bytes(memory[array_ptr..array_ptr + 4].try_into().unwrap());
+                let mut text = String::new();
+                for index in 0..count as usize {
+                    if index > 0 {
+                        text.push_str(&sep);
+                    }
+                    let at = array_ptr + 4 + index * 8;
+                    if at + 8 > memory.len() {
+                        break;
+                    }
+                    let piece_ptr =
+                        u32::from_le_bytes(memory[at..at + 4].try_into().unwrap()) as usize;
+                    let piece_len =
+                        u32::from_le_bytes(memory[at + 4..at + 8].try_into().unwrap()) as usize;
+                    if let Some(bytes) = memory.get(piece_ptr..piece_ptr + piece_len) {
+                        text.push_str(&String::from_utf8_lossy(bytes));
+                    }
+                }
+                match store_text_block(memory, &mut self.next_file, text.as_bytes()) {
+                    Some(start) => Ok(vec![WVal::I32(start as i32)]),
+                    None => Err("string result does not fit the memory region".to_string()),
+                }
+            }
+            ("env", "str_slice") => {
+                let (ptr, len, start, end) =
+                    match (args.first(), args.get(1), args.get(2), args.get(3)) {
+                        (
+                            Some(WVal::I32(ptr)),
+                            Some(WVal::I32(len)),
+                            Some(WVal::I64(start)),
+                            Some(WVal::I64(end)),
+                        ) => (*ptr as usize, *len as usize, *start, *end),
+                        _ => {
+                            return Err(
+                                "env.str_slice expects (i32 ptr, i32 len, i64, i64)".to_string()
+                            )
+                        }
+                    };
+                let bytes = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .ok_or_else(|| "env.str_slice string is outside memory".to_string())?;
+                let length = bytes.len() as i64;
+                let clamp = |value: i64| -> i64 {
+                    let normalized = if value < 0 { length + value } else { value };
+                    normalized.clamp(0, length)
+                };
+                let from = clamp(start);
+                let to = clamp(end);
+                let slice: Vec<u8> = if from <= to {
+                    bytes[from as usize..to as usize].to_vec()
+                } else {
+                    Vec::new()
+                };
+                match store_text_block(memory, &mut self.next_file, &slice) {
+                    Some(start) => Ok(vec![WVal::I32(start as i32)]),
+                    None => Err("string result does not fit the memory region".to_string()),
+                }
+            }
+            ("env", "arr_slice") => {
+                let (ptr, start, end) = match (args.first(), args.get(1), args.get(2)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I64(start)), Some(WVal::I64(end))) => {
+                        (*ptr as usize, *start, *end)
+                    }
+                    _ => return Err("env.arr_slice expects (i32 ptr, i64, i64)".to_string()),
+                };
+                if ptr + 4 > memory.len() {
+                    return Err("env.arr_slice array is outside memory".to_string());
+                }
+                let count = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as i64;
+                let clamp = |value: i64| -> i64 {
+                    let normalized = if value < 0 { count + value } else { value };
+                    normalized.clamp(0, count)
+                };
+                let from = clamp(start);
+                let to = clamp(end);
+                let keep = if from <= to { (to - from) as u32 } else { 0 };
+                let size = 4 + 8 * keep as usize;
+                let at = self.next_file as usize;
+                if at + size > memory.len() {
+                    return Err("slice result does not fit the memory region".to_string());
+                }
+                memory[at..at + 4].copy_from_slice(&keep.to_le_bytes());
+                let src = ptr + 4 + from as usize * 8;
+                let dst = at + 4;
+                if keep > 0 {
+                    memory.copy_within(src..src + keep as usize * 8, dst);
+                }
+                self.next_file = (at + size + 7) as u32 & !7;
+                Ok(vec![WVal::I32(at as i32)])
+            }
             ("env", "str_trim") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {
                     (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),

@@ -782,7 +782,7 @@ if (wasmExists.code == 0 && wasmExistsRun.out == wasmExistsVm.out && wasmExistsR
   failures.push("wasm exists()\n    wasm=" + json(wasmExistsRun.out) + " vm=" + json(wasmExistsVm.out) + " err=" + json(wasmExistsRun.err))
 }
 write(artDir + "/g1.bxs", 'let a = [3, 4]\nlet total = 0\nfor v in a { total = total + v }\nprint(total)\nprint("ok")\n')
-write(artDir + "/g1-bad.bxs", 'let xs = ["a", "b"]\nprint(xs[0])\n')
+write(artDir + "/g1-bad.bxs", 'fn outer() {\n  let n = 5\n  let f = fn(x) { return x + n }\n  return f(1)\n}\nprint(outer())\n')
 let g1Default = exec([BX, "build", artDir + "/g1.bxs"])
 let g1Wasm = exec([BX, "build", "--target", "wasm", artDir + "/g1.bxs", "-o", artDir + "/g1-target.wasm"])
 let g1EnvBuild = exec([BX, "build", artDir + "/g1.bxs", "-o", artDir + "/g1-env.wasm"], { env: { BX_TARGET: "wasm" } })
@@ -899,6 +899,16 @@ if (wasmBuiltins.code == 0 && wasmBuiltinsRun.out == wasmBuiltinsVm.out && wasmB
 } else {
   casesFail += 1
   failures.push("wasm numeric/string/type builtins\n    wasm=" + json(wasmBuiltinsRun.out) + " vm=" + json(wasmBuiltinsVm.out) + " err=" + json(wasmBuiltinsRun.err))
+}
+write(artDir + "/wasm-strarr.bxs", 'let parts = split("a,b,c", ",")\nprint(len(parts))\nprint(parts[0])\nprint(join(parts, "-"))\nprint(slice("hello", 1, 3))\nfor i, p in parts { print(i + ":" + p) }\nparts[1] = "B"\nprint(join(parts, "|"))\nlet xs = [10, 20, 30, 40]\nfor v in slice(xs, 1, 3) { print(v) }\n')
+let wasmStrarr = exec([BX, "build", "--wasm", artDir + "/wasm-strarr.bxs", "-o", artDir + "/wasm-strarr.wasm"])
+let wasmStrarrRun = exec([BX, "run", artDir + "/wasm-strarr.wasm"])
+let wasmStrarrVm = exec([BX, "run", artDir + "/wasm-strarr.bxs"])
+if (wasmStrarr.code == 0 && wasmStrarrRun.out == wasmStrarrVm.out && wasmStrarrRun.out.trim() == "3\na\na-b-c\nel\n0:a\n1:b\n2:c\na|B|c\n20\n30") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm string arrays and slices\n    wasm=" + json(wasmStrarrRun.out) + " vm=" + json(wasmStrarrVm.out) + " err=" + json(wasmStrarrRun.err))
 }
 write(artDir + "/wasm-bad.bxs", 'fn outer() {\n  let n = 5\n  let f = fn(x) { return x + n }\n  return f(1)\n}\nprint(outer())\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
