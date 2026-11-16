@@ -645,6 +645,24 @@ impl Checker {
                     );
                 }
             }
+            Stmt::Expr(Expr::MethodCall(object, name, args, _), _) => {
+                let base = self.infer(object)?;
+                if base != Ty::Arr {
+                    return Err("wasm target supports .push on arrays only".to_string());
+                }
+                if name != "push" {
+                    return Err(format!(
+                        "wasm target does not support the .{} method yet",
+                        name
+                    ));
+                }
+                if args.len() != 1 {
+                    return Err("wasm target .push takes one value".to_string());
+                }
+                if self.infer(&args[0])? != Ty::Int {
+                    return Err("wasm target arrays hold ints only".to_string());
+                }
+            }
             Stmt::Expr(expr, _) => {
                 self.infer(expr)?;
             }
@@ -976,6 +994,62 @@ impl<'a> Emitter<'a> {
             ty_name(expected),
             ty_name(actual)
         ))
+    }
+
+    /// `arr.push(value)`: allocate a larger block, copy the old one, append and
+    /// write the new pointer back into the array variable.
+    fn emit_push(&mut self, name: &str, value: &Expr) -> Result<(), String> {
+        let arr_tmp = self.builder.add_local(ValType::I32);
+        let new_tmp = self.builder.add_local(ValType::I32);
+        let val_tmp = self.builder.add_local(ValType::I64);
+        let value_ty = self.emit_expr(value)?;
+        if value_ty != Ty::Int {
+            return Err("wasm target arrays hold ints only".to_string());
+        }
+        self.builder.push(Instr::Local(0x21, val_tmp));
+        self.emit_load(name)?;
+        self.builder.push(Instr::Local(0x21, arr_tmp));
+        // size = 4 + 8 * (len + 1)
+        self.builder.push(Instr::Local(0x20, arr_tmp));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Const(0x41, WVal::I32(12)));
+        self.builder.push(Instr::Op(0x6a));
+        self.emit_alloc_dynamic();
+        self.builder.push(Instr::Local(0x21, new_tmp));
+        // copy [ptr, ptr + 4 + 8*len)
+        self.builder.push(Instr::Local(0x20, new_tmp));
+        self.builder.push(Instr::Local(0x20, arr_tmp));
+        self.builder.push(Instr::Local(0x20, arr_tmp));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::MemoryCopy);
+        // len += 1
+        self.builder.push(Instr::Local(0x20, new_tmp));
+        self.builder.push(Instr::Local(0x20, arr_tmp));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Mem(0x36, 2, 0));
+        // new_ptr[4 + 8*len] = value
+        self.builder.push(Instr::Local(0x20, new_tmp));
+        self.builder.push(Instr::Local(0x20, arr_tmp));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, val_tmp));
+        self.builder.push(Instr::Mem(0x37, 3, 0));
+        // store the new pointer back into the variable
+        self.builder.push(Instr::Local(0x20, new_tmp));
+        self.emit_store(name)?;
+        Ok(())
     }
 
     fn type_of(&self, expr: &Expr) -> Result<Ty, String> {
@@ -1726,6 +1800,19 @@ impl<'a> Emitter<'a> {
                         }
                     }
                 }
+                Ok(())
+            }
+            Stmt::Expr(Expr::MethodCall(object, name, args, _), _) => {
+                let Expr::Ident(array) = &**object else {
+                    return Err("wasm target supports .push on array variables only".to_string());
+                };
+                if name != "push" || args.len() != 1 {
+                    return Err(format!(
+                        "wasm target does not support the .{} method yet",
+                        name
+                    ));
+                }
+                self.emit_push(array, &args[0])?;
                 Ok(())
             }
             Stmt::Expr(Expr::Compound(target, op, value, _), _) => {
@@ -2528,6 +2615,14 @@ mod tests {
             strings,
             vec!["3.5".to_string(), "4.5".to_string(), "2.5".to_string()]
         );
+    }
+
+    #[test]
+    fn arrays_grow_with_push() {
+        let prints = run_source(
+            "let a = [1, 2]\na.push(3)\na.push(4)\nprint(len(a))\nprint(a[3])\nfn build() {\n  let xs = []\n  xs.push(7)\n  return xs\n}\nlet b = build()\nprint(b[0])",
+        );
+        assert_eq!(prints, vec![4, 4, 7]);
     }
 
     #[test]

@@ -32,7 +32,8 @@ bx wasm target
 │   ├── [v] numbers: ints and floats (`+ - * / %`, mixed promotion, VM-identical formatting)
 │   ├── [v] strings: literals, runtime `+`, comparisons (`env.str_compare`),
 │   │   data segments, `print_utf8`
-│   ├── [v] arrays of ints: `[..]`, `arr[i]`, `len(arr)` over the prototype heap
+│   ├── [v] arrays of ints: `[..]`, `arr[i]`, `len(arr)`, `arr.push(x)` growth
+│   │   (allocate-and-copy over the module heap)
 │   ├── [v] runtime strings: bindings (ptr,len globals), `s + t`, `len(s)`
 │   ├── [v] fixed-layout records `{a: 1, b: 2}` with `o.a` field loads
 │   ├── [v] control flow: `if/else`, `while`, `for`, `break`/`continue`, comparisons
@@ -112,7 +113,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 54 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 55 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of

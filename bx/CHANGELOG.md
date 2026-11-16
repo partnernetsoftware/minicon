@@ -28,6 +28,7 @@
 
 **实验性 wasm 目标**
 
+- 数组可变：`arr.push(x)`（分配-复制-写回，容量按需增长）；差分测试加入 push。`
 - 字符串比较（`== != < <= > >=`）经 host `str_compare` + i32 比较实现，与 VM 一致；差分测试加入字符串比较。`
 - 函数参数/返回支持 int/float/string/array/record（调用点推断；字符串按 ptr/len 成对传递，字符串返回用 wasm 多值结果；int 实参可提升为 float）。`
 - wasm 执行预算：`bx run --max-steps/--timeout *.wasm` 与原生 VM 同款保护（指令计数 + 周期截止检查）。`

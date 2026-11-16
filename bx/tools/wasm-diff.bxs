@@ -85,6 +85,12 @@ fn gen() {
   } else {
     lines.push('if (cmp_a == cmp_b) { print(1) } else { print(2) }')
   }
+  lines.push("let grow = [1, 2]")
+  lines.push("grow.push(" + str(1 + pick(9)) + ")")
+  lines.push("print(len(grow))")
+  if (pick(2) == 0) {
+    lines.push("print(grow[2])")
+  }
   lines.push("fn rich() {")
   lines.push("  let a = [4, 5]")
   lines.push("  let s = \"d\"")

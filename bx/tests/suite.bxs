@@ -694,6 +694,16 @@ if (wasmStrcmp.code == 0 && wasmStrcmpRun.out == wasmStrcmpVm.out && wasmStrcmpR
   casesFail += 1
   failures.push("wasm string comparisons\n    wasm=" + json(wasmStrcmpRun.out) + " vm=" + json(wasmStrcmpVm.out) + " err=" + json(wasmStrcmpRun.err))
 }
+write(artDir + "/wasm-push.bxs", 'let a = [1, 2]\na.push(3)\na.push(4)\nprint(len(a))\nprint(a[3])\nfn build() {\n  let xs = []\n  xs.push(7)\n  return xs\n}\nlet b = build()\nprint(b[0])\n')
+let wasmPush = exec([BX, "build", "--wasm", artDir + "/wasm-push.bxs", "-o", artDir + "/wasm-push.wasm"])
+let wasmPushRun = exec([BX, "run", artDir + "/wasm-push.wasm"])
+let wasmPushVm = exec([BX, "run", artDir + "/wasm-push.bxs"])
+if (wasmPush.code == 0 && wasmPushRun.out == wasmPushVm.out && wasmPushRun.out.trim() == "4\n4\n7") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm array push\n    wasm=" + json(wasmPushRun.out) + " vm=" + json(wasmPushVm.out) + " err=" + json(wasmPushRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'let f = fn() { return 1 }\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1) {

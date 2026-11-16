@@ -154,6 +154,14 @@ write(dir + "/wasm-inf.bxs", 'let i = 0\nlet s = 0\nwhile (i < 1) { s = s + 1 }\
 write(dir + "/wasm-fnf.bxs", 'fn half(x) { return x / 2 }\nprint(half(7))\n')
 write(dir + "/wasm-richp.bxs", 'fn tag(s) { return s + "?" }\nprint(tag("ok"))\n')
 write(dir + "/wasm-strcmp.bxs", 'if ("abc" < "abd") { print(1) }\n')
+write(dir + "/wasm-push.bxs", 'let a = [1]\na.push(2)\nprint(len(a))\n')
+test("wasm arrays grow with push", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-push.bxs", "-o", dir + "/wasm-push.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-push.wasm"])
+  let vm = exec([bin, "run", dir + "/wasm-push.bxs"])
+  assert(ran.code == 0 && ran.out == vm.out && ran.out.trim() == "2", "wasm=" + json(ran.out) + " vm=" + json(vm.out))
+})
 test("wasm string comparisons", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-strcmp.bxs", "-o", dir + "/wasm-strcmp.wasm"])
   assert(built.code == 0, "build failed: " + built.err)
