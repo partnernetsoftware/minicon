@@ -3,7 +3,7 @@
 Parent: [provider gateway](PRD_02_31_01_provider_gateway.md). Presentation:
 [Harness experience](PRD_02_31_01_01_harness_experience.md). Measurements:
 [usage and balances](PRD_02_31_01_03_usage_monitoring.md). Sequence:
-[0.2.23 plan](../plan/plan-v0.2.23.md#harness-product-redesign-before-publication).
+[0.2.23 plan](../plan/archive/plan-v0.2.23.md#harness-product-redesign-before-publication).
 Status: `[-]` selected design with a partial backend checkpoint, clarified by
 the owner on 2026-10-25. Native account-network/context acceptance, profile
 management UI and actual three-account acceptance remain open.

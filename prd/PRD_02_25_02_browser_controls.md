@@ -6,7 +6,7 @@ mechanism/native development observations below do not qualify release bytes.
 The workspace owns tab/page lifetime and existing address semantics;
 [browser preferences](PRD_02_25_01_browser_preferences.md) owns proxy validation,
 application and saved choices. This child owns consistent control operation,
-not another preferences model. Sequencing: [0.2.23](../plan/plan-v0.2.23.md).
+not another preferences model. Sequencing: [0.2.23](../plan/archive/plan-v0.2.23.md).
 
 ## Outcome tree DAG
 

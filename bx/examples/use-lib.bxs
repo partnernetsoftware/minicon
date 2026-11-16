@@ -1,0 +1,5 @@
+// use-lib.bxs - inline another script's definitions
+use "lib.bxs"
+
+print(greet("agent"))
+print(json(map([-2, 0, 5], fn(n) { return classify(n) })))

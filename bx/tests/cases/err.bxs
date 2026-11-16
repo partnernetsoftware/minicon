@@ -1,0 +1,3 @@
+// err.bxs - an undefined call on line 3 must report line 3
+let x = 1
+missing_fn(x)

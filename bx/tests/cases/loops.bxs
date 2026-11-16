@@ -1,0 +1,26 @@
+// loops.bxs - control flow
+let total = 0
+for i in range(1, 5) {
+  total += i
+}
+print("sum", total)
+
+let kept = []
+for (let i = 0; i < 5; i++) {
+  if (i % 2 == 1) { continue }
+  kept.push(i)
+}
+print("kept", json(kept))
+
+let n = 0
+while (true) {
+  n += 1
+  if (n >= 3) { break }
+}
+print("while", n)
+
+let o = {a: 1}
+o.b = 2
+o["c"] = 3
+print("object", json(o), "len", o.len())
+print("nested", o.b + o["c"])

@@ -92,6 +92,8 @@ MiniCon — one-file local terminal
     ├── [v] public v0.2.24 tree interactions and clipboard status → prd/archive/v0.2.24-release-history.md
     ├── [v] public v0.2.25 fixed @0 / direct creation / scrollbars / route clarity → prd/archive/v0.2.25-release-history.md
     ├── [v] public v0.2.26 @0 watch floor / zero-tab convergence → prd/archive/v0.2.26-release-history.md
+    ├── [_] proposed, parked v0.2.27 addressable agent workspace → plan/plan-v0.2.27.md
+    ├── current plan navigation → plan/README.md
     ├── current independent tracks → plan/plan-v0.2.x-product-roadmap.md
     └── historical outcomes and receipts → prd/archive/README.md
 ```
@@ -132,6 +134,8 @@ flowchart LR
     APPS -->|model-only client| GW
     REL25["Public 0.2.25: @0 shell / direct actions / route clarity"] --> HX & ROB
     NEXT26["Public 0.2.26: default-list tab-agent watch floor and zero-tab @0"] --> HOME
+    NEXT27["Proposed 0.2.27: same-instance CLI and Visual V1"] --> CLI & HOME
+    NEXT26 --> NEXT27
     POOL & MON --> ROB
     BV["PRD 31.01.02.01.01: quoted profile checks / explicit commit cutoff"] --> POOL
     ROB -. later explicit task operation .-> HC
@@ -230,6 +234,14 @@ flowchart LR
   presentation and observer acceptance; [workspace](prd/PRD_02_25_con_workspace.md)
   retains multi-Web authorization and other-platform acceptance. Task
   characters wait for typed tab-bound run evidence.
+- [_] **Proposed, parked v0.2.27: addressable agent workspace.**
+  [Version plan](plan/plan-v0.2.27.md) selects same-instance Console child CLI,
+  exact tab/result semantics and session-only @0 Visual arrangement. The
+  [agent CLI contract](prd/PRD_02_26_01_agent_cli_contract.md) and
+  [Home canvas](prd/PRD_02_39_01_home_canvas.md) own behavior and acceptance.
+  This is a proposed cut parked during documentation cleanup; no version bump,
+  implementation or release is inferred. Typed agent work and cross-machine
+  control remain later gates.
 
 - [_] **Computer use is a future product track.** [PRD 38](prd/PRD_02_38_computer_use.md)
   owns target-bound observation/action and the same-repo crate decision;
@@ -248,28 +260,9 @@ flowchart LR
   owns the host/app boundary and [its plan](plan/plan-minicon-harness-extraction.md)
   gates migration against released worker behavior. This changes the earlier
   AgenTerm-only placement rule only for the explicitly bounded MiniCon layer.
-- [v] **Public v0.2.24: tab-tree drag, reliable inline rename and clipboard type.**
-  [Release history](prd/archive/v0.2.24-release-history.md) owns the exact
-  source, signed Candidate, Defender and public Promotion evidence.
-  [PRD 25.03](prd/PRD_02_25_03_tab_tree_interactions.md) retains native
-  pointer/IME/scroll/capture acceptance, while [PRD 25](prd/PRD_02_25_con_workspace.md)
-  retains public clipboard-pixel and IME/status co-layout acceptance. Shipped
-  core behavior does not close those wider cases.
-- [v] **Public v0.2.22: terminal-to-browser preview and proxy preferences.**
-  [Release history](prd/archive/v0.2.22-release-history.md) owns final source,
-  signed/Candidate/Defender/public qualification, retained failures and scope.
-  [Workspace](prd/PRD_02_25_con_workspace.md) and
-  [preferences](prd/PRD_02_25_01_browser_preferences.md) own behavior.
-- [v] **Public v0.2.23: browser controls and experimental first Harness connection.**
-  [Release history](prd/archive/v0.2.23-release-history.md) owns the exact
-  source, public chain and deferred acceptance record.
-  [Controls](prd/PRD_02_25_02_browser_controls.md) and
-  [provider gateway](prd/PRD_02_31_01_provider_gateway.md) own shipped
-  behavior. The [connection experience](prd/PRD_02_31_01_01_harness_experience.md),
-  [provider pool](prd/PRD_02_31_01_02_provider_pool.md) and
-  [monitoring](prd/PRD_02_31_01_03_usage_monitoring.md) retain real-account,
-  client and native acceptance still open after the owner's experimental
-  release decision. Installation remains
+- [v] **Earlier public releases.** The [release-history index](prd/archive/README.md)
+  owns the 0.2.22–0.2.24 exact-source outcomes. Open behavior and acceptance
+  remain with the capability owners indexed above. Installation remains
   [deferred for coordinated AgenTerm planning](prd/PRD_02_27_01_install.md).
 - [-] **Modern-agent and terminal-library qualification.** Owned Rust console
   is the Windows default from 0.2.20; classic remains the explicit rollback.

@@ -6,7 +6,7 @@ owned by [PRD 23](PRD_02_23_minicon.md#distribution-priority).
 Status: `[_]` accepted follow-up, deferred by the owner on 2026-10-24 for
 coordinated AgenTerm planning. The current public baseline and next sequence
 are indexed in [PRD](../PRD.md); installation is outside the
-[0.2.23 plan](../plan/plan-v0.2.23.md). The original 0.2.21 closeout remains in
+[0.2.23 plan](../plan/archive/plan-v0.2.23.md). The original 0.2.21 closeout remains in
 its archived goal/plan records; this deferred work is not a Candidate gate.
 
 ## Outcome tree DAG

@@ -1,0 +1,14 @@
+// inspect.bxs - drive a native binary and turn its output into data
+let r = exec(["git", "--version"])
+
+if (!r.ok) {
+  eprint("git failed:", r.err)
+  exit(1)
+}
+
+print("code:", r.code, "in", r.ms, "ms")
+print("raw:", r.out.trim())
+
+let words = r.out.trim().split(" ")
+print("words:", json(words))
+print("binary:", words[0])

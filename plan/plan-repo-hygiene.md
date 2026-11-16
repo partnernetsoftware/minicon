@@ -17,6 +17,16 @@ Outcome: current context stays small while valuable history stays reachable
 │   invariant: rendering tests write ignored output while the released PNG stays archived
 │   evidence: existing frame test and clean source status; safe failure: retain image/assertions
 │   dependency: PRD 25; non-goal: deleting research or changing product rendering
+├── [-] Retire completed version plans from current entrypoints
+│   invariant: released sequencing is history; open behavior remains in capability PRDs
+│   evidence: public 0.2.23 history, relocated plan and updated incoming/internal links
+│   safe failure: preserve an uncertain plan in place until ownership is clear
+│   dependency: PRD/archive indexes; non-goal: treating archival as acceptance of open cases
+├── [-] Make current plans discoverable without duplicating requirements
+│   invariant: one short plan index distinguishes proposed, active, deferred and debt
+│   evidence: plan/README.md, PRD entry and local-link check
+│   safe failure: uncertain status is marked for review rather than guessed closed
+│   dependency: owning PRDs and release history; non-goal: a second product roadmap
 └── [_] Review remaining ownership questions in bounded batches
     invariant: one owner per fact and per-site cross-platform code judgment
     evidence: owner pointers, reviewed paths and applicable gates; safe failure: preserve unknown-owned data
@@ -48,6 +58,19 @@ flowchart LR
 - Assess research-output ignore rules and vendor residue per path. Do not ignore
   tracked evidence or whole dependency/documentation directories.
 
-The [0.2.23 plan](plan-v0.2.23.md) sequences this pass's remaining control work.
-Inherited harness edits stay outside cleanup commits. Failed CI/negative-control
-experience belongs in its release history or owning module, not private notes.
+The [0.2.23 plan](archive/plan-v0.2.23.md) is historical; its unfinished
+behavior and acceptance remain in the linked PRD owners. The proposed
+[0.2.27 plan](plan-v0.2.27.md) is parked while this documentation pass runs.
+Failed CI/negative-control experience belongs in its release history or owning
+module, not private notes.
+
+## Current documentation pass
+
+1. Move the released 0.2.23 plan to `plan/archive/` and repair its incoming
+   and internal links. Preserve its original release decision as history only.
+2. Keep unresolved plans in place. The terminal, browser, Console, Harness,
+   cluster and computer-use owners still carry open work; age alone is not a
+   reason to mark them done or remove their evidence.
+3. Reduce the root PRD's historical release narration to an archive pointer,
+   keep the most recent baseline and current frontier, and provide one short
+   `plan/README.md` for navigation. Check links and working-tree scope.

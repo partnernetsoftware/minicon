@@ -24,17 +24,11 @@ Outcome: improve daily use without losing open product obligations
 │   └── C2 task handoff/cancel, then C3 model/capacity coordination → gated stages
 ├── [_] Future selected-window computer use → PRD 38 / plan-minicon-cu.md
 │   └── observation, single action, Harness and paired-node gates → owning CU plan
-├── [v] Public 0.2.22 → release history; exact artifact evidence only
-├── [v] Public 0.2.23 browser controls and first harness connection → release history
-│   ├── browser control consistency → PRD 25.02
-│   └── Harness settings / manual pool / local model API → PRD 31.01
-├── [v] Public 0.2.24 tab-tree interactions and clipboard status → release history
-│   ├── shipped inline edit and atomic subtree move; open native gesture scope → PRD 25.03
-│   └── shipped clipboard type/size core; open public-pixel and IME scope → PRD 25
-├── [v] Public 0.2.25 connection clarity and fixed @0 shell → archive/plan-v0.2.25.md
-│   ├── route clarity shipped; full real account-to-client path remains open → PRD 31.01.01/02
-│   └── cached read-only operation shipped; live request/task acceptance remains open → PRD 36
+├── [v] Earlier public 0.2.x releases → prd/archive/README.md
 ├── [v] Public 0.2.26 @0 watch floor → archive/plan-v0.2.26.md / PRD 39.01
+├── [_] Proposed, parked 0.2.27 addressable agent workspace → plan-v0.2.27.md
+│   ├── same-instance Console child CLI and exact machine results → PRD 26.01
+│   └── @0 Visual V1 session arrangement with List as default → PRD 39.01
 ├── [-] Modern-agent / Windows provider / terminal-library qualification → PRD 24.01/34/35
 ├── [-] Test inventory, selection, composition and measured feedback → PRD 33
 ├── [-] RSS, artifact size and exact-source delivery costs → PRD 27
@@ -43,10 +37,9 @@ Outcome: improve daily use without losing open product obligations
 
 ```mermaid
 flowchart LR
-    B[Public 0.2.22] --> P[Public 0.2.23 controls and first connection]
-    P --> A[PRD 31.01 auth feasibility and manual account binding]
-    V[Core Harness workspace / PRD 36] --> P
-    A --> V
+    B[Public 0.2.26 watch floor] --> N[Proposed, parked 0.2.27 local control and Visual V1]
+    N --> Q[Scoped evidence and separate release decision]
+    A[PRD 31.01 provider gateway] --> V[Core Harness workspace / PRD 36]
     V --> L[Later bounded app-backed task operation]
     APP[PRD 40 optional minicon-harness app] --> L
     APP --> SET[Future Settings / Plugins and Apps manager]
@@ -56,35 +49,19 @@ flowchart LR
     CP -. later remote CU authority .-> CU
     L --> CT[Later C2 deliberate task handoff]
     CP --> CT
-    A --> Q
     F[Future llm-gate / ujs + tinyvm] -. separate scheduling horizon .-> A
-    P --> Q[Scoped evidence and separate release decision]
-    P --> NEXT[Public 0.2.24 tree interactions and clipboard status]
-    NEXT --> TREE[PRD 25.03 rename repair / atomic drag]
-    TREE --> Q
-    NEXT --> V25[Public 0.2.25 connection clarity and @0 shell]
-    V25 --> Q
-    V25 --> V26[Public 0.2.26 default-list @0]
+    CLI[PRD 26.01 same-instance agent CLI] --> N
+    HOME[PRD 39.01 Visual V1] --> N
     T[Modern-agent and provider tracks] --> Q
     O[Test orchestration and delivery owners] --> Q
-    H[Archived roadmap and release histories] -. decisions and experience .-> P
-    I[Deferred installation] -. separate coordinated planning .-> B
+    H[Archived roadmap and release histories] -. decisions and experience .-> B
+    I[Deferred installation] -. separate coordinated planning .-> Q
 ```
 
-Public 0.2.23 and 0.2.24 outcomes are recorded in their
-[release histories](../prd/archive/README.md), not inferred from an old
-version number. Predictable editing/menu/focus behavior is owned in
-[PRD 25.02](../prd/PRD_02_25_02_browser_controls.md); the first shared inference
-path, auth feasibility, manual pool and later selection seam are owned in
-[PRD 31.01](../prd/PRD_02_31_01_provider_gateway.md). First connection does not
-implement the later dynamic scheduler.
-The [archived 0.2.24 plan](archive/plan-v0.2.24.md) records the shipped
-tab-tree and clipboard sequence, with remaining acceptance in
-[PRD 25.03](../prd/PRD_02_25_03_tab_tree_interactions.md) and
-[PRD 25](../prd/PRD_02_25_con_workspace.md). Qualification is source-specific.
-The [archived 0.2.25 plan](archive/plan-v0.2.25.md) records the public release
-cut and its retained acceptance. The [archived 0.2.26 plan](archive/plan-v0.2.26.md)
-records the @0 watch-floor cut; behavior and open acceptance belong to the linked PRD modules.
+Earlier outcomes and evidence are in the [release histories](../prd/archive/README.md)
+and [archived plans](archive/README.md). The [proposed 0.2.27 plan](plan-v0.2.27.md)
+is parked during documentation cleanup; it selects no implementation or release.
+Current behavior and open acceptance remain in the owning PRDs above.
 The owner's 2026-10-25 direction makes the
 [visual Harness workspace](../prd/PRD_02_36_harness_workspace.md) a continuing
 core product track; [its plan](plan-harness-workspace.md) stages the robot

@@ -2,7 +2,7 @@
 
 Parent: [0.2.x horizon](PRD_02_31_v0_2_horizon.md). Product boundary:
 [charter](PRD_02_23_minicon.md). Sequence:
-[0.2.23 plan](../plan/plan-v0.2.23.md). Status: `[-]` implementation active;
+[0.2.23 plan](../plan/archive/plan-v0.2.23.md). Status: `[-]` implementation active;
 existing harness/browser mechanisms are inputs, not qualification of this feature.
 Account-auth implementation is now in progress; the owner goal authorizes
 development through public 0.2.23. The experimental-release amendment below

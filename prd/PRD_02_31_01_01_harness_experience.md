@@ -1,7 +1,7 @@
 # Harness connection experience
 
 Parent: [provider gateway](PRD_02_31_01_provider_gateway.md). Sequence:
-[0.2.23 plan](../plan/plan-v0.2.23.md#harness-product-redesign-before-publication)
+[0.2.23 plan](../plan/archive/plan-v0.2.23.md#harness-product-redesign-before-publication)
 and the archived [0.2.25 experience slice](../plan/archive/plan-v0.2.25.md).
 Status: `[-]` product redesign specified after owner feedback, 2026-10-25;
 presentation has scoped native development checkpoints below; full implementation

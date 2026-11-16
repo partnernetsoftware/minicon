@@ -1,0 +1,16 @@
+// data.bxs - JSON in, transformation, JSON out
+let data = parse(read(__dir__ + "/sample.json"))
+print("items", data.items.len())
+
+let names = map(data.items, fn(it) { return it.name })
+print("names", names.join(","))
+
+let good = filter(data.items, fn(it) { return it.score >= 5 })
+print("good", json(map(good, fn(it) { return it.name })))
+
+let total = reduce(map(data.items, fn(it) { return it.score }), fn(a, b) { return a + b }, 0)
+print("total", total)
+
+let byScore = map(data.items, fn(it) { return [it.score, it.name] })
+sort(byScore, fn(a, b) { return b[0] - a[0] })
+print("sorted", json(byScore))

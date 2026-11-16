@@ -1,0 +1,202 @@
+// suite.bxs - bx's own test suite, written in bx.
+//
+// This is the self-iteration loop: every case below spawns the compiled
+// binary and compares real output. If bx cannot run this file, bx is not
+// usable as the tool it claims to be.
+
+// Suite can be pointed at any bx build: the native binary by default, or a
+// packed minicon-bx.com to prove the trampoline path end to end.
+let BX = env("BX_BIN", __dir__ + "/../target/release/bx.exe")
+let casesOk = 0
+let casesFail = 0
+let failures = []
+
+fn run(argv) {
+  return exec([BX] + argv)
+}
+
+/** A case that must exit 0 with exactly this stdout (surrounding blank lines trimmed). */
+fn check(name, expected, argv) {
+  let r = run(argv)
+  let got = r.out.trim()
+  if (r.code == 0 && got == expected) {
+    casesOk += 1
+    return
+  }
+  casesFail += 1
+  let suffix = ""
+  if (r.err.trim() != "") {
+    suffix = "\n    stderr:   " + r.err.trim()
+  }
+  failures.push(
+    name + "\n    expected: " + json(expected) + "\n    got:      " + json(got) + " (exit " + r.code + ")" + suffix
+  )
+}
+
+/** A case that must fail with this exit code and this text in stderr. */
+fn checkFail(name, needle, code, argv) {
+  let r = run(argv)
+  if (r.code == code && r.err.contains(needle)) {
+    casesOk += 1
+    return
+  }
+  casesFail += 1
+  failures.push(
+    name + "\n    expected exit " + code + " with " + json(needle) +
+    "\n    got exit " + r.code + " stderr " + json(r.err.trim()) + " stdout " + json(r.out.trim())
+  )
+}
+
+fn checkTrue(name, argv) {
+  check(name, "true", argv)
+}
+
+/** A case that must exit 0 and print text containing this needle. */
+fn checkContains(name, needle, argv) {
+  let r = run(argv)
+  if (r.code == 0 && r.out.contains(needle)) {
+    casesOk += 1
+    return
+  }
+  casesFail += 1
+  failures.push(
+    name + "\n    expected output containing " + json(needle) +
+    "\n    got exit " + r.code + " stdout " + json(r.out.trim())
+  )
+}
+
+// ---------------------------------------------------------------------------
+// language
+// ---------------------------------------------------------------------------
+
+print("language")
+check("arithmetic", "7", ["eval", "1 + 2 * 3"])
+check("precedence", "11", ["eval", "2 + 3 * 4 - 6 / 2"])
+check("unary and parens", "5", ["eval", "-(3 - 8)"])
+check("string methods", "A-B-C", ["eval", '"a,b,c".split(",").join("-").upper()'])
+check("string concat", "n=42", ["eval", 'let n = 42; "n=" + n'])
+check("json shape", '{"a":1,"b":[true,null]}', ["eval", "json({b:[true, null], a:1})"])
+check("json parse", "9", ["eval", 'parse("{\\"x\\":9}").x'])
+check("compound assign", "3", ["eval", "let o = {a:1}; o.a += 2; o.a"])
+check("array negative index", "3", ["eval", "let a = [1,2,3]; a[-1]"])
+check("method sugar", "4", ["eval", 'let a = [2,3]; a.len() + a[0]'])
+check("truthiness", '[0,"yes"]', ["eval", 'json([0 && 1, "" || "yes"])'])
+check("recursion", "55", ["eval", "fn fib(n) { if (n < 2) { return n } return fib(n-1) + fib(n-2) } fib(10)"])
+check("globals visible in fn", "10", ["eval", "let g = 4; fn f(x) { return x + g } f(6)"])
+check("higher order", "[0,4,16]", ["eval", "map(filter(range(6), fn(x) { return x % 2 == 0 }), fn(x) { return x * x })"])
+check("sort comparator", "[5,3,1]", ["eval", "let a = [1,5,3]; sort(a, fn(x, y) { return y - x }); a"])
+check("type names", '["int","str","array","object","fn","null"]', ["eval", 'json([type(1), type("s"), type([]), type({}), type(print), type(null)])'])
+check("len", "3", ["eval", 'len({"a":1,"b":2,"c":3})'])
+
+// iteration: arrays, strings and objects share one protocol
+check("iterate object keys", "ab", ["eval", 'let o = {b:2, a:1}; let s = ""; for k in o { s += k } s'])
+check("iterate string chars", "a.b.c.", ["eval", 'let s = ""; for c in "abc" { s += c + "." } s'])
+check("iterate object values", "1,2", ["eval", 'let o = {a:1, b:2}; join(map(keys(o), fn(k) { return str(o[k]) }), ",")'])
+checkFail("iterate non-iterable", "cannot iterate over", 1, ["eval", "for x in 5 { print(x) }"])
+
+// error capture: a failing expression becomes a value, not an exit
+check("attempt ok=false", "false", ["eval", "attempt(fn() { return 1 / 0 }).ok"])
+check("attempt value", "42", ["eval", "attempt(fn() { return 6 * 7 }).value"])
+checkTrue("attempt error text", ["eval", 'attempt(fn() { return 1 / 0 }).error.contains("division by zero")'])
+check("attempt keeps script alive", "still here", ["eval", 'let r = attempt(fn() { return [][3].x }); if (!r.ok) { print("still here") }'])
+
+// ---------------------------------------------------------------------------
+// processes
+// ---------------------------------------------------------------------------
+
+print("processes")
+check("exec exit code", "3", ["eval", 'exec("cmd /C exit 3").code'])
+check("exec stdout", "hi", ["eval", 'exec(["cmd","/C","echo hi"]).out.trim()'])
+check("exec stderr", "boom", ["eval", 'exec(["cmd","/C","echo boom 1>&2"]).err.trim()'])
+check("exec argv", "a b", ["eval", 'exec(["cmd","/C","echo a b"]).out.trim()'])
+check("exec timeout", "true", ["eval", 'exec(["cmd","/C","ping -n 4 127.0.0.1 > nul"], {timeout: 50}).timeout'])
+check("sh", "shell", ["eval", 'sh("echo shell").out.trim()'])
+checkTrue("which finds cmd", ["eval", 'which("cmd") != null'])
+checkTrue("cwd is a string", ["eval", 'type(cwd()) == "str"'])
+checkTrue("env read", ["eval", "len(env()) > 0"])
+
+// ---------------------------------------------------------------------------
+// programs
+// ---------------------------------------------------------------------------
+
+print("programs")
+let loops = "sum 10\nkept [0,2,4]\nwhile 3\nobject {\"a\":1,\"b\":2,\"c\":3} len 3\nnested 5"
+check("loops.bxs", loops, ["run", __dir__ + "/cases/loops.bxs"])
+
+let data = "items 3\nnames alpha,beta,gamma\ngood [\"beta\",\"gamma\"]\ntotal 17\nsorted [[9,\"beta\"],[5,\"gamma\"],[3,\"alpha\"]]"
+check("data.bxs", data, ["run", __dir__ + "/cases/data.bxs"])
+
+check("use include", "hi agent\n[\"negative\",\"zero\",\"positive\"]", ["run", __dir__ + "/../examples/use-lib.bxs"])
+check("argv", '["one","two"]', ["run", __dir__ + "/cases/argv.bxs", "one", "two"])
+check("hello example", "hello from bx\n7\n{\"bytes\":2,\"fast\":true}", ["run", __dir__ + "/../examples/hello.bxs"])
+
+// ---------------------------------------------------------------------------
+// bytecode
+// ---------------------------------------------------------------------------
+
+print("bytecode")
+let artDir = __dir__ + "/../target/bx-tests"
+mkdir(artDir)
+let bxb = artDir + "/suite-loops.bxb"
+let built = run(["build", __dir__ + "/cases/loops.bxs", "-o", bxb])
+if (built.code == 0 && exists(bxb)) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("build bytecode\n    stderr: " + json(built.err.trim()))
+}
+check("run compiled .bxb", loops, ["run", bxb])
+checkContains("dis shows main chunk", "<main>", ["dis", bxb])
+
+let argvBxb = artDir + "/suite-argv.bxb"
+let builtArgv = run(["build", __dir__ + "/cases/argv.bxs", "-o", argvBxb])
+if (builtArgv.code == 0) {
+  check("compiled argv script", '["x"]', ["run", argvBxb, "x"])
+} else {
+  casesFail += 1
+  failures.push("build argv bytecode\n    stderr: " + json(builtArgv.err.trim()))
+}
+
+// A source run compiles once, leaves the bytecode beside the script, and the
+// second run executes that cached binary instead of re-parsing.
+let cacheScript = artDir + "/cache-probe.bxs"
+write(cacheScript, 'print("cached")\n')
+let probe = run(["run", cacheScript])
+let cacheDir = artDir + "/.bxcache"
+let cacheFiles = list(cacheDir)
+if (probe.code == 0 && probe.out.trim() == "cached" && len(cacheFiles) > 0) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("cache written beside the script\n    got exit " + probe.code + " stdout " + json(probe.out.trim()) + " cache entries " + len(cacheFiles))
+}
+let warm = run(["run", cacheScript])
+check("cached run still executes", "cached", ["run", cacheScript])
+
+// ---------------------------------------------------------------------------
+// errors
+// ---------------------------------------------------------------------------
+
+print("errors")
+checkFail("undefined variable", "undefined variable 'nope'", 1, ["eval", "nope()"])
+checkFail("syntax error has line", "line 1", 1, ["eval", "let = 3"])
+checkFail("runtime error has line", "err.bxs(3)", 1, ["run", __dir__ + "/cases/err.bxs"])
+checkFail("assert message", "boom", 1, ["eval", 'assert(1 == 2, "boom")'])
+checkFail("exec missing binary", "cannot run", 1, ["eval", 'exec("definitely-not-a-real-binary-xyz")'])
+checkFail("unknown command", "unknown command", 2, ["frobnicate"])
+
+// ---------------------------------------------------------------------------
+// report
+// ---------------------------------------------------------------------------
+
+print("")
+if (casesFail == 0) {
+  print("PASS  " + casesOk + " checks")
+  exit(0)
+}
+print("FAIL  " + casesOk + " passed, " + casesFail + " failed")
+for f in failures {
+  print("")
+  print("  " + f)
+}
+exit(1)

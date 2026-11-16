@@ -12,7 +12,7 @@ the same two subcommands, not a new capability.
 [v] Published v0.2.1 from `1796876f76ffabb74426d95a7dcbe826a8db41b7`
 with explicit owner authority. Both signatures, Candidate, Defender, reputation,
 dry run, Promotion and public-download checks passed. Exact run identities and
-local evidence: [`../prd/archive/v0.2.1-release-history.md`](../prd/archive/v0.2.1-release-history.md).
+local evidence: [`../prd/archive/v0.2.1-release-history.md`](../../prd/archive/v0.2.1-release-history.md).
 The previous cloud-session approval blocker below is historical and resolved.
 The earlier Linux-only environment limitations below describe that session;
 local macOS tests and cloud six-cell release runtime now have independent
@@ -161,7 +161,7 @@ v0.2.1 — harden mux + harness; no new role (owner decision 2026-09-26)
           owner (via a separate macOS-side session, not this one) then ran
           the real chain and published v0.2.1 with explicit authority; exact
           gate run identities are in
-          [`../prd/archive/v0.2.1-release-history.md`](../prd/archive/v0.2.1-release-history.md).
+          [`../prd/archive/v0.2.1-release-history.md`](../../prd/archive/v0.2.1-release-history.md).
           Independently verified from this session afterward by a new
           read-only `.github/workflows/release-smoke-test.yml` that
           downloads the real published assets and runs them on each OS's

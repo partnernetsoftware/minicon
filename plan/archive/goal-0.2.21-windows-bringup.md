@@ -10,9 +10,9 @@ Windows, then propose UI/UX improvements.
 ## Read first
 
 `AGENTS.md`, [plan-v0.2.21.md](plan-v0.2.21.md),
-[plan-browser-tabs.md](plan-browser-tabs.md),
+[plan-browser-tabs.md](../plan-browser-tabs.md),
 `crates/minicon-web/src/native_page.rs` (the macOS adapter, used as the
-reference), and [PRD 25](../prd/PRD_02_25_con_workspace.md) for the
+reference), and [PRD 25](../../prd/PRD_02_25_con_workspace.md) for the
 Tab / content panel terminology.
 
 ## Current state

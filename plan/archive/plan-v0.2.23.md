@@ -1,8 +1,12 @@
 # v0.2.23 — browser controls and the first harness connection
 
+Archived after public v0.2.23. This sequence is historical; open behavior and
+acceptance remain with the linked PRD owners. Do not read its former publish
+authorization or gates as authority for a later source.
+
 Status: `[v]` publicly released as an experimental Harness delivery; exact
 source and open acceptance are recorded in
-[release history](../prd/archive/v0.2.23-release-history.md). Planning refined at the
+[release history](../../prd/archive/v0.2.23-release-history.md). Planning refined at the
 owner's request on 2026-10-24, using exploration of public 0.2.22 and the
 subsequent Harness/provider-pool direction. Scope is the first working model
 connection through a multi-account pool, per-account networks, keyed client
@@ -12,7 +16,7 @@ development through **public 0.2.23**, subject to the selected evidence gates;
 no second publication approval is needed for that named version. Installation remains deferred for
 coordinated AgenTerm planning.
 
-The [experimental-release amendment](../prd/PRD_02_31_01_provider_gateway.md#0223-experimental-release-amendment-2026-10-26)
+The [experimental-release amendment](../../prd/PRD_02_31_01_provider_gateway.md#0223-experimental-release-amendment-2026-10-26)
 records the owner's latest decision: publish the improved Harness as experimental
 without waiting for complete real-account acceptance. Carry the open real-account
 and continuous-client cases into 0.2.24 without marking them passed. The earlier
@@ -20,29 +24,29 @@ redesign sequence below remains implementation history and acceptance ownership;
 it no longer makes those deferred cases a publication prerequisite. Exact-source
 build/native artifact, signing, scan and Promotion gates still apply.
 
-Behavior belongs to [browser controls](../prd/PRD_02_25_02_browser_controls.md)
-and [preferences](../prd/PRD_02_25_01_browser_preferences.md). Harness settings,
+Behavior belongs to [browser controls](../../prd/PRD_02_25_02_browser_controls.md)
+and [preferences](../../prd/PRD_02_25_01_browser_preferences.md). Harness settings,
 provider accounts, the inference API and the future selection seam belong to
-[provider gateway](../prd/PRD_02_31_01_provider_gateway.md); the existing worker
-and its tool budgets belong to [horizon](../prd/PRD_02_31_v0_2_horizon.md).
+[provider gateway](../../prd/PRD_02_31_01_provider_gateway.md); the existing worker
+and its tool budgets belong to [horizon](../../prd/PRD_02_31_v0_2_horizon.md).
 Harness information architecture, first use, state and recovery belong to
-[connection experience](../prd/PRD_02_31_01_01_harness_experience.md). Multi-account
-networks and keyed allocations belong to [provider pool](../prd/PRD_02_31_01_02_provider_pool.md);
-statistics, balances and allowance belong to [monitoring](../prd/PRD_02_31_01_03_usage_monitoring.md).
+[connection experience](../../prd/PRD_02_31_01_01_harness_experience.md). Multi-account
+networks and keyed allocations belong to [provider pool](../../prd/PRD_02_31_01_02_provider_pool.md);
+statistics, balances and allowance belong to [monitoring](../../prd/PRD_02_31_01_03_usage_monitoring.md).
 The robot entry and operational host view belong to
-[PRD 36](../prd/PRD_02_36_harness_workspace.md), sequenced by
-[the Harness workspace plan](plan-harness-workspace.md). This version selects
+[PRD 36](../../prd/PRD_02_36_harness_workspace.md), sequenced by
+[the Harness workspace plan](../plan-harness-workspace.md). This version selects
 its H0 entry/overview/deep-link reservation and available H1 projections;
 the later H2 task-operation UI is not silently included in this release.
-The newly requested [cluster horizon](../prd/PRD_02_37_cluster_horizon.md#未来构想)
-starts subsequent-version design under [its plan](plan-cluster-horizon.md),
+The newly requested [cluster horizon](../../prd/PRD_02_37_cluster_horizon.md#未来构想)
+starts subsequent-version design under [its plan](../plan-cluster-horizon.md),
 without adding cluster implementation to 0.2.23's selected delivery.
 Public observation
-belongs to [control](../prd/PRD_02_26_con_control_cli.md), reusable mechanisms to
-[PRD 28](../prd/PRD_02_28_shared_core.md), qualification to
-[PRD 32](../prd/PRD_02_32_dev_loop_crosscheck.md), resource scheduling to
-[PRD 33](../prd/PRD_02_33_test_orchestration.md), and delivery to
-[PRD 27](../prd/PRD_02_27_con_delivery.md). This file owns sequencing and gates.
+belongs to [control](../../prd/PRD_02_26_con_control_cli.md), reusable mechanisms to
+[PRD 28](../../prd/PRD_02_28_shared_core.md), qualification to
+[PRD 32](../../prd/PRD_02_32_dev_loop_crosscheck.md), resource scheduling to
+[PRD 33](../../prd/PRD_02_33_test_orchestration.md), and delivery to
+[PRD 27](../../prd/PRD_02_27_con_delivery.md). This file owns sequencing and gates.
 
 ## Outcome tree DAG
 
@@ -154,11 +158,11 @@ flowchart LR
 ## Starting evidence and scope
 
 - [v] Public 0.2.22, exact source/signatures/Defender/download smoke and retained
-  failures are owned by its [release history](../prd/archive/v0.2.22-release-history.md).
-  Its [archived plan](archive/plan-v0.2.22.md) preserves implementation and trial
+  failures are owned by its [release history](../../prd/archive/v0.2.22-release-history.md).
+  Its [archived plan](plan-v0.2.22.md) preserves implementation and trial
   evidence. Do not schedule that closeout again.
 - The new menu observations and their input-method limits belong to
-  [PRD 25.02's baseline section](../prd/PRD_02_25_02_browser_controls.md#observed-0222-starting-failures--windows-x86_64-2026-10-24).
+  [PRD 25.02's baseline section](../../prd/PRD_02_25_02_browser_controls.md#observed-0222-starting-failures--windows-x86_64-2026-10-24).
   B22-MENU-DISMISS is the first regression; B22-MENU-KEYS anchors keyboard work.
   The selected-replacement size issue is now a reproduced mechanism failure with a passing shared editor and public three-field journey; scoped evidence is retained by that owner.
 - Retain one Browser root, existing adapters and proxy page-recreation/refusal
@@ -205,10 +209,10 @@ in PRD 31.01 and the worker module, rather than another contract in this plan.
 ### Monitoring integration sequence (2026-10-26 local continuation)
 
 Request-accounting cache work and native feedback remain owned by
-[accounting](../prd/PRD_02_31_01_03_01_request_accounting.md) and
-[the dev court](../prd/PRD_02_32_dev_loop_crosscheck.md).
-The integrated [account metadata backend](../prd/PRD_02_31_01_03_02_account_monitoring.md)
-and [Monitoring/report consumers](../prd/PRD_02_31_01_03_03_usage_reports.md)
+[accounting](../../prd/PRD_02_31_01_03_01_request_accounting.md) and
+[the dev court](../../prd/PRD_02_32_dev_loop_crosscheck.md).
+The integrated [account metadata backend](../../prd/PRD_02_31_01_03_02_account_monitoring.md)
+and [Monitoring/report consumers](../../prd/PRD_02_31_01_03_03_usage_reports.md)
 now record matching-source local consumer, guard and synthetic public evidence.
 Their initial compiler, fixture and navigation failures remain retained.
 Explicit local-history clearing now has local writer/Runtime/UI consumers,
@@ -222,7 +226,7 @@ exact-artifact release; the older Candidate cannot qualify changed source.
 
 ### Retained integration checkpoint (2026-10-25)
 
-The [provider owner](../prd/PRD_02_31_01_provider_gateway.md#real-account-checkpoint-and-worker-defects-2026-10-25)
+The [provider owner](../../prd/PRD_02_31_01_provider_gateway.md#real-account-checkpoint-and-worker-defects-2026-10-25)
 records the actual DeepSeek grant/probe, retained worker failures and the
 repaired ordinary-task checkpoint, including the named Pi client's actual
 tool/SSE/cancellation journey. Completion instructions, Windows cwd adaptation,
@@ -234,14 +238,14 @@ replace the complete product wrapper or final artifact courts. Before the next
 source freeze, include the expanded artifact browser-smoke entry, then qualify
 the selected payloads with it. Its existing control/Harness journeys now have a passing
 Windows development run, and exposed a browser-first injected-IME defect
-that the [control owner](../prd/PRD_02_26_con_control_cli.md) records with its
+that the [control owner](../../prd/PRD_02_26_con_control_cli.md) records with its
 repair. The `403dbf48` six-cell source checkpoint precedes that repair and is
 not final-source proof for it. Retain the cancelled `40126457516` unsigned-pack
 attempt as history; no Candidate was sealed from it.
 Root serializes Cargo, guard mutations and final integration. The earlier live
 browser-login and owner-clipboard wait descriptions are superseded by the
-[public real-account inventory](../prd/PRD_02_31_01_02_provider_pool.md#public-real-account-readiness-inventory)
-and [native development evidence](../prd/PRD_02_32_dev_loop_crosscheck.md).
+[public real-account inventory](../../prd/PRD_02_31_01_02_provider_pool.md#public-real-account-readiness-inventory)
+and [native development evidence](../../prd/PRD_02_32_dev_loop_crosscheck.md).
 Use those owners for current account availability, completed workspace gates
 and remaining native-input blockers; do not restart a login or repeat a gate
 from this historical checkpoint. Finish the selected account/native interaction
@@ -252,21 +256,21 @@ changed source. No Candidate has been sealed from that checkpoint.
 ### Harness product redesign before publication
 
 Development checkpoints implement the
-[orientation delivery slice](../prd/PRD_02_31_01_01_harness_experience.md#orientation-delivery-slice-2026-10-26)
-and [focused form sections](../prd/PRD_02_31_01_01_harness_experience.md#focused-form-sections-2026-10-26)
-and then [cached pool/account presentation](../prd/PRD_02_31_01_01_harness_experience.md#cached-pool-status-and-account-readings-2026-10-26)
-and [account removal review](../prd/PRD_02_31_01_01_harness_experience.md#account-removal-review-2026-10-26)
-and [account action menu](../prd/PRD_02_31_01_01_harness_experience.md#account-action-menu-2026-10-26)
-and [sampled account activity](../prd/PRD_02_31_01_02_provider_pool.md#sampled-account-activity-2026-10-26)
-and [account save feedback](../prd/PRD_02_31_01_01_harness_experience.md#account-save-feedback-2026-10-26)
+[orientation delivery slice](../../prd/PRD_02_31_01_01_harness_experience.md#orientation-delivery-slice-2026-10-26)
+and [focused form sections](../../prd/PRD_02_31_01_01_harness_experience.md#focused-form-sections-2026-10-26)
+and then [cached pool/account presentation](../../prd/PRD_02_31_01_01_harness_experience.md#cached-pool-status-and-account-readings-2026-10-26)
+and [account removal review](../../prd/PRD_02_31_01_01_harness_experience.md#account-removal-review-2026-10-26)
+and [account action menu](../../prd/PRD_02_31_01_01_harness_experience.md#account-action-menu-2026-10-26)
+and [sampled account activity](../../prd/PRD_02_31_01_02_provider_pool.md#sampled-account-activity-2026-10-26)
+and [account save feedback](../../prd/PRD_02_31_01_01_harness_experience.md#account-save-feedback-2026-10-26)
 in the existing Settings form. Their scoped evidence and remaining presentation
 work live with that owner. Use daily smoke plus requirement-selected subjects; do not
 repeat a whole native matrix for this slice before the integration checkpoint.
 
 Behavior and acceptance IDs belong to
-[experience HU-01..09](../prd/PRD_02_31_01_01_harness_experience.md),
-[pool PP-01..06](../prd/PRD_02_31_01_02_provider_pool.md) and
-[monitoring UM-01..06](../prd/PRD_02_31_01_03_usage_monitoring.md). This sequence
+[experience HU-01..09](../../prd/PRD_02_31_01_01_harness_experience.md),
+[pool PP-01..06](../../prd/PRD_02_31_01_02_provider_pool.md) and
+[monitoring UM-01..06](../../prd/PRD_02_31_01_03_usage_monitoring.md). This sequence
 implements that design; it does not replace the two-provider, protocol, worker,
 native-input or scaling obligations selected elsewhere in this plan.
 
@@ -295,9 +299,9 @@ Start with slices 0 and 1 under one integrator. Hot files are
 `provider_server.rs`, `provider_login.rs`, protocol usage extraction, `ui.rs`,
 host control snapshots and browser/input fixtures. The shared boundaries are
 private storage/native HTTP and minicon-web login-context isolation.
-The [pool development join](../prd/PRD_02_31_01_02_provider_pool.md#development-join-private-account-policy-and-service-transport)
+The [pool development join](../../prd/PRD_02_31_01_02_provider_pool.md#development-join-private-account-policy-and-service-transport)
 records private policy persistence, service routing and save-receipt work;
-the [authorization development join](../prd/PRD_02_31_01_02_provider_pool.md#development-join-authorization-transport-and-serial-presentation)
+the [authorization development join](../../prd/PRD_02_31_01_02_provider_pool.md#development-join-authorization-transport-and-serial-presentation)
 records pinned auth transport, serial presentation, stale-event refusal and
 remaining real-context/native qualification. The earlier failed macOS ARM
 continuation from run `40159013816` remains retained with unknown root cause;
@@ -314,7 +318,7 @@ inputs are stable; runtime
 binding transactions and GUI callers join serially. No shared Cargo, desktop,
 clipboard or guard mutation runs concurrently.
 
-For slice 2, the [connection-selection contract](../prd/PRD_02_31_01_02_01_connection_selection.md)
+For slice 2, the [connection-selection contract](../../prd/PRD_02_31_01_02_01_connection_selection.md)
 is the implementation join: account-resolved authority and independent catalogue
 ownership first, then draft/proof identity, migration/publication and GUI actions.
 The default and additional profiles join the same transaction; a default-only
@@ -322,15 +326,15 @@ repair does not close HU-03/04 or PP-06. Catalogue loading and paid verification
 remain separate operations. Agree runtime/server/store APIs before assigning
 their hot files to different writers.
 
-The [mechanism checkpoint](../prd/PRD_02_31_01_02_01_connection_selection.md#catalogue-and-draft-mechanism-checkpoint)
+The [mechanism checkpoint](../../prd/PRD_02_31_01_02_01_connection_selection.md#catalogue-and-draft-mechanism-checkpoint)
 qualifies the initial test-build catalogue/draft core. The same owner records
 the production registry-metadata binding repair and the
-[production catalogue join](../prd/PRD_02_31_01_02_01_connection_selection.md#production-catalogue-join-in-progress)
+[production catalogue join](../../prd/PRD_02_31_01_02_01_connection_selection.md#production-catalogue-join-in-progress)
 under qualification. Continue through the complete
 runtime, migration and UI transaction; these prerequisites do not close slice 2.
 The same owner now records the partial
-[version-3 resolver/migration prerequisite](../prd/PRD_02_31_01_02_01_connection_selection.md#version-3-resolver-and-migration-prerequisite-in-progress).
-The [production draft-form join](../prd/PRD_02_31_01_02_01_connection_selection.md#production-draft-form-join-in-progress)
+[version-3 resolver/migration prerequisite](../../prd/PRD_02_31_01_02_01_connection_selection.md#version-3-resolver-and-migration-prerequisite-in-progress).
+The [production draft-form join](../../prd/PRD_02_31_01_02_01_connection_selection.md#production-draft-form-join-in-progress)
 now integrates independent default/custom forms and real Settings callers under
 qualification. Its independent and six-platform developer evidence is now
 recorded in that owner. Join and qualify exact paid candidate verification,
@@ -426,11 +430,11 @@ consumer boundary in PRD 28.
 
 1. Exact-candidate checks and plain atomic Apply are independently verified and
    pushed. Evidence, source identities and retained failed attempts belong to
-   [connection selection](../prd/PRD_02_31_01_02_01_connection_selection.md).
+   [connection selection](../../prd/PRD_02_31_01_02_01_connection_selection.md).
    Matching plain-Apply six-cell feedback passes; it does not qualify paid
    provider entitlement or release artifacts.
 2. Implement the accepted
-   [whole-profile Verify and apply](../prd/PRD_02_31_01_02_01_01_profile_verification.md)
+   [whole-profile Verify and apply](../../prd/PRD_02_31_01_02_01_01_profile_verification.md)
    contract next. Shared prerequisites: the raw alias/wire resolver extension,
    stable quoted scope, producer-side pending gate and existing atomic Apply.
    Hot files are `provider_selection.rs`, `provider_runtime.rs`,
@@ -456,7 +460,7 @@ the behavior owner. Do not substitute one image's receipt for another.
 ### Windows authentication persistence investigation
 
 Review and integrate the finite
-[lifetime comparison](../prd/PRD_02_28_01_browser_context_lifecycle.md#direct-wry-lifetime-comparison-planned-diagnostic)
+[lifetime comparison](../../prd/PRD_02_28_01_browser_context_lifecycle.md#direct-wry-lifetime-comparison-planned-diagnostic)
 while the complete provider preview is prepared. Shared prerequisites are the
 unchanged original fixture protocol and the existing native release/metadata
 mechanisms. Hot files: dedicated `harness_auth_court.rs`, its feature-only
@@ -470,7 +474,7 @@ a matching normal-exit trace is not a persistence fix or release qualification.
 ## Urgent owned-window shortcut join
 
 The owner's 2026-10-25 temporary macOS request is sequenced before the remaining
-Harness work: [window shortcuts](../prd/PRD_02_25_04_window_shortcuts.md).
+Harness work: [window shortcuts](../../prd/PRD_02_25_04_window_shortcuts.md).
 Reuse one shared owned-window placement mechanism, then join host and native-page
 input routing and run the selected Mac courts. Hot files: platform window-host
 contract/Unix adapter, native Web shortcut monitor and MiniCon event dispatch.

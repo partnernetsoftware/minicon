@@ -3,7 +3,7 @@
 Completed and archived 2026-10-19. Public source:
 `0ac2d7ed1b3898835956f80569718c4d2eb994b9`.
 [Release history](../../prd/archive/v0.2.15-release-history.md) owns the final
-publication/court receipts; [0.2.16](../plan-v0.2.16.md) owns the successor design.
+publication/court receipts; [0.2.16](plan-v0.2.16.md) owns the successor design.
 Intermediate failures below preserve the qualification sequence; they are not
 current blockers. Current behavior is upserted into the owning PRDs.
 

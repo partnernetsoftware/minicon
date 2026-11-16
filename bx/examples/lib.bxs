@@ -1,0 +1,10 @@
+// helpers shared with other scripts through `use`
+fn greet(name) {
+  return "hi " + name
+}
+
+fn classify(n) {
+  if (n < 0) { return "negative" }
+  if (n == 0) { return "zero" }
+  return "positive"
+}

@@ -1,0 +1,8 @@
+{
+  "name": "bx",
+  "items": [
+    {"name": "alpha", "score": 3},
+    {"name": "beta", "score": 9},
+    {"name": "gamma", "score": 5}
+  ]
+}

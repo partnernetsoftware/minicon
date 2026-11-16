@@ -482,6 +482,33 @@ flowchart LR
   follows from this item; it stays `[v]` as a closed measurement, not as an
   open lever.
 
+### Rust launcher lane (per-OS `.com`, cosmocc-free)
+
+- [-] A second join produces one `.com` per cell with a compiled Rust launcher
+  instead of the cosmocc polyglot: a `MINICOM1` footer + absolute-offset table +
+  cell blobs. The launcher extracts its host cell, spawns it with inherited
+  stdio, returns its exit code verbatim, and cleans the extract up. No C
+  toolchain and no cosmocc are involved.
+- [-] It exists because the cosmocc trampoline encodes a nonzero child exit as
+  `(128+c)<<8` on Windows and loses piped stdout when a Rust parent supplies the
+  handles. The launcher fixes both: `exec` capture returns `[0,"42\n"]` and
+  `exit(1|3|42)` reaches the caller unchanged.
+- [-] Evidence so far (2026-11-16, Windows x86_64 host): eight artifacts packed
+  and verified by `com-pack verify` — `minicon-{win-x86_64,win-aarch64,
+  lnx-x86_64,lnx-aarch64}.com` and the `minicon-bx-*` set — with PE machine
+  `0x8664`/`0xaa64` and ELF machine `0x3e`/`0xb7` matching their keys in all
+  eight. The two x86_64 Windows artifacts execute (`minicon --version` and
+  `--status` exit 0; bx prints `42` and `exit(3)` yields 3). Linux and ARM64
+  runtime evidence belongs to the six-runner matrix, not this host.
+- [-] CI: the build job of `.github/workflows/minicon-com.yml` packs the six
+  per-cell artifacts (`loader/pack-rust-all.sh`) plus `manifest.json`; each
+  native runner executes only its own file after checking its bytes, and the
+  aggregate requires the `rust_lane` evidence. Mechanism and operator commands:
+  `loader/bx/README.md`.
+- [no] It does not replace the polyglot asset. A compiled launcher is per-OS, so
+  the six-OS single-file `minicon.com` stays on the cosmocc trampoline (or the
+  `APE!` loader under `systems/ape`). Names: `minicon-<cell>.com` here,
+  `minicon.com` for the polyglot.
 ### Linux size attribution (LTO cells, 2026-08-29)
 
 Payload bytes after Linux `profile.release` (same numbers as the 迁出差异

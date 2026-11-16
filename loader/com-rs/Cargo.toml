@@ -1,0 +1,25 @@
+[package]
+name = "minicon-com-rs"
+version = "0.1.0"
+edition = "2021"
+description = "Single-file launcher + packer: one binary, per-host cells appended"
+license = "MIT OR Apache-2.0"
+
+# Standalone on purpose: this tool must not become a MiniCon product dependency
+# (loader/README.md keeps "linking MiniCon crates" a non-goal).
+[workspace]
+
+[[bin]]
+name = "com-trampoline"
+path = "src/bin/trampoline.rs"
+
+[[bin]]
+name = "com-pack"
+path = "src/bin/pack.rs"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

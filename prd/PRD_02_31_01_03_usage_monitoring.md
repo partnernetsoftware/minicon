@@ -3,7 +3,7 @@
 Parent: [provider gateway](PRD_02_31_01_provider_gateway.md). Account/allocation
 identity: [provider pool](PRD_02_31_01_02_provider_pool.md). Presentation:
 [Harness experience](PRD_02_31_01_01_harness_experience.md). Sequence:
-[0.2.23 plan](../plan/plan-v0.2.23.md#harness-product-redesign-before-publication).
+[0.2.23 plan](../plan/archive/plan-v0.2.23.md#harness-product-redesign-before-publication).
 Status: `[-]` local accounting, metadata and report consumers have development
 evidence; selected real-account and final-release acceptance remain open.
 Protocol usage forwarding already exists; a durable statistics/monitoring

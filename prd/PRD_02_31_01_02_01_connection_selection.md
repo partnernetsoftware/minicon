@@ -2,7 +2,7 @@
 
 Parent: [provider pool](PRD_02_31_01_02_provider_pool.md). User-facing forms and
 actions remain with [Harness experience](PRD_02_31_01_01_harness_experience.md).
-Sequence: [0.2.23 plan](../plan/plan-v0.2.23.md#harness-product-redesign-before-publication).
+Sequence: [0.2.23 plan](../plan/archive/plan-v0.2.23.md#harness-product-redesign-before-publication).
 Status: `[-]` organization authority, production catalogue, migration and draft
 form joins in development; draft acceptance and verify/apply delivery remain open.
 

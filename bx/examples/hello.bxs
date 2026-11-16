@@ -1,0 +1,4 @@
+// hello.bxs - the smallest complete bx program
+print("hello from bx")
+print(1 + 2 * 3)
+print(json({fast: true, bytes: len("bx")}))

@@ -180,6 +180,27 @@ outside Git and rerun the same exact-SHA court after Microsoft updates its
 classification. Do not disable Defender, add exclusions, rebuild, or remove
 terminal/control behavior to manufacture a green verdict.
 
+## Rust launcher lane (cosmocc-free)
+
+`com-rs/` + `pack-rust.ps1` compile the launcher with rustc instead of cosmocc.
+The container is a `MINICOM1` footer plus a `{os}-{isa}` cell table; the child
+inherits stdio and its exit code is returned verbatim (the cosmocc trampoline
+shifts it to `(128+c)<<8` on Windows and loses piped stdout for a Rust parent).
+
+Measured 2026-11-16 on Windows x86_64: the win-x86_64 cell (5,299,200 B) packed
+as `minicon-win-x86_64.com` printed `minicon 0.2.23` for both `--version` and
+`--status`, exit 0.
+
+A compiled launcher is per-OS, so this lane emits **one file per platform**; the
+polyglot `minicon.com` asset keeps using the cosmocc trampoline above (or the
+APE! loader under `systems/ape`).
+
+CI runs it: `.github/workflows/minicon-com.yml`'s build job packs all six
+(`loader/pack-rust-all.sh`, same native/zig/xwin toolchain split as
+`rebuild-payloads.sh`) and writes a per-cell manifest, each of the six native
+runners executes only its own artifact, and the aggregate requires that evidence.
+
+Mechanism, commands and the bx consumer: [`bx/README.md`](bx/README.md).
 ## Non-goals
 
 - Linking MiniCon crates against cosmocc

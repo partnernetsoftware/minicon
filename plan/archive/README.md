@@ -4,6 +4,10 @@ These files preserve completed release plans and bounded experiments. They are
 evidence history, not current task entrypoints. Current truth starts at
 `PRD.md`, then the owning `prd/PRD_*.md` module.
 
+- `plan-v0.2.23.md` — public experimental Harness/browser-controls release
+  sequence. Open real-account, client and native acceptance remains in the
+  owning PRDs; its former publication authorization applies only to 0.2.23.
+
 - `plan-0.1.16.md` — shipped v0.1.16 (`MiniCon.app` + `install-cli`). Its
   Themes A/B/C were never part of 0.1.16 and are carried by
   `plan/archive/plan-0.1.18.md` P2; do not read them here as open scope.

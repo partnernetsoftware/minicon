@@ -221,6 +221,26 @@ jobs:
           PY
           bash loader/rebuild-payloads.sh
           bash loader/pack.sh
+          # Per-platform Rust launcher artifacts (no cosmocc); packed here and
+          # executed unmodified by the six-cell matrix below.
+          bash loader/pack-rust-all.sh
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          root = Path("loader/dist/rust")
+          artifacts = {}
+          for path in sorted(root.glob("*.com")):
+              raw = path.read_bytes()
+              artifacts[path.name] = {
+                  "sha256": hashlib.sha256(raw).hexdigest(),
+                  "bytes": len(raw),
+              }
+          if len(artifacts) != 6:
+              raise SystemExit(f"expected six rust artifacts, found {len(artifacts)}")
+          (root / "manifest.json").write_text(
+              json.dumps({"schema": 1, "artifacts": artifacts}, indent=2) + "\n"
+          )
+          PY
           mkdir -p loader/dist/g3
           cp "$g3_dir"/* loader/dist/g3/
           python3 loader/write-build-receipt.py
@@ -261,6 +281,7 @@ jobs:
           mkdir -p artifact
           cp loader/dist/minicon.com artifact/
           cp loader/dist/minicon.com.sha256 artifact/
+          cp -R loader/dist/rust artifact/
           cp loader/dist/build-receipt.json artifact/
           cp loader/ci-status.sh artifact/
           cp loader/ci-status.ps1 artifact/
@@ -426,6 +447,43 @@ jobs:
           python bundle/browser-workspace-smoke.py browser-native/minicon.exe --output browser-workspace
           if ($LASTEXITCODE -ne 0) { throw 'Native browser workspace failed' }
 
+      - name: Rust launcher lane (no compile, per-OS artifact)
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > rust-lane.log
+          src="bundle/rust/minicon-${CELL}.com"
+          test -f "$src"
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          cell = os.environ["CELL"]
+          manifest = json.loads(Path("bundle/rust/manifest.json").read_text())
+          entry = manifest["artifacts"][f"minicon-{cell}.com"]
+          raw = Path(f"bundle/rust/minicon-{cell}.com").read_bytes()
+          assert hashlib.sha256(raw).hexdigest() == entry["sha256"]
+          assert len(raw) == entry["bytes"]
+          PY
+          if [[ "$FAMILY" == "windows" ]]; then
+            bin="rust-lane.exe"
+          else
+            bin="rust-lane.com"
+          fi
+          cp "$src" "$bin"
+          if [[ "$FAMILY" != "windows" ]]; then chmod +x "$bin"; fi
+          {
+            "$bin" --version
+            if "$bin" --definitely-not-a-flag; then
+              echo "unknown flag must exit nonzero" >&2
+              exit 1
+            fi
+            if [[ "$FAMILY" == "linux" ]]; then
+              xvfb-run -a "$bin" --status
+            else
+              "$bin" --status
+            fi
+          } 2>&1 | tee -a rust-lane.log
+
       - name: Receipt
         if: always()
         shell: bash
@@ -464,6 +522,16 @@ jobs:
               data['native_browser_sha256'] = journey['binary_sha256']
               data['native_browser_status'] = journey['status']
               data['native_browser_receipt_sha256'] = hashlib.sha256(raw).hexdigest()
+          rust = Path('rust-lane.log')
+          if rust.is_file():
+              raw = rust.read_bytes()
+              data['rust_lane'] = {
+                  'status': 'passed' if os.environ['JOB_STATUS'] == 'success' else 'failed',
+                  'sha256': hashlib.sha256(raw).hexdigest(),
+                  'bytes': len(raw),
+              }
+          else:
+              data['rust_lane'] = {'status': 'missing'}
           Path("runtime-receipt.json").write_text(json.dumps(data, indent=2) + "\n")
           PY
 
@@ -474,6 +542,7 @@ jobs:
           path: |
             runtime-receipt.json
             runtime-body.log
+            rust-lane.log
             browser-workspace/
           if-no-files-found: error
           retention-days: 14
@@ -530,6 +599,8 @@ jobs:
           bad = [r for r in rows if r.get("job_status") != "success"]
           if bad:
               print("bad", bad); sys.exit(1)
+          if any((r.get('rust_lane') or {}).get('status') != 'passed' for r in rows):
+              print('missing rust launcher lane evidence'); sys.exit(1)
           if any(r.get('native_browser_status') != 'passed' or not r.get('native_browser_sha256')
                  or not r.get('native_browser_receipt_sha256') for r in rows):
               print('missing native browser qualification'); sys.exit(1)

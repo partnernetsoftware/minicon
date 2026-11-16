@@ -1,7 +1,7 @@
 # Whole-profile verification and application
 
 Parent: [connection selection](PRD_02_31_01_02_01_connection_selection.md).
-Sequence: [0.2.23 plan](../plan/plan-v0.2.23.md#harness-product-redesign-before-publication).
+Sequence: [0.2.23 plan](../plan/archive/plan-v0.2.23.md#harness-product-redesign-before-publication).
 Status: `[-]` accepted CS-05 design enters production integration, 2026-10-25.
 The complete preview is integrated and its initial controlled runtime gate
 passes. Original-assertion controls and the zero-call/unknown-plan public consumer are

@@ -19,7 +19,7 @@ intermediate open-status observations below remain historical evidence.
 - [v] Owner release decision: the 2026-10-24 instruction to publish supersedes
   the earlier no-publish handoff and the pending replacement-UX gate.
 - [_] Native install commands, README/site adoption and size optimization:
-  accepted follow-up, now handed to [0.2.22](../plan-v0.2.22.md).
+  accepted follow-up, now handed to [0.2.22](plan-v0.2.22.md).
 
 The scoped limits in PRD 25 and carried debt remain open. Neither the owner's
 release decision nor exact-artifact courts certify unobserved focus, proxy,
