@@ -37,6 +37,11 @@ fn is_number(ty: Ty) -> bool {
     matches!(ty, Ty::Int | Ty::Float)
 }
 
+/// A call-site argument may promote an int to a float parameter.
+fn arg_ok(expected: Ty, actual: Ty) -> bool {
+    expected == actual || (expected == Ty::Float && actual == Ty::Int)
+}
+
 fn stmt_kind(stmt: &Stmt) -> &'static str {
     match stmt {
         Stmt::Fn(..) => "fn",
@@ -89,10 +94,10 @@ struct Shape {
     keys: Vec<String>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Debug)]
 struct FnSig {
-    params: usize,
-    returns: bool,
+    params: Vec<Ty>,
+    result: Option<Ty>,
     /// Index in the wasm function index space (imports first).
     index: u32,
 }
@@ -121,7 +126,7 @@ impl Checker {
         }
     }
 
-    fn declare_fn(&mut self, name: &str, params: usize, returns: bool) -> Result<(), String> {
+    fn declare_fn(&mut self, name: &str, index: u32) -> Result<(), String> {
         if self.fns.contains_key(name) {
             return Err(format!(
                 "wasm target does not support redeclaring function '{}'",
@@ -134,26 +139,49 @@ impl Checker {
                 name
             ));
         }
-        // imports + start (1) + previously declared user functions.
-        let index = IMPORT_COUNT + 1 + self.fns.len() as u32;
         self.fns.insert(
             name.to_string(),
             FnSig {
-                params,
-                returns,
+                params: Vec::new(),
+                result: None,
                 index,
             },
         );
         Ok(())
     }
 
-    fn fn_sig(&self, name: &str) -> Option<FnSig> {
-        self.fns.get(name).copied()
+    fn fn_sig(&self, name: &str) -> Option<&FnSig> {
+        self.fns.get(name)
+    }
+
+    fn set_fn_sig(&mut self, name: &str, params: Vec<Ty>, result: Option<Ty>) {
+        if let Some(sig) = self.fns.get_mut(name) {
+            sig.params = params;
+            sig.result = result;
+        }
+    }
+
+    fn global_types(&self) -> HashMap<String, Ty> {
+        self.env
+            .iter()
+            .map(|(name, binding)| (name.clone(), binding.ty))
+            .collect()
     }
 
     fn declare_let(&mut self, name: &str, ty: Ty) -> Result<(), String> {
         if self.fn_depth > 0 {
             self.local_scope.insert(name.to_string(), ty);
+            return Ok(());
+        }
+        if let Some(existing) = self.env.get(name) {
+            if existing.ty != ty {
+                return Err(format!(
+                    "wasm target requires stable types: '{}' is {}, assigned {}",
+                    name,
+                    ty_name(existing.ty),
+                    ty_name(ty)
+                ));
+            }
             return Ok(());
         }
         self.declare(name, ty)
@@ -332,26 +360,33 @@ impl Checker {
             Expr::Call(callee, args, _) => {
                 if let Expr::Ident(name) = &**callee {
                     if let Some(sig) = self.fn_sig(name) {
-                        if !sig.returns {
+                        let result = sig.result;
+                        let params = sig.params.clone();
+                        if result.is_none() {
                             return Err(format!(
                                 "wasm target function '{}' returns no value",
                                 name
                             ));
                         }
-                        if args.len() != sig.params {
+                        if args.len() != params.len() {
                             return Err(format!(
                                 "wasm target function '{}' takes {} arguments",
-                                name, sig.params
+                                name,
+                                params.len()
                             ));
                         }
-                        for arg in args {
-                            if self.infer(arg)? != Ty::Int {
-                                return Err(
-                                    "wasm target function arguments must be ints".to_string()
-                                );
+                        for (arg, expected) in args.iter().zip(params.iter()) {
+                            let actual = self.infer(arg)?;
+                            if !arg_ok(*expected, actual) {
+                                return Err(format!(
+                                    "wasm target function '{}' expects {}, got {}",
+                                    name,
+                                    ty_name(*expected),
+                                    ty_name(actual)
+                                ));
                             }
                         }
-                        return Ok(Ty::Int);
+                        return Ok(result.expect("checked above"));
                     }
 
                     if name == "run" && args.len() == 1 {
@@ -427,12 +462,23 @@ impl Checker {
         }
     }
 
-    fn check_fn_body(&mut self, params: &[String], body: &[Stmt]) -> Result<(), String> {
+    fn check_fn_body(
+        &mut self,
+        params: &[String],
+        types: &[Ty],
+        body: &[Stmt],
+    ) -> Result<(), String> {
         let saved_scope = std::mem::take(&mut self.local_scope);
         let saved_depth = self.fn_depth;
         self.fn_depth += 1;
-        for param in params {
-            self.local_scope.insert(param.clone(), Ty::Int);
+        for (param, ty) in params.iter().zip(types.iter()) {
+            if !is_number(*ty) {
+                return Err(format!(
+                    "wasm target does not support {} function parameters yet",
+                    ty_name(*ty)
+                ));
+            }
+            self.local_scope.insert(param.clone(), *ty);
         }
         let outcome = (|| -> Result<(), String> {
             for stmt in body {
@@ -540,15 +586,23 @@ impl Checker {
                     _ => {}
                 }
                 if let Some(sig) = self.fn_sig(name) {
-                    if args.len() != sig.params {
+                    let params = sig.params.clone();
+                    if args.len() != params.len() {
                         return Err(format!(
                             "wasm target function '{}' takes {} arguments",
-                            name, sig.params
+                            name,
+                            params.len()
                         ));
                     }
-                    for arg in args {
-                        if self.infer(arg)? != Ty::Int {
-                            return Err("wasm target function arguments must be ints".to_string());
+                    for (arg, expected) in args.iter().zip(params.iter()) {
+                        let actual = self.infer(arg)?;
+                        if !arg_ok(*expected, actual) {
+                            return Err(format!(
+                                "wasm target function '{}' expects {}, got {}",
+                                name,
+                                ty_name(*expected),
+                                ty_name(actual)
+                            ));
                         }
                     }
                     return Ok(());
@@ -675,8 +729,12 @@ impl Checker {
                     return Err("wasm target has no function to return from".to_string());
                 }
                 if let Some(value) = expr {
-                    if self.infer(value)? != Ty::Int {
-                        return Err("wasm target returns ints only".to_string());
+                    let ty = self.infer(value)?;
+                    if !is_number(ty) {
+                        return Err(format!(
+                            "wasm target returns numbers only, got {}",
+                            ty_name(ty)
+                        ));
                     }
                 }
             }
@@ -684,13 +742,17 @@ impl Checker {
                 if self.fn_depth > 0 {
                     return Err("wasm target does not support nested functions".to_string());
                 }
-                let returns = body
-                    .iter()
-                    .any(|stmt| matches!(stmt, Stmt::Return(Some(_), _)));
-                if self.fn_sig(name).is_none() {
-                    self.declare_fn(name, params.len(), returns)?;
+                let types = match self.fn_sig(name) {
+                    Some(sig) => sig.params.clone(),
+                    None => vec![Ty::Int; params.len()],
+                };
+                if types.len() != params.len() {
+                    return Err(format!(
+                        "wasm target could not infer the parameters of '{}'",
+                        name
+                    ));
                 }
-                self.check_fn_body(params, body)?;
+                self.check_fn_body(params, &types, body)?;
             }
             other => {
                 return Err(format!(
@@ -758,6 +820,8 @@ struct Emitter<'a> {
     fn_mode: bool,
     /// First temporary-local index for the function currently being emitted.
     temp_base: u32,
+    /// Result type of the function currently being emitted (`None` = unit).
+    result: Option<Ty>,
 }
 
 impl Emitter<'_> {
@@ -897,6 +961,21 @@ impl<'a> Emitter<'a> {
             }
         }
         self.emit_store(name)
+    }
+
+    fn coerce_arg(&mut self, expected: Ty, actual: Ty) -> Result<(), String> {
+        if expected == actual {
+            return Ok(());
+        }
+        if expected == Ty::Float && actual == Ty::Int {
+            self.builder.push(Instr::Op(0xb9));
+            return Ok(());
+        }
+        Err(format!(
+            "wasm target parameter expects {}, got {}",
+            ty_name(expected),
+            ty_name(actual)
+        ))
     }
 
     fn type_of(&self, expr: &Expr) -> Result<Ty, String> {
@@ -1326,24 +1405,26 @@ impl<'a> Emitter<'a> {
             }
             Expr::Call(callee, args, _) => {
                 if let Expr::Ident(name) = &**callee {
-                    if let Some(sig) = self.checker.fn_sig(name) {
-                        if !sig.returns {
+                    if let Some(sig) = self.checker.fn_sig(name).cloned() {
+                        let Some(result) = sig.result else {
                             return Err(format!(
                                 "wasm target function '{}' returns no value",
                                 name
                             ));
-                        }
-                        if args.len() != sig.params {
+                        };
+                        if args.len() != sig.params.len() {
                             return Err(format!(
                                 "wasm target function '{}' takes {} arguments",
-                                name, sig.params
+                                name,
+                                sig.params.len()
                             ));
                         }
-                        for arg in args {
-                            self.emit_expr(arg)?;
+                        for (arg, expected) in args.iter().zip(sig.params.iter()) {
+                            let actual = self.emit_expr(arg)?;
+                            self.coerce_arg(*expected, actual)?;
                         }
                         self.builder.push(Instr::Call(sig.index));
-                        return Ok(Ty::Int);
+                        return Ok(result);
                     }
 
                     if name == "run" && args.len() == 1 {
@@ -1532,18 +1613,20 @@ impl<'a> Emitter<'a> {
                 let Expr::Ident(name) = &**callee else {
                     return Err("wasm target only supports calls to print()".to_string());
                 };
-                if let Some(sig) = self.checker.fn_sig(name) {
-                    if args.len() != sig.params {
+                if let Some(sig) = self.checker.fn_sig(name).cloned() {
+                    if args.len() != sig.params.len() {
                         return Err(format!(
                             "wasm target function '{}' takes {} arguments",
-                            name, sig.params
+                            name,
+                            sig.params.len()
                         ));
                     }
-                    for arg in args {
-                        self.emit_expr(arg)?;
+                    for (arg, expected) in args.iter().zip(sig.params.iter()) {
+                        let actual = self.emit_expr(arg)?;
+                        self.coerce_arg(*expected, actual)?;
                     }
                     self.builder.push(Instr::Call(sig.index));
-                    if sig.returns {
+                    if sig.result.is_some() {
                         self.builder.push(Instr::Op(0x1a));
                     }
                     return Ok(());
@@ -1672,8 +1755,32 @@ impl<'a> Emitter<'a> {
                 Ok(())
             }
             Stmt::Return(expr, _) => {
-                if let Some(expr) = expr {
-                    self.emit_expr(expr)?;
+                match (expr, self.result) {
+                    (Some(expr), Some(expected)) => {
+                        let actual = self.emit_expr(expr)?;
+                        if expected == Ty::Float && actual == Ty::Int {
+                            self.builder.push(Instr::Op(0xb9));
+                        } else if expected != actual {
+                            return Err(format!(
+                                "wasm target function returns {}, got {}",
+                                ty_name(expected),
+                                ty_name(actual)
+                            ));
+                        }
+                    }
+                    (Some(_), None) => {
+                        return Err(
+                            "wasm target function has no result type; return without a value"
+                                .to_string(),
+                        )
+                    }
+                    (None, Some(expected)) => {
+                        return Err(format!(
+                            "wasm target function returns {}; return needs a value",
+                            ty_name(expected)
+                        ))
+                    }
+                    (None, None) => {}
                 }
                 self.builder.push(Instr::Op(0x0f));
                 Ok(())
@@ -1692,32 +1799,346 @@ impl<'a> Emitter<'a> {
     }
 }
 
-/// Compile bx source to a standard WebAssembly module (current subset only).
-pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
-    struct FnDecl {
-        params: Vec<String>,
-        body: Vec<Stmt>,
-        returns: bool,
+struct FnDecl {
+    name: String,
+    params: Vec<String>,
+    body: Vec<Stmt>,
+}
+
+/// Soft (partial) type inference for call sites and returns: `None` means the
+/// type is not known yet, so a later fixpoint iteration may resolve it.
+struct InferState<'a> {
+    index: &'a HashMap<String, usize>,
+    globals: &'a HashMap<String, Ty>,
+    params: Vec<Vec<Option<Ty>>>,
+    results: Vec<Option<Ty>>,
+}
+
+impl<'a> InferState<'a> {
+    fn soft(&self, expr: &Expr, locals: &HashMap<String, Ty>) -> Option<Ty> {
+        match expr {
+            Expr::Int(_) => Some(Ty::Int),
+            Expr::Float(_) => Some(Ty::Float),
+            Expr::Str(_) => Some(Ty::Str),
+            Expr::Ident(name) => locals
+                .get(name)
+                .copied()
+                .or_else(|| self.globals.get(name).copied()),
+            Expr::Neg(inner) => match self.soft(inner, locals)? {
+                Ty::Float => Some(Ty::Float),
+                _ => Some(Ty::Int),
+            },
+            Expr::Bin(op, left, right) => {
+                let lt = self.soft(left, locals)?;
+                let rt = self.soft(right, locals)?;
+                if *op == BinOp::Add && lt == Ty::Str && rt == Ty::Str {
+                    return Some(Ty::Str);
+                }
+                if !is_number(lt) || !is_number(rt) {
+                    return Some(Ty::Int);
+                }
+                if *op == BinOp::Div || lt == Ty::Float || rt == Ty::Float {
+                    Some(Ty::Float)
+                } else {
+                    Some(Ty::Int)
+                }
+            }
+            Expr::Ternary(cond, then, other, _) => {
+                self.soft(cond, locals)?;
+                self.soft(then, locals).or_else(|| self.soft(other, locals))
+            }
+            Expr::Array(items) => {
+                for item in items {
+                    self.soft(item, locals)?;
+                }
+                Some(Ty::Arr)
+            }
+            Expr::Object(fields) => {
+                for (_, value) in fields {
+                    self.soft(value, locals)?;
+                }
+                Some(Ty::Obj(u32::MAX))
+            }
+            Expr::Member(object, _, _) => {
+                self.soft(object, locals)?;
+                Some(Ty::Int)
+            }
+            Expr::Index(array, index, _) => {
+                self.soft(array, locals)?;
+                self.soft(index, locals)?;
+                Some(Ty::Int)
+            }
+            Expr::Call(callee, args, _) => {
+                let Expr::Ident(name) = &**callee else {
+                    return None;
+                };
+                if let Some(index) = self.index.get(name) {
+                    return self.results.get(*index).copied().flatten();
+                }
+                match name.as_str() {
+                    "len" | "argc" | "write_file" | "run" | "gl_pixel" | "gl_png" => Some(Ty::Int),
+                    "arg" | "read_file" | "capture" => Some(Ty::Str),
+                    "performance_now" => Some(Ty::Float),
+                    _ => {
+                        for arg in args {
+                            self.soft(arg, locals)?;
+                        }
+                        None
+                    }
+                }
+            }
+            _ => None,
+        }
     }
 
+    fn unify_param(&mut self, index: usize, slot: usize, ty: Ty) -> Result<bool, String> {
+        let Some(value) = self.params[index].get_mut(slot) else {
+            return Ok(false);
+        };
+        match value {
+            None => {
+                *value = Some(if is_number(ty) {
+                    ty
+                } else {
+                    return Err(ty_err(ty));
+                });
+                Ok(true)
+            }
+            Some(current) => {
+                if *current == ty {
+                    return Ok(false);
+                }
+                if is_number(*current) && is_number(ty) {
+                    if ty == Ty::Float && *current == Ty::Int {
+                        *current = Ty::Float;
+                        return Ok(true);
+                    }
+                    return Ok(false);
+                }
+                Err(ty_err(ty))
+            }
+        }
+    }
+
+    fn unify_result(&mut self, index: usize, ty: Ty) -> Result<bool, String> {
+        match self.results[index] {
+            None => {
+                self.results[index] = Some(if is_number(ty) {
+                    ty
+                } else {
+                    return Err(ty_err(ty));
+                });
+                Ok(true)
+            }
+            Some(current) if current == ty => Ok(false),
+            Some(current) if is_number(current) && is_number(ty) => {
+                if ty == Ty::Float && current == Ty::Int {
+                    self.results[index] = Some(Ty::Float);
+                    return Ok(true);
+                }
+                Ok(false)
+            }
+            Some(_) => Err(ty_err(ty)),
+        }
+    }
+
+    fn walk(
+        &mut self,
+        stmts: &[Stmt],
+        locals: &mut HashMap<String, Ty>,
+        fn_index: Option<usize>,
+    ) -> Result<bool, String> {
+        let mut changed = false;
+        for stmt in stmts {
+            match stmt {
+                Stmt::Let(name, init, _) => {
+                    let ty = init
+                        .as_ref()
+                        .and_then(|expr| self.soft(expr, locals))
+                        .unwrap_or(Ty::Int);
+                    locals.insert(name.clone(), ty);
+                }
+                Stmt::Expr(expr, _) => {
+                    changed |= self.walk_expr(expr, locals)?;
+                }
+                Stmt::Fn(..) => {}
+                Stmt::Block(body) => changed |= self.walk(body, &mut locals.clone(), fn_index)?,
+                Stmt::If(cond, then, other, _) => {
+                    changed |= self.walk_expr(cond, locals)?;
+                    changed |= self.walk(then, &mut locals.clone(), fn_index)?;
+                    if let Some(other) = other {
+                        changed |= self.walk(other, &mut locals.clone(), fn_index)?;
+                    }
+                }
+                Stmt::While(cond, body, _) => {
+                    changed |= self.walk_expr(cond, locals)?;
+                    changed |= self.walk(body, &mut locals.clone(), fn_index)?;
+                }
+                Stmt::ForC(init, cond, step, body, _) => {
+                    if let Some(init) = init {
+                        changed |= self.walk(std::slice::from_ref(init), locals, fn_index)?;
+                    }
+                    if let Some(cond) = cond {
+                        changed |= self.walk_expr(cond, locals)?;
+                    }
+                    if let Some(step) = step {
+                        changed |= self.walk_expr(step, locals)?;
+                    }
+                    changed |= self.walk(body, &mut locals.clone(), fn_index)?;
+                }
+                Stmt::Return(expr, _) => {
+                    if let (Some(expr), Some(index)) = (expr, fn_index) {
+                        if let Some(ty) = self.soft(expr, locals) {
+                            changed |= self.unify_result(index, ty)?;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(changed)
+    }
+
+    fn walk_expr(&mut self, expr: &Expr, locals: &HashMap<String, Ty>) -> Result<bool, String> {
+        match expr {
+            Expr::Call(callee, args, _) => {
+                let mut changed = false;
+                if let Expr::Ident(name) = &**callee {
+                    if let Some(index) = self.index.get(name).copied() {
+                        for (slot, arg) in args.iter().enumerate() {
+                            if let Some(ty) = self.soft(arg, locals) {
+                                changed |= self.unify_param(index, slot, ty)?;
+                            }
+                        }
+                        return Ok(changed);
+                    }
+                }
+                for arg in args {
+                    changed |= self.walk_expr(arg, locals)?;
+                }
+                Ok(changed)
+            }
+            Expr::Bin(_, left, right) => {
+                Ok(self.walk_expr(left, locals)? | self.walk_expr(right, locals)?)
+            }
+            Expr::Neg(inner) | Expr::Not(inner) => self.walk_expr(inner, locals),
+            Expr::Assign(target, value, _) => {
+                let mut changed = self.walk_expr(value, locals)?;
+                changed |= self.walk_expr(target, locals)?;
+                Ok(changed)
+            }
+            Expr::Compound(target, _, value, _) => {
+                self.walk_expr(target, locals)?;
+                self.walk_expr(value, locals)
+            }
+            Expr::Ternary(cond, then, other, _) => {
+                self.walk_expr(cond, locals)?;
+                self.walk_expr(then, locals)?;
+                self.walk_expr(other, locals)
+            }
+            Expr::Array(items) => {
+                let mut changed = false;
+                for item in items {
+                    changed |= self.walk_expr(item, locals)?;
+                }
+                Ok(changed)
+            }
+            Expr::Object(fields) => {
+                let mut changed = false;
+                for (_, value) in fields {
+                    changed |= self.walk_expr(value, locals)?;
+                }
+                Ok(changed)
+            }
+            Expr::Index(array, index, _) => {
+                Ok(self.walk_expr(array, locals)? | self.walk_expr(index, locals)?)
+            }
+            Expr::Member(object, _, _) => self.walk_expr(object, locals),
+            Expr::And(left, right) | Expr::Or(left, right) => {
+                Ok(self.walk_expr(left, locals)? | self.walk_expr(right, locals)?)
+            }
+            _ => Ok(false),
+        }
+    }
+}
+
+fn ty_err(ty: Ty) -> String {
+    format!(
+        "wasm target does not support {} function parameters or results yet",
+        ty_name(ty)
+    )
+}
+/// Compile bx source to a standard WebAssembly module (current subset only).
+pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let stmts = crate::parser::parse(source)?;
     let mut checker = Checker::new();
-    let mut declarations: Vec<(String, FnDecl)> = Vec::new();
+    let mut declarations: Vec<FnDecl> = Vec::new();
     for stmt in &stmts {
         if let Stmt::Fn(name, params, body, _) = stmt {
-            let returns = body
-                .iter()
-                .any(|stmt| matches!(stmt, Stmt::Return(Some(_), _)));
-            checker.declare_fn(name, params.len(), returns)?;
-            declarations.push((
-                name.clone(),
-                FnDecl {
-                    params: params.clone(),
-                    body: body.clone(),
-                    returns,
-                },
-            ));
+            declarations.push(FnDecl {
+                name: name.clone(),
+                params: params.clone(),
+                body: body.clone(),
+            });
         }
+    }
+    let mut index: HashMap<String, usize> = HashMap::new();
+    for (slot, decl) in declarations.iter().enumerate() {
+        let fn_index = IMPORT_COUNT + 1 + slot as u32;
+        checker.declare_fn(&decl.name, fn_index)?;
+        index.insert(decl.name.clone(), slot);
+    }
+    // Seed top-level globals so argument inference can see their types. The
+    // checker itself types literals/arrays/records correctly; statements whose
+    // initialiser cannot be typed yet (calls to not-yet-inferred functions) are
+    // skipped here and declared during the full check after inference.
+    let mut seeded: HashMap<String, Ty> = HashMap::new();
+    for stmt in &stmts {
+        if let Stmt::Let(name, _, _) = stmt {
+            if checker.check_stmt(stmt).is_ok() {
+                if let Ok(ty) = checker.lookup(name) {
+                    seeded.insert(name.clone(), ty);
+                }
+            }
+        }
+    }
+    let globals = checker.global_types();
+    let mut infer = InferState {
+        index: &index,
+        globals: &globals,
+        params: declarations
+            .iter()
+            .map(|decl| vec![None; decl.params.len()])
+            .collect(),
+        results: vec![None; declarations.len()],
+    };
+    for _ in 0..8 {
+        let mut changed = false;
+        let globals = infer.globals.clone();
+        for stmt in &stmts {
+            if let Stmt::Fn(..) = stmt {
+                continue;
+            }
+            let mut locals = globals.clone();
+            changed |= infer.walk(std::slice::from_ref(stmt), &mut locals, None)?;
+        }
+        for (slot, decl) in declarations.iter().enumerate() {
+            let mut locals = globals.clone();
+            for (param, ty) in decl.params.iter().zip(infer.params[slot].iter()) {
+                locals.insert(param.clone(), ty.unwrap_or(Ty::Int));
+            }
+            changed |= infer.walk(&decl.body, &mut locals, Some(slot))?;
+        }
+        if !changed {
+            break;
+        }
+    }
+    for (slot, decl) in declarations.iter().enumerate() {
+        let params: Vec<Ty> = infer.params[slot]
+            .iter()
+            .map(|ty| ty.unwrap_or(Ty::Int))
+            .collect();
+        checker.set_fn_sig(&decl.name, params, infer.results[slot]);
     }
     for stmt in &stmts {
         checker.check_stmt(stmt)?;
@@ -1751,12 +2172,28 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let gl_to_png_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
     let start_ty = builder.add_type(vec![], vec![]);
     let mut fn_types: Vec<u32> = Vec::new();
-    for (_, decl) in &declarations {
-        let params = vec![ValType::I64; decl.params.len()];
-        let results = if decl.returns {
-            vec![ValType::I64]
-        } else {
-            Vec::new()
+    for decl in &declarations {
+        let sig = checker
+            .fn_sig(&decl.name)
+            .cloned()
+            .ok_or_else(|| format!("missing signature for '{}'", decl.name))?;
+        let params: Vec<ValType> = sig
+            .params
+            .iter()
+            .map(|ty| match ty {
+                Ty::Int => ValType::I64,
+                Ty::Float => ValType::F64,
+                other => {
+                    // Rejected during inference; keep the compiler defensive.
+                    let _ = other;
+                    ValType::I64
+                }
+            })
+            .collect();
+        let results = match sig.result {
+            Some(Ty::Int) => vec![ValType::I64],
+            Some(Ty::Float) => vec![ValType::F64],
+            _ => Vec::new(),
         };
         fn_types.push(builder.add_type(params, results));
     }
@@ -1809,15 +2246,20 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             locals: HashMap::new(),
             fn_mode: false,
             temp_base: 0,
+            result: None,
         };
         for stmt in &stmts {
             emitter.emit_stmt(stmt)?;
         }
     }
 
-    for (index, (_, decl)) in declarations.iter().enumerate() {
-        builder.begin_function(fn_types[index]);
-        let temp_base = declarations[index].1.params.len() as u32;
+    for (slot, decl) in declarations.iter().enumerate() {
+        let sig = checker
+            .fn_sig(&decl.name)
+            .cloned()
+            .ok_or_else(|| format!("missing signature for '{}'", decl.name))?;
+        builder.begin_function(fn_types[slot]);
+        let temp_base = sig.params.len() as u32;
         for _ in 0..8 {
             builder.add_local(ValType::I32);
         }
@@ -1830,12 +2272,13 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                 locals: HashMap::new(),
                 fn_mode: true,
                 temp_base,
+                result: sig.result,
             };
-            for (slot, param) in decl.params.iter().enumerate() {
+            for (slot, (param, ty)) in decl.params.iter().zip(sig.params.iter()).enumerate() {
                 emitter.locals.insert(
                     param.clone(),
                     LocalSlot {
-                        ty: Ty::Int,
+                        ty: *ty,
                         slot: slot as u32,
                     },
                 );
@@ -1843,8 +2286,16 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             for stmt in &decl.body {
                 emitter.emit_stmt(stmt)?;
             }
-            if decl.returns {
-                emitter.builder.push(Instr::Const(0x42, WVal::I64(0)));
+            match sig.result {
+                Some(Ty::Int) => emitter.builder.push(Instr::Const(0x42, WVal::I64(0))),
+                Some(Ty::Float) => emitter.builder.push(Instr::Const(0x44, WVal::F64(0.0))),
+                Some(other) => {
+                    return Err(format!(
+                        "wasm target does not support {} function results yet",
+                        ty_name(other)
+                    ))
+                }
+                None => {}
             }
         }
     }
@@ -2015,6 +2466,35 @@ mod tests {
     fn user_functions_take_params_and_return() {
         let prints = run_source("fn add(a, b) { return a + b }\nprint(add(2, 3))");
         assert_eq!(prints, vec![5]);
+    }
+
+    #[test]
+    fn float_parameters_and_results() {
+        let (numbers, strings) = run_with_argv(
+            "fn half(x) { return x / 2 }\nfn scale(x, factor) { return x * factor }\nfn show(x) { print(x) }\nprint(half(7))\nprint(scale(3, 1.5))\nshow(2.5)",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec!["3.5".to_string(), "4.5".to_string(), "2.5".to_string()]
+        );
+    }
+
+    #[test]
+    fn mixed_returns_promote_to_float() {
+        let (numbers, strings) = run_with_argv(
+            "fn f(x) { if (x < 0) { return 0 }\n  return x / 2 }\nprint(f(-1))\nprint(f(7))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(strings, vec!["0".to_string(), "3.5".to_string()]);
+    }
+
+    #[test]
+    fn string_parameters_are_rejected() {
+        assert!(compile_to_wasm("fn shout(s) { print(s) }\nshout(\"hi\")").is_err());
+        assert!(compile_to_wasm("fn pick(xs) { return xs[0] }\nprint(pick([1, 2]))").is_err());
     }
 
     #[test]
