@@ -165,6 +165,14 @@ write(dir + "/wasm-closure.bxs", 'let double = fn(x) { return x * 2 }\nprint(dou
 write(dir + "/wasm-bool.bxs", 'let ok = 2 > 1\nif (ok) { print(str(ok)) }\nprint(ok ? 1 : 0)\n')
 write(dir + "/wasm-exists.bxs", 'print(exists("."))\nprint(exists("C:/definitely-missing-bx"))\n')
 write(dir + "/g1.bxs", 'let a = [3, 4]\nlet total = 0\nfor v in a { total = total + v }\nprint(total)\n')
+write(dir + "/wasm-reciter.bxs", 'let o = {a: 1, b: 2}\nfor k, v in o { print(k)\nprint(v) }\nprint("abc".contains("b"))\n')
+test("wasm record iteration and string methods", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-reciter.bxs", "-o", dir + "/wasm-reciter.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-reciter.wasm"])
+  let vm = exec([bin, "run", dir + "/wasm-reciter.bxs"])
+  assert(ran.code == 0 && ran.out == vm.out && ran.out.trim() == "a\n1\nb\n2\ntrue", "wasm=" + json(ran.out) + " vm=" + json(vm.out))
+})
 test("G1 target selection", fn() {
   let wasm = exec([bin, "build", "--target", "wasm", dir + "/g1.bxs", "-o", dir + "/g1-target.wasm"])
   assert(wasm.code == 0, "build failed: " + wasm.err)

@@ -151,6 +151,22 @@ const imports = {
       }
       return 0;
     },
+    str_test: (ap, al, bp, bl, mode) => {
+      const hay = new Uint8Array(instance.exports.memory.buffer, ap, al);
+      const needle = new Uint8Array(instance.exports.memory.buffer, bp, bl);
+      if (mode === 1 || mode === 2) {
+        if (needle.length > hay.length) return 0;
+        const start = mode === 1 ? 0 : hay.length - needle.length;
+        for (let i = 0; i < needle.length; i++) if (hay[start + i] !== needle[i]) return 0;
+        return 1;
+      }
+      for (let i = 0; i + needle.length <= hay.length; i++) {
+        let hit = 1;
+        for (let j = 0; j < needle.length; j++) if (hay[i + j] !== needle[j]) hit = 0;
+        if (hit) return 1;
+      }
+      return 0;
+    },
     str_compare: (ap, al, bp, bl) => {
       const bytesA = new Uint8Array(instance.exports.memory.buffer, ap, al);
       const bytesB = new Uint8Array(instance.exports.memory.buffer, bp, bl);

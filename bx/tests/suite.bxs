@@ -797,6 +797,16 @@ if (g1Default.code == 0 && g1Wasm.code == 0 && g1EnvBuild.code == 0 && g1EnvRun.
   casesFail += 1
   failures.push("G1 target selection\n    default=" + g1Default.code + " wasm=" + g1Wasm.code + " envbuild=" + g1EnvBuild.code + " envrun=" + g1EnvRun.code + " invalid=" + g1Invalid.code + " conflict=" + g1Conflict.code + " fallback=" + g1Fallback.code + " err=" + json(g1Fallback.err))
 }
+write(artDir + "/wasm-reciter.bxs", 'let o = {a: 1, b: 2}\nfor k, v in o {\n  print(k)\n  print(v)\n}\nfor k in o {\n  print(k)\n}\nlet sum = 0\nfor k, v in o { sum = sum + v }\nprint(sum)\nprint("abc".contains("b"))\nprint("abc".starts_with("ab"))\nprint("abc".ends_with("bd"))\n')
+let wasmReciter = exec([BX, "build", "--wasm", artDir + "/wasm-reciter.bxs", "-o", artDir + "/wasm-reciter.wasm"])
+let wasmReciterRun = exec([BX, "run", artDir + "/wasm-reciter.wasm"])
+let wasmReciterVm = exec([BX, "run", artDir + "/wasm-reciter.bxs"])
+if (wasmReciter.code == 0 && wasmReciterRun.out == wasmReciterVm.out && wasmReciterRun.out.trim() == "a\n1\nb\n2\na\nb\n3\ntrue\ntrue\nfalse") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm record iteration and string methods\n    wasm=" + json(wasmReciterRun.out) + " vm=" + json(wasmReciterVm.out) + " err=" + json(wasmReciterRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'fn outer() {\n  let n = 5\n  let f = fn(x) { return x + n }\n  return f(1)\n}\nprint(outer())\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1 && wasmBad.err.contains("cannot capture outer variables")) {

@@ -1930,6 +1930,35 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 (self.on_str)(&text);
                 Ok(Vec::new())
             }
+            ("env", "str_test") => {
+                let read = |value: Option<&WVal>| match value {
+                    Some(WVal::I32(value)) => Some(*value as usize),
+                    _ => None,
+                };
+                let (hp, hl, np, nl, mode) = match (
+                    read(args.first()),
+                    read(args.get(1)),
+                    read(args.get(2)),
+                    read(args.get(3)),
+                    read(args.get(4)),
+                ) {
+                    (Some(hp), Some(hl), Some(np), Some(nl), Some(mode)) => (hp, hl, np, nl, mode),
+                    _ => return Err("env.str_test expects (i32,i32,i32,i32,i32)".to_string()),
+                };
+                let hay = memory
+                    .get(hp..hp.saturating_add(hl))
+                    .ok_or_else(|| "env.str_test haystack is outside memory".to_string())?;
+                let needle = memory
+                    .get(np..np.saturating_add(nl))
+                    .ok_or_else(|| "env.str_test needle is outside memory".to_string())?;
+                let found = match mode {
+                    0 => hay.windows(needle.len()).any(|window| window == needle),
+                    1 => hay.starts_with(needle),
+                    2 => hay.ends_with(needle),
+                    _ => return Err("env.str_test mode must be 0-2".to_string()),
+                };
+                Ok(vec![WVal::I32(if found { 1 } else { 0 })])
+            }
             ("env", "bool_to_str") => {
                 let value = match args.first() {
                     Some(WVal::I32(value)) => *value,

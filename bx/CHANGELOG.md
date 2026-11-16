@@ -28,6 +28,7 @@
 
 **实验性 wasm 目标**
 
+- 记录遍历 `for k, v in o`（声明序键表）与字符串方法 `.contains/.starts_with/.ends_with`（host `env.str_test`）；差分生成器限制乘法量级以避开 VM 的 9e15 浮点提升区间。`
 - G1 目标选择：`bx build --target wasm|bxb` 与 `BX_TARGET=wasm|bxb`（默认仍为 bxb）；非法值退出 2，`BX_TARGET=wasm bx run 脚本` 走 wasm 且失败时提示回退。`
 - `exists(path)` 返回 bool（与 VM 一致）；`file_exists(path)` 保留为 int 扩展。`
 - bool 类型：`true`/`false`、比较作为表达式、`&&`/`||`/`!`（短路）、三元、`str(bool)`/`print(bool)`；条件接受 bool 变量。`

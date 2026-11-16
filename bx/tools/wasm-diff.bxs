@@ -45,6 +45,12 @@ fn atom(vars) {
   }
   return str(1 + pick(30))
 }
+fn small_atom() {
+  if (pick(4) == 0) {
+    return str(1 + pick(9)) + "." + str(pick(9))
+  }
+  return str(1 + pick(9))
+}
 fn expr(vars) {
   let text = atom(vars)
   let ops = 1 + pick(2)
@@ -57,7 +63,7 @@ fn expr(vars) {
       text = text + " - " + atom(vars)
     }
     if (kind == 2) {
-      text = text + " * " + atom(vars)
+      text = text + " * " + small_atom()
     }
     if (kind == 3) {
       text = text + " / " + str(1 + pick(8))
@@ -89,6 +95,13 @@ fn gen() {
   lines.push("print(int(\"" + str(1 + pick(99)) + "\"))")
   lines.push("let conv = \"n\" + str(" + str(1 + pick(9)) + ")")
   lines.push("print(conv.len())")
+  lines.push("print(\"abc\".contains(\"b\"))")
+  lines.push("print(\"abc\".starts_with(\"ab\"))")
+  lines.push("print(\"abc\".ends_with(\"bc\"))")
+  lines.push("let rec = {p: " + str(1 + pick(9)) + ", q: " + str(1 + pick(9)) + "}")
+  lines.push("let rec_sum = 0")
+  lines.push("for rk, rv in rec { rec_sum = rec_sum + rv }")
+  lines.push("print(rec_sum)")
   lines.push("print(exists(\".\"))")
   lines.push("print(!exists(\".\"))")
   lines.push("let bool_a = " + str(1 + pick(9)) + " < " + str(1 + pick(9)))

@@ -254,6 +254,14 @@ impl Checker {
         (shapes.len() - 1) as u32
     }
 
+    fn shape_keys(&self, shape: u32) -> Result<Vec<String>, String> {
+        let shapes = self.shapes.borrow();
+        shapes
+            .get(shape as usize)
+            .map(|shape| shape.keys.clone())
+            .ok_or_else(|| "unknown object shape".to_string())
+    }
+
     fn field_index(&self, shape: u32, key: &str) -> Result<usize, String> {
         let shapes = self.shapes.borrow();
         let shape = shapes
@@ -443,6 +451,15 @@ impl Checker {
                 Ok(Ty::Obj(self.shape_id(&keys)))
             }
             Expr::MethodCall(object, key, args, _) => {
+                if matches!(key.as_str(), "contains" | "starts_with" | "ends_with") {
+                    if args.len() != 1 {
+                        return Err(format!("wasm target .{} takes one string", key));
+                    }
+                    if self.infer(object)? != Ty::Str || self.infer(&args[0])? != Ty::Str {
+                        return Err(format!("wasm target .{} works on strings only", key));
+                    }
+                    return Ok(Ty::Bool);
+                }
                 if key == "len" && args.is_empty() {
                     let ty = self.infer(object)?;
                     if matches!(ty, Ty::Str | Ty::Arr) {
@@ -1002,7 +1019,7 @@ impl Checker {
                         }
                         scope.insert(value_name, Ty::Int);
                     }
-                    Ty::Map => {
+                    Ty::Map | Ty::Obj(_) => {
                         scope.insert(key.clone(), Ty::Str);
                         if let Some(value) = value {
                             scope.insert(value.clone(), Ty::Int);
@@ -1085,7 +1102,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 37;
+const IMPORT_COUNT: u32 = 38;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -1113,6 +1130,7 @@ const MAP_LEN: u32 = 33;
 const MAP_KEY_AT: u32 = 34;
 const MAP_VALUE_AT: u32 = 35;
 const BOOL_TO_STR: u32 = 36;
+const STR_TEST: u32 = 37;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -1139,6 +1157,8 @@ struct Emitter<'a> {
     scoped: Vec<HashMap<String, LocalSlot>>,
     /// AST address -> literal id, resolved statically.
     literal_ids: HashMap<usize, u32>,
+    /// shape id -> (data-segment base of its key table, key count).
+    record_tables: HashMap<u32, (u32, u32)>,
 }
 
 impl Emitter<'_> {
@@ -1325,6 +1345,126 @@ impl<'a> Emitter<'a> {
         Ok(None)
     }
 
+    /// Lazily build a data-segment table: `count` u32 offsets followed by
+    /// `[len][utf8]` key blocks for a record shape.
+    fn record_table(&mut self, shape: u32) -> Result<(u32, u32), String> {
+        if let Some(entry) = self.record_tables.get(&shape) {
+            return Ok(*entry);
+        }
+        let keys = self.checker.shape_keys(shape)?;
+        let count = keys.len() as u32;
+        let mut data: Vec<u8> = Vec::new();
+        let mut cursor = count * 4;
+        let mut blocks: Vec<u8> = Vec::new();
+        for key in &keys {
+            data.extend_from_slice(&cursor.to_le_bytes());
+            blocks.extend_from_slice(&(key.len() as u32).to_le_bytes());
+            blocks.extend_from_slice(key.as_bytes());
+            cursor += 4 + key.len() as u32;
+        }
+        data.extend_from_slice(&blocks);
+        let base = self.builder.add_data(&data);
+        self.record_tables.insert(shape, (base, count));
+        Ok((base, count))
+    }
+
+    /// `for k, v in record { .. }`: declaration-order key (string) / value (int).
+    fn emit_for_in_record(
+        &mut self,
+        key: &str,
+        value: Option<&str>,
+        iter: &Expr,
+        shape: u32,
+        body: &[Stmt],
+    ) -> Result<(), String> {
+        let (table, count) = self.record_table(shape)?;
+        let record_tmp = self.builder.add_local(ValType::I32);
+        let index_tmp = self.builder.add_local(ValType::I32);
+        let block_tmp = self.builder.add_local(ValType::I32);
+        let key_slot = self.builder.add_local(ValType::I32);
+        let key_len_slot = self.builder.add_local(ValType::I32);
+        let mut scope = HashMap::new();
+        scope.insert(
+            key.to_string(),
+            LocalSlot {
+                ty: Ty::Str,
+                slot: key_slot,
+            },
+        );
+        let value_slot = value.map(|value| {
+            let slot = self.builder.add_local(ValType::I64);
+            scope.insert(value.to_string(), LocalSlot { ty: Ty::Int, slot });
+            slot
+        });
+        self.scoped.push(scope);
+        self.emit_expr(iter)?;
+        self.builder.push(Instr::Local(0x21, record_tmp));
+        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+        self.builder.push(Instr::Local(0x21, index_tmp));
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x02);
+        self.builder.push(Instr::Block {
+            opcode: 0x03,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x03);
+        self.builder.push(Instr::Local(0x20, index_tmp));
+        self.builder
+            .push(Instr::Const(0x41, WVal::I32(count as i32)));
+        self.builder.push(Instr::Op(0x48));
+        self.builder.push(Instr::Op(0x45));
+        self.builder.push(Instr::BrIf(1));
+        // key block address = table + load(table + 4*index)
+        self.builder
+            .push(Instr::Const(0x41, WVal::I32(table as i32)));
+        self.builder.push(Instr::Local(0x20, index_tmp));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder
+            .push(Instr::Const(0x41, WVal::I32(table as i32)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, block_tmp));
+        self.builder.push(Instr::Local(0x20, block_tmp));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Local(0x21, key_len_slot));
+        self.builder.push(Instr::Local(0x20, block_tmp));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, key_slot));
+        if let Some(value_slot) = value_slot {
+            self.builder.push(Instr::Local(0x20, record_tmp));
+            self.builder.push(Instr::Local(0x20, index_tmp));
+            self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+            self.builder.push(Instr::Op(0x6c));
+            self.builder.push(Instr::Op(0x6a));
+            self.builder.push(Instr::Mem(0x29, 3, 0));
+            self.builder.push(Instr::Local(0x21, value_slot));
+        }
+        for stmt in body {
+            self.emit_stmt(stmt)?;
+        }
+        self.builder.push(Instr::Local(0x20, index_tmp));
+        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, index_tmp));
+        self.builder.push(Instr::Br(0));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.scoped.pop();
+        Ok(())
+    }
+
     /// `for k, v in map { .. }`: entry-order key (string) / value (int) locals.
     fn emit_for_in_map(
         &mut self,
@@ -1424,6 +1564,9 @@ impl<'a> Emitter<'a> {
         let iter_ty = self.type_of(iter)?;
         if iter_ty == Ty::Map {
             return self.emit_for_in_map(key, value, iter, body);
+        }
+        if let Ty::Obj(shape) = iter_ty {
+            return self.emit_for_in_record(key, value, iter, shape, body);
         }
         if iter_ty != Ty::Arr {
             return Err(format!(
@@ -2231,6 +2374,24 @@ impl<'a> Emitter<'a> {
                 Ok(Ty::Int)
             }
             Expr::MethodCall(object, key, args, _) => {
+                if matches!(key.as_str(), "contains" | "starts_with" | "ends_with") {
+                    if args.len() != 1 {
+                        return Err(format!("wasm target .{} takes one string", key));
+                    }
+                    if self.type_of(object)? != Ty::Str || self.type_of(&args[0])? != Ty::Str {
+                        return Err(format!("wasm target .{} works on strings only", key));
+                    }
+                    let mode = match key.as_str() {
+                        "contains" => 0,
+                        "starts_with" => 1,
+                        _ => 2,
+                    };
+                    self.emit_str(object)?;
+                    self.emit_str(&args[0])?;
+                    self.builder.push(Instr::Const(0x41, WVal::I32(mode)));
+                    self.builder.push(Instr::Call(STR_TEST));
+                    return Ok(Ty::Bool);
+                }
                 if key == "len" && args.is_empty() {
                     return match self.type_of(object)? {
                         Ty::Arr => {
@@ -3483,6 +3644,16 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let map_key_at_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
     let map_value_at_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I64]);
     let bool_to_str_ty = builder.add_type(vec![ValType::I32], vec![ValType::I32]);
+    let str_test_ty = builder.add_type(
+        vec![
+            ValType::I32,
+            ValType::I32,
+            ValType::I32,
+            ValType::I32,
+            ValType::I32,
+        ],
+        vec![ValType::I32],
+    );
     let sleep_ms_ty = builder.add_type(vec![ValType::I64], vec![]);
     let cwd_ty = builder.add_type(vec![], vec![ValType::I32]);
     let env_get_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
@@ -3552,6 +3723,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "map_key_at", map_key_at_ty);
     builder.import_func("env", "map_value_at", map_value_at_ty);
     builder.import_func("env", "bool_to_str", bool_to_str_ty);
+    builder.import_func("env", "str_test", str_test_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -3587,6 +3759,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             result: None,
             scoped: Vec::new(),
             literal_ids: literal_ids.clone(),
+            record_tables: HashMap::new(),
         };
         for stmt in &stmts {
             emitter.emit_stmt(stmt)?;
@@ -3618,6 +3791,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                 result: sig.result,
                 scoped: Vec::new(),
                 literal_ids: literal_ids.clone(),
+                record_tables: HashMap::new(),
             };
             let mut used = 0u32;
             for (param, ty) in decl.params.iter().zip(sig.params.iter()) {
@@ -3673,6 +3847,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                 result: sig.result,
                 scoped: Vec::new(),
                 literal_ids: literal_ids.clone(),
+                record_tables: HashMap::new(),
             };
             let mut used = 0u32;
             for (param, ty) in decl.params.iter().zip(sig.params.iter()) {
@@ -3881,6 +4056,25 @@ mod tests {
         assert_eq!(
             strings,
             vec!["3.5".to_string(), "4.5".to_string(), "2.5".to_string()]
+        );
+    }
+
+    #[test]
+    fn records_iterate_and_string_methods_work() {
+        let (numbers, strings) = run_with_argv(
+            "let o = {a: 1, b: 2}\nfor k, v in o {\n  print(k)\n  print(v)\n}\nprint(\"abc\".contains(\"b\"))\nprint(\"abc\".starts_with(\"ab\"))\nprint(\"abc\".ends_with(\"bd\"))",
+            &[],
+        );
+        assert_eq!(numbers, vec![1, 2]);
+        assert_eq!(
+            strings,
+            vec![
+                "a".to_string(),
+                "b".to_string(),
+                "true".to_string(),
+                "true".to_string(),
+                "false".to_string(),
+            ]
         );
     }
 

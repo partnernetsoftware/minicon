@@ -84,6 +84,9 @@ Legend: `[v]` supported and covered by evidence, `[-]` missing but planned,
 | values | int, float arithmetic | `[v]` | `[v]` | unit + differential |
 | values | string literals, concat, compare, len, str/int conversions | `[v]` | `[v]` | unit + differential + node |
 | values | bool, `&&`/`||`/`!`, ternary, str(bool)/print(bool) | `[v]` | `[v]` | unit + differential + node |
+| values | string methods: contains/starts_with/ends_with | `[v]` | `[v]` | unit + differential + node |
+| values | record iteration `for k, v in record` | `[v]` | `[v]` | unit + differential + node |
+| values | numeric range: VM promotes int results ≥9e15 to Float | `[v]` | documented divergence | PRD_02_42 known limitation |
 | values | int arrays, index, len, push/pop | `[v]` | `[v]` | unit + differential |
 | values | fixed-layout records, member read/write | `[v]` | `[v]` | unit |
 | values | dynamic string-keyed maps (`map_*`, for-in) | — | `ext` | unit + node |

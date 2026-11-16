@@ -36,6 +36,10 @@ bx wasm target
 │   │   data segments, `print_utf8`
 │   ├── [v] arrays of ints: `[..]`, `arr[i]`, `len(arr)`, `arr.push(x)` growth
 │   │   (allocate-and-copy over the module heap)
+│   ├── [v] records: `{a: 1}`, `o.a`, `for k, v in o` (string key / int value,
+│   │   declaration order via a per-shape key table)
+│   ├── [v] string methods: `.len()`, `.contains(s)`, `.starts_with(s)`,
+│   │   `.ends_with(s)` (host `env.str_test`)
 │   ├── [v] runtime strings: bindings (ptr,len globals), `s + t`, `len(s)`
 │   ├── [v] fixed-layout records `{a: 1, b: 2}` with `o.a` field loads
 │   ├── [v] control flow: `if/else`, `while`, `for`, `for v in` / `for k, v in`
@@ -119,7 +123,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 64 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 66 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -135,6 +139,10 @@ bx wasm target
   `&&`/`||`/`!` through if/else locals, ternary with int/float/bool branches
   (string branches still rejected) and `str(bool)`/`print(bool)` via host
   `env.bool_to_str`.
+- **Numeric range divergence (documented)**: the VM promotes int arithmetic
+  results to Float when the exact result is fractional or `|r| >= 9e15`; the
+  wasm subset keeps i64. Values below that threshold agree; the differential
+  generator deliberately bounds magnitudes so it never asserts past it.
 - **Function literals**: `let f = fn(x) { return x * 2 }` compiles to a lifted
   wasm function; the value is a dummy i32 and every call site resolves the
   concrete literal statically (`Ty::Func(id)`). Literals can be passed to
