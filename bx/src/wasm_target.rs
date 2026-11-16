@@ -266,6 +266,33 @@ impl Checker {
         }
     }
 
+    fn check_cond(&self, expr: &Expr) -> Result<(), String> {
+        match expr {
+            Expr::Bin(
+                op @ (BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge),
+                left,
+                right,
+            ) => {
+                let _ = op;
+                for side in [left, right] {
+                    let ty = self.infer(side)?;
+                    if ty != Ty::Int {
+                        return Err(format!(
+                            "wasm target compares ints only, got {}",
+                            ty_name(ty)
+                        ));
+                    }
+                }
+                Ok(())
+            }
+            Expr::Not(inner) => self.check_cond(inner),
+            other => Err(format!(
+                "wasm target supports comparison conditions only, got {}",
+                expr_kind(other)
+            )),
+        }
+    }
+
     fn check_stmt(&mut self, stmt: &Stmt) -> Result<(), String> {
         match stmt {
             Stmt::Let(name, init, _) => {
@@ -308,9 +335,81 @@ impl Checker {
                     return Err("wasm target cannot print arrays yet".to_string());
                 }
             }
+            Stmt::Expr(Expr::Compound(target, _op, value, _), _) => {
+                let Expr::Ident(name) = &**target else {
+                    return Err(
+                        "wasm target supports compound assignment to a global only".to_string()
+                    );
+                };
+                if self.lookup(name)? != Ty::Int {
+                    return Err("wasm target supports compound assignment on ints only".to_string());
+                }
+                if self.infer(value)? != Ty::Int {
+                    return Err("wasm target supports compound assignment on ints only".to_string());
+                }
+            }
             Stmt::Expr(expr, _) => {
                 self.infer(expr)?;
             }
+            Stmt::Block(stmts) => {
+                for stmt in stmts {
+                    self.check_stmt(stmt)?;
+                }
+            }
+            Stmt::If(cond, then_body, else_body, _) => {
+                self.check_cond(cond)?;
+                for stmt in then_body {
+                    self.check_stmt(stmt)?;
+                }
+                if let Some(else_body) = else_body {
+                    for stmt in else_body {
+                        self.check_stmt(stmt)?;
+                    }
+                }
+            }
+            Stmt::While(cond, body, _) => {
+                self.check_cond(cond)?;
+                for stmt in body {
+                    self.check_stmt(stmt)?;
+                }
+            }
+            Stmt::ForC(init, cond, step, body, _) => {
+                if let Some(init) = init {
+                    self.check_stmt(init)?;
+                }
+                if let Some(cond) = cond {
+                    self.check_cond(cond)?;
+                }
+                if let Some(step) = step {
+                    match step {
+                        Expr::Assign(target, value, _) => {
+                            let Expr::Ident(name) = &**target else {
+                                return Err(
+                                    "wasm target supports assignment to a global name only"
+                                        .to_string(),
+                                );
+                            };
+                            let expected = self.lookup(name)?;
+                            let actual = self.infer(value)?;
+                            if expected != actual {
+                                return Err(format!(
+                                    "wasm target requires stable types: '{}' is {}, assigned {}",
+                                    name,
+                                    ty_name(expected),
+                                    ty_name(actual)
+                                ));
+                            }
+                        }
+                        other => {
+                            self.infer(other)?;
+                        }
+                    }
+                }
+                for stmt in body {
+                    self.check_stmt(stmt)?;
+                }
+            }
+            Stmt::Break(_) | Stmt::Continue(_) => {}
             other => {
                 return Err(format!(
                     "wasm target does not support this statement yet: {}",
@@ -348,6 +447,8 @@ struct Emitter<'a> {
     builder: &'a mut Builder,
     /// Index of the bump-allocator global (module-internal heap).
     heap: u32,
+    /// Structured-control stack: 0x02 block (loop exit), 0x03 loop, 0x04 if.
+    labels: Vec<u8>,
 }
 
 impl<'a> Emitter<'a> {
@@ -377,6 +478,134 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Local(0x20, ALLOC_TMP));
         self.builder.push(Instr::Op(0x6a));
         self.builder.push(Instr::Global(0x24, self.heap));
+    }
+
+    fn break_depth(&self) -> Result<u32, String> {
+        for (depth, kind) in self.labels.iter().rev().enumerate() {
+            if *kind == 0x02 {
+                return Ok(depth as u32);
+            }
+        }
+        Err("wasm target has no loop to break out of".to_string())
+    }
+
+    fn continue_depth(&self) -> Result<u32, String> {
+        for (depth, kind) in self.labels.iter().rev().enumerate() {
+            if *kind == 0x03 {
+                return Ok(depth as u32);
+            }
+        }
+        Err("wasm target has no loop to continue".to_string())
+    }
+
+    fn emit_cond(&mut self, expr: &Expr) -> Result<(), String> {
+        match expr {
+            Expr::Not(inner) => {
+                self.emit_cond(inner)?;
+                self.builder.push(Instr::Op(0x45));
+                Ok(())
+            }
+            Expr::Bin(op, left, right) => {
+                let opcode = match op {
+                    BinOp::Eq => 0x51,
+                    BinOp::Ne => 0x52,
+                    BinOp::Lt => 0x53,
+                    BinOp::Le => 0x54,
+                    BinOp::Gt => 0x55,
+                    BinOp::Ge => 0x56,
+                    _ => return Err("wasm target supports comparison conditions only".to_string()),
+                };
+                self.emit_expr(left)?;
+                self.emit_expr(right)?;
+                self.builder.push(Instr::Op(opcode));
+                Ok(())
+            }
+            other => Err(format!(
+                "wasm target supports comparison conditions only, got {}",
+                expr_kind(other)
+            )),
+        }
+    }
+
+    fn emit_while(
+        &mut self,
+        cond: Option<&Expr>,
+        body: &[Stmt],
+        step: Option<&Expr>,
+    ) -> Result<(), String> {
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x02);
+        self.builder.push(Instr::Block {
+            opcode: 0x03,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x03);
+        if let Some(cond) = cond {
+            self.emit_cond(cond)?;
+            self.builder.push(Instr::Op(0x45));
+            self.builder.push(Instr::BrIf(1));
+        }
+        for stmt in body {
+            self.emit_stmt(stmt)?;
+        }
+        if let Some(step) = step {
+            match step {
+                Expr::Assign(target, value, _) => {
+                    let Expr::Ident(name) = &**target else {
+                        return Err(
+                            "wasm target supports assignment to a global name only".to_string()
+                        );
+                    };
+                    self.emit_expr(value)?;
+                    self.store_ident(name)?;
+                }
+                Expr::Compound(target, op, value, _) => {
+                    let Expr::Ident(name) = &**target else {
+                        return Err(
+                            "wasm target supports compound assignment to a global only".to_string()
+                        );
+                    };
+                    self.push_global(name, false)?;
+                    self.emit_expr(value)?;
+                    self.builder.push(Instr::Op(match op {
+                        BinOp::Add => 0x7c,
+                        BinOp::Sub => 0x7d,
+                        BinOp::Mul => 0x7e,
+                        _ => return Err("wasm target supports only + - *".to_string()),
+                    }));
+                    self.store_ident(name)?;
+                }
+                other => {
+                    self.emit_expr(other)?;
+                    self.builder.push(Instr::Op(0x1a));
+                }
+            }
+        }
+        self.builder.push(Instr::Br(0));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        Ok(())
+    }
+
+    fn store_ident(&mut self, name: &str) -> Result<(), String> {
+        let ty = self.checker.lookup(name)?;
+        let base = self.checker.binding(name)?.base;
+        if ty == Ty::Str {
+            self.builder.push(Instr::Global(0x24, base + 1));
+            self.builder.push(Instr::Global(0x24, base));
+        } else {
+            self.builder.push(Instr::Global(0x24, base));
+        }
+        Ok(())
     }
 
     /// Push an integer string address/length pair for a string expression.
@@ -631,6 +860,23 @@ impl<'a> Emitter<'a> {
                 }
                 Ok(())
             }
+            Stmt::Expr(Expr::Compound(target, op, value, _), _) => {
+                let Expr::Ident(name) = &**target else {
+                    return Err(
+                        "wasm target supports compound assignment to a global only".to_string()
+                    );
+                };
+                self.push_global(name, false)?;
+                self.emit_expr(value)?;
+                self.builder.push(Instr::Op(match op {
+                    BinOp::Add => 0x7c,
+                    BinOp::Sub => 0x7d,
+                    BinOp::Mul => 0x7e,
+                    _ => return Err("wasm target supports only + - *".to_string()),
+                }));
+                self.store_ident(name)?;
+                Ok(())
+            }
             Stmt::Expr(expr, _) => {
                 let ty = self.emit_expr(expr)?;
                 match ty {
@@ -641,6 +887,51 @@ impl<'a> Emitter<'a> {
                     }
                     Ty::Int | Ty::Arr | Ty::Obj(_) => self.builder.push(Instr::Op(0x1a)),
                 }
+                Ok(())
+            }
+            Stmt::Block(stmts) => {
+                for stmt in stmts {
+                    self.emit_stmt(stmt)?;
+                }
+                Ok(())
+            }
+            Stmt::If(cond, then_body, else_body, _) => {
+                self.emit_cond(cond)?;
+                self.builder.push(Instr::Block {
+                    opcode: 0x04,
+                    end: 0,
+                    else_at: 0,
+                    start: 0,
+                });
+                self.labels.push(0x04);
+                for stmt in then_body {
+                    self.emit_stmt(stmt)?;
+                }
+                if let Some(else_body) = else_body {
+                    self.builder.push(Instr::Else { end: 0 });
+                    for stmt in else_body {
+                        self.emit_stmt(stmt)?;
+                    }
+                }
+                self.labels.pop();
+                self.builder.push(Instr::Op(0x0b));
+                Ok(())
+            }
+            Stmt::While(cond, body, _) => self.emit_while(Some(cond), body, None),
+            Stmt::ForC(init, cond, step, body, _) => {
+                if let Some(init) = init {
+                    self.emit_stmt(init)?;
+                }
+                self.emit_while(cond.as_ref(), body, step.as_ref())
+            }
+            Stmt::Break(_) => {
+                let depth = self.break_depth()?;
+                self.builder.push(Instr::Br(depth));
+                Ok(())
+            }
+            Stmt::Continue(_) => {
+                let depth = self.continue_depth()?;
+                self.builder.push(Instr::Br(depth));
                 Ok(())
             }
             other => Err(format!(
@@ -690,6 +981,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             checker: &checker,
             builder: &mut builder,
             heap,
+            labels: Vec::new(),
         };
         for stmt in &stmts {
             emitter.emit_stmt(stmt)?;
@@ -765,6 +1057,30 @@ mod tests {
     fn runtime_strings_concatenate() {
         let prints = run_strings("let s = \"ab\"\nlet t = s + \"cd\"\nprint(t + s)\nprint(len(t))");
         assert_eq!(prints, vec!["abcdab".to_string()]);
+    }
+
+    #[test]
+    fn loops_and_conditionals() {
+        let prints = run_source(
+            "let i = 0\nwhile (i < 5) {\n  print(i)\n  i = i + 1\n}\nif (i == 5) { print(100) } else { print(200) }",
+        );
+        assert_eq!(prints, vec![0, 1, 2, 3, 4, 100]);
+    }
+
+    #[test]
+    fn break_and_continue() {
+        let prints = run_source(
+            "let i = 0\nlet sum = 0\nwhile (i < 10) {\n  i = i + 1\n  if (i == 3) { continue }\n  if (i == 6) { break }\n  sum = sum + i\n}\nprint(sum)",
+        );
+        assert_eq!(prints, vec![1 + 2 + 4 + 5]);
+    }
+
+    #[test]
+    fn for_loops_desugar() {
+        let prints = run_source(
+            "let sum = 0\nfor (let i = 0; i < 4; i = i + 1) {\n  sum = sum + i\n}\nprint(sum)",
+        );
+        assert_eq!(prints, vec![6]);
     }
 
     #[test]

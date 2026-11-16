@@ -33,7 +33,9 @@ bx wasm target
 │   ├── [v] strings: literals + compile-time `+`, data segments, `print_utf8`
 │   ├── [v] arrays of ints: `[..]`, `arr[i]`, `len(arr)` over the prototype heap
 │   ├── [v] runtime strings: bindings (ptr,len globals), `s + t`, `len(s)`
-│   └── [v] fixed-layout records `{a: 1, b: 2}` with `o.a` field loads
+│   ├── [v] fixed-layout records `{a: 1, b: 2}` with `o.a` field loads
+│   ├── [v] control flow: `if/else`, `while`, `for`, `break`/`continue`, comparisons
+│   └── [-] user functions with parameters/returns and calls (M3)
 ├── runtime (standard module execution, own code)
 │   ├── [v] decode + validate (type/import/function/global/export/code)
 │   ├── [v] interpreter: consts, globals, locals, calls, control flow, numeric ops
@@ -82,8 +84,9 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 23 in-tree unit tests cover encoder round-trip, memory/data decoding, UTF-8
-  imports, operator precedence and rejection of unsupported constructs.
+- 29 in-tree unit tests cover encoder round-trip, memory/data decoding, UTF-8
+  imports, operator precedence, control flow (`while`/`if`/`break`/`continue`/
+  `for`) and rejection of unsupported constructs.
 - CLI round-trip (`build --wasm` → `run` → `check`) is covered by the self-hosted
   suite and therefore by the packed six-cell CI lane.
 
@@ -102,7 +105,7 @@ bx wasm target
 | M0 | this spec + decision record | `[v]` |
 | M1 | numeric vertical slice: emit → run → `check`, node cross-check | `[v]` |
 | M2 | data model: strings, arrays, objects in linear memory | `[-]` (strings incl. runtime concat, int arrays, fixed-layout records, in-module bump heap done; dynamic keys, mixed-type fields and growable arrays next) |
-| M3 | functions, closures, control flow compiled to wasm | `[_]` |
+| M3 | functions, closures, control flow compiled to wasm | `[-]` (control flow done; user functions/closures next) |
 | M4 | builtins + native process ABI (`bx.*`), default target flip | `[_]` |
 | M5 | `web.*` + `webgl.*` ABI, software backend, browser demo | `[_]` |
 | M6 | remove `.bxb` + legacy code paths, six-cell wasm evidence | `[_]` |

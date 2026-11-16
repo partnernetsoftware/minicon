@@ -536,6 +536,15 @@ if (wasmRec.code == 0 && wasmRecRun.code == 0 && wasmRecRun.out.trim() == "30\n2
   casesFail += 1
   failures.push("wasm records + in-module heap\n    build=" + wasmRec.code + " out=" + json(wasmRecRun.out) + " err=" + json(wasmRecRun.err))
 }
+write(artDir + "/wasm-flow.bxs", 'let i = 0\nlet sum = 0\nwhile (i < 10) {\n  i = i + 2\n  if (i == 6) { continue }\n  sum = sum + i\n}\nprint(sum)\nfor (let k = 0; k < 3; k = k + 1) {\n  print(k)\n}\n')
+let wasmFlow = exec([BX, "build", "--wasm", artDir + "/wasm-flow.bxs", "-o", artDir + "/wasm-flow.wasm"])
+let wasmFlowRun = exec([BX, "run", artDir + "/wasm-flow.wasm"])
+if (wasmFlow.code == 0 && wasmFlowRun.code == 0 && wasmFlowRun.out.trim() == "24\n0\n1\n2") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm control flow\n    build=" + wasmFlow.code + " out=" + json(wasmFlowRun.out) + " err=" + json(wasmFlowRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'fn unsupported() { return 1 }\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1) {
