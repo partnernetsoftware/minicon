@@ -111,7 +111,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 52 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 53 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -123,10 +123,11 @@ bx wasm target
 - `bx check <module> --json` reports the decoded import/export names and defined
   function count, so agents can introspect a module without a JS toolchain.
 - **Function parameters**: a light call-site inference pass types function
-  parameters and results as int or float (int arguments promote to float
-  parameters; conflicting call sites and string/array parameters produce clear
-  errors). Parameter/local slots are laid out per function, so float helpers such
-  as `fn half(x) { return x / 2 }` compile and match the VM exactly.
+  parameters and results as int, float, string, array or record. Strings travel
+  as `(ptr, len)` pairs and string results use wasm multi-value results; int
+  arguments promote to float parameters; conflicting call sites produce clear
+  errors. Slots are laid out per function (a string parameter owns two locals),
+  so helpers such as `fn tag(s) { return s + "?" }` compile and match the VM.
 - **Execution budgets**: `bx run --max-steps N --timeout MS script.wasm` applies
   the same budgets as the native VM path to the wasm interpreter (instruction
   counter plus a periodic deadline check), so untrusted modules cannot spin

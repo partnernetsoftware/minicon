@@ -668,13 +668,21 @@ write(artDir + "/wasm-fnf.bxs", 'fn half(x) { return x / 2 }\nfn scale(x, factor
 let wasmFnf = exec([BX, "build", "--wasm", artDir + "/wasm-fnf.bxs", "-o", artDir + "/wasm-fnf.wasm"])
 let wasmFnfRun = exec([BX, "run", artDir + "/wasm-fnf.wasm"])
 let wasmFnfVm = exec([BX, "run", artDir + "/wasm-fnf.bxs"])
-write(artDir + "/wasm-fnbad.bxs", 'fn shout(s) { print(s) }\nshout("hi")\n')
-let wasmFnBad = exec([BX, "build", "--wasm", artDir + "/wasm-fnbad.bxs", "-o", artDir + "/wasm-fnbad.wasm"])
-if (wasmFnf.code == 0 && wasmFnfRun.out == wasmFnfVm.out && wasmFnfRun.out.trim() == "3.5\n4.5\n2.5" && wasmFnBad.code == 1) {
+if (wasmFnf.code == 0 && wasmFnfRun.out == wasmFnfVm.out && wasmFnfRun.out.trim() == "3.5\n4.5\n2.5") {
   casesOk += 1
 } else {
   casesFail += 1
   failures.push("wasm float function params/results\n    wasm=" + json(wasmFnfRun.out) + " vm=" + json(wasmFnfVm.out) + " bad=" + wasmFnBad.code)
+}
+write(artDir + "/wasm-richp.bxs", 'fn shout(s) { print(s + "!") }\nfn tag(s) { return s + "?" }\nfn first(xs) { return xs[0] }\nfn make() { return [7, 8] }\nfn kv(o) { return o.k }\nshout("hey")\nprint(tag("ok"))\nlet a = [5, 6]\nprint(first(a))\nlet b = make()\nprint(b[1])\nlet r = {k: 3}\nprint(kv(r))\n')
+let wasmRichp = exec([BX, "build", "--wasm", artDir + "/wasm-richp.bxs", "-o", artDir + "/wasm-richp.wasm"])
+let wasmRichpRun = exec([BX, "run", artDir + "/wasm-richp.wasm"])
+let wasmRichpVm = exec([BX, "run", artDir + "/wasm-richp.bxs"])
+if (wasmRichp.code == 0 && wasmRichpRun.out == wasmRichpVm.out && wasmRichpRun.out.trim() == "hey!\nok?\n5\n8\n3") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm rich function parameters\n    wasm=" + json(wasmRichpRun.out) + " vm=" + json(wasmRichpVm.out) + " err=" + json(wasmRichpRun.err))
 }
 write(artDir + "/wasm-bad.bxs", 'let f = fn() { return 1 }\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
