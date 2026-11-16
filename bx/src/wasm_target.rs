@@ -26,6 +26,8 @@ enum Ty {
     /// Non-capturing function literal (payload = literal id). Values carry a
     /// dummy i32 and calls are resolved statically.
     Func(u32),
+    /// Boolean: real i32 0/1 (wasm-target extension beyond the earlier subset).
+    Bool,
 }
 
 fn ty_name(ty: Ty) -> &'static str {
@@ -37,6 +39,7 @@ fn ty_name(ty: Ty) -> &'static str {
         Ty::Obj(_) => "object",
         Ty::Map => "map",
         Ty::Func(_) => "function",
+        Ty::Bool => "bool",
     }
 }
 
@@ -55,7 +58,7 @@ fn wasm_types(ty: Ty) -> Vec<ValType> {
         Ty::Int => vec![ValType::I64],
         Ty::Float => vec![ValType::F64],
         Ty::Str => vec![ValType::I32, ValType::I32],
-        Ty::Arr | Ty::Obj(_) | Ty::Map | Ty::Func(_) => vec![ValType::I32],
+        Ty::Arr | Ty::Obj(_) | Ty::Map | Ty::Func(_) | Ty::Bool => vec![ValType::I32],
     }
 }
 
@@ -308,6 +311,7 @@ impl Checker {
                 .get(&(expr as *const Expr as usize))
                 .map(|id| Ty::Func(*id))
                 .ok_or_else(|| "wasm target lost a function literal".to_string()),
+            Expr::Bool(_) => Ok(Ty::Bool),
             Expr::Int(_) => Ok(Ty::Int),
             Expr::Float(_) => Ok(Ty::Float),
             Expr::Str(_) => Ok(Ty::Str),
@@ -321,6 +325,60 @@ impl Checker {
                     ));
                 }
                 Ok(Ty::Int)
+            }
+            Expr::Not(inner) => {
+                if self.infer(inner)? == Ty::Bool {
+                    return Ok(Ty::Bool);
+                }
+                Err("wasm target negates bools only".to_string())
+            }
+            Expr::And(left, right) | Expr::Or(left, right) => {
+                if self.infer(left)? == Ty::Bool && self.infer(right)? == Ty::Bool {
+                    return Ok(Ty::Bool);
+                }
+                Err("wasm target combines bools with && and || only".to_string())
+            }
+            Expr::Ternary(cond, then, other, _) => {
+                if self.infer(cond)? != Ty::Bool {
+                    return Err("wasm target ternaries need a bool condition".to_string());
+                }
+                let lt = self.infer(then)?;
+                let rt = self.infer(other)?;
+                if lt == rt {
+                    return Ok(lt);
+                }
+                if is_number(lt) && is_number(rt) {
+                    return Ok(if lt == Ty::Float || rt == Ty::Float {
+                        Ty::Float
+                    } else {
+                        Ty::Int
+                    });
+                }
+                Err(format!(
+                    "wasm target ternary branches differ: {} and {}",
+                    ty_name(lt),
+                    ty_name(rt)
+                ))
+            }
+            Expr::Bin(
+                op @ (BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge),
+                left,
+                right,
+            ) => {
+                let lt = self.infer(left)?;
+                let rt = self.infer(right)?;
+                let comparable = (is_number(lt) && is_number(rt))
+                    || (lt == Ty::Str && rt == Ty::Str)
+                    || (lt == Ty::Bool && rt == Ty::Bool);
+                if !comparable {
+                    return Err(format!(
+                        "wasm target compares two numbers, strings or bools, got {} and {}",
+                        ty_name(lt),
+                        ty_name(rt)
+                    ));
+                }
+                let _ = op;
+                Ok(Ty::Bool)
             }
             Expr::Bin(op @ (BinOp::Add | BinOp::Sub | BinOp::Mul), left, right) => {
                 let lt = self.infer(left)?;
@@ -363,7 +421,7 @@ impl Checker {
                     Ok(Ty::Float)
                 }
             }
-            Expr::Bin(..) => Err("wasm target supports + - * / %".to_string()),
+
             Expr::Object(fields) => {
                 if fields.is_empty() {
                     return Err("wasm target does not support empty objects yet".to_string());
@@ -559,8 +617,9 @@ impl Checker {
                         return Ok(Ty::Int);
                     }
                     if name == "str" && args.len() == 1 {
-                        if !is_number(self.infer(&args[0])?) {
-                            return Err("wasm target str() takes a number".to_string());
+                        let ty = self.infer(&args[0])?;
+                        if !is_number(ty) && ty != Ty::Bool {
+                            return Err("wasm target str() takes a number or bool".to_string());
                         }
                         return Ok(Ty::Str);
                     }
@@ -659,29 +718,11 @@ impl Checker {
     }
 
     fn check_cond(&self, expr: &Expr) -> Result<(), String> {
-        match expr {
-            Expr::Bin(
-                BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge,
-                left,
-                right,
-            ) => {
-                let left_ty = self.infer(left)?;
-                let right_ty = self.infer(right)?;
-                if matches!((left_ty, right_ty), (Ty::Str, Ty::Str))
-                    || (is_number(left_ty) && is_number(right_ty))
-                {
-                    return Ok(());
-                }
-                Err(format!(
-                    "wasm target compares two numbers or two strings, got {} and {}",
-                    ty_name(left_ty),
-                    ty_name(right_ty)
-                ))
-            }
-            Expr::Not(inner) => self.check_cond(inner),
+        match self.infer(expr)? {
+            Ty::Bool => Ok(()),
             other => Err(format!(
-                "wasm target supports comparison conditions only, got {}",
-                expr_kind(other)
+                "wasm target conditions must be bool, got {}",
+                ty_name(other)
             )),
         }
     }
@@ -1038,7 +1079,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 36;
+const IMPORT_COUNT: u32 = 37;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -1065,6 +1106,7 @@ const MAP_HAS: u32 = 32;
 const MAP_LEN: u32 = 33;
 const MAP_KEY_AT: u32 = 34;
 const MAP_VALUE_AT: u32 = 35;
+const BOOL_TO_STR: u32 = 36;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -1565,6 +1607,22 @@ impl<'a> Emitter<'a> {
             Expr::Bin(op, left, right) => {
                 let lt = self.type_of(left)?;
                 let rt = self.type_of(right)?;
+                if matches!(
+                    op,
+                    BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge
+                ) {
+                    let comparable = (is_number(lt) && is_number(rt))
+                        || (lt == Ty::Str && rt == Ty::Str)
+                        || (lt == Ty::Bool && rt == Ty::Bool);
+                    if !comparable {
+                        return Err(format!(
+                            "wasm target compares two numbers, strings or bools, got {} and {}",
+                            ty_name(lt),
+                            ty_name(rt)
+                        ));
+                    }
+                    return Ok(Ty::Bool);
+                }
                 if op == &BinOp::Add && lt == Ty::Str && rt == Ty::Str {
                     return Ok(Ty::Str);
                 }
@@ -1585,6 +1643,40 @@ impl<'a> Emitter<'a> {
                         }
                     }
                 }
+            }
+            Expr::Not(inner) => {
+                if self.type_of(inner)? == Ty::Bool {
+                    return Ok(Ty::Bool);
+                }
+                Err("wasm target negates bools only".to_string())
+            }
+            Expr::And(left, right) | Expr::Or(left, right) => {
+                if self.type_of(left)? == Ty::Bool && self.type_of(right)? == Ty::Bool {
+                    return Ok(Ty::Bool);
+                }
+                Err("wasm target combines bools with && and || only".to_string())
+            }
+            Expr::Ternary(cond, then, other, _) => {
+                if self.type_of(cond)? != Ty::Bool {
+                    return Err("wasm target ternaries need a bool condition".to_string());
+                }
+                let lt = self.type_of(then)?;
+                let rt = self.type_of(other)?;
+                if lt == rt {
+                    return Ok(lt);
+                }
+                if is_number(lt) && is_number(rt) {
+                    return Ok(if lt == Ty::Float || rt == Ty::Float {
+                        Ty::Float
+                    } else {
+                        Ty::Int
+                    });
+                }
+                Err(format!(
+                    "wasm target ternary branches differ: {} and {}",
+                    ty_name(lt),
+                    ty_name(rt)
+                ))
             }
             Expr::Call(callee, _, _) => {
                 if let Expr::Ident(name) = &**callee {
@@ -1753,10 +1845,16 @@ impl<'a> Emitter<'a> {
                 self.builder.push(Instr::Op(opcode));
                 Ok(())
             }
-            other => Err(format!(
-                "wasm target supports comparison conditions only, got {}",
-                expr_kind(other)
-            )),
+            other => {
+                if self.type_of(other)? == Ty::Bool {
+                    self.emit_expr(other)?;
+                    return Ok(());
+                }
+                Err(format!(
+                    "wasm target conditions must be bool, got {}",
+                    expr_kind(other)
+                ))
+            }
         }
     }
     fn emit_while(
@@ -1923,6 +2021,11 @@ impl<'a> Emitter<'a> {
                 self.builder.push(Instr::Const(0x44, WVal::F64(*value)));
                 Ok(Ty::Float)
             }
+            Expr::Bool(value) => {
+                self.builder
+                    .push(Instr::Const(0x41, WVal::I32(*value as i32)));
+                Ok(Ty::Bool)
+            }
             Expr::Ident(name) => {
                 if let Some(slot) = self.local_of(name) {
                     self.push_local(slot);
@@ -1935,10 +2038,96 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Global(0x23, base));
                         self.builder.push(Instr::Global(0x23, base + 1));
                     }
-                    Ty::Int | Ty::Float | Ty::Arr | Ty::Obj(_) | Ty::Map | Ty::Func(_) => {
-                        self.push_global(name, false)?
-                    }
+                    Ty::Int
+                    | Ty::Float
+                    | Ty::Arr
+                    | Ty::Obj(_)
+                    | Ty::Map
+                    | Ty::Func(_)
+                    | Ty::Bool => self.push_global(name, false)?,
                 }
+                Ok(ty)
+            }
+            Expr::Not(inner) => {
+                self.emit_expr(inner)?;
+                self.builder.push(Instr::Op(0x45));
+                Ok(Ty::Bool)
+            }
+            Expr::And(left, right) => {
+                let slot = self.builder.add_local(ValType::I32);
+                self.emit_cond(left)?;
+                self.builder.push(Instr::Block {
+                    opcode: 0x04,
+                    end: 0,
+                    else_at: 0,
+                    start: 0,
+                });
+                self.labels.push(0x04);
+                self.emit_cond(right)?;
+                self.builder.push(Instr::Local(0x21, slot));
+                self.builder.push(Instr::Else { end: 0 });
+                self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                self.builder.push(Instr::Local(0x21, slot));
+                self.labels.pop();
+                self.builder.push(Instr::Op(0x0b));
+                self.builder.push(Instr::Local(0x20, slot));
+                Ok(Ty::Bool)
+            }
+            Expr::Or(left, right) => {
+                let slot = self.builder.add_local(ValType::I32);
+                self.emit_cond(left)?;
+                self.builder.push(Instr::Block {
+                    opcode: 0x04,
+                    end: 0,
+                    else_at: 0,
+                    start: 0,
+                });
+                self.labels.push(0x04);
+                self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+                self.builder.push(Instr::Local(0x21, slot));
+                self.builder.push(Instr::Else { end: 0 });
+                self.emit_cond(right)?;
+                self.builder.push(Instr::Local(0x21, slot));
+                self.labels.pop();
+                self.builder.push(Instr::Op(0x0b));
+                self.builder.push(Instr::Local(0x20, slot));
+                Ok(Ty::Bool)
+            }
+            Expr::Ternary(cond, then, other, _) => {
+                let ty = self.checker.infer(expr)?;
+                if ty == Ty::Str {
+                    return Err("wasm target string ternaries are not supported yet".to_string());
+                }
+                let slot_ty = match ty {
+                    Ty::Float => ValType::F64,
+                    Ty::Int => ValType::I64,
+                    _ => ValType::I32,
+                };
+                let slot = self.builder.add_local(slot_ty);
+                self.emit_cond(cond)?;
+                self.builder.push(Instr::Block {
+                    opcode: 0x04,
+                    end: 0,
+                    else_at: 0,
+                    start: 0,
+                });
+                self.labels.push(0x04);
+                if ty == Ty::Float {
+                    self.emit_f64(then)?;
+                } else {
+                    self.emit_expr(then)?;
+                }
+                self.builder.push(Instr::Local(0x21, slot));
+                self.builder.push(Instr::Else { end: 0 });
+                if ty == Ty::Float {
+                    self.emit_f64(other)?;
+                } else {
+                    self.emit_expr(other)?;
+                }
+                self.builder.push(Instr::Local(0x21, slot));
+                self.labels.pop();
+                self.builder.push(Instr::Op(0x0b));
+                self.builder.push(Instr::Local(0x20, slot));
                 Ok(ty)
             }
             Expr::Neg(inner) => {
@@ -1954,7 +2143,16 @@ impl<'a> Emitter<'a> {
                 }
                 self.emit_numeric(BinOp::Add, left, right)
             }
-            Expr::Bin(op, left, right) => self.emit_numeric(*op, left, right),
+            Expr::Bin(op, left, right) => {
+                if matches!(
+                    op,
+                    BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge
+                ) {
+                    self.emit_cond(expr)?;
+                    return Ok(Ty::Bool);
+                }
+                self.emit_numeric(*op, left, right)
+            }
             Expr::Object(fields) => {
                 let mut keys: Vec<String> = Vec::new();
                 for (key, value) in fields {
@@ -2212,6 +2410,17 @@ impl<'a> Emitter<'a> {
                     }
                     if name == "str" && args.len() == 1 {
                         let ty = self.type_of(&args[0])?;
+                        if ty == Ty::Bool {
+                            self.emit_expr(&args[0])?;
+                            self.builder.push(Instr::Call(BOOL_TO_STR));
+                            self.builder.push(Instr::Local(0x21, ARG_TMP));
+                            self.builder.push(Instr::Local(0x20, ARG_TMP));
+                            self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                            self.builder.push(Instr::Op(0x6a));
+                            self.builder.push(Instr::Local(0x20, ARG_TMP));
+                            self.builder.push(Instr::Mem(0x28, 2, 0));
+                            return Ok(Ty::Str);
+                        }
                         if ty == Ty::Float {
                             self.emit_f64(&args[0])?;
                             self.builder.push(Instr::Call(F64_TO_STR));
@@ -2325,7 +2534,7 @@ impl<'a> Emitter<'a> {
                             self.builder.add_local(ValType::I32);
                             slot
                         }
-                        Ty::Arr | Ty::Obj(_) | Ty::Map | Ty::Func(_) => {
+                        Ty::Arr | Ty::Obj(_) | Ty::Map | Ty::Func(_) | Ty::Bool => {
                             self.builder.add_local(ValType::I32)
                         }
                     };
@@ -2491,6 +2700,17 @@ impl<'a> Emitter<'a> {
                 let web = name == "console_log";
                 let ty = self.emit_expr(&args[0])?;
                 match ty {
+                    Ty::Bool => {
+                        self.builder.push(Instr::Call(BOOL_TO_STR));
+                        self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
+                        self.builder.push(Instr::Local(0x20, self.temp(ARG_TMP)));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x20, self.temp(ARG_TMP)));
+                        self.builder.push(Instr::Mem(0x28, 2, 0));
+                        self.builder
+                            .push(Instr::Call(if web { WEB_CONSOLE_UTF8 } else { 1 }));
+                    }
                     Ty::Str => {
                         self.builder
                             .push(Instr::Call(if web { WEB_CONSOLE_UTF8 } else { 1 }));
@@ -2552,9 +2772,13 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Op(0x1a));
                         self.builder.push(Instr::Op(0x1a));
                     }
-                    Ty::Int | Ty::Float | Ty::Arr | Ty::Obj(_) | Ty::Map | Ty::Func(_) => {
-                        self.builder.push(Instr::Op(0x1a))
-                    }
+                    Ty::Int
+                    | Ty::Float
+                    | Ty::Arr
+                    | Ty::Obj(_)
+                    | Ty::Map
+                    | Ty::Func(_)
+                    | Ty::Bool => self.builder.push(Instr::Op(0x1a)),
                 }
                 Ok(())
             }
@@ -2788,6 +3012,17 @@ impl<'a> InferState<'a> {
                 .literal_ids
                 .get(&(expr as *const Expr as usize))
                 .map(|id| Ty::Func(*id)),
+            Expr::Bool(_) => Some(Ty::Bool),
+            Expr::Not(inner) => {
+                self.soft(inner, locals)?;
+                Some(Ty::Bool)
+            }
+            Expr::And(left, right) | Expr::Or(left, right) => {
+                self.soft(left, locals)?;
+                self.soft(right, locals)?;
+                Some(Ty::Bool)
+            }
+
             Expr::Int(_) => Some(Ty::Int),
             Expr::Float(_) => Some(Ty::Float),
             Expr::Str(_) => Some(Ty::Str),
@@ -2799,6 +3034,15 @@ impl<'a> InferState<'a> {
                 Ty::Float => Some(Ty::Float),
                 _ => Some(Ty::Int),
             },
+            Expr::Bin(
+                BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge,
+                left,
+                right,
+            ) => {
+                self.soft(left, locals)?;
+                self.soft(right, locals)?;
+                Some(Ty::Bool)
+            }
             Expr::Bin(op, left, right) => {
                 let lt = self.soft(left, locals)?;
                 let rt = self.soft(right, locals)?;
@@ -3223,6 +3467,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let map_len_ty = builder.add_type(vec![ValType::I32], vec![ValType::I32]);
     let map_key_at_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
     let map_value_at_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I64]);
+    let bool_to_str_ty = builder.add_type(vec![ValType::I32], vec![ValType::I32]);
     let sleep_ms_ty = builder.add_type(vec![ValType::I64], vec![]);
     let cwd_ty = builder.add_type(vec![], vec![ValType::I32]);
     let env_get_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
@@ -3291,6 +3536,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "map_len", map_len_ty);
     builder.import_func("env", "map_key_at", map_key_at_ty);
     builder.import_func("env", "map_value_at", map_value_at_ty);
+    builder.import_func("env", "bool_to_str", bool_to_str_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -3302,7 +3548,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                 builder.add_global(ValType::I32, true, WVal::I32(0));
                 builder.add_global(ValType::I32, true, WVal::I32(0));
             }
-            Ty::Obj(_) | Ty::Map | Ty::Func(_) => {
+            Ty::Obj(_) | Ty::Map | Ty::Func(_) | Ty::Bool => {
                 builder.add_global(ValType::I32, true, WVal::I32(0))
             }
         }
@@ -3379,7 +3625,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                     emitter.builder.push(Instr::Const(0x41, WVal::I32(0)));
                     emitter.builder.push(Instr::Const(0x41, WVal::I32(0)));
                 }
-                Some(Ty::Arr | Ty::Obj(_) | Ty::Map | Ty::Func(_)) => {
+                Some(Ty::Arr | Ty::Obj(_) | Ty::Map | Ty::Func(_) | Ty::Bool) => {
                     emitter.builder.push(Instr::Const(0x41, WVal::I32(0)))
                 }
                 None => {}
@@ -3434,7 +3680,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                     emitter.builder.push(Instr::Const(0x41, WVal::I32(0)));
                     emitter.builder.push(Instr::Const(0x41, WVal::I32(0)));
                 }
-                Some(Ty::Arr | Ty::Obj(_) | Ty::Map | Ty::Func(_)) => {
+                Some(Ty::Arr | Ty::Obj(_) | Ty::Map | Ty::Func(_) | Ty::Bool) => {
                     emitter.builder.push(Instr::Const(0x41, WVal::I32(0)))
                 }
                 None => {}
@@ -3620,6 +3866,28 @@ mod tests {
         assert_eq!(
             strings,
             vec!["3.5".to_string(), "4.5".to_string(), "2.5".to_string()]
+        );
+    }
+
+    #[test]
+    fn bool_values_and_expressions_work() {
+        let (numbers, strings) = run_with_argv(
+            "let flag = 3 > 2\nif (flag) { print(1) }\nprint(str(flag))\nlet a = true\nlet b = false\nprint(a)\nprint(b)\nprint(a && b)\nprint(a || b)\nprint(!b)\nlet n = flag ? 10 : 20\nprint(n)\nfn even(x) { return x % 2 == 0 }\nprint(even(4))\nprint(even(5))",
+            &[],
+        );
+        assert_eq!(numbers, vec![1, 10]);
+        assert_eq!(
+            strings,
+            vec![
+                "true".to_string(),
+                "true".to_string(),
+                "false".to_string(),
+                "false".to_string(),
+                "true".to_string(),
+                "true".to_string(),
+                "true".to_string(),
+                "false".to_string(),
+            ]
         );
     }
 

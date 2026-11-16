@@ -761,6 +761,16 @@ if (wasmClosure.code == 0 && wasmClosureRun.out == wasmClosureVm.out && wasmClos
   casesFail += 1
   failures.push("wasm function literals\n    wasm=" + json(wasmClosureRun.out) + " vm=" + json(wasmClosureVm.out) + " err=" + json(wasmClosureRun.err))
 }
+write(artDir + "/wasm-bool.bxs", 'let flag = 3 > 2\nif (flag) { print(1) }\nprint(str(flag))\nlet a = true\nlet b = false\nprint(a)\nprint(b)\nprint(a && b)\nprint(a || b)\nprint(!b)\nlet n = flag ? 10 : 20\nprint(n)\nfn even(x) { return x % 2 == 0 }\nprint(even(4))\nprint(even(5))\n')
+let wasmBool = exec([BX, "build", "--wasm", artDir + "/wasm-bool.bxs", "-o", artDir + "/wasm-bool.wasm"])
+let wasmBoolRun = exec([BX, "run", artDir + "/wasm-bool.wasm"])
+let wasmBoolVm = exec([BX, "run", artDir + "/wasm-bool.bxs"])
+if (wasmBool.code == 0 && wasmBoolRun.out == wasmBoolVm.out && wasmBoolRun.out.trim() == "1\ntrue\ntrue\nfalse\nfalse\ntrue\ntrue\n10\ntrue\nfalse") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm bool values\n    wasm=" + json(wasmBoolRun.out) + " vm=" + json(wasmBoolVm.out) + " err=" + json(wasmBoolRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'fn outer() {\n  let n = 5\n  let f = fn(x) { return x + n }\n  return f(1)\n}\nprint(outer())\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1 && wasmBad.err.contains("cannot capture outer variables")) {

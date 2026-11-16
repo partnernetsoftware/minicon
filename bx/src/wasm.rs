@@ -1930,6 +1930,22 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 (self.on_str)(&text);
                 Ok(Vec::new())
             }
+            ("env", "bool_to_str") => {
+                let value = match args.first() {
+                    Some(WVal::I32(value)) => *value,
+                    _ => return Err("env.bool_to_str expects one i32".to_string()),
+                };
+                let text = if value == 0 { "false" } else { "true" };
+                let start = self.next_file as usize;
+                let size = 4 + text.len();
+                if start + size > memory.len() {
+                    return Ok(vec![WVal::I32(0)]);
+                }
+                memory[start..start + 4].copy_from_slice(&(text.len() as u32).to_le_bytes());
+                memory[start + 4..start + size].copy_from_slice(text.as_bytes());
+                self.next_file = (start + size + 7) as u32 & !7;
+                Ok(vec![WVal::I32(start as i32)])
+            }
             ("env", "int_to_str") => {
                 let value = match args.first() {
                     Some(WVal::I64(value)) => *value,

@@ -99,6 +99,7 @@ const imports = {
     print_f64: (value) => { emit(formatFloat(value)); },
     fmod: (a, b) => a % b,
     int_to_str: (value) => writeStringBlock(value.toString()),
+    bool_to_str: (value) => writeStringBlock(value ? "true" : "false"),
     f64_to_str: (value) => writeStringBlock(formatFloat(value)),
     str_to_int: (ptr, len) => {
       const text = new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, ptr, len)).trim();

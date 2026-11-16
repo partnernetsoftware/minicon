@@ -28,6 +28,7 @@
 
 **实验性 wasm 目标**
 
+- bool 类型：`true`/`false`、比较作为表达式、`&&`/`||`/`!`（短路）、三元、`str(bool)`/`print(bool)`；条件接受 bool 变量。`
 - 非捕获函数字面量：`let f = fn(x) { .. }`、直接调用、作为实参传给函数；捕获外层局部变量明确报错。`
 - 动态键映射（wasm 侧扩展，VM 暂无）：`map_new`/`map_set`/`map_get`/`map_has`/`map_len`，字符串键 + int 值，固定 64 槽，支持 `for k, v in m` 按插入序遍历；浏览器胶水用 JS Map。`
 - 原生工具：`now()`/`sleep(ms)`/`cwd()`/`env(name)`/`mkdir(path)`/`file_exists(path)`（浏览器胶水提供 stub）。`

@@ -37,7 +37,10 @@ bx wasm target
 │   ├── [v] runtime strings: bindings (ptr,len globals), `s + t`, `len(s)`
 │   ├── [v] fixed-layout records `{a: 1, b: 2}` with `o.a` field loads
 │   ├── [v] control flow: `if/else`, `while`, `for`, `for v in` / `for k, v in`
-│   │   over arrays, `break`/`continue`, comparisons
+│   │   over arrays and maps, `break`/`continue`
+│   ├── [v] bool values: `true`/`false`, comparisons as expressions, `&&`/`||`/`!`
+│   │   (short-circuit), ternary, bool globals/params/returns, `str(bool)`,
+│   │   `print(bool)`
 │   ├── [v] user functions: params, int locals, `return <int>`, calls, recursion
 │   ├── [v] functions may read/write string, array and record globals
 │   └── [-] closures, non-int params/locals, nested functions
@@ -114,7 +117,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 62 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 63 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -125,6 +128,11 @@ bx wasm target
   suite and therefore by the packed six-cell CI lane.
 - `bx check <module> --json` reports the decoded import/export names and defined
   function count, so agents can introspect a module without a JS toolchain.
+- **Bools**: a real `bool` type (`i32` 0/1) so comparisons are expressions
+  (`let ok = a < b`, `return x % 2 == 0`), plus `true`/`false`, short-circuit
+  `&&`/`||`/`!` through if/else locals, ternary with int/float/bool branches
+  (string branches still rejected) and `str(bool)`/`print(bool)` via host
+  `env.bool_to_str`.
 - **Function literals**: `let f = fn(x) { return x * 2 }` compiles to a lifted
   wasm function; the value is a dummy i32 and every call site resolves the
   concrete literal statically (`Ty::Func(id)`). Literals can be passed to

@@ -162,6 +162,14 @@ write(dir + "/wasm-map.bxs", 'let m = map_new()\nmap_set(m, "a", 3)\nmap_set(m, 
 write(dir + "/wasm-mapfor.bxs", 'let m = map_new()\nmap_set(m, "k", 9)\nfor k, v in m { print(k)\nprint(v) }\n')
 write(dir + "/wasm-capture.bxs", 'fn outer() {\n  let n = 5\n  let f = fn(x) { return x + n }\n  return f(1)\n}\nprint(outer())\n')
 write(dir + "/wasm-closure.bxs", 'let double = fn(x) { return x * 2 }\nprint(double(21))\n')
+write(dir + "/wasm-bool.bxs", 'let ok = 2 > 1\nif (ok) { print(str(ok)) }\nprint(ok ? 1 : 0)\n')
+test("wasm bool values", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-bool.bxs", "-o", dir + "/wasm-bool.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-bool.wasm"])
+  let vm = exec([bin, "run", dir + "/wasm-bool.bxs"])
+  assert(ran.code == 0 && ran.out == vm.out && ran.out.trim() == "true\n1", "wasm=" + json(ran.out) + " vm=" + json(vm.out))
+})
 test("wasm function literals", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-closure.bxs", "-o", dir + "/wasm-closure.wasm"])
   assert(built.code == 0, "build failed: " + built.err)
