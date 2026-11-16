@@ -122,6 +122,8 @@ check("loop closures keep their iteration", "[10,21]", ["eval", "fn f() { let fs
 check("closure reads two levels up", "5", ["eval", "fn outer() { let n = 5; return fn() { return fn() { return n } } } outer()()()"])
 check("closure writes two levels up", "11", ["eval", "fn outer() { let n = 1; let mid = fn() { return fn() { n = n + 10; return n } }; let c = mid(); c(); return n } outer()"])
 check("closure reads three levels up", "7", ["eval", "fn a() { let n = 7; return fn() { return fn() { return fn() { return n } } } } a()()()()"])
+check("closure writes three levels up", "6", ["eval", "fn a() { let n = 1; return fn() { return fn() { return fn() { n = n + 5; return n } } } } a()()()()"])
+check("grandchild capture boxes a local the parent ignores", "9", ["eval", "fn a() { let n = 9; return fn() { return fn() { let q = fn() { return n }; return q() } } } a()()()"])
 
 // iteration: arrays, strings and objects share one protocol
 check("iterate object keys", "ab", ["eval", 'let o = {b:2, a:1}; let s = ""; for k in o { s += k } s'])

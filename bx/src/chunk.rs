@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -474,6 +474,7 @@ pub fn compile(src: &str, base_dir: PathBuf, keep_last: bool) -> Result<Vec<Chun
             const_map: HashMap::new(),
             include_stack: Vec::new(),
             captures: Vec::new(),
+            cells: HashSet::new(),
         };
         c.compile_stmts(&stmts, keep_last)?;
         c.emit(op::HALT, 0, 0);
@@ -507,6 +508,8 @@ struct Compiler<'a> {
     include_stack: Vec<PathBuf>,
     /// Names this function closed over, and where its creator keeps them.
     captures: Vec<(String, CaptureSource)>,
+    /// Locals that a nested function uses; only these are boxed.
+    cells: HashSet<String>,
 }
 
 impl<'a> Compiler<'a> {
@@ -602,6 +605,11 @@ impl<'a> Compiler<'a> {
         None
     }
 
+    /// Only locals used by a nested function need a box.
+    fn is_cell(&self, name: &str) -> bool {
+        self.cells.contains(name)
+    }
+
     /// Index of a captured name in this function's upvalue list.
     fn capture_position(&self, name: &str) -> Option<u16> {
         self.captures
@@ -620,12 +628,14 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn emit_set(&mut self, target: &Target, line: u32) {
+    fn emit_set(&mut self, target: &Target, name: &str, line: u32) {
         match target {
             Target::Local(slot) => {
-                // A loop binding is a fresh box per iteration, so a closure made
-                // in iteration N keeps iteration N's value.
-                self.emit(op::WRAP_CELL, 0, line);
+                // A captured loop binding gets a fresh box per iteration, so a
+                // closure made in iteration N keeps iteration N's value.
+                if self.is_cell(name) {
+                    self.emit(op::WRAP_CELL, 0, line);
+                }
                 self.emit(op::SET_LOCAL, *slot as i32, line);
             }
             Target::Global(k) => {
@@ -690,7 +700,9 @@ impl<'a> Compiler<'a> {
                     self.emit(op::SET_GLOBAL, k as i32, *line);
                 } else {
                     let slot = self.declare_local(name);
-                    self.emit(op::WRAP_CELL, 0, *line);
+                    if self.is_cell(name) {
+                        self.emit(op::WRAP_CELL, 0, *line);
+                    }
                     self.emit(op::SET_LOCAL, slot as i32, *line);
                 }
             }
@@ -702,7 +714,9 @@ impl<'a> Compiler<'a> {
                     self.emit(op::SET_GLOBAL, nk as i32, *line);
                 } else {
                     let slot = self.declare_local(name);
-                    self.emit(op::WRAP_CELL, 0, *line);
+                    if self.is_cell(name) {
+                        self.emit(op::WRAP_CELL, 0, *line);
+                    }
                     self.emit(op::SET_LOCAL, slot as i32, *line);
                 }
             }
@@ -832,19 +846,19 @@ impl<'a> Compiler<'a> {
                         self.emit(op::INDEX_GET, 0, *line);
                         self.emit(op::SET_LOCAL, kslot as i32, *line);
                         self.emit(op::GET_LOCAL, kslot as i32, *line);
-                        self.emit_set(&target_key, *line);
+                        self.emit_set(&target_key, name, *line);
                         self.emit(op::GET_LOCAL, src_slot as i32, *line);
                         self.emit(op::GET_LOCAL, kslot as i32, *line);
                         self.emit(op::INDEX_GET, 0, *line);
                         if let Some(value_target) = &target_value {
-                            self.emit_set(value_target, *line);
+                            self.emit_set(value_target, value.as_deref().unwrap_or(""), *line);
                         }
                     }
                     _ => {
                         self.emit(op::GET_LOCAL, seq_slot as i32, *line);
                         self.emit(op::GET_LOCAL, idx_slot as i32, *line);
                         self.emit(op::INDEX_GET, 0, *line);
-                        self.emit_set(&target_key, *line);
+                        self.emit_set(&target_key, name, *line);
                     }
                 }
 
@@ -953,12 +967,15 @@ impl<'a> Compiler<'a> {
             const_map: HashMap::new(),
             include_stack: self.include_stack.clone(),
             captures: inherited,
+            cells: captured_names(body, params),
         };
         for p in params {
             let slot = sub.declare_local(p);
-            sub.emit(op::GET_LOCAL, slot as i32, 0);
-            sub.emit(op::WRAP_CELL, 0, 0);
-            sub.emit(op::SET_LOCAL, slot as i32, 0);
+            if sub.is_cell(p) {
+                sub.emit(op::GET_LOCAL, slot as i32, 0);
+                sub.emit(op::WRAP_CELL, 0, 0);
+                sub.emit(op::SET_LOCAL, slot as i32, 0);
+            }
         }
         sub.compile_stmts(body, false)?;
         sub.emit(op::NULL, 0, 0);
@@ -991,7 +1008,12 @@ impl<'a> Compiler<'a> {
             }
             Expr::Ident(name) => {
                 if let Some(slot) = self.resolve_local(name) {
-                    self.emit(op::GET_CELL, slot as i32, self.line);
+                    let opcode = if self.is_cell(name) {
+                        op::GET_CELL
+                    } else {
+                        op::GET_LOCAL
+                    };
+                    self.emit(opcode, slot as i32, self.line);
                 } else if let Some(i) = self.capture_position(name) {
                     self.emit(op::GET_UPVALUE, i as i32, self.line);
                 } else {
@@ -1096,7 +1118,12 @@ impl<'a> Compiler<'a> {
                     self.compile_expr(value)?;
                     self.emit(op::DUP, 0, *line);
                     if let Some(slot) = self.resolve_local(name) {
-                        self.emit(op::SET_CELL, slot as i32, *line);
+                        let opcode = if self.is_cell(name) {
+                            op::SET_CELL
+                        } else {
+                            op::SET_LOCAL
+                        };
+                        self.emit(opcode, slot as i32, *line);
                     } else if let Some(i) = self.capture_position(name) {
                         self.emit(op::SET_UPVALUE, i as i32, *line);
                     } else {
@@ -1131,7 +1158,12 @@ impl<'a> Compiler<'a> {
                 match &**target {
                     Expr::Ident(name) => {
                         if let Some(slot) = self.resolve_local(name) {
-                            self.emit(op::GET_CELL, slot as i32, *line);
+                            let opcode = if self.is_cell(name) {
+                                op::GET_CELL
+                            } else {
+                                op::GET_LOCAL
+                            };
+                            self.emit(opcode, slot as i32, *line);
                         } else if let Some(i) = self.capture_position(name) {
                             self.emit(op::GET_UPVALUE, i as i32, *line);
                         } else {
@@ -1142,7 +1174,12 @@ impl<'a> Compiler<'a> {
                         self.emit(o, 0, *line);
                         self.emit(op::DUP, 0, *line);
                         if let Some(slot) = self.resolve_local(name) {
-                            self.emit(op::SET_CELL, slot as i32, *line);
+                            let opcode = if self.is_cell(name) {
+                                op::SET_CELL
+                            } else {
+                                op::SET_LOCAL
+                            };
+                            self.emit(opcode, slot as i32, *line);
                         } else if let Some(i) = self.capture_position(name) {
                             self.emit(op::SET_UPVALUE, i as i32, *line);
                         } else {
@@ -1216,7 +1253,7 @@ fn inherited_captures(parent: &Compiler) -> Vec<(String, CaptureSource)> {
     let mut out: Vec<(String, CaptureSource)> = Vec::new();
     for scope in &parent.scopes {
         for (name, slot) in scope {
-            if name.starts_with('$') {
+            if name.starts_with('$') || !parent.cells.contains(name) {
                 continue;
             }
             match out.iter().position(|(n, _)| n == name) {
@@ -1232,4 +1269,259 @@ fn inherited_captures(parent: &Compiler) -> Vec<(String, CaptureSource)> {
         out.push((name.clone(), CaptureSource::Upvalue(i as u16)));
     }
     out
+}
+
+/// Locals of one function that a nested function references: `declared here`
+/// intersected with identifiers used anywhere inside a nested function. Only
+/// these become cells; every other local stays a plain slot.
+fn captured_names(body: &[Stmt], params: &[String]) -> HashSet<String> {
+    let mut declared: HashSet<String> = params.iter().cloned().collect();
+    collect_declared(body, &mut declared);
+    let mut used = HashSet::new();
+    collect_nested_idents(body, &mut used);
+    declared.intersection(&used).cloned().collect()
+}
+
+fn collect_declared(stmts: &[Stmt], out: &mut HashSet<String>) {
+    for s in stmts {
+        match s {
+            Stmt::Let(name, _, _) => {
+                out.insert(name.clone());
+            }
+            Stmt::Fn(name, _, _, _) => {
+                out.insert(name.clone());
+            }
+            Stmt::Block(inner) => collect_declared(inner, out),
+            Stmt::If(_, then, els, _) => {
+                collect_declared(then, out);
+                if let Some(els) = els {
+                    collect_declared(els, out);
+                }
+            }
+            Stmt::While(_, body, _) => collect_declared(body, out),
+            Stmt::ForC(init, _, _, body, _) => {
+                if let Some(init) = init {
+                    if let Stmt::Let(name, _, _) = &**init {
+                        out.insert(name.clone());
+                    }
+                }
+                collect_declared(body, out);
+            }
+            Stmt::ForIn(key, value, _, body, _) => {
+                out.insert(key.clone());
+                if let Some(value) = value {
+                    out.insert(value.clone());
+                }
+                collect_declared(body, out);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Identifiers used inside nested function bodies (walked whole; the caller
+/// intersects with its own declarations, so over-collecting is harmless).
+fn collect_nested_idents(stmts: &[Stmt], out: &mut HashSet<String>) {
+    for s in stmts {
+        match s {
+            Stmt::Expr(e, _) => collect_nested_expr(e, out),
+            Stmt::Let(_, Some(e), _) => collect_nested_expr(e, out),
+            Stmt::Fn(_, _, body, _) => collect_all_idents_stmts(body, out),
+            Stmt::Block(inner) => collect_nested_idents(inner, out),
+            Stmt::If(cond, then, els, _) => {
+                collect_nested_expr(cond, out);
+                collect_nested_idents(then, out);
+                if let Some(els) = els {
+                    collect_nested_idents(els, out);
+                }
+            }
+            Stmt::While(cond, body, _) => {
+                collect_nested_expr(cond, out);
+                collect_nested_idents(body, out);
+            }
+            Stmt::ForC(init, cond, step, body, _) => {
+                if let Some(init) = init {
+                    collect_nested_idents(std::slice::from_ref(init), out);
+                }
+                if let Some(cond) = cond {
+                    collect_nested_expr(cond, out);
+                }
+                if let Some(step) = step {
+                    collect_nested_expr(step, out);
+                }
+                collect_nested_idents(body, out);
+            }
+            Stmt::ForIn(_, _, iter, body, _) => {
+                collect_nested_expr(iter, out);
+                collect_nested_idents(body, out);
+            }
+            Stmt::Return(Some(e), _) => collect_nested_expr(e, out),
+            _ => {}
+        }
+    }
+}
+
+fn collect_nested_expr(e: &Expr, out: &mut HashSet<String>) {
+    match e {
+        Expr::Func(_, body, _) => collect_all_idents_stmts(body, out),
+        Expr::Array(items) => {
+            for item in items {
+                collect_nested_expr(item, out);
+            }
+        }
+        Expr::Object(fields) => {
+            for (_, value) in fields {
+                collect_nested_expr(value, out);
+            }
+        }
+        Expr::Neg(x) | Expr::Not(x) => collect_nested_expr(x, out),
+        Expr::Bin(_, a, b) => {
+            collect_nested_expr(a, out);
+            collect_nested_expr(b, out);
+        }
+        Expr::Ternary(a, b, c, _) => {
+            collect_nested_expr(a, out);
+            collect_nested_expr(b, out);
+            collect_nested_expr(c, out);
+        }
+        Expr::And(a, b) | Expr::Or(a, b) => {
+            collect_nested_expr(a, out);
+            collect_nested_expr(b, out);
+        }
+        Expr::Call(callee, args, _) => {
+            collect_nested_expr(callee, out);
+            for arg in args {
+                collect_nested_expr(arg, out);
+            }
+        }
+        Expr::MethodCall(obj, _, args, _) => {
+            collect_nested_expr(obj, out);
+            for arg in args {
+                collect_nested_expr(arg, out);
+            }
+        }
+        Expr::Index(obj, idx, _) => {
+            collect_nested_expr(obj, out);
+            collect_nested_expr(idx, out);
+        }
+        Expr::Member(obj, _, _) => collect_nested_expr(obj, out),
+        Expr::Assign(target, value, _) | Expr::Compound(target, _, value, _) => {
+            collect_nested_expr(target, out);
+            collect_nested_expr(value, out);
+        }
+        _ => {}
+    }
+}
+
+fn collect_all_idents_stmts(stmts: &[Stmt], out: &mut HashSet<String>) {
+    for s in stmts {
+        collect_all_idents_stmt(s, out);
+    }
+}
+
+fn collect_all_idents_stmt(s: &Stmt, out: &mut HashSet<String>) {
+    match s {
+        Stmt::Expr(e, _) => collect_all_idents_expr(e, out),
+        Stmt::Let(_, Some(e), _) => collect_all_idents_expr(e, out),
+        Stmt::Fn(_, params, body, _) => {
+            for p in params {
+                out.insert(p.clone());
+            }
+            collect_all_idents_stmts(body, out);
+        }
+        Stmt::Block(inner) => collect_all_idents_stmts(inner, out),
+        Stmt::If(cond, then, els, _) => {
+            collect_all_idents_expr(cond, out);
+            collect_all_idents_stmts(then, out);
+            if let Some(els) = els {
+                collect_all_idents_stmts(els, out);
+            }
+        }
+        Stmt::While(cond, body, _) => {
+            collect_all_idents_expr(cond, out);
+            collect_all_idents_stmts(body, out);
+        }
+        Stmt::ForC(init, cond, step, body, _) => {
+            if let Some(init) = init {
+                collect_all_idents_stmt(init, out);
+            }
+            if let Some(cond) = cond {
+                collect_all_idents_expr(cond, out);
+            }
+            if let Some(step) = step {
+                collect_all_idents_expr(step, out);
+            }
+            collect_all_idents_stmts(body, out);
+        }
+        Stmt::ForIn(key, value, iter, body, _) => {
+            out.insert(key.clone());
+            if let Some(value) = value {
+                out.insert(value.clone());
+            }
+            collect_all_idents_expr(iter, out);
+            collect_all_idents_stmts(body, out);
+        }
+        Stmt::Return(Some(e), _) => collect_all_idents_expr(e, out),
+        _ => {}
+    }
+}
+
+fn collect_all_idents_expr(e: &Expr, out: &mut HashSet<String>) {
+    match e {
+        Expr::Ident(name) => {
+            out.insert(name.clone());
+        }
+        Expr::Array(items) => {
+            for item in items {
+                collect_all_idents_expr(item, out);
+            }
+        }
+        Expr::Object(fields) => {
+            for (_, value) in fields {
+                collect_all_idents_expr(value, out);
+            }
+        }
+        Expr::Neg(x) | Expr::Not(x) => collect_all_idents_expr(x, out),
+        Expr::Bin(_, a, b) => {
+            collect_all_idents_expr(a, out);
+            collect_all_idents_expr(b, out);
+        }
+        Expr::Ternary(a, b, c, _) => {
+            collect_all_idents_expr(a, out);
+            collect_all_idents_expr(b, out);
+            collect_all_idents_expr(c, out);
+        }
+        Expr::And(a, b) | Expr::Or(a, b) => {
+            collect_all_idents_expr(a, out);
+            collect_all_idents_expr(b, out);
+        }
+        Expr::Call(callee, args, _) => {
+            collect_all_idents_expr(callee, out);
+            for arg in args {
+                collect_all_idents_expr(arg, out);
+            }
+        }
+        Expr::MethodCall(obj, _, args, _) => {
+            collect_all_idents_expr(obj, out);
+            for arg in args {
+                collect_all_idents_expr(arg, out);
+            }
+        }
+        Expr::Index(obj, idx, _) => {
+            collect_all_idents_expr(obj, out);
+            collect_all_idents_expr(idx, out);
+        }
+        Expr::Member(obj, _, _) => collect_all_idents_expr(obj, out),
+        Expr::Assign(target, value, _) | Expr::Compound(target, _, value, _) => {
+            collect_all_idents_expr(target, out);
+            collect_all_idents_expr(value, out);
+        }
+        Expr::Func(params, body, _) => {
+            for p in params {
+                out.insert(p.clone());
+            }
+            collect_all_idents_stmts(body, out);
+        }
+        _ => {}
+    }
 }
