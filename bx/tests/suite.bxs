@@ -645,6 +645,15 @@ if (wasmWeb.code == 0 && wasmWebRun.code == 0 && wasmWebRun.out.trim() == "42\nw
   casesFail += 1
   failures.push("wasm web.* namespace\n    build=" + wasmWeb.code + " out=" + json(wasmWebRun.out) + " err=" + json(wasmWebRun.err))
 }
+write(artDir + "/wasm-gl.bxs", 'gl_create(2, 2)\ngl_clear_color(1.0, 0.0, 0.0, 1.0)\ngl_clear()\nprint(gl_pixel(0, 0))\nprint(gl_png("wasm-gl.png"))\n')
+let wasmGl = exec([BX, "build", "--wasm", artDir + "/wasm-gl.bxs", "-o", artDir + "/wasm-gl.wasm"])
+let wasmGlRun = exec([BX, "run", artDir + "/wasm-gl.wasm"], { cwd: artDir })
+if (wasmGl.code == 0 && wasmGlRun.code == 0 && wasmGlRun.out.trim() == "4278190335\n0" && exists(artDir + "/wasm-gl.png")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm webgl clear + png export\n    build=" + wasmGl.code + " out=" + json(wasmGlRun.out) + " err=" + json(wasmGlRun.err))
+}
 write(artDir + "/wasm-bad.bxs", 'let f = fn() { return 1 }\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1) {

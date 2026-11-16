@@ -1729,6 +1729,7 @@ where
             next_file: 131_072,
             next_proc: 196_608,
             started: std::time::Instant::now(),
+            gl: GlBackend::new(),
         },
     );
     let start = module
@@ -1757,6 +1758,56 @@ fn shell_command(line: &str) -> std::process::Command {
     }
 }
 
+/// Deterministic software framebuffer behind the `webgl.*` imports.
+struct GlBackend {
+    width: u32,
+    height: u32,
+    clear: [f64; 4],
+    pixels: Vec<u8>,
+}
+
+impl GlBackend {
+    fn new() -> GlBackend {
+        GlBackend {
+            width: 0,
+            height: 0,
+            clear: [0.0, 0.0, 0.0, 1.0],
+            pixels: Vec::new(),
+        }
+    }
+
+    fn resize(&mut self, width: u32, height: u32) {
+        self.width = width.clamp(1, 4096);
+        self.height = height.clamp(1, 4096);
+        self.pixels = vec![0; self.width as usize * self.height as usize * 4];
+    }
+
+    fn clear(&mut self) {
+        let channel = |value: f64| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
+        let fill = [
+            channel(self.clear[0]),
+            channel(self.clear[1]),
+            channel(self.clear[2]),
+            channel(self.clear[3]),
+        ];
+        for pixel in self.pixels.chunks_mut(4) {
+            pixel.copy_from_slice(&fill);
+        }
+    }
+
+    fn pixel(&self, x: u32, y: u32) -> u32 {
+        if x >= self.width || y >= self.height {
+            return 0;
+        }
+        let offset = (y as usize * self.width as usize + x as usize) * 4;
+        let r = self.pixels[offset] as u32;
+        let g = self.pixels[offset + 1] as u32;
+        let b = self.pixels[offset + 2] as u32;
+        let a = self.pixels[offset + 3] as u32;
+        (r << 24) | (g << 16) | (b << 8) | a
+    }
+}
+
 struct PrintHost<'a, F: FnMut(i64), G: FnMut(&str)> {
     on_i64: &'a mut F,
     on_str: &'a mut G,
@@ -1772,6 +1823,8 @@ struct PrintHost<'a, F: FnMut(i64), G: FnMut(&str)> {
     next_proc: u32,
     /// Clock origin for `web.performance_now`.
     started: std::time::Instant,
+    /// Software framebuffer for the `webgl.*` namespace.
+    gl: GlBackend,
 }
 
 impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
@@ -1847,6 +1900,62 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     _ => return Err("env.fmod expects two f64 values".to_string()),
                 };
                 Ok(vec![WVal::F64(a % b)])
+            }
+            ("webgl", "create") => {
+                let (width, height) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(width)), Some(WVal::I32(height))) => {
+                        (*width as u32, *height as u32)
+                    }
+                    _ => return Err("webgl.create expects (i32 width, i32 height)".to_string()),
+                };
+                self.gl.resize(width, height);
+                Ok(vec![WVal::I32(1)])
+            }
+            ("webgl", "clear_color") => {
+                let mut channels = [0.0f64; 4];
+                for (index, channel) in channels.iter_mut().enumerate() {
+                    *channel = match args.get(index) {
+                        Some(WVal::F64(value)) => *value,
+                        Some(WVal::I64(value)) => *value as f64,
+                        _ => return Err("webgl.clear_color expects (f64 r, g, b, a)".to_string()),
+                    };
+                }
+                self.gl.clear = channels;
+                Ok(Vec::new())
+            }
+            ("webgl", "clear") => {
+                self.gl.clear();
+                Ok(Vec::new())
+            }
+            ("webgl", "read_pixel") => {
+                let (x, y) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(x)), Some(WVal::I32(y))) => (*x as u32, *y as u32),
+                    _ => return Err("webgl.read_pixel expects (i32 x, i32 y)".to_string()),
+                };
+                Ok(vec![WVal::I32(self.gl.pixel(x, y) as i32)])
+            }
+            ("webgl", "to_png") => {
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("webgl.to_png expects (i32 ptr, i32 len)".to_string()),
+                };
+                let path_bytes = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .ok_or_else(|| "webgl.to_png path is outside memory".to_string())?;
+                let path = String::from_utf8_lossy(path_bytes).to_string();
+                let encoded =
+                    crate::png::encode_rgba(self.gl.width, self.gl.height, &self.gl.pixels);
+                let status = match encoded {
+                    Ok(png) => {
+                        if std::fs::write(&path, png).is_ok() {
+                            0
+                        } else {
+                            -1
+                        }
+                    }
+                    Err(_) => -1,
+                };
+                Ok(vec![WVal::I32(status)])
             }
             ("web", "console_log_i64") => {
                 let value = match args.first() {

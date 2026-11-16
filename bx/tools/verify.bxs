@@ -149,6 +149,13 @@ test("wasm backend matches the VM on generated programs", fn() {
 write(dir + "/wasm-flt.bxs", 'print(7 / 2)\nprint(6 / 2)\n')
 write(dir + "/wasm-rich.bxs", 'fn build() {\n  let a = [7, 8]\n  print(a[1])\n}\nbuild()\n')
 write(dir + "/wasm-web.bxs", 'console_log("web")\nconsole_log(7)\n')
+write(dir + "/wasm-gl.bxs", 'gl_create(1, 1)\ngl_clear_color(0.0, 1.0, 0.0, 1.0)\ngl_clear()\nprint(gl_pixel(0, 0))\n')
+test("wasm webgl clears and reads pixels", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-gl.bxs", "-o", dir + "/wasm-gl.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-gl.wasm"])
+  assert(ran.code == 0 && ran.out.trim() == "16711935", "got " + json(ran.out) + " " + ran.err)
+})
 test("wasm web.* console works", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-web.bxs", "-o", dir + "/wasm-web.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

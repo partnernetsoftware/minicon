@@ -383,6 +383,20 @@ impl Checker {
                     if name == "performance_now" && args.is_empty() {
                         return Ok(Ty::Float);
                     }
+                    if name == "gl_pixel" && args.len() == 2 {
+                        for arg in args {
+                            if self.infer(arg)? != Ty::Int {
+                                return Err("wasm target gl_pixel takes ints".to_string());
+                            }
+                        }
+                        return Ok(Ty::Int);
+                    }
+                    if name == "gl_png" && args.len() == 1 {
+                        if self.infer(&args[0])? != Ty::Str {
+                            return Err("wasm target gl_png(path) needs a string".to_string());
+                        }
+                        return Ok(Ty::Int);
+                    }
                     if name == "argc" && args.is_empty() {
                         return Ok(Ty::Int);
                     }
@@ -486,6 +500,45 @@ impl Checker {
                 let Expr::Ident(name) = &**callee else {
                     return Err("wasm target only supports calls to print()".to_string());
                 };
+                match name.as_str() {
+                    "gl_create" => {
+                        if args.len() != 2 {
+                            return Err("wasm target gl_create(width, height)".to_string());
+                        }
+                        for arg in args {
+                            if self.infer(arg)? != Ty::Int {
+                                return Err("wasm target gl_create takes ints".to_string());
+                            }
+                        }
+                        return Ok(());
+                    }
+                    "gl_clear_color" => {
+                        if args.len() != 4 {
+                            return Err("wasm target gl_clear_color(r, g, b, a)".to_string());
+                        }
+                        for arg in args {
+                            if !is_number(self.infer(arg)?) {
+                                return Err("wasm target gl_clear_color takes numbers".to_string());
+                            }
+                        }
+                        return Ok(());
+                    }
+                    "gl_clear" => {
+                        if !args.is_empty() {
+                            return Err("wasm target gl_clear() takes no arguments".to_string());
+                        }
+                        return Ok(());
+                    }
+                    "gl_png" => {
+                        self.infer(&Expr::Call(
+                            Box::new(Expr::Ident("gl_png".to_string())),
+                            args.clone(),
+                            0,
+                        ))?;
+                        return Ok(());
+                    }
+                    _ => {}
+                }
                 if let Some(sig) = self.fn_sig(name) {
                     if args.len() != sig.params {
                         return Err(format!(
@@ -675,11 +728,16 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 14;
+const IMPORT_COUNT: u32 = 19;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
 const WEB_PERFORMANCE_NOW: u32 = 13;
+const WEBGL_CREATE: u32 = 14;
+const WEBGL_CLEAR_COLOR: u32 = 15;
+const WEBGL_CLEAR: u32 = 16;
+const WEBGL_READ_PIXEL: u32 = 17;
+const WEBGL_TO_PNG: u32 = 18;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -1327,6 +1385,21 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Call(WEB_PERFORMANCE_NOW));
                         return Ok(Ty::Float);
                     }
+                    if name == "gl_pixel" && args.len() == 2 {
+                        for arg in args {
+                            self.emit_expr(arg)?;
+                            self.builder.push(Instr::Op(0xa7));
+                        }
+                        self.builder.push(Instr::Call(WEBGL_READ_PIXEL));
+                        self.builder.push(Instr::Op(0xad));
+                        return Ok(Ty::Int);
+                    }
+                    if name == "gl_png" && args.len() == 1 {
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Call(WEBGL_TO_PNG));
+                        self.builder.push(Instr::Op(0xad));
+                        return Ok(Ty::Int);
+                    }
                     if name == "argc" && args.is_empty() {
                         self.builder.push(Instr::Call(2));
                         self.builder.push(Instr::Op(0xad));
@@ -1474,6 +1547,35 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Op(0x1a));
                     }
                     return Ok(());
+                }
+                match name.as_str() {
+                    "gl_create" => {
+                        for arg in args {
+                            self.emit_expr(arg)?;
+                            self.builder.push(Instr::Op(0xa7));
+                        }
+                        self.builder.push(Instr::Call(WEBGL_CREATE));
+                        self.builder.push(Instr::Op(0x1a));
+                        return Ok(());
+                    }
+                    "gl_clear_color" => {
+                        for arg in args {
+                            self.emit_f64(arg)?;
+                        }
+                        self.builder.push(Instr::Call(WEBGL_CLEAR_COLOR));
+                        return Ok(());
+                    }
+                    "gl_clear" => {
+                        self.builder.push(Instr::Call(WEBGL_CLEAR));
+                        return Ok(());
+                    }
+                    "gl_png" => {
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Call(WEBGL_TO_PNG));
+                        self.builder.push(Instr::Op(0x1a));
+                        return Ok(());
+                    }
+                    _ => {}
                 }
                 if (name != "print" && name != "console_log") || args.len() != 1 {
                     return Err(
@@ -1639,6 +1741,14 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let console_f64_ty = builder.add_type(vec![ValType::F64], vec![]);
     let console_utf8_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![]);
     let performance_ty = builder.add_type(vec![], vec![ValType::F64]);
+    let gl_create_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
+    let gl_clear_color_ty = builder.add_type(
+        vec![ValType::F64, ValType::F64, ValType::F64, ValType::F64],
+        vec![],
+    );
+    let gl_clear_ty = builder.add_type(vec![], vec![]);
+    let gl_read_pixel_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
+    let gl_to_png_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
     let start_ty = builder.add_type(vec![], vec![]);
     let mut fn_types: Vec<u32> = Vec::new();
     for (_, decl) in &declarations {
@@ -1664,6 +1774,11 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("web", "console_log_f64", console_f64_ty);
     builder.import_func("web", "console_log_utf8", console_utf8_ty);
     builder.import_func("web", "performance_now", performance_ty);
+    builder.import_func("webgl", "create", gl_create_ty);
+    builder.import_func("webgl", "clear_color", gl_clear_color_ty);
+    builder.import_func("webgl", "clear", gl_clear_ty);
+    builder.import_func("webgl", "read_pixel", gl_read_pixel_ty);
+    builder.import_func("webgl", "to_png", gl_to_png_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -2019,6 +2134,23 @@ mod tests {
         );
         assert_eq!(numbers, vec![42, 1]);
         assert_eq!(strings, vec!["2.5".to_string(), "hi".to_string()]);
+    }
+
+    #[test]
+    fn webgl_clear_and_png_export() {
+        let path = std::env::temp_dir().join(format!("bx-wasm-gl-{}.png", std::process::id()));
+        let escaped = path.to_string_lossy().replace('\\', "\\\\");
+        let source = format!(
+            "gl_create(2, 2)\ngl_clear_color(1.0, 0.0, 0.0, 1.0)\ngl_clear()\nprint(gl_pixel(0, 0))\nprint(gl_png(\"{escaped}\"))"
+        );
+        let (numbers, _strings) = run_with_argv(&source, &[]);
+        let bytes = std::fs::read(&path).expect("png file");
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(numbers, vec![0xFF0000FFu32 as i64, 0]);
+        assert_eq!(
+            &bytes[0..8],
+            &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+        );
     }
 
     #[test]

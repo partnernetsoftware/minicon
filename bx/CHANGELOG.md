@@ -28,6 +28,7 @@
 
 **实验性 wasm 目标**
 
+- `webgl.*` 最小切片：`gl_create`/`gl_clear_color`/`gl_clear`/`gl_pixel`/`gl_png`（原生确定性软件帧缓冲；内建无依赖 PNG 编码，demo 胶水提供同语义 JS 实现）。`
 - `web.*` 命名空间：`console_log`（int/float/string）与 `performance_now()`，原生 host、demo 胶水与 node 一致。`
 - `bx build --wasm --html` 生成自包含浏览器 demo（base64 模块 + 浏览器/node 双端胶水，node 可直接运行）。`
 - wasm 解释器性能：函数帧独立标签基址（修复“块内调用后跳过块外代码”的 bug）、调用走 locals 池且结果留在操作数栈；fib/loop/calls 均快于原生 VM（`bench.sh --wasm`）。`

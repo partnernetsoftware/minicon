@@ -4,6 +4,7 @@ mod chunk;
 mod json;
 mod lexer;
 mod parser;
+mod png;
 mod value;
 mod vm;
 mod wasm;

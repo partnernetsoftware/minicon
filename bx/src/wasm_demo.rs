@@ -69,6 +69,7 @@ function formatFloat(value) {
 }
 let instance = null;
 let nextArg = 65536;
+const gl = { width: 0, height: 0, clear: [0, 0, 0, 1], pixels: new Uint8Array(0) };
 const queryArgs = (() => {
   if (typeof process !== "undefined" && Array.isArray(process.argv)) {
     return process.argv.slice(2);
@@ -104,6 +105,22 @@ const imports = {
     write_file: () => -1,
     run: () => -1,
     capture: () => 0,
+  },
+  webgl: {
+    create: (width, height) => { gl.width = Math.max(1, width); gl.height = Math.max(1, height); gl.pixels = new Uint8Array(gl.width * gl.height * 4); return 1; },
+    clear_color: (r, g, b, a) => { gl.clear = [r, g, b, a]; },
+    clear: () => {
+      const channel = (v) => Math.round(Math.min(1, Math.max(0, v)) * 255);
+      const fill = [channel(gl.clear[0]), channel(gl.clear[1]), channel(gl.clear[2]), channel(gl.clear[3])];
+      for (let i = 0; i < gl.pixels.length; i += 4) gl.pixels.set(fill, i);
+    },
+    read_pixel: (x, y) => {
+      if (x < 0 || y < 0 || x >= gl.width || y >= gl.height) return 0;
+      const offset = (y * gl.width + x) * 4;
+      const packed = ((gl.pixels[offset] << 24) | (gl.pixels[offset + 1] << 16) | (gl.pixels[offset + 2] << 8) | gl.pixels[offset + 3]) >>> 0;
+      return packed | 0;
+    },
+    to_png: () => -1,
   },
   web: {
     console_log_i64: (value) => { emit(value.toString()); },
