@@ -509,6 +509,28 @@ flowchart LR
   the six-OS single-file `minicon.com` stays on the cosmocc trampoline (or the
   `APE!` loader under `systems/ape`). Names: `minicon-<cell>.com` here,
   `minicon.com` for the polyglot.
+  *(Superseded 2026-11-16 by the v0.2.27 owner direction below — kept visible
+  so the reversal is explicit rather than silent.)*
+- [-] Authenticode coexistence proven (2026-11-16, Windows x86_64 host,
+  mechanism-only): a packed `minicon-win-x86_64.com` signed with an ephemeral
+  untrusted cert via `signtool` still reads its container, still executes
+  (`--version` exit 0), and a one-byte flip inside the embedded cell fails
+  `signtool verify` with `TRUST_E_BAD_DIGEST`. The reader asks the PE security
+  data directory where the certificate overlay starts and looks for the footer
+  there, with a bounded 1 MiB backwards scan as fallback; a footer whose table
+  does not end exactly at it is rejected, so stray `MINICOM1` bytes inside a
+  certificate cannot win. Regression court: `loader/bx/selftest.ps1` signs,
+  reads, runs and rejects a tamper (skipped, not failed, without
+  signtool/openssl).
+- [-] **v0.2.27 owner direction (2026-11-16): this lane replaces the cosmocc
+  polyglot as the shipped single-file artifact** ([plan](../plan/plan-v0.2.27.md)).
+  The `[no]` above is overturned by that decision. The cost is named and
+  accepted: one file no longer boots six kernels; per-cell names
+  (`minicon-<cell>.com`) become the product's single-file assets and the
+  six-OS polyglot ends with 0.2.26 unless a future owner decision revives it.
+  The release-chain switch (signing catalog, Defender/reputation set,
+  Candidate bundle, Promotion smoke, cosmocc retirement) is v0.2.27 work
+  gated by the plan's L27..C27 sequence.
 ### Linux size attribution (LTO cells, 2026-08-29)
 
 Payload bytes after Linux `profile.release` (same numbers as the 迁出差异

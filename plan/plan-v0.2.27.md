@@ -40,21 +40,21 @@ without further design work.
 
 ```text
 Outcome: the shipped single-file artifact is produced by MiniCon's own Rust tooling, with cosmocc retired
-├── [_] D27 — fix the shipped asset shape and names
+├── [v] D27 — fix the shipped asset shape and names
 │   invariant: every published single-file artifact name maps to exactly one {os,isa} cell and one digest; nothing named minicon.com claims six-OS coverage after 0.2.26
-│   evidence: release-policy.json assets, candidate bundle, release notes template, READMEs and docs/ download pages list one identical per-cell set
+│   evidence: owner direction 2026-11-16 (this plan's acceptance); publish minicon-{win-x86_64,win-aarch64,lnx-x86_64,lnx-aarch64}.com, court-execute all six, osx cells keep the signed native archive/DMG path; Defender/reputation stays Windows-only. PRD 27 rust-lane "[no] replace" overturned and re-owned in the same PRD edit
 │   safe failure: an unresolved owner question blocks pack/Candidate; the chain never guesses a name
-│   dependency: owner direction 2026-11-16; PRD 27 rust-lane "[no] replace" overturned and re-owned in the same PRD edit
+│   dependency: owner direction 2026-11-16
 │   non-goal: a Rust-built polyglot that boots six kernels from one file
-├── [_] L27 — make the launcher a signable, tamper-evident front door
+├── [-] L27 — make the launcher a signable, tamper-evident front door
 │   invariant: Authenticode-signing a packed Windows .com neither breaks container lookup nor lets payload bytes drift unnoticed
-│   evidence: container-design spike decided on real bytes (footer back-scan past the certificate blob, or container embedded inside the PE image; bump to MINICOM2 if layout changes); a self-sign-rehearsal-extended packed .com verifies and executes after signing; a flipped payload byte fails com-pack verify (negative control)
+│   evidence: PROVEN 2026-11-16 Windows x86_64 (mechanism-only, ephemeral cert): sign-last + bounded back-scan chosen; the reader asks the PE security data directory for the certificate-overlay start, footer directly before it, 1 MiB fallback scan, strict table_end==footer_off; signtool-signed packed .com still reads and executes (--version exit 0); one flipped cell byte fails signtool verify TRUST_E_BAD_DIGEST; format stays MINICOM1 (no bump); unit tests in com-rs lib (6); regression court in loader/bx/selftest.ps1 (PASS 27 checks incl. 4 signing ones). Open: VERSIONINFO icon/product-version preflight for G27 signing catalog
 │   safe failure: unreadable container after signing, missing VERSIONINFO/icon, wrong embedded product version or checksum mismatch fails signing preflight — not the user's first run
 │   dependency: bx lane's proven stdio/exit parity (PRD 41 evidence) carried over; extract hygiene reaches loader.c discipline (0700 per-invocation dir, owner marker, reaper, EINTR-safe wait)
 │   non-goal: compressing/encrypting cells; in-process mmap execution; codesigning the osx .com (macOS users keep the signed native archive/DMG path, same as 0.2.26)
-├── [_] P27 — pack six minicon .com plus the bx set on one CI host
+├── [-] P27 — pack six minicon .com plus the bx set on one CI host
 │   invariant: one source identity yields every launcher+cell artifact with per-file SHA-256 in one manifest
-│   evidence: minicon-com.yml build job (macos-15: native osx, zigbuild lnx, xwin win) emits minicon-<cell>.com ×6 and minicon-bx-<cell>.com ×6; com-pack verify plus PE 0x8664/0xaa64 and ELF 0x3e/0xb7 machine checks green; manifest and build receipt bind source SHA and dirty=false
+│   evidence: local 4-cell repack green 2026-11-16 (loader/dist/rust-v027: win-x86_64 exec --version/--status exit 0; win-aarch64/lnx-x86_64/lnx-aarch64 com-pack verify PE 0x8664/0xaa64 ELF 0x3e/0xb7; meta carries product/cell/version/source_sha); pack-rust-all.sh relative-path LLD_LINK bug fixed (absolute-path normalization). Open: osx two cells + CI workflow wiring (macos-15 pack host) and manifest/receipt binding
 │   safe failure: any missing or failed cell artifact fails the job before the six-runner fan-out
 │   dependency: loader/pack-rust-all.sh host matrix; payload rebuild path (rebuild-payloads.sh) unchanged
 │   non-goal: compiling anything on the six execution runners

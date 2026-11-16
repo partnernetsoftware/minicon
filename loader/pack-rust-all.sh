@@ -46,12 +46,18 @@ PACK="$COM_RS/target/release/com-pack"
 HOST="$(rustc -vV | sed -n 's/^host: //p')"
 
 # lld-link is the same LLD as rust-lld, selected by argv[0]; a Windows host has
-# no ARM64 link.exe unless the VS ARM64 workload is installed.
+# no ARM64 link.exe unless the VS ARM64 workload is installed. The linker path
+# goes into RUSTFLAGS, which cargo resolves against its own cwd — make it
+# absolute so a relative cells/out invocation cannot break the ARM64 build.
 LLD_LINK="${MINICON_LLD_LINK:-}"
 if [[ "$FAMILY" == windows ]]; then
     if [[ -z "$LLD_LINK" ]]; then
         LLD_LINK="$OUT/.tools/lld-link.exe"
     fi
+    case "$LLD_LINK" in
+        /*|?:/*|[A-Za-z]:\\*) ;;
+        *) LLD_LINK="$(cd "$(dirname "$LLD_LINK")" && pwd)/$(basename "$LLD_LINK")" ;;
+    esac
     if [[ ! -f "$LLD_LINK" ]]; then
         mkdir -p "$(dirname "$LLD_LINK")"
         cp "$(rustc --print sysroot)/lib/rustlib/$HOST/bin/rust-lld.exe" "$LLD_LINK"
