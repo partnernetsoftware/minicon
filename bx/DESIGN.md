@@ -73,7 +73,7 @@
 
 ## 4.5 wasm 目标（实验，长期替代 `.bxb`）
 
-执行格式的长期方向是标准 WebAssembly：`bx build --wasm` 用自研编码器生成 core wasm 模块（`\0asm` v1），`bx run *.wasm` 用自研解码器 + 解释器执行。M2 切片已包含线性内存、活动数据段、导出 `memory` 与 `env.print_utf8`，字符串字面量、运行期拼接（ptr/len 双全局槽 + `memory.copy`）、整型数组、定长记录（模块内 bump 堆 + 内存 load/store）、控制流（结构化 block/loop + 比较）、用户函数（多函数模块、参数/局部/返回/递归）、argv、文件与原生进程（`bx.*` 原生命名空间）因此能跑；`bx/tools/wasm-diff.bxs` 用随机程序对 VM 与 wasm 后端做逐字节差分。零依赖不变——`wasm.rs` 只有 bx 自己的代码，`cargo tree` 里没有第三方 wasm crate。host ABI 按 web 形状设计（`web.*` 对应浏览器 API、`webgl.*` 对应 WebGL 1.0、`bx.*` 是原生扩展），细节由 [PRD_02_42_bx_wasm_target.md](../prd/PRD_02_42_bx_wasm_target.md) 拥有；`.bxb` 在 M6 前仍是默认路径。
+执行格式的长期方向是标准 WebAssembly：`bx build --wasm` 用自研编码器生成 core wasm 模块（`\0asm` v1），`bx run *.wasm` 用自研解码器 + 解释器执行。M2 切片已包含线性内存、活动数据段、导出 `memory` 与 `env.print_utf8`，字符串字面量、运行期拼接（ptr/len 双全局槽 + `memory.copy`）、整型数组、定长记录（模块内 bump 堆 + 内存 load/store）、控制流（结构化 block/loop + 比较）、用户函数（多函数模块、参数/局部/返回/递归）、argv、文件与原生进程（`bx.*` 原生命名空间）因此能跑；`bx/tools/wasm-diff.bxs` 用随机程序（含浮点）对 VM 与 wasm 后端做逐字节差分。零依赖不变——`wasm.rs` 只有 bx 自己的代码，`cargo tree` 里没有第三方 wasm crate。host ABI 按 web 形状设计（`web.*` 对应浏览器 API、`webgl.*` 对应 WebGL 1.0、`bx.*` 是原生扩展），细节由 [PRD_02_42_bx_wasm_target.md](../prd/PRD_02_42_bx_wasm_target.md) 拥有；`.bxb` 在 M6 前仍是默认路径。
 ## 5. 字节码格式（v2）
 
 小端。所有字符串 = `u32` 长度 + UTF-8 字节。

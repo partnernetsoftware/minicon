@@ -146,6 +146,14 @@ test("wasm backend matches the VM on generated programs", fn() {
   let out = exec([bin, "run", __dir__ + "/wasm-diff.bxs", bin, "8"])
   assert(out.code == 0 && out.out.contains("PASS 8 differential cases"), "got " + out.out + " " + out.err)
 })
+write(dir + "/wasm-flt.bxs", 'print(7 / 2)\nprint(6 / 2)\n')
+test("wasm float division matches the VM", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-flt.bxs", "-o", dir + "/wasm-flt.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let wasm = exec([bin, "run", dir + "/wasm-flt.wasm"])
+  let vm = exec([bin, "run", dir + "/wasm-flt.bxs"])
+  assert(wasm.code == 0 && wasm.out == vm.out && wasm.out.trim() == "3.5\n3", "wasm=" + json(wasm.out) + " vm=" + json(vm.out))
+})
 test("wasm comparisons and modulo", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-cmp.bxs", "-o", dir + "/wasm-cmp.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

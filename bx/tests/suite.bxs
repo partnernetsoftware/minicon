@@ -597,6 +597,16 @@ if (wasmDiff.code == 0 && wasmDiff.out.contains("PASS 15 differential cases")) {
   casesFail += 1
   failures.push("wasm-vs-VM differential cases\n    out=" + json(wasmDiff.out) + " err=" + json(wasmDiff.err))
 }
+write(artDir + "/wasm-flt.bxs", 'print(7 / 2)\nprint(6 / 2)\nprint(2.5 + 1)\nprint(7 % 2.5)\nlet f = 1.5\nf *= 2\nprint(f)\nif (2.5 < 3) { print(100) }\n')
+let wasmFlt = exec([BX, "build", "--wasm", artDir + "/wasm-flt.bxs", "-o", artDir + "/wasm-flt.wasm"])
+let wasmFltRun = exec([BX, "run", artDir + "/wasm-flt.wasm"])
+let wasmFltVm = exec([BX, "run", artDir + "/wasm-flt.bxs"])
+if (wasmFlt.code == 0 && wasmFltRun.code == 0 && wasmFltRun.out == wasmFltVm.out && wasmFltRun.out.trim() == "3.5\n3\n3.5\n2\n3\n100") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm floats match the VM\n    wasm=" + json(wasmFltRun.out) + " vm=" + json(wasmFltVm.out))
+}
 write(artDir + "/wasm-bad.bxs", 'let f = fn() { return 1 }\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
 if (wasmBad.code == 1) {

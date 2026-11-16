@@ -213,7 +213,7 @@ impl Checker {
             if let Some(binding) = self.env.get(name) {
                 return Ok(binding.ty);
             }
-            return Err(format!("undefined variable '{}' (fn_depth={})", name, self.fn_depth));
+            return Err(format!("undefined variable '{}'", name));
         }
         self.binding(name).map(|binding| binding.ty)
     }
@@ -280,7 +280,8 @@ impl Checker {
                 } else {
                     Ok(Ty::Float)
                 }
-            }            Expr::Bin(..) => Err("wasm target supports + - * / %".to_string()),
+            }
+            Expr::Bin(..) => Err("wasm target supports + - * / %".to_string()),
             Expr::Object(fields) => {
                 if fields.is_empty() {
                     return Err("wasm target does not support empty objects yet".to_string());
@@ -446,9 +447,9 @@ impl Checker {
                 let _ = op;
                 for side in [left, right] {
                     let ty = self.infer(side)?;
-                    if ty != Ty::Int {
+                    if !is_number(ty) {
                         return Err(format!(
-                            "wasm target compares ints only, got {}",
+                            "wasm target compares numbers only, got {}",
                             ty_name(ty)
                         ));
                     }
@@ -525,11 +526,17 @@ impl Checker {
                         "wasm target supports compound assignment to a global only".to_string()
                     );
                 };
-                if self.lookup(name)? != Ty::Int {
-                    return Err("wasm target supports compound assignment on ints only".to_string());
+                let target_ty = self.lookup(name)?;
+                let value_ty = self.infer(value)?;
+                if !is_number(target_ty) || !is_number(value_ty) {
+                    return Err(
+                        "wasm target supports compound assignment on numbers only".to_string()
+                    );
                 }
-                if self.infer(value)? != Ty::Int {
-                    return Err("wasm target supports compound assignment on ints only".to_string());
+                if target_ty == Ty::Int && value_ty == Ty::Float {
+                    return Err(
+                        "wasm target requires stable types for compound assignment".to_string()
+                    );
                 }
             }
             Stmt::Expr(expr, _) => {
@@ -591,9 +598,17 @@ impl Checker {
                                         .to_string(),
                                 );
                             };
-                            if self.lookup(name)? != Ty::Int || self.infer(value)? != Ty::Int {
+                            let target_ty = self.lookup(name)?;
+                            let value_ty = self.infer(value)?;
+                            if !is_number(target_ty) || !is_number(value_ty) {
                                 return Err(
-                                    "wasm target supports compound assignment on ints only"
+                                    "wasm target supports compound assignment on numbers only"
+                                        .to_string(),
+                                );
+                            }
+                            if target_ty == Ty::Int && value_ty == Ty::Float {
+                                return Err(
+                                    "wasm target requires stable types for compound assignment"
                                         .to_string(),
                                 );
                             }
@@ -750,18 +765,104 @@ impl<'a> Emitter<'a> {
         Err("wasm target has no loop to continue".to_string())
     }
 
+    fn emit_compound(&mut self, name: &str, op: BinOp, value: &Expr) -> Result<(), String> {
+        let target_ty = match self.local_of(name) {
+            Some(_) => Ty::Int,
+            None => self.checker.binding(name)?.ty,
+        };
+        if !is_number(target_ty) {
+            return Err(format!(
+                "wasm target supports compound assignment on numbers only, '{}' is {}",
+                name,
+                ty_name(target_ty)
+            ));
+        }
+        self.emit_load(name)?;
+        let value_ty = self.emit_expr(value)?;
+        let value_ty = if target_ty == Ty::Float && value_ty == Ty::Int {
+            self.builder.push(Instr::Op(0xb9));
+            Ty::Float
+        } else {
+            value_ty
+        };
+        if target_ty != value_ty {
+            return Err(format!(
+                "wasm target requires stable types for compound assignment on '{}'",
+                name
+            ));
+        }
+        match (target_ty, op) {
+            (Ty::Int, BinOp::Add) => self.builder.push(Instr::Op(0x7c)),
+            (Ty::Int, BinOp::Sub) => self.builder.push(Instr::Op(0x7d)),
+            (Ty::Int, BinOp::Mul) => self.builder.push(Instr::Op(0x7e)),
+            (Ty::Int, BinOp::Mod) => self.builder.push(Instr::Op(0x81)),
+            (Ty::Float, BinOp::Add) => self.builder.push(Instr::Op(0xa0)),
+            (Ty::Float, BinOp::Sub) => self.builder.push(Instr::Op(0xa1)),
+            (Ty::Float, BinOp::Mul) => self.builder.push(Instr::Op(0xa2)),
+            (Ty::Float, BinOp::Div) => self.builder.push(Instr::Op(0xa3)),
+            (Ty::Float, BinOp::Mod) => self.builder.push(Instr::Call(9)),
+            _ => {
+                return Err(format!(
+                    "wasm target does not support compound {:?} here",
+                    op
+                ))
+            }
+        }
+        self.emit_store(name)
+    }
+
     fn type_of(&self, expr: &Expr) -> Result<Ty, String> {
         match expr {
-            Expr::Ident(name) => {
-                if self.local_of(name).is_some() {
-                    return Ok(Ty::Int);
+            Expr::Ident(name) => match self.local_of(name) {
+                Some(_) => Ok(Ty::Int),
+                None => self.checker.infer(expr),
+            },
+            Expr::Int(_) => Ok(Ty::Int),
+            Expr::Float(_) => Ok(Ty::Float),
+            Expr::Neg(inner) => {
+                self.type_of(inner)?;
+                Ok(Ty::Int)
+            }
+            Expr::Bin(op, left, right) => {
+                let lt = self.type_of(left)?;
+                let rt = self.type_of(right)?;
+                if op == &BinOp::Add && lt == Ty::Str && rt == Ty::Str && !self.fn_mode {
+                    return Ok(Ty::Str);
+                }
+                if !is_number(lt) || !is_number(rt) {
+                    return Err(format!(
+                        "wasm target does not support {:?} on {} yet",
+                        op,
+                        ty_name(if !is_number(lt) { lt } else { rt })
+                    ));
+                }
+                match op {
+                    BinOp::Div => Ok(Ty::Float),
+                    _ => {
+                        if lt == Ty::Int && rt == Ty::Int {
+                            Ok(Ty::Int)
+                        } else {
+                            Ok(Ty::Float)
+                        }
+                    }
+                }
+            }
+            Expr::Call(callee, _, _) => {
+                if let Expr::Ident(name) = &**callee {
+                    if self.checker.fn_sig(name).is_some() {
+                        return Ok(Ty::Int);
+                    }
+                    match name.as_str() {
+                        "argc" | "write_file" | "run" => return Ok(Ty::Int),
+                        "arg" | "read_file" | "capture" => return Ok(Ty::Str),
+                        _ => {}
+                    }
                 }
                 self.checker.infer(expr)
             }
             _ => self.checker.infer(expr),
         }
     }
-
     fn emit_f64(&mut self, expr: &Expr) -> Result<(), String> {
         let ty = self.emit_expr(expr)?;
         match ty {
@@ -931,16 +1032,7 @@ impl<'a> Emitter<'a> {
                             "wasm target supports compound assignment to a global only".to_string()
                         );
                     };
-                    self.emit_load(name)?;
-                    self.emit_expr(value)?;
-                    self.builder.push(Instr::Op(match op {
-                        BinOp::Add => 0x7c,
-                        BinOp::Sub => 0x7d,
-                        BinOp::Mul => 0x7e,
-                        BinOp::Mod => 0x81,
-                        _ => return Err("wasm target supports + - * %".to_string()),
-                    }));
-                    self.emit_store(name)?;
+                    self.emit_compound(name, *op, value)?;
                 }
                 other => {
                     self.emit_expr(other)?;
@@ -1033,7 +1125,8 @@ impl<'a> Emitter<'a> {
             Expr::Float(value) => {
                 self.builder.push(Instr::Const(0x44, WVal::F64(*value)));
                 Ok(Ty::Float)
-            }            Expr::Ident(name) => {
+            }
+            Expr::Ident(name) => {
                 if let Some(index) = self.local_of(name) {
                     self.builder.push(Instr::Local(0x20, index));
                     return Ok(Ty::Int);
@@ -1062,7 +1155,8 @@ impl<'a> Emitter<'a> {
                 }
                 self.emit_numeric(BinOp::Add, left, right)
             }
-            Expr::Bin(op, left, right) => self.emit_numeric(*op, left, right),            Expr::Object(fields) => {
+            Expr::Bin(op, left, right) => self.emit_numeric(*op, left, right),
+            Expr::Object(fields) => {
                 let ty = self.checker.infer(expr)?;
                 let Ty::Obj(shape) = ty else {
                     return Err("wasm target object type mismatch".to_string());
@@ -1272,6 +1366,19 @@ impl<'a> Emitter<'a> {
                     self.emit_store(name)?;
                     return Ok(());
                 }
+                let expected = self.checker.binding(name)?.ty;
+                if expected == Ty::Int && ty == Ty::Float {
+                    return Err(format!(
+                        "wasm target requires stable types: '{}' is int, assigned float",
+                        name
+                    ));
+                }
+                let ty = if expected == Ty::Float && ty == Ty::Int {
+                    self.builder.push(Instr::Op(0xb9));
+                    Ty::Float
+                } else {
+                    ty
+                };
                 let base = self.checker.binding(name)?.base;
                 if ty == Ty::Str {
                     self.builder.push(Instr::Global(0x24, base + 1));
@@ -1305,11 +1412,17 @@ impl<'a> Emitter<'a> {
                     return Err("wasm target supports print(<value>) with one argument".to_string());
                 }
                 let ty = self.emit_expr(&args[0])?;
-                if ty == Ty::Str {
-                    self.builder.push(Instr::Call(1));
-                } else {
-                    self.builder.push(Instr::Call(0));
-                    self.builder.push(Instr::Op(0x1a));
+                match ty {
+                    Ty::Str => {
+                        self.builder.push(Instr::Call(1));
+                    }
+                    Ty::Float => {
+                        self.builder.push(Instr::Call(8));
+                    }
+                    _ => {
+                        self.builder.push(Instr::Call(0));
+                        self.builder.push(Instr::Op(0x1a));
+                    }
                 }
                 Ok(())
             }
@@ -1319,17 +1432,7 @@ impl<'a> Emitter<'a> {
                         "wasm target supports compound assignment to a global only".to_string()
                     );
                 };
-                self.emit_load(name)?;
-                self.emit_expr(value)?;
-                self.builder.push(Instr::Op(match op {
-                    BinOp::Add => 0x7c,
-                    BinOp::Sub => 0x7d,
-                    BinOp::Mul => 0x7e,
-                    BinOp::Mod => 0x81,
-                    _ => return Err("wasm target supports + - * %".to_string()),
-                }));
-                self.emit_store(name)?;
-                Ok(())
+                self.emit_compound(name, *op, value)
             }
             Stmt::Expr(expr, _) => {
                 let ty = self.emit_expr(expr)?;
@@ -1340,8 +1443,8 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Op(0x1a));
                     }
                     Ty::Int | Ty::Float | Ty::Arr | Ty::Obj(_) => {
-                            self.builder.push(Instr::Op(0x1a))
-                        }
+                        self.builder.push(Instr::Op(0x1a))
+                    }
                 }
                 Ok(())
             }
@@ -1699,6 +1802,26 @@ mod tests {
             "let x = 5\nif (x <= 5) { print(1) }\nif (x >= 5) { print(2) }\nif (x < 5) { print(3) }\nif (x > 5) { print(4) }\nif (x != 5) { print(5) }",
         );
         assert_eq!(prints, vec![1, 2]);
+    }
+
+    #[test]
+    fn floats_match_the_vm_formatting() {
+        let (numbers, strings) = run_with_argv(
+            "print(7 / 2)\nprint(6 / 2)\nprint(2.5 + 1)\nprint(7 % 2.5)\nlet f = 1.5\nf *= 2\nprint(f)\nf /= 4\nprint(f)\nif (2.5 < 3) { print(100) }",
+            &[],
+        );
+        assert_eq!(numbers, vec![100]);
+        assert_eq!(
+            strings,
+            vec![
+                "3.5".to_string(),
+                "3".to_string(),
+                "3.5".to_string(),
+                "2".to_string(),
+                "3".to_string(),
+                "0.75".to_string(),
+            ]
+        );
     }
 
     #[test]

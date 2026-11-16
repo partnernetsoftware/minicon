@@ -29,7 +29,7 @@ module should run in a browser once the Web ABI lands.
 ```text
 bx wasm target
 ├── emitter (AST → core wasm)
-│   ├── [v] i64 subset: let / assignment / `+ - * %` / print(<int>)
+│   ├── [v] numbers: ints and floats (`+ - * / %`, mixed promotion, VM-identical formatting)
 │   ├── [v] strings: literals + compile-time `+`, data segments, `print_utf8`
 │   ├── [v] arrays of ints: `[..]`, `arr[i]`, `len(arr)` over the prototype heap
 │   ├── [v] runtime strings: bindings (ptr,len globals), `s + t`, `len(s)`
@@ -37,8 +37,7 @@ bx wasm target
 │   ├── [v] control flow: `if/else`, `while`, `for`, `break`/`continue`, comparisons
 │   ├── [v] user functions: params, int locals, `return <int>`, calls, recursion
 │   ├── [v] functions may read/write string, array and record globals
-│   └── [-] float values (`/` is bx-style float division; rejected until floats land),
-│       closures, non-int params/locals, nested functions
+│   └── [-] closures, non-int params/locals, nested functions
 ├── runtime (standard module execution, own code)
 │   ├── [v] decode + validate (type/import/function/global/export/code)
 │   ├── [v] interpreter: consts, globals, locals, calls, control flow, numeric ops
@@ -47,7 +46,8 @@ bx wasm target
 │   ├── [v] bulk `memory.copy` for runtime string concatenation
 │   └── [-] table sections, full conversions, float arithmetic
 ├── host ABI (web-shaped)
-│   ├── [v] prototype imports: `env.print_i64`, `env.print_utf8(ptr,len)`
+│   ├── [v] prototype imports: `env.print_i64`, `env.print_utf8(ptr,len)`,
+│   │   `env.print_f64` (VM-identical float formatting), `env.fmod`
 │   ├── [v] module-internal bump heap (mutable global, starts at 8192) — no `alloc` import
 │   ├── [v] argv: `bx.argc()` / `bx.arg(i)` (length-prefixed UTF-8 in page 2)
 │   ├── [v] files: `bx.read_file` / `bx.write_file` (contents in page 3)
@@ -101,7 +101,7 @@ bx wasm target
   precedence and rejection of unsupported constructs; the whole crate suite is
   part of `bx/scripts/test.sh`.
 - **Differential testing**: `bx/tools/wasm-diff.bxs` generates seeded random programs
-  from the shared int subset and runs each one through both the bx VM and the wasm
+  from the shared numeric subset (now including float literals and `/`) and runs each one through both the bx VM and the wasm
   backend; stdout and exit codes must match byte-for-byte. The suite runs 15 cases
   and the verifier 8; a 100-case local run passes. This is what caught the VM/floats
   divergence: bx's `/` is float division, so the wasm target now rejects `/` with a
@@ -110,7 +110,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 40 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 41 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -135,7 +135,7 @@ bx wasm target
 | M0 | this spec + decision record | `[v]` |
 | M1 | numeric vertical slice: emit → run → `check`, node cross-check | `[v]` |
 | M2 | data model: strings, arrays, objects in linear memory | `[-]` (strings incl. runtime concat, int arrays, fixed-layout records, in-module bump heap done; dynamic keys, mixed-type fields and growable arrays next) |
-| M3 | functions, closures, control flow compiled to wasm | `[-]` (control flow and user functions/recursion done; closures next) |
+| M3 | functions, closures, control flow compiled to wasm | `[-]` (control flow, user functions/recursion and float values done; closures next) |
 | M4 | builtins + native process ABI (`bx.*`), default target flip | `[-]` (argv, file and process imports done; default target flip next) |
 | M5 | `web.*` + `webgl.*` ABI, software backend, browser demo | `[_]` |
 | M6 | remove `.bxb` + legacy code paths, six-cell wasm evidence | `[_]` |
