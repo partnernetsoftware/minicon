@@ -1705,6 +1705,12 @@ pub static BUILTINS: &[Builtin] = &[
         f: b_attempt,
     },
     Builtin {
+        name: "test",
+        sig: "test(name, fn)",
+        doc: "run one named test; `bx test <file>` reports the summary and exit code",
+        f: b_test,
+    },
+    Builtin {
         name: "assert",
         sig: "assert(cond, message?)",
         doc: "raise unless cond is truthy",
@@ -2137,4 +2143,18 @@ fn b_spawn_close(vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
     // Dropping the pipe sends EOF, which a child reading stdin waits for.
     let had_pipe = spawned.stdin.take().is_some();
     Ok(Value::Bool(had_pipe))
+}
+fn b_test(vm: &mut Vm, args: &[Value]) -> Result<Value, String> {
+    let name = s_arg(args, 0)?;
+    let body = arg(args, 1)?.clone();
+    match vm.call_value(body, Vec::new(), 0) {
+        Ok(_) => {
+            vm.tests_passed += 1;
+        }
+        Err(e) => {
+            vm.tests_failed += 1;
+            vm.test_failures.push(format!("{}: {}", name, e));
+        }
+    }
+    Ok(Value::Null)
 }

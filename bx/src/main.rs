@@ -53,6 +53,7 @@ fn cli(cmd: String, args: Vec<String>) -> i32 {
         "build" => cmd_build(args),
         "dis" | "disasm" => cmd_dis(args),
         "check" => cmd_check(args),
+        "test" => cmd_test(args),
         "help" | "-h" | "--help" => {
             if let Some(name) = args.first() {
                 print_builtin_help(name);
@@ -87,6 +88,7 @@ usage
   bx build <script.bxs> [-o out.bxb]         compile source to bytecode
   bx dis <script.bxs|out.bxb>                disassemble bytecode
   bx check [--json] <script.bxs|script.bxb>  compile only (no execution)
+  bx test <script.bxs>                       run test(name, fn) blocks and report
   bx help [builtin]                          this text, or one builtin's contract
   bx version
 
@@ -351,6 +353,67 @@ fn cmd_build(args: Vec<String>) -> i32 {
     0
 }
 
+/// Run `test(name, fn)` blocks and report the summary.
+fn cmd_test(args: Vec<String>) -> i32 {
+    let budget = match parse_budget(args) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("bx: {}", e);
+            return 2;
+        }
+    };
+    let args = budget.args;
+    if let Some(steps) = budget.max_steps {
+        std::env::set_var("BX_MAX_STEPS", steps.to_string());
+    }
+    if let Some(ms) = budget.timeout_ms {
+        std::env::set_var("BX_TIMEOUT_MS", ms.to_string());
+    }
+    if args.is_empty() {
+        eprintln!("bx test: missing script path");
+        return 2;
+    }
+    let path = &args[0];
+    let script_args: Vec<Value> = args[1..].iter().map(|s| str_val(s.clone())).collect();
+    let (chunks, source_name) = match load_program(Path::new(path), false) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("bx: {}", e);
+            return 1;
+        }
+    };
+    let mut machine = Vm::new(
+        chunks,
+        source_name,
+        script_args,
+        script_dir(Path::new(path)),
+    );
+    if let Err(e) = machine.run() {
+        eprintln!("bx: {}", e);
+        return 1;
+    }
+    for failure in &machine.test_failures {
+        eprintln!("FAIL {}", failure);
+    }
+    let passed = machine.tests_passed;
+    let failed = machine.tests_failed;
+    let total = passed + failed;
+    if total == 0 {
+        println!("no tests in {}", path);
+        return 0;
+    }
+    println!(
+        "{} {} test{}",
+        if failed == 0 { "PASS" } else { "FAIL" },
+        total,
+        if total == 1 { "" } else { "s" }
+    );
+    if failed == 0 {
+        0
+    } else {
+        1
+    }
+}
 /// Compile without executing: validation for agents that want to gate a run.
 /// `--json` prints one machine-readable line on stdout in both outcomes.
 fn cmd_check(args: Vec<String>) -> i32 {

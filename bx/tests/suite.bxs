@@ -458,6 +458,31 @@ if (verifyRun.code == 0 && verifyRun.out.contains("PASS ")) {
   casesFail += 1
   failures.push("tools/verify.bxs passes\n    out=" + json(verifyRun.out.trim()) + " err=" + json(verifyRun.err.trim()))
 }
+// bx test runs test(name, fn) blocks and reports a summary
+write(artDir + "/t-pass.bxs", 'test("math", fn() { assert(1 + 1 == 2) })\ntest("strings", fn() { assert("a" + "b" == "ab") })\n')
+let tpass = exec([BX, "test", artDir + "/t-pass.bxs"])
+if (tpass.code == 0 && tpass.out.contains("PASS 2")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("bx test reports passing tests\n    out=" + json(tpass.out.trim()) + " code=" + tpass.code)
+}
+write(artDir + "/t-fail.bxs", 'test("bad", fn() { assert(false, "nope") })\n')
+let tfail = exec([BX, "test", artDir + "/t-fail.bxs"])
+if (tfail.code == 1 && tfail.out.contains("FAIL 1") && tfail.err.contains("bad:")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("bx test reports failures\n    out=" + json(tfail.out.trim()) + " err=" + json(tfail.err.trim()))
+}
+write(artDir + "/t-none.bxs", 'print("plain")\n')
+let tnone = exec([BX, "test", artDir + "/t-none.bxs"])
+if (tnone.code == 0 && tnone.out.contains("no tests")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("bx test handles a file without tests\n    out=" + json(tnone.out.trim()) + " code=" + tnone.code)
+}
 
 // closures capture the enclosing function's visible locals by value
 check("closure factory", "15", ["eval", "fn adder(n) { return fn(x) { return x + n } } let f = adder(10); f(5)"])

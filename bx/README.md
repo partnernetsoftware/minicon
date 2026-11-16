@@ -141,6 +141,20 @@ spawn_kill(h.id)                    // 终止并收集剩余输出
 
 首行写 `#!/usr/bin/env bx` 即可在 Unix 上直接 `./script.bxs`：解析器把这一行抹成空格，行号不偏移，`bx check`/`build` 一视同仁。
 
+## 测试
+
+用 `test(name, fn)` 写测试，`bx test <file.bxs>` 跑完给汇总（失败退出 1）：
+
+```js
+test("adds", fn() { assert(add(1, 2) == 3) })
+test("misses", fn() { assert(1 == 2, "math is broken") })
+```
+
+```
+$ bx test math.bxs
+FAIL 2 tests
+FAIL misses: math.bxs(2): math is broken
+```
 ## 结构化编辑
 
 `patch(path, diff)` 应用 unified diff，是 agent 自迭代时改代码的原子原语：任一 hunk 上下文不匹配就报错，**文件保持原样**：
