@@ -30,7 +30,7 @@ TARGET_ROOT="${MINICON_RUST_TARGET_DIR:-}"
 VERSION="${MINICON_RUST_VERSION:-}"
 SOURCE_SHA="${MINICON_RUST_SOURCE_SHA:-}"
 
-# Cells come pre-staged from loader/pack.sh's convention (loader/dist/cells).
+# Cells follow loader/dist/cells (the retired pack.sh staged the same layout).
 # v0.2.27 removed pack.sh from the live path, so when the directory is absent
 # stage it straight from payload-build (rebuild-payloads.sh's output layout).
 if [[ ! -d "$CELLS" ]]; then

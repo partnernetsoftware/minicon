@@ -170,7 +170,7 @@ jobs:
             CC_x86_64_apple_darwin="$clang_x86_64" \
               CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER="$clang_x86_64" \
               cargo build --locked --release --target x86_64-apple-darwin -p minicon
-            # minicon.com packing (loader/pack.sh) reads the per-cell layout
+            # minicon .com packing (loader/pack-rust-all.sh) reads the per-cell layout
             # produced by loader/rebuild-payloads.sh, which assumes a real macOS host for the two native
             # osx-* builds -- this probe sets CC/linker explicitly instead (above),
             # so it deliberately does not call that script. Wiring pack.sh onto
