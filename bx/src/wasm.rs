@@ -1066,6 +1066,22 @@ fn format_str_array(memory: &[u8], ptr: usize) -> String {
     format!("[{}]", pieces.join(","))
 }
 
+fn format_arr_arr(memory: &[u8], ptr: usize) -> String {
+    if ptr + 4 > memory.len() {
+        return "[]".to_string();
+    }
+    let len = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+    let mut pieces: Vec<String> = Vec::new();
+    for index in 0..len {
+        let offset = ptr + 4 + index * 8;
+        if offset + 4 > memory.len() {
+            break;
+        }
+        let inner = u32::from_le_bytes(memory[offset..offset + 4].try_into().unwrap()) as usize;
+        pieces.push(format_i64_array(memory, inner));
+    }
+    format!("[{}]", pieces.join(","))
+}
 fn format_record(memory: &[u8], table: usize, count: usize, rec: usize) -> String {
     let mut pieces: Vec<String> = Vec::new();
     for index in 0..count {
@@ -2166,6 +2182,15 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 (self.on_str)(&format!("[{}]", pieces.join(",")));
                 Ok(Vec::new())
             }
+            ("env", "print_arr_arr") => {
+                let ptr = match args.first() {
+                    Some(WVal::I32(ptr)) => *ptr as usize,
+                    _ => return Err("env.print_arr_arr expects one i32".to_string()),
+                };
+                let text = format_arr_arr(memory, ptr);
+                (self.on_str)(&text);
+                Ok(Vec::new())
+            }
             ("env", "arr_sort") => {
                 let ptr = match args.first() {
                     Some(WVal::I32(ptr)) => *ptr as usize,
@@ -3248,6 +3273,14 @@ mod tests {
                     }
                     self.next_alloc = (end + 7) & !7;
                     Ok(vec![WVal::I32(start as i32)])
+                }
+                ("env", "print_arr_arr") => {
+                    let ptr = match args.first() {
+                        Some(WVal::I32(ptr)) => *ptr as usize,
+                        _ => return Err("env.print_arr_arr expects one i32".to_string()),
+                    };
+                    self.strings.push(format_arr_arr(memory, ptr));
+                    Ok(Vec::new())
                 }
                 ("env", "print_utf8") => {
                     let ptr = match args.first() {

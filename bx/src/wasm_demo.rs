@@ -128,7 +128,19 @@ const imports = {
       }
       emit("{" + pieces.join(",") + "}");
     },
-    print_arr_obj: (table, count, arr) => {
+    print_arr_arr: (ptr) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const formatInner = (inner) => {
+        const count = view.getUint32(inner, true);
+        const pieces = [];
+        for (let i = 0; i < count; i++) pieces.push(view.getBigInt64(inner + 4 + i * 8, true).toString());
+        return "[" + pieces.join(",") + "]";
+      };
+      const len = view.getUint32(ptr, true);
+      const pieces = [];
+      for (let i = 0; i < len; i++) pieces.push(formatInner(view.getUint32(ptr + 4 + i * 8, true)));
+      emit("[" + pieces.join(",") + "]");
+    },    print_arr_obj: (table, count, arr) => {
       const view = new DataView(instance.exports.memory.buffer);
       const decode = (p, l) => new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, p, l));
       const record = (rec) => {

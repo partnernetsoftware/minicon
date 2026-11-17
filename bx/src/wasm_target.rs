@@ -23,6 +23,8 @@ enum Ty {
     ArrStr,
     /// Array of records of one fixed shape; entries hold record pointers.
     ArrObj(u32),
+    /// Array of int arrays; entries hold inner-array pointers.
+    ArrArr,
     /// Fixed-layout record; the payload indexes `Checker::shapes`.
     Obj(u32),
     /// Dynamic string-keyed map (values are ints; wasm-target extension).
@@ -42,6 +44,7 @@ fn ty_name(ty: Ty) -> &'static str {
         Ty::Arr => "array",
         Ty::ArrStr => "array",
         Ty::ArrObj(_) => "array",
+        Ty::ArrArr => "array",
         Ty::Obj(_) => "object",
         Ty::Map => "map",
         Ty::Func(_) => "function",
@@ -64,7 +67,14 @@ fn wasm_types(ty: Ty) -> Vec<ValType> {
         Ty::Int => vec![ValType::I64],
         Ty::Float => vec![ValType::F64],
         Ty::Str => vec![ValType::I32, ValType::I32],
-        Ty::Arr | Ty::ArrStr | Ty::ArrObj(_) | Ty::Obj(_) | Ty::Map | Ty::Func(_) | Ty::Bool => {
+        Ty::Arr
+        | Ty::ArrStr
+        | Ty::ArrObj(_)
+        | Ty::ArrArr
+        | Ty::Obj(_)
+        | Ty::Map
+        | Ty::Func(_)
+        | Ty::Bool => {
             vec![ValType::I32]
         }
     }
@@ -526,11 +536,13 @@ impl Checker {
             Expr::Array(items) => {
                 let mut saw_int = false;
                 let mut saw_str = false;
+                let mut saw_arr = false;
                 let mut saw_obj: Option<u32> = None;
                 for item in items {
                     match self.infer(item)? {
                         Ty::Int => saw_int = true,
                         Ty::Str => saw_str = true,
+                        Ty::Arr => saw_arr = true,
                         Ty::Obj(shape) => match saw_obj {
                             Some(known) if known != shape => {
                                 return Err("wasm target records in one array need the same shape"
@@ -546,7 +558,7 @@ impl Checker {
                         }
                     }
                 }
-                let kinds = [saw_int, saw_str, saw_obj.is_some()]
+                let kinds = [saw_int, saw_str, saw_arr, saw_obj.is_some()]
                     .iter()
                     .filter(|seen| **seen)
                     .count();
@@ -559,12 +571,16 @@ impl Checker {
                 Ok(match saw_obj {
                     Some(shape) => Ty::ArrObj(shape),
                     None if saw_str => Ty::ArrStr,
+                    None if saw_arr => Ty::ArrArr,
                     None => Ty::Arr,
                 })
             }
             Expr::Index(array, index, _) => {
                 let arr_ty = self.infer(array)?;
-                if !matches!(arr_ty, Ty::Arr | Ty::ArrStr | Ty::ArrObj(_) | Ty::Str) {
+                if !matches!(
+                    arr_ty,
+                    Ty::Arr | Ty::ArrStr | Ty::ArrObj(_) | Ty::ArrArr | Ty::Str
+                ) {
                     return Err(format!(
                         "wasm target indexes arrays and strings only, got {}",
                         ty_name(arr_ty)
@@ -577,6 +593,7 @@ impl Checker {
                 Ok(match arr_ty {
                     Ty::Str | Ty::ArrStr => Ty::Str,
                     Ty::ArrObj(shape) => Ty::Obj(shape),
+                    Ty::ArrArr => Ty::Arr,
                     _ => Ty::Int,
                 })
             }
@@ -983,7 +1000,9 @@ impl Checker {
                     }
                     if name == "len" && args.len() == 1 {
                         return match self.infer(&args[0])? {
-                            Ty::Arr | Ty::ArrStr | Ty::ArrObj(_) | Ty::Str => Ok(Ty::Int),
+                            Ty::Arr | Ty::ArrStr | Ty::ArrObj(_) | Ty::ArrArr | Ty::Str => {
+                                Ok(Ty::Int)
+                            }
                             other => {
                                 Err(format!("wasm target cannot take len of {}", ty_name(other)))
                             }
@@ -1126,7 +1145,7 @@ impl Checker {
                     }
                     Expr::Index(array, index, _) => {
                         let arr_ty = self.infer(array)?;
-                        if !matches!(arr_ty, Ty::Arr | Ty::ArrStr | Ty::ArrObj(_)) {
+                        if !matches!(arr_ty, Ty::Arr | Ty::ArrStr | Ty::ArrObj(_) | Ty::ArrArr) {
                             return Err(
                                 "wasm target writes array elements only".to_string()
                             );
@@ -1137,6 +1156,7 @@ impl Checker {
                         let expected = match arr_ty {
                             Ty::ArrStr => Ty::Str,
                             Ty::ArrObj(shape) => Ty::Obj(shape),
+                            Ty::ArrArr => Ty::Arr,
                             _ => Ty::Int,
                         };
                         if self.infer(value)? != expected {
@@ -1175,6 +1195,7 @@ impl Checker {
                             Ty::Arr => Ty::Int,
                             Ty::ArrStr => Ty::Str,
                             Ty::ArrObj(shape) => Ty::Obj(shape),
+                            Ty::ArrArr => Ty::Arr,
                             other => {
                                 return Err(format!(
                                     "wasm target pushes into arrays only, got {}",
@@ -1197,7 +1218,7 @@ impl Checker {
                             );
                         }
                         match self.infer(&args[0])? {
-                            Ty::Arr | Ty::ArrStr | Ty::ArrObj(_) => {}
+                            Ty::Arr | Ty::ArrStr | Ty::ArrObj(_) | Ty::ArrArr => {}
                             other => {
                                 return Err(format!(
                                     "wasm target pops arrays only, got {}",
@@ -1388,6 +1409,7 @@ impl Checker {
                     Ty::Arr => Ty::Int,
                     Ty::ArrStr => Ty::Str,
                     Ty::ArrObj(shape) => Ty::Obj(shape),
+                    Ty::ArrArr => Ty::Arr,
                     _ => {
                         return Err("wasm target supports .push on arrays only".to_string())
                     }
@@ -1538,6 +1560,16 @@ impl Checker {
                         }
                         scope.insert(value_name, Ty::Obj(shape));
                     }
+                    Ty::ArrArr => {
+                        let (key_name, value_name) = match value {
+                            Some(value) => (Some(key.clone()), value.clone()),
+                            None => (None, key.clone()),
+                        };
+                        if let Some(key_name) = key_name {
+                            scope.insert(key_name, Ty::Int);
+                        }
+                        scope.insert(value_name, Ty::Arr);
+                    }
                     other => {
                         return Err(format!(
                             "wasm target iterates arrays and maps only, got {}",
@@ -1615,7 +1647,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 58;
+const IMPORT_COUNT: u32 = 59;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -1664,6 +1696,7 @@ const PRINT_ARR_I64: u32 = 54;
 const PRINT_ARR_STR: u32 = 55;
 const PRINT_RECORD: u32 = 56;
 const PRINT_ARR_OBJ: u32 = 57;
+const PRINT_ARR_ARR: u32 = 58;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -2344,6 +2377,131 @@ impl<'a> Emitter<'a> {
         self.scoped.pop();
         Ok(())
     }
+    /// `for i, row in matrix { .. }`: index (int) / element (int array) locals.
+    fn emit_for_in_arrarr(
+        &mut self,
+        key: &str,
+        value: Option<&str>,
+        iter: &Expr,
+        body: &[Stmt],
+    ) -> Result<(), String> {
+        let array_tmp = self.builder.add_local(ValType::I32);
+        let index_tmp = self.builder.add_local(ValType::I64);
+        let (key_name, value_name) = match value {
+            Some(value) => (Some(key), value),
+            None => (None, key),
+        };
+        let mut scope = HashMap::new();
+        let value_tmp = self.builder.add_local(ValType::I32);
+        let value_boxed = self.boxed.contains(value_name);
+        let value_cell = if value_boxed {
+            Some(self.loop_cell(Ty::Arr))
+        } else {
+            None
+        };
+        scope.insert(
+            value_name.to_string(),
+            LocalSlot {
+                ty: Ty::Arr,
+                slot: value_cell.unwrap_or(value_tmp),
+                boxed: value_boxed,
+                capture: None,
+            },
+        );
+        let key_tmp = key_name.map(|name| {
+            let tmp = self.builder.add_local(ValType::I64);
+            let boxed = self.boxed.contains(name);
+            let cell = if boxed {
+                Some(self.loop_cell(Ty::Int))
+            } else {
+                None
+            };
+            scope.insert(
+                name.to_string(),
+                LocalSlot {
+                    ty: Ty::Int,
+                    slot: cell.unwrap_or(tmp),
+                    boxed,
+                    capture: None,
+                },
+            );
+            tmp
+        });
+        let key_cell = key_name.and_then(|name| {
+            if self.boxed.contains(name) {
+                self.scoped
+                    .last()
+                    .and_then(|scope| scope.get(name))
+                    .map(|slot| slot.slot)
+            } else {
+                None
+            }
+        });
+        self.scoped.push(scope);
+        self.emit_expr(iter)?;
+        self.builder.push(Instr::Local(0x21, array_tmp));
+        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+        self.builder.push(Instr::Local(0x21, index_tmp));
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x02);
+        self.builder.push(Instr::Block {
+            opcode: 0x03,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x03);
+        self.builder.push(Instr::Local(0x20, index_tmp));
+        self.builder.push(Instr::Local(0x20, array_tmp));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Op(0xad));
+        self.builder.push(Instr::Op(0x53));
+        self.builder.push(Instr::Op(0x45));
+        self.builder.push(Instr::BrIf(1));
+        if let Some(key_tmp) = key_tmp {
+            self.builder.push(Instr::Local(0x20, index_tmp));
+            self.builder.push(Instr::Local(0x21, key_tmp));
+        }
+        self.builder.push(Instr::Local(0x20, array_tmp));
+        self.builder.push(Instr::Local(0x20, index_tmp));
+        self.builder.push(Instr::Op(0xa7));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Local(0x21, value_tmp));
+        if let Some(cell) = value_cell {
+            self.builder.push(Instr::Local(0x20, cell));
+            self.builder.push(Instr::Local(0x20, value_tmp));
+            self.builder.push(Instr::Mem(0x36, 2, 0));
+        }
+        if let (Some(cell), Some(tmp)) = (key_cell, key_tmp) {
+            self.refresh_loop_cell(cell, tmp, Ty::Int);
+        }
+        self.push_continue_block();
+        for stmt in body {
+            self.emit_stmt(stmt)?;
+        }
+        self.pop_continue_block();
+        self.builder.push(Instr::Local(0x20, index_tmp));
+        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+        self.builder.push(Instr::Op(0x7c));
+        self.builder.push(Instr::Local(0x21, index_tmp));
+        self.builder.push(Instr::Br(0));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.scoped.pop();
+        Ok(())
+    }
     /// `for i, s in strarr { .. }`: index (int) / element (string) locals.
     fn emit_for_in_strarr(
         &mut self,
@@ -2648,6 +2806,9 @@ impl<'a> Emitter<'a> {
         if let Ty::ArrObj(shape) = iter_ty {
             return self.emit_for_in_arrobj(key, value, iter, shape, body);
         }
+        if iter_ty == Ty::ArrArr {
+            return self.emit_for_in_arrarr(key, value, iter, body);
+        }
         if let Ty::Obj(shape) = iter_ty {
             return self.emit_for_in_record(key, value, iter, shape, body);
         }
@@ -2895,6 +3056,7 @@ impl<'a> Emitter<'a> {
             Ty::Arr => Ty::Int,
             Ty::ArrStr => Ty::Str,
             Ty::ArrObj(shape) => Ty::Obj(shape),
+            Ty::ArrArr => Ty::Arr,
             other => {
                 return Err(format!(
                     "wasm target pushes into arrays only, got {}",
@@ -2922,10 +3084,17 @@ impl<'a> Emitter<'a> {
                 self.builder.push(Instr::Local(0x21, value_len));
                 self.builder.push(Instr::Local(0x21, value_ptr));
             }
-            _ => {
+            Ty::Obj(_) => {
                 let actual = self.emit_expr(value)?;
                 if !matches!(actual, Ty::Obj(_)) {
                     return Err("wasm target record arrays hold records only".to_string());
+                }
+                self.builder.push(Instr::Local(0x21, value_ptr));
+            }
+            _ => {
+                let actual = self.emit_expr(value)?;
+                if actual != Ty::Arr {
+                    return Err("wasm target nested arrays hold int arrays only".to_string());
                 }
                 self.builder.push(Instr::Local(0x21, value_ptr));
             }
@@ -3153,6 +3322,12 @@ impl<'a> Emitter<'a> {
                 self.checker.infer(expr)
             }
 
+            Expr::Index(array, _, _) => match self.type_of(array)? {
+                Ty::ArrStr | Ty::Str => Ok(Ty::Str),
+                Ty::ArrObj(shape) => Ok(Ty::Obj(shape)),
+                Ty::ArrArr => Ok(Ty::Arr),
+                _ => Ok(Ty::Int),
+            },
             Expr::Member(object, key, _) => {
                 let Ty::Obj(shape) = self.type_of(object)? else {
                     return Err("wasm target reads record fields only".to_string());
@@ -3688,7 +3863,7 @@ impl<'a> Emitter<'a> {
                 }
                 let ty = self.checker.lookup(name)?;
                 match ty {
-                    Ty::ArrObj(_) => {
+                    Ty::ArrObj(_) | Ty::ArrArr => {
                         let base = self.checker.binding(name)?.base;
                         self.builder.push(Instr::Global(0x23, base));
                     }
@@ -3891,6 +4066,26 @@ impl<'a> Emitter<'a> {
                     return Ok(Ty::ArrStr);
                 }
                 if !items.is_empty() {
+                    if self.type_of(&items[0])? == Ty::Arr {
+                        let arr_local = self.builder.add_local(ValType::I32);
+                        let size = 4 + 8 * count;
+                        self.emit_alloc_const(size);
+                        self.builder.push(Instr::Local(0x21, arr_local));
+                        self.builder.push(Instr::Local(0x20, arr_local));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(count as i32)));
+                        self.builder.push(Instr::Mem(0x36, 2, 0));
+                        for (index, item) in items.iter().enumerate() {
+                            self.builder.push(Instr::Local(0x20, arr_local));
+                            self.builder
+                                .push(Instr::Const(0x41, WVal::I32((4 + 8 * index as u32) as i32)));
+                            self.builder.push(Instr::Op(0x6a));
+                            self.emit_expr(item)?;
+                            self.builder.push(Instr::Mem(0x36, 2, 0));
+                        }
+                        self.builder.push(Instr::Local(0x20, arr_local));
+                        return Ok(Ty::ArrArr);
+                    }
                     if let Ty::Obj(shape) = self.type_of(&items[0])? {
                         // Records allocate their own storage while being emitted, so
                         // keep the array pointer in a dedicated local (the shared
@@ -4026,7 +4221,7 @@ impl<'a> Emitter<'a> {
                     self.builder.push(Instr::Mem(0x28, 2, 0));
                     return Ok(Ty::Str);
                 }
-                if !matches!(array_ty, Ty::Arr | Ty::ArrObj(_)) {
+                if !matches!(array_ty, Ty::Arr | Ty::ArrObj(_) | Ty::ArrArr) {
                     return Err(format!(
                         "wasm target indexes arrays and strings only, got {}",
                         ty_name(array_ty)
@@ -4095,6 +4290,9 @@ impl<'a> Emitter<'a> {
                     return Ok(Ty::Int);
                 }
                 self.builder.push(Instr::Mem(0x28, 2, 0));
+                if array_ty == Ty::ArrArr {
+                    return Ok(Ty::Arr);
+                }
                 let Ty::ArrObj(shape) = array_ty else {
                     return Err("wasm target lost the record-array shape".to_string());
                 };
@@ -4121,7 +4319,7 @@ impl<'a> Emitter<'a> {
                 }
                 if key == "len" && args.is_empty() {
                     return match self.type_of(object)? {
-                        Ty::Arr | Ty::ArrObj(_) => {
+                        Ty::Arr | Ty::ArrObj(_) | Ty::ArrArr => {
                             self.emit_expr(object)?;
                             self.builder.push(Instr::Mem(0x28, 2, 0));
                             self.builder.push(Instr::Op(0xad));
@@ -4440,7 +4638,7 @@ impl<'a> Emitter<'a> {
                             Ty::Float => "float",
                             Ty::Str => "str",
                             Ty::Bool => "bool",
-                            Ty::Arr | Ty::ArrStr | Ty::ArrObj(_) => "array",
+                            Ty::Arr | Ty::ArrStr | Ty::ArrObj(_) | Ty::ArrArr => "array",
                             Ty::Obj(_) | Ty::Map => "object",
                             Ty::Func(_) => "function",
                         };
@@ -5442,7 +5640,7 @@ impl<'a> Emitter<'a> {
                     }
                     if name == "len" && args.len() == 1 {
                         match self.type_of(&args[0])? {
-                            Ty::Arr | Ty::ArrStr | Ty::ArrObj(_) => {
+                            Ty::Arr | Ty::ArrStr | Ty::ArrObj(_) | Ty::ArrArr => {
                                 self.emit_expr(&args[0])?;
                                 self.builder.push(Instr::Mem(0x28, 2, 0));
                                 self.builder.push(Instr::Op(0xad));
@@ -5508,6 +5706,7 @@ impl<'a> Emitter<'a> {
                         Ty::Arr
                         | Ty::ArrStr
                         | Ty::ArrObj(_)
+                        | Ty::ArrArr
                         | Ty::Obj(_)
                         | Ty::Map
                         | Ty::Func(_)
@@ -5562,15 +5761,20 @@ impl<'a> Emitter<'a> {
                         }
                     }
                     if let Expr::Index(array, _, _) = &**target {
-                        if matches!(self.type_of(array)?, Ty::ArrObj(_)) {
+                        let array_ty = self.type_of(array)?;
+                        if matches!(array_ty, Ty::ArrObj(_) | Ty::ArrArr) {
                             let address = self.builder.add_local(ValType::I32);
                             self.emit_target_address(target)?;
                             self.builder.push(Instr::Local(0x21, address));
                             self.builder.push(Instr::Local(0x20, address));
                             let ty = self.emit_expr(value)?;
-                            if !matches!(ty, Ty::Obj(_)) {
+                            let ok = match array_ty {
+                                Ty::ArrArr => ty == Ty::Arr,
+                                _ => matches!(ty, Ty::Obj(_)),
+                            };
+                            if !ok {
                                 return Err(
-                                    "wasm target record arrays hold records only".to_string()
+                                    "wasm target nested arrays hold int arrays only".to_string()
                                 );
                             }
                             self.builder.push(Instr::Mem(0x36, 2, 0));
@@ -5852,6 +6056,12 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Local(0x20, value));
                         self.builder.push(Instr::Call(PRINT_RECORD));
                     }
+                    Ty::ArrArr => {
+                        if web {
+                            return Err("wasm target console_log prints scalars only".to_string());
+                        }
+                        self.builder.push(Instr::Call(PRINT_ARR_ARR));
+                    }
                     Ty::ArrObj(shape) => {
                         if web {
                             return Err("wasm target console_log prints scalars only".to_string());
@@ -5960,7 +6170,7 @@ impl<'a> Emitter<'a> {
             Stmt::Expr(expr, _) => {
                 let ty = self.emit_expr(expr)?;
                 match ty {
-                    Ty::ArrObj(_) => {
+                    Ty::ArrObj(_) | Ty::ArrArr => {
                         self.builder.push(Instr::Op(0x1a));
                     }
                     Ty::Str => {
@@ -6270,10 +6480,12 @@ impl<'a> InferState<'a> {
             }
             Expr::Array(items) => {
                 let mut saw_str = false;
+                let mut saw_arr = false;
                 let mut obj_shape: Option<u32> = None;
                 for item in items {
                     match self.soft(item, locals)? {
                         Ty::Str => saw_str = true,
+                        Ty::Arr => saw_arr = true,
                         Ty::Obj(shape) => obj_shape = Some(shape),
                         _ => {}
                     }
@@ -6281,6 +6493,7 @@ impl<'a> InferState<'a> {
                 Some(match obj_shape {
                     Some(shape) => Ty::ArrObj(shape),
                     None if saw_str => Ty::ArrStr,
+                    None if saw_arr => Ty::ArrArr,
                     None => Ty::Arr,
                 })
             }
@@ -6297,9 +6510,14 @@ impl<'a> InferState<'a> {
                 Some(Ty::Int)
             }
             Expr::Index(array, index, _) => {
-                self.soft(array, locals)?;
+                let base = self.soft(array, locals)?;
                 self.soft(index, locals)?;
-                Some(Ty::Int)
+                Some(match base {
+                    Ty::ArrStr => Ty::Str,
+                    Ty::ArrObj(shape) => Ty::Obj(shape),
+                    Ty::ArrArr => Ty::Arr,
+                    _ => Ty::Int,
+                })
             }
             Expr::Call(callee, args, _) => {
                 if let Some(Ty::Func(id)) = self.soft(callee, locals) {
@@ -6745,6 +6963,9 @@ impl<'a> CaptureWalker<'a> {
                 if items.iter().any(|item| matches!(item, Expr::Str(_))) {
                     return Ty::ArrStr;
                 }
+                if items.iter().all(|item| self.ty_of(item) == Ty::Arr) {
+                    return Ty::ArrArr;
+                }
                 let shapes: Vec<Option<u32>> = items
                     .iter()
                     .map(|item| match self.ty_of(item) {
@@ -6818,6 +7039,7 @@ impl<'a> CaptureWalker<'a> {
             Expr::Index(array, _, _) => match self.ty_of(array) {
                 Ty::ArrStr | Ty::Str | Ty::Map => Ty::Str,
                 Ty::ArrObj(shape) => Ty::Obj(shape),
+                Ty::ArrArr => Ty::Arr,
                 _ => Ty::Int,
             },
             Expr::Member(object, _, _) => {
@@ -7154,6 +7376,7 @@ impl<'a> CaptureWalker<'a> {
                 let (key_ty, value_ty) = match iter_ty {
                     Ty::ArrStr => (Ty::Int, Ty::Str),
                     Ty::ArrObj(shape) => (Ty::Int, Ty::Obj(shape)),
+                    Ty::ArrArr => (Ty::Int, Ty::Arr),
                     Ty::Obj(_) | Ty::Map => (Ty::Str, Ty::Int),
                     _ => (Ty::Int, Ty::Int),
                 };
@@ -7554,6 +7777,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let print_arr_str_ty = builder.add_type(vec![ValType::I32], vec![]);
     let print_record_ty = builder.add_type(vec![ValType::I32, ValType::I32, ValType::I32], vec![]);
     let print_arr_obj_ty = builder.add_type(vec![ValType::I32, ValType::I32, ValType::I32], vec![]);
+    let print_arr_arr_ty = builder.add_type(vec![ValType::I32], vec![]);
     let str_test_ty = builder.add_type(
         vec![
             ValType::I32,
@@ -7654,13 +7878,16 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "print_arr_str", print_arr_str_ty);
     builder.import_func("env", "print_record", print_record_ty);
     builder.import_func("env", "print_arr_obj", print_arr_obj_ty);
+    builder.import_func("env", "print_arr_arr", print_arr_arr_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
         match ty {
             Ty::Int => builder.add_global(ValType::I64, true, WVal::I64(0)),
             Ty::Float => builder.add_global(ValType::F64, true, WVal::F64(0.0)),
-            Ty::Arr | Ty::ArrObj(_) => builder.add_global(ValType::I32, true, WVal::I32(0)),
+            Ty::Arr | Ty::ArrObj(_) | Ty::ArrArr => {
+                builder.add_global(ValType::I32, true, WVal::I32(0))
+            }
             Ty::Str => {
                 builder.add_global(ValType::I32, true, WVal::I32(0));
                 builder.add_global(ValType::I32, true, WVal::I32(0));
@@ -7767,6 +7994,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                     Ty::Arr
                     | Ty::ArrStr
                     | Ty::ArrObj(_)
+                    | Ty::ArrArr
                     | Ty::Obj(_)
                     | Ty::Map
                     | Ty::Func(_)
@@ -7847,6 +8075,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                     Ty::Arr
                     | Ty::ArrStr
                     | Ty::ArrObj(_)
+                    | Ty::ArrArr
                     | Ty::Obj(_)
                     | Ty::Map
                     | Ty::Func(_)
@@ -8375,6 +8604,26 @@ mod tests {
         );
         assert_eq!(numbers, vec![42, 42]);
         assert_eq!(strings, vec!["hi there".to_string()]);
+    }
+
+    #[test]
+    fn nested_arrays_work() {
+        let (numbers, strings) = run_with_argv(
+            "let m = [[1, 2], [3, 4]]\nprint(m)\nprint(m[1][0])\nprint(len(m))\nfor row in m {\n  print(row)\n}\nm[0] = [9, 8]\nprint(m)\npush(m, [5])\nprint(m)\nprint(m[-1])\nfor i, row in m {\n  print(i)\n}\nlet total = 0\nfor row in m {\n  for v in row {\n    total = total + v\n  }\n}\nprint(total)\nfn sum_row(r) {\n  let s = 0\n  for v in r {\n    s = s + v\n  }\n  return s\n}\nprint(sum_row(m[0]))",
+            &[],
+        );
+        assert_eq!(numbers, vec![3, 2, 0, 1, 2, 29, 17]);
+        assert_eq!(
+            strings,
+            vec![
+                "[[1,2],[3,4]]".to_string(),
+                "[1,2]".to_string(),
+                "[3,4]".to_string(),
+                "[[9,8],[3,4]]".to_string(),
+                "[[9,8],[3,4],[5]]".to_string(),
+                "[5]".to_string(),
+            ]
+        );
     }
 
     #[test]
