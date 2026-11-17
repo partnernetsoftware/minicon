@@ -306,6 +306,85 @@ fn text_row_ops(lines, name) {
     lines.push("print(sort(" + name + ", fn(x, y) { return len(x) - len(y) }))")
   }
 }
+fn rand_lit() {
+  let choice = pick(4)
+  if (choice == 0) {
+    return "\"a\""
+  }
+  if (choice == 1) {
+    return "\"é\""
+  }
+  if (choice == 2) {
+    return "\"\""
+  }
+  return "\"xy\""
+}
+fn rand_str_op(vars) {
+  let choice = pick(12)
+  if (choice == 0) {
+    return "trim(" + vars[pick(len(vars))] + ")"
+  }
+  if (choice == 1) {
+    return "upper(" + vars[pick(len(vars))] + ")"
+  }
+  if (choice == 2) {
+    return "lower(" + vars[pick(len(vars))] + ")"
+  }
+  if (choice == 3) {
+    return "replace(" + vars[pick(len(vars))] + ", \"a\", \"-\")"
+  }
+  if (choice == 4) {
+    return "repeat(" + vars[pick(len(vars))] + ", 2)"
+  }
+  if (choice == 5) {
+    return "slice(" + vars[pick(len(vars))] + ", 0, 2)"
+  }
+  if (choice == 6) {
+    return vars[pick(len(vars))] + " + " + vars[pick(len(vars))] 
+  }
+  if (choice == 7) {
+    return "len(" + vars[pick(len(vars))] + ")"
+  }
+  if (choice == 8) {
+    return "index_of(" + vars[pick(len(vars))] + ", \"a\")"
+  }
+  if (choice == 9) {
+    return "join(split(" + vars[pick(len(vars))] + ", \"a\"), \"-\")"
+  }
+  if (choice == 10) {
+    return vars[pick(len(vars))] + " == " + vars[pick(len(vars))]
+  }
+  return vars[pick(len(vars))] + " + " + rand_lit()
+}
+fn rand_str_val(vars) {
+  let choice = pick(8)
+  if (choice == 0) {
+    return "trim(" + vars[pick(len(vars))] + ")"
+  }
+  if (choice == 1) {
+    return "upper(" + vars[pick(len(vars))] + ")"
+  }
+  if (choice == 2) {
+    return "lower(" + vars[pick(len(vars))] + ")"
+  }
+  if (choice == 3) {
+    return "replace(" + vars[pick(len(vars))] + ", \"a\", \"-\")"
+  }
+  if (choice == 4) {
+    return "repeat(" + vars[pick(len(vars))] + ", 2)"
+  }
+  if (choice == 5) {
+    return "slice(" + vars[pick(len(vars))] + ", 0, 2)"
+  }
+  if (choice == 6) {
+    return vars[pick(len(vars))] + " + " + rand_lit()
+  }
+  return "join(split(" + vars[pick(len(vars))] + ", \"a\"), \"-\")"
+}
+fn rand_interp(vars) {
+  let v = vars[pick(len(vars))]
+  return "\"<" + "$" + "{" + v + "}>\"" 
+}
 fn gen() {
   let lines = []
   let used = 0
@@ -355,6 +434,24 @@ fn gen() {
     lines.push("let v" + str(used) + " = " + text_rows())
     text_row_ops(lines, "v" + str(used))
     used += 1
+  }
+  if (pick(2) == 0) {
+    let s0 = "strv0"
+    let s1 = "strv1"
+    lines.push("let " + s0 + " = \" Ab \"")
+    lines.push("let " + s1 + " = \"éa\"")
+    let vars = [s0, s1]
+    let count = 2 + pick(3)
+    for (let i = 0; i < count; i += 1) {
+      if (pick(3) == 0) {
+        lines.push("print(" + rand_interp(vars) + ")")
+      } else {
+        lines.push("print(" + rand_str_op(vars) + ")")
+      }
+    }
+    lines.push("print([" + rand_str_val(vars) + ", " + rand_str_val(vars) + "])")
+    lines.push("print({" + "k" + ": " + rand_str_val(vars) + "})")
+    lines.push("print(map([" + rand_str_val(vars) + "], fn(x) { return len(x) }))")
   }
   if (pick(2) == 0) {
     lines.push("let base = " + num())

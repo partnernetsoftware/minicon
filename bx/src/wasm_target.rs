@@ -9682,7 +9682,8 @@ impl<'a> InferState<'a> {
                                 })
                         }),
                     "str" | "type" | "arg" | "read_file" | "read" | "which" | "capture" | "cwd"
-                    | "env" | "join" | "slice" => Some(Ty::Str),
+                    | "env" | "join" | "slice" | "trim" | "upper" | "lower" | "replace"
+                    | "repeat" => Some(Ty::Str),
                     "float" | "sqrt" => Some(Ty::Float),
                     "exists" | "file_exists" | "has" => Some(Ty::Bool),
                     "split" | "keys" => Some(Ty::ArrStr),
