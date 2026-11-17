@@ -537,6 +537,16 @@ if (wasmRec.code == 0 && wasmRecRun.code == 0 && wasmRecRun.out.trim() == "30\n2
   failures.push("wasm records + in-module heap\n    build=" + wasmRec.code + " out=" + json(wasmRecRun.out) + " err=" + json(wasmRecRun.err))
 }
 let safeArtDir = replace(artDir, "\\", "/")
+write(artDir + "/wasm-eq.bxs", 'fn same() {\n  let a = {x: 1, y: "s"}\n  let b = {x: 1, y: "s"}\n  print(a == b)\n  print(a == {x: 2, y: "s"})\n  print(contains([a], b))\n  print(index_of([{a: 1}, {a: 2}], {a: 2}))\n  print(get(a, "y"))\n  print(has(a, "z"))\n  print([1, 2] == [1, 3])\n  print([[1], [2]] == [[1], [2]])\n}\nsame()\n')
+let wasmEq = exec([BX, "build", "--wasm", artDir + "/wasm-eq.bxs", "-o", artDir + "/wasm-eq.wasm"])
+let wasmEqRun = exec([BX, "run", artDir + "/wasm-eq.wasm"])
+let wasmEqVm = exec([BX, "run", artDir + "/wasm-eq.bxs"])
+if (wasmEq.code == 0 && wasmEqRun.out == wasmEqVm.out && wasmEqRun.out.trim() == "true\nfalse\ntrue\n1\ns\nfalse\nfalse\ntrue") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm structural equality and record lookups\n    wasm=" + json(wasmEqRun.out) + " vm=" + json(wasmEqVm.out) + " err=" + json(wasmEqRun.err))
+}
 write(artDir + "/wasm-exec.bxs", 'let r = sh("echo hi")\nprint(r.code)\nprint(r.ok)\nprint(r.timeout)\nprint(r.out.trim())\nprint(len(r.err))\nlet m = exec(["definitely-not-a-cmd-xyz"])\nprint(m.code)\n')
 let wasmExec = exec([BX, "build", "--wasm", artDir + "/wasm-exec.bxs", "-o", artDir + "/wasm-exec.wasm"])
 let wasmExecRun = exec([BX, "run", artDir + "/wasm-exec.wasm"])
@@ -952,6 +962,16 @@ if (wasmAssign.code == 0 && wasmAssignRun.out == wasmAssignVm.out && wasmAssignR
 } else {
   casesFail += 1
   failures.push("wasm interpolation and assignments\n    wasm=" + json(wasmAssignRun.out) + " vm=" + json(wasmAssignVm.out) + " err=" + json(wasmAssignRun.err))
+}
+write(artDir + "/wasm-eq.bxs", 'fn same() {\n  let a = {x: 1, y: "s"}\n  let b = {x: 1, y: "s"}\n  print(a == b)\n  print(a == {x: 2, y: "s"})\n  print(contains([a], b))\n  print(index_of([{a: 1}, {a: 2}], {a: 2}))\n  print(get(a, "y"))\n  print(has(a, "z"))\n  print([1, 2] == [1, 3])\n  print([[1], [2]] == [[1], [2]])\n}\nsame()\n')
+let wasmEq = exec([BX, "build", "--wasm", artDir + "/wasm-eq.bxs", "-o", artDir + "/wasm-eq.wasm"])
+let wasmEqRun = exec([BX, "run", artDir + "/wasm-eq.wasm"])
+let wasmEqVm = exec([BX, "run", artDir + "/wasm-eq.bxs"])
+if (wasmEq.code == 0 && wasmEqRun.out == wasmEqVm.out && wasmEqRun.out.trim() == "true\nfalse\ntrue\n1\ns\nfalse\nfalse\ntrue") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm structural equality and record lookups\n    wasm=" + json(wasmEqRun.out) + " vm=" + json(wasmEqVm.out) + " err=" + json(wasmEqRun.err))
 }
 write(artDir + "/wasm-exec.bxs", 'let r = sh("echo hi")\nprint(r.code)\nprint(r.ok)\nprint(r.timeout)\nprint(r.out.trim())\nprint(len(r.err))\nlet m = exec(["definitely-not-a-cmd-xyz"])\nprint(m.code)\n')
 let wasmExec = exec([BX, "build", "--wasm", artDir + "/wasm-exec.bxs", "-o", artDir + "/wasm-exec.wasm"])

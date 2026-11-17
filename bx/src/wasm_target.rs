@@ -515,7 +515,20 @@ impl Checker {
                 if op == &BinOp::Add && lt == Ty::Str && rt == Ty::Str {
                     return Ok(Ty::Str);
                 }
-                let comparable = (is_number(lt) && is_number(rt))
+                let structural = lt == rt
+                    && matches!(
+                        lt,
+                        Ty::Obj(_)
+                            | Ty::Arr
+                            | Ty::ArrF
+                            | Ty::ArrStr
+                            | Ty::ArrObj(_)
+                            | Ty::ArrArr
+                            | Ty::ArrStrArr
+                    )
+                    && matches!(op, BinOp::Eq | BinOp::Ne);
+                let comparable = structural
+                    || (is_number(lt) && is_number(rt))
                     || (lt == Ty::Str && rt == Ty::Str)
                     || (lt == Ty::Bool && rt == Ty::Bool);
                 if !comparable {
@@ -1032,6 +1045,9 @@ impl Checker {
                             Ty::Arr => Ty::Int,
                             Ty::ArrF => Ty::Float,
                             Ty::ArrStr => Ty::Str,
+                            Ty::ArrObj(shape) => Ty::Obj(shape),
+                            Ty::ArrArr => Ty::Arr,
+                            Ty::ArrStrArr => Ty::ArrStr,
                             _ => {
                                 return Err(
                                     "wasm target index_of() takes a string or array".to_string()
@@ -1263,12 +1279,40 @@ impl Checker {
                         return Ok(Ty::Bool);
                     }
                     if name == "get" && (args.len() == 2 || args.len() == 3) {
-                        if !matches!(self.infer(&args[0])?, Ty::Obj(_) | Ty::Map)
-                            || self.infer(&args[1])? != Ty::Str
-                        {
-                            return Err(
-                                "wasm target get() takes a record/map and a string key".to_string()
-                            );
+                        let base = self.infer(&args[0])?;
+                        if self.infer(&args[1])? != Ty::Str {
+                            return Err("wasm target get() takes a string key".to_string());
+                        }
+                        if let Ty::Obj(shape) = base {
+                            let Expr::Str(key) = &args[1] else {
+                                return Err(
+                                    "wasm target get() on records needs a literal string key"
+                                        .to_string(),
+                                );
+                            };
+                            let keys = self.shape_keys(shape)?;
+                            let Some(position) = keys.iter().position(|known| known == key) else {
+                                match args.get(2) {
+                                    Some(default) => return self.infer(default),
+                                    None => return Ok(Ty::Int),
+                                }
+                            };
+                            let kinds = self.shape_kinds(shape)?;
+                            let field_ty = kind_ty(kinds[position]);
+                            if let Some(default) = args.get(2) {
+                                let default_ty = self.infer(default)?;
+                                if default_ty != field_ty
+                                    && !(field_ty == Ty::Float && default_ty == Ty::Int)
+                                {
+                                    return Err(
+                                        "wasm target get() default has the wrong type".to_string()
+                                    );
+                                }
+                            }
+                            return Ok(field_ty);
+                        }
+                        if base != Ty::Map {
+                            return Err("wasm target get() takes a record/map".to_string());
                         }
                         if args.len() == 3 && self.infer(&args[2])? != Ty::Int {
                             return Err("wasm target get() default must be an int".to_string());
@@ -1427,6 +1471,31 @@ impl Checker {
                                     );
                                 }
                             }
+                            Ty::ArrObj(shape) => {
+                                if self.infer(&args[1])? != Ty::Obj(shape) {
+                                    return Err(
+                                        "wasm target contains() on record arrays takes a record"
+                                            .to_string(),
+                                    );
+                                }
+                            }
+                            Ty::ArrArr => {
+                                if self.infer(&args[1])? != Ty::Arr {
+                                    return Err(
+                                        "wasm target contains() on nested arrays takes an array"
+                                            .to_string(),
+                                    );
+                                }
+                            }
+                            Ty::ArrStrArr => {
+                                if self.infer(&args[1])? != Ty::ArrStr {
+                                    return Err(
+                                        "wasm target contains() on text rows takes a string array"
+                                            .to_string(),
+                                    );
+                                }
+                            }
+
                             other => {
                                 return Err(format!(
                                     "wasm target contains() supports int, string and float arrays, got {}",
@@ -4553,6 +4622,42 @@ impl<'a> Emitter<'a> {
                 Ty::ArrF => Ok(Ty::Float),
                 _ => Ok(Ty::Int),
             },
+            Expr::Array(items) => {
+                if items.is_empty() {
+                    return Ok(Ty::Arr);
+                }
+                let types: Vec<Ty> = items
+                    .iter()
+                    .map(|item| self.type_of(item))
+                    .collect::<Result<_, _>>()?;
+                if types.iter().all(|ty| *ty == Ty::ArrStr) {
+                    return Ok(Ty::ArrStrArr);
+                }
+                if types.contains(&Ty::Str) {
+                    return Ok(Ty::ArrStr);
+                }
+                if types.iter().all(|ty| *ty == Ty::Arr) {
+                    return Ok(Ty::ArrArr);
+                }
+                if let Ty::Obj(shape) = types[0] {
+                    if types.iter().all(|ty| *ty == Ty::Obj(shape)) {
+                        return Ok(Ty::ArrObj(shape));
+                    }
+                }
+                if types.contains(&Ty::Float) {
+                    return Ok(Ty::ArrF);
+                }
+                Ok(Ty::Arr)
+            }
+            Expr::Object(fields) => {
+                let mut keys: Vec<String> = Vec::new();
+                let mut kinds: Vec<u8> = Vec::new();
+                for (key, value) in fields {
+                    keys.push(key.clone());
+                    kinds.push(field_kind(self.type_of(value)?).unwrap_or(0));
+                }
+                Ok(Ty::Obj(self.checker.shape_id(&keys, &kinds)))
+            }
             Expr::Member(object, key, _) => {
                 let Ty::Obj(shape) = self.type_of(object)? else {
                     return Err("wasm target reads record fields only".to_string());
@@ -4712,10 +4817,302 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// Store `expr` into a fresh 16-byte cell in slot format and return a local
+    /// holding its address (used by structural equality and array search).
+    fn emit_value_cell(&mut self, expr: &Expr, ty: Ty) -> Result<u32, String> {
+        let cell = self.builder.add_local(ValType::I32);
+        self.emit_alloc_const(16);
+        self.builder.push(Instr::Local(0x21, cell));
+        match ty {
+            Ty::Int => {
+                self.builder.push(Instr::Local(0x20, cell));
+                self.emit_expr(expr)?;
+                self.builder.push(Instr::Mem(0x37, 3, 0));
+            }
+            Ty::Float => {
+                self.builder.push(Instr::Local(0x20, cell));
+                self.emit_f64(expr)?;
+                self.builder.push(Instr::Mem(0x39, 3, 0));
+            }
+            Ty::Bool => {
+                self.builder.push(Instr::Local(0x20, cell));
+                self.emit_expr(expr)?;
+                self.builder.push(Instr::Mem(0x36, 2, 0));
+            }
+            Ty::Str => {
+                self.emit_str(expr)?;
+                self.builder.push(Instr::Local(0x21, self.temp(LEN_A)));
+                self.builder.push(Instr::Local(0x21, self.temp(PTR_A)));
+                self.builder.push(Instr::Local(0x20, cell));
+                self.builder.push(Instr::Local(0x20, self.temp(PTR_A)));
+                self.builder.push(Instr::Mem(0x36, 2, 0));
+                self.builder.push(Instr::Local(0x20, cell));
+                self.builder.push(Instr::Local(0x20, self.temp(LEN_A)));
+                self.builder.push(Instr::Mem(0x36, 2, 4));
+            }
+            _ => {
+                self.builder.push(Instr::Local(0x20, cell));
+                self.emit_expr(expr)?;
+                self.builder.push(Instr::Mem(0x36, 2, 0));
+            }
+        }
+        Ok(cell)
+    }
+
+    /// Compare the values stored at two slot addresses, leaving an i32 bool.
+    fn emit_eq_at(&mut self, ty: Ty, a: u32, b: u32) -> Result<(), String> {
+        match ty {
+            Ty::Int => {
+                self.builder.push(Instr::Local(0x20, a));
+                self.builder.push(Instr::Mem(0x29, 3, 0));
+                self.builder.push(Instr::Local(0x20, b));
+                self.builder.push(Instr::Mem(0x29, 3, 0));
+                self.builder.push(Instr::Op(0x51));
+            }
+            Ty::Float => {
+                self.builder.push(Instr::Local(0x20, a));
+                self.builder.push(Instr::Mem(0x2b, 3, 0));
+                self.builder.push(Instr::Local(0x20, b));
+                self.builder.push(Instr::Mem(0x2b, 3, 0));
+                self.builder.push(Instr::Op(0x61));
+            }
+            Ty::Bool => {
+                self.builder.push(Instr::Local(0x20, a));
+                self.builder.push(Instr::Mem(0x28, 2, 0));
+                self.builder.push(Instr::Local(0x20, b));
+                self.builder.push(Instr::Mem(0x28, 2, 0));
+                self.builder.push(Instr::Op(0x46));
+            }
+            Ty::Str => {
+                for (slot, offset) in [(a, 0u32), (a, 4), (b, 0), (b, 4)] {
+                    self.builder.push(Instr::Local(0x20, slot));
+                    self.builder.push(Instr::Mem(0x28, 2, offset));
+                }
+                self.builder.push(Instr::Call(STR_COMPARE));
+                self.builder.push(Instr::Op(0x45));
+            }
+            Ty::Obj(shape) => {
+                let rec_a = self.builder.add_local(ValType::I32);
+                let rec_b = self.builder.add_local(ValType::I32);
+                self.builder.push(Instr::Local(0x20, a));
+                self.builder.push(Instr::Mem(0x28, 2, 0));
+                self.builder.push(Instr::Local(0x21, rec_a));
+                self.builder.push(Instr::Local(0x20, b));
+                self.builder.push(Instr::Mem(0x28, 2, 0));
+                self.builder.push(Instr::Local(0x21, rec_b));
+                let kinds = self.checker.shape_kinds(shape)?;
+                let acc = self.builder.add_local(ValType::I32);
+                self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+                self.builder.push(Instr::Local(0x21, acc));
+                for (index, kind) in kinds.iter().enumerate() {
+                    let field_ty = kind_ty(*kind);
+                    let fa = self.builder.add_local(ValType::I32);
+                    let fb = self.builder.add_local(ValType::I32);
+                    for (slot, rec) in [(fa, rec_a), (fb, rec_b)] {
+                        self.builder.push(Instr::Local(0x20, rec));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32((8 * index) as i32)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x21, slot));
+                    }
+                    self.emit_eq_at(field_ty, fa, fb)?;
+                    self.builder.push(Instr::Local(0x21, self.temp(DST)));
+                    self.builder.push(Instr::Local(0x20, acc));
+                    self.builder.push(Instr::Local(0x20, self.temp(DST)));
+                    self.builder.push(Instr::Op(0x71));
+                    self.builder.push(Instr::Local(0x21, acc));
+                }
+                self.builder.push(Instr::Local(0x20, acc));
+            }
+            Ty::Arr | Ty::ArrF | Ty::ArrStr | Ty::ArrObj(_) | Ty::ArrArr | Ty::ArrStrArr => {
+                let elem = element_ty(ty).ok_or_else(|| "not an array".to_string())?;
+                let head_a = self.builder.add_local(ValType::I32);
+                let head_b = self.builder.add_local(ValType::I32);
+                self.builder.push(Instr::Local(0x20, a));
+                self.builder.push(Instr::Mem(0x28, 2, 0));
+                self.builder.push(Instr::Local(0x21, head_a));
+                self.builder.push(Instr::Local(0x20, b));
+                self.builder.push(Instr::Mem(0x28, 2, 0));
+                self.builder.push(Instr::Local(0x21, head_b));
+                let same_len = self.builder.add_local(ValType::I32);
+                self.builder.push(Instr::Local(0x20, head_a));
+                self.builder.push(Instr::Mem(0x28, 2, 0));
+                self.builder.push(Instr::Local(0x20, head_b));
+                self.builder.push(Instr::Mem(0x28, 2, 0));
+                self.builder.push(Instr::Op(0x46));
+                self.builder.push(Instr::Local(0x21, same_len));
+                let index = self.builder.add_local(ValType::I32);
+                self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                self.builder.push(Instr::Local(0x21, index));
+                let acc = self.builder.add_local(ValType::I32);
+                self.builder.push(Instr::Local(0x20, same_len));
+                self.builder.push(Instr::Local(0x21, acc));
+                self.builder.push(Instr::Block {
+                    opcode: 0x02,
+                    end: 0,
+                    else_at: 0,
+                    start: 0,
+                });
+                self.labels.push(0x02);
+                self.builder.push(Instr::Block {
+                    opcode: 0x03,
+                    end: 0,
+                    else_at: 0,
+                    start: 0,
+                });
+                self.labels.push(0x03);
+                self.builder.push(Instr::Local(0x20, index));
+                self.builder.push(Instr::Local(0x20, head_a));
+                self.builder.push(Instr::Mem(0x28, 2, 0));
+                self.builder.push(Instr::Op(0x46));
+                self.builder.push(Instr::BrIf(1));
+                let ea = self.builder.add_local(ValType::I32);
+                let eb = self.builder.add_local(ValType::I32);
+                for (slot, head) in [(ea, head_a), (eb, head_b)] {
+                    self.builder.push(Instr::Local(0x20, head));
+                    self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                    self.builder.push(Instr::Op(0x6a));
+                    self.builder.push(Instr::Local(0x20, index));
+                    self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                    self.builder.push(Instr::Op(0x6c));
+                    self.builder.push(Instr::Op(0x6a));
+                    self.builder.push(Instr::Local(0x21, slot));
+                }
+                self.emit_eq_at(elem, ea, eb)?;
+                self.builder.push(Instr::Local(0x21, self.temp(DST)));
+                self.builder.push(Instr::Local(0x20, acc));
+                self.builder.push(Instr::Local(0x20, self.temp(DST)));
+                self.builder.push(Instr::Op(0x71));
+                self.builder.push(Instr::Local(0x21, acc));
+                self.builder.push(Instr::Local(0x20, index));
+                self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+                self.builder.push(Instr::Op(0x6a));
+                self.builder.push(Instr::Local(0x21, index));
+                self.builder.push(Instr::Br(0));
+                self.labels.pop();
+                self.builder.push(Instr::Op(0x0b));
+                self.labels.pop();
+                self.builder.push(Instr::Op(0x0b));
+                self.builder.push(Instr::Local(0x20, acc));
+            }
+            _ => return Err("wasm target cannot compare these values".to_string()),
+        }
+        Ok(())
+    }
+
+    /// Linear search of `value` in an array of `elem` kind. With `want_index`
+    /// the index (or -1) is pushed; otherwise a bool is pushed.
+    fn emit_array_search(
+        &mut self,
+        array: &Expr,
+        value: &Expr,
+        elem: Ty,
+        want_index: bool,
+    ) -> Result<(), String> {
+        let head = self.builder.add_local(ValType::I32);
+        self.emit_expr(array)?;
+        self.builder.push(Instr::Local(0x21, head));
+        let cell = self.emit_value_cell(value, elem)?;
+        let len = self.builder.add_local(ValType::I32);
+        self.builder.push(Instr::Local(0x20, head));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Local(0x21, len));
+        let index = self.builder.add_local(ValType::I32);
+        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+        self.builder.push(Instr::Local(0x21, index));
+        let result = self.builder.add_local(ValType::I64);
+        self.builder.push(Instr::Const(0x42, WVal::I64(-1)));
+        self.builder.push(Instr::Local(0x21, result));
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x02);
+        self.builder.push(Instr::Block {
+            opcode: 0x03,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x03);
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Local(0x20, len));
+        self.builder.push(Instr::Op(0x4f));
+        self.builder.push(Instr::BrIf(1));
+        let ea = self.builder.add_local(ValType::I32);
+        self.builder.push(Instr::Local(0x20, head));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, ea));
+        self.builder.push(Instr::Local(0x20, result));
+        self.builder.push(Instr::Const(0x42, WVal::I64(-1)));
+        self.builder.push(Instr::Op(0x51));
+        self.emit_eq_at(elem, ea, cell)?;
+        self.builder.push(Instr::Op(0x71));
+        self.builder.push(Instr::Block {
+            opcode: 0x04,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x04);
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Op(0xad));
+        self.builder.push(Instr::Local(0x21, result));
+        self.builder.push(Instr::Br(2));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, index));
+        self.builder.push(Instr::Br(0));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.builder.push(Instr::Local(0x20, result));
+        if !want_index {
+            self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+            self.builder.push(Instr::Op(0x59));
+        }
+        Ok(())
+    }
+
+    fn emit_value_eq(&mut self, left: &Expr, right: &Expr, ty: Ty) -> Result<(), String> {
+        let a = self.emit_value_cell(left, ty)?;
+        let b = self.emit_value_cell(right, ty)?;
+        self.emit_eq_at(ty, a, b)
+    }
     /// Emit a comparison, leaving an i32 bool on the stack.
     fn emit_cmp(&mut self, op: BinOp, left: &Expr, right: &Expr) -> Result<(), String> {
         let lt = self.type_of(left)?;
         let rt = self.type_of(right)?;
+        if lt == rt
+            && matches!(
+                lt,
+                Ty::Obj(_)
+                    | Ty::Arr
+                    | Ty::ArrF
+                    | Ty::ArrStr
+                    | Ty::ArrObj(_)
+                    | Ty::ArrArr
+                    | Ty::ArrStrArr
+            )
+            && matches!(op, BinOp::Eq | BinOp::Ne)
+        {
+            self.emit_value_eq(left, right, lt)?;
+            if op == BinOp::Ne {
+                self.builder.push(Instr::Op(0x45));
+            }
+            return Ok(());
+        }
         if lt == Ty::Bool && rt == Ty::Bool {
             self.emit_expr(left)?;
             self.emit_expr(right)?;
@@ -6209,6 +6606,18 @@ impl<'a> Emitter<'a> {
                                 self.emit_f64(&args[1])?;
                                 self.builder.push(Instr::Call(ARR_INDEX_OF_F));
                             }
+                            Ty::ArrObj(shape) => {
+                                self.emit_array_search(&args[0], &args[1], Ty::Obj(shape), false)?;
+                                return Ok(Ty::Bool);
+                            }
+                            Ty::ArrArr => {
+                                self.emit_array_search(&args[0], &args[1], Ty::Arr, false)?;
+                                return Ok(Ty::Bool);
+                            }
+                            Ty::ArrStrArr => {
+                                self.emit_array_search(&args[0], &args[1], Ty::ArrStr, false)?;
+                                return Ok(Ty::Bool);
+                            }
                             other => {
                                 return Err(format!(
                                     "wasm target contains() supports int, string and float arrays, got {}",
@@ -6350,6 +6759,18 @@ impl<'a> Emitter<'a> {
                                 self.emit_expr(&args[0])?;
                                 self.emit_str(&args[1])?;
                                 self.builder.push(Instr::Call(ARR_INDEX_OF_STR));
+                                return Ok(Ty::Int);
+                            }
+                            Ty::ArrObj(shape) => {
+                                self.emit_array_search(&args[0], &args[1], Ty::Obj(shape), true)?;
+                                return Ok(Ty::Int);
+                            }
+                            Ty::ArrArr => {
+                                self.emit_array_search(&args[0], &args[1], Ty::Arr, true)?;
+                                return Ok(Ty::Int);
+                            }
+                            Ty::ArrStrArr => {
+                                self.emit_array_search(&args[0], &args[1], Ty::ArrStr, true)?;
                                 return Ok(Ty::Int);
                             }
                             _ => {
@@ -7830,115 +8251,53 @@ impl<'a> Emitter<'a> {
                         let Ty::Obj(shape) = self.type_of(&args[0])? else {
                             return Err("wasm target get() takes a record".to_string());
                         };
-                        let (table, count) = self.record_table(shape)?;
-                        let record_tmp = self.builder.add_local(ValType::I32);
-                        let key_ptr = self.builder.add_local(ValType::I32);
-                        let key_len = self.builder.add_local(ValType::I32);
-                        let index_tmp = self.builder.add_local(ValType::I64);
-                        let block_tmp = self.builder.add_local(ValType::I32);
-                        let result_tmp = self.builder.add_local(ValType::I64);
-                        let found_tmp = self.builder.add_local(ValType::I32);
+                        let Expr::Str(key) = &args[1] else {
+                            return Err("wasm target get() on records needs a literal string key"
+                                .to_string());
+                        };
+                        let rec_tmp = self.builder.add_local(ValType::I32);
                         self.emit_expr(&args[0])?;
-                        self.builder.push(Instr::Local(0x21, record_tmp));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
-                        self.builder.push(Instr::Local(0x21, found_tmp));
-                        self.emit_str(&args[1])?;
-                        self.builder.push(Instr::Local(0x21, key_len));
-                        self.builder.push(Instr::Local(0x21, key_ptr));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
-                        self.builder.push(Instr::Local(0x21, index_tmp));
-                        self.builder.push(Instr::Block {
-                            opcode: 0x02,
-                            end: 0,
-                            else_at: 0,
-                            start: 0,
-                        });
-                        self.labels.push(0x02);
-                        self.builder.push(Instr::Block {
-                            opcode: 0x03,
-                            end: 0,
-                            else_at: 0,
-                            start: 0,
-                        });
-                        self.labels.push(0x03);
-                        self.builder.push(Instr::Local(0x20, index_tmp));
-                        self.builder.push(Instr::Op(0xa7));
-                        self.builder
-                            .push(Instr::Const(0x41, WVal::I32(count as i32)));
-                        self.builder.push(Instr::Op(0x48));
-                        self.builder.push(Instr::Op(0x45));
-                        self.builder.push(Instr::BrIf(1));
-                        self.builder
-                            .push(Instr::Const(0x41, WVal::I32(table as i32)));
-                        self.builder.push(Instr::Local(0x20, index_tmp));
-                        self.builder.push(Instr::Op(0xa7));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                        self.builder.push(Instr::Op(0x6c));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Mem(0x28, 2, 0));
-                        self.builder
-                            .push(Instr::Const(0x41, WVal::I32(table as i32)));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Local(0x21, block_tmp));
-                        self.builder.push(Instr::Local(0x20, block_tmp));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Local(0x20, block_tmp));
-                        self.builder.push(Instr::Mem(0x28, 2, 0));
-                        self.builder.push(Instr::Local(0x20, key_ptr));
-                        self.builder.push(Instr::Local(0x20, key_len));
-                        self.builder.push(Instr::Call(STR_COMPARE));
-                        self.builder.push(Instr::Op(0x45));
-                        self.builder.push(Instr::Block {
-                            opcode: 0x04,
-                            end: 0,
-                            else_at: 0,
-                            start: 0,
-                        });
-                        self.labels.push(0x04);
-                        // result = record field value
-                        self.builder.push(Instr::Local(0x20, record_tmp));
-                        self.builder.push(Instr::Local(0x20, index_tmp));
-                        self.builder.push(Instr::Op(0xa7));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
-                        self.builder.push(Instr::Op(0x6c));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Mem(0x29, 3, 0));
-                        self.builder.push(Instr::Local(0x21, result_tmp));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
-                        self.builder.push(Instr::Local(0x21, found_tmp));
-                        self.builder.push(Instr::Br(2));
-                        self.labels.pop();
-                        self.builder.push(Instr::Op(0x0b));
-                        self.builder.push(Instr::Local(0x20, index_tmp));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
-                        self.builder.push(Instr::Op(0x7c));
-                        self.builder.push(Instr::Local(0x21, index_tmp));
-                        self.builder.push(Instr::Br(0));
-                        self.labels.pop();
-                        self.builder.push(Instr::Op(0x0b));
-                        self.labels.pop();
-                        self.builder.push(Instr::Op(0x0b));
-                        // missing key: use the default or abort
-                        self.builder.push(Instr::Local(0x20, found_tmp));
-                        self.builder.push(Instr::Op(0x45));
-                        self.builder.push(Instr::Block {
-                            opcode: 0x04,
-                            end: 0,
-                            else_at: 0,
-                            start: 0,
-                        });
-                        self.labels.push(0x04);
-                        if args.len() == 3 {
-                            self.emit_expr(&args[2])?;
-                            self.builder.push(Instr::Local(0x21, result_tmp));
-                        } else {
-                            self.emit_panic("get() missing key with no default");
+                        self.builder.push(Instr::Local(0x21, rec_tmp));
+                        let keys = self.checker.shape_keys(shape)?;
+                        let Some(position) = keys.iter().position(|known| known == key) else {
+                            match args.get(2) {
+                                Some(default) => return self.emit_expr(default),
+                                None => {
+                                    self.emit_panic("get() missing key with no default");
+                                    return Ok(Ty::Int);
+                                }
+                            }
+                        };
+                        let kind = self.checker.shape_kinds(shape)?[position];
+                        let offset = (8 * position) as u32;
+                        match kind {
+                            1 => {
+                                self.builder.push(Instr::Local(0x20, rec_tmp));
+                                self.builder.push(Instr::Mem(0x28, 2, offset));
+                                self.builder.push(Instr::Local(0x21, self.temp(PTR_A)));
+                                self.builder.push(Instr::Local(0x20, rec_tmp));
+                                self.builder.push(Instr::Mem(0x28, 2, offset + 4));
+                                self.builder.push(Instr::Local(0x21, self.temp(LEN_A)));
+                                self.builder.push(Instr::Local(0x20, self.temp(PTR_A)));
+                                self.builder.push(Instr::Local(0x20, self.temp(LEN_A)));
+                                return Ok(Ty::Str);
+                            }
+                            2 => {
+                                self.builder.push(Instr::Local(0x20, rec_tmp));
+                                self.builder.push(Instr::Mem(0x2b, 3, offset));
+                                return Ok(Ty::Float);
+                            }
+                            3 => {
+                                self.builder.push(Instr::Local(0x20, rec_tmp));
+                                self.builder.push(Instr::Mem(0x28, 2, offset));
+                                return Ok(Ty::Bool);
+                            }
+                            _ => {
+                                self.builder.push(Instr::Local(0x20, rec_tmp));
+                                self.builder.push(Instr::Mem(0x29, 3, offset));
+                                return Ok(Ty::Int);
+                            }
                         }
-                        self.labels.pop();
-                        self.builder.push(Instr::Op(0x0b));
-                        self.builder.push(Instr::Local(0x20, result_tmp));
-                        return Ok(Ty::Int);
                     }
                     if name == "merge" && args.len() == 2 {
                         let Ty::Obj(union) = self.type_of(expr)? else {
@@ -11536,6 +11895,32 @@ mod tests {
                 "9.5".to_string(),
                 "array".to_string(),
                 "19.25".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn structural_equality_and_record_lookups_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let a = {x: 1, y: \"s\"}\nlet b = {x: 1, y: \"s\"}\nprint(a == b)\nprint(a == {x: 2, y: \"s\"})\nprint(a != b)\nprint(contains([a], b))\nprint(contains([a], {x: 2, y: \"s\"}))\nprint(index_of([{a: 1}, {a: 2}], {a: 2}))\nprint(get(a, \"y\"))\nprint(get(a, \"missing\", 7))\nprint(has(a, \"x\"))\nprint(has(a, \"z\"))\nprint([1, 2] == [1, 2])\nprint([1, 2] == [1, 3])\nprint([[1], [2, 3]] == [[1], [2, 3]])\nprint(index_of([[1]], [1]))\nprint(contains([[\"a\"]], [\"a\"]))",
+            &[],
+        );
+        assert_eq!(numbers, vec![1, 7, 0]);
+        assert_eq!(
+            strings,
+            vec![
+                "true".to_string(),
+                "false".to_string(),
+                "false".to_string(),
+                "true".to_string(),
+                "false".to_string(),
+                "s".to_string(),
+                "true".to_string(),
+                "false".to_string(),
+                "true".to_string(),
+                "false".to_string(),
+                "true".to_string(),
+                "true".to_string(),
             ]
         );
     }
