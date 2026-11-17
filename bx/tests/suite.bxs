@@ -537,6 +537,16 @@ if (wasmRec.code == 0 && wasmRecRun.code == 0 && wasmRecRun.out.trim() == "30\n2
   failures.push("wasm records + in-module heap\n    build=" + wasmRec.code + " out=" + json(wasmRecRun.out) + " err=" + json(wasmRecRun.err))
 }
 let safeArtDir = replace(artDir, "\\", "/")
+write(artDir + "/wasm-attempt-exec.bxs", 'let r = attempt(fn() { return exec("definitely-not-a-command-xyz").code })\nprint(r.ok)\nprint(len(r.error) > 0)\nlet q = attempt(fn() { return sh("definitely-not-a-command-xyz").code })\nprint(q.ok)\n')
+let wasmAttemptExec = exec([BX, "build", "--wasm", artDir + "/wasm-attempt-exec.bxs", "-o", artDir + "/wasm-attempt-exec.wasm"])
+let wasmAttemptExecRun = exec([BX, "run", artDir + "/wasm-attempt-exec.wasm"])
+let wasmAttemptExecVm = exec([BX, "run", artDir + "/wasm-attempt-exec.bxs"])
+if (wasmAttemptExec.code == 0 && wasmAttemptExecRun.out == wasmAttemptExecVm.out && wasmAttemptExecRun.out.trim() == "false\ntrue\ntrue") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm attempt() exec spawn failure\n    wasm=" + json(wasmAttemptExecRun.out) + " vm=" + json(wasmAttemptExecVm.out) + " err=" + json(wasmAttemptExecRun.err))
+}
 write(artDir + "/wasm-attempt.bxs", 'print(attempt(fn() { return 1 }).ok)\nprint(attempt(fn() { return 1 }).value)\nprint(attempt(fn() { return 1 / 0 }).ok)\nlet e = attempt(fn() { error("boom") })\nprint(e.ok)\nprint(len(e.error) > 0)\nprint(attempt(fn() { return "x" }).value)\nprint(attempt(fn() { return 1 < 2 }).value)\nlet looped = 0\nlet i = 0\nwhile (i < 3) {\n  let r = attempt(fn() { return 10 / (i - 1) })\n  if (r.ok) { looped += 1 }\n  i += 1\n}\nprint(looped)\n')
 let wasmAttempt = exec([BX, "build", "--wasm", artDir + "/wasm-attempt.bxs", "-o", artDir + "/wasm-attempt.wasm"])
 let wasmAttemptRun = exec([BX, "run", artDir + "/wasm-attempt.wasm"])
@@ -1012,6 +1022,16 @@ if (wasmAssign.code == 0 && wasmAssignRun.out == wasmAssignVm.out && wasmAssignR
 } else {
   casesFail += 1
   failures.push("wasm interpolation and assignments\n    wasm=" + json(wasmAssignRun.out) + " vm=" + json(wasmAssignVm.out) + " err=" + json(wasmAssignRun.err))
+}
+write(artDir + "/wasm-attempt-exec.bxs", 'let r = attempt(fn() { return exec("definitely-not-a-command-xyz").code })\nprint(r.ok)\nprint(len(r.error) > 0)\nlet q = attempt(fn() { return sh("definitely-not-a-command-xyz").code })\nprint(q.ok)\n')
+let wasmAttemptExec = exec([BX, "build", "--wasm", artDir + "/wasm-attempt-exec.bxs", "-o", artDir + "/wasm-attempt-exec.wasm"])
+let wasmAttemptExecRun = exec([BX, "run", artDir + "/wasm-attempt-exec.wasm"])
+let wasmAttemptExecVm = exec([BX, "run", artDir + "/wasm-attempt-exec.bxs"])
+if (wasmAttemptExec.code == 0 && wasmAttemptExecRun.out == wasmAttemptExecVm.out && wasmAttemptExecRun.out.trim() == "false\ntrue\ntrue") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm attempt() exec spawn failure\n    wasm=" + json(wasmAttemptExecRun.out) + " vm=" + json(wasmAttemptExecVm.out) + " err=" + json(wasmAttemptExecRun.err))
 }
 write(artDir + "/wasm-attempt.bxs", 'print(attempt(fn() { return 1 }).ok)\nprint(attempt(fn() { return 1 }).value)\nprint(attempt(fn() { return 1 / 0 }).ok)\nlet e = attempt(fn() { error("boom") })\nprint(e.ok)\nprint(len(e.error) > 0)\nprint(attempt(fn() { return "x" }).value)\nprint(attempt(fn() { return 1 < 2 }).value)\nlet looped = 0\nlet i = 0\nwhile (i < 3) {\n  let r = attempt(fn() { return 10 / (i - 1) })\n  if (r.ok) { looped += 1 }\n  i += 1\n}\nprint(looped)\n')
 let wasmAttempt = exec([BX, "build", "--wasm", artDir + "/wasm-attempt.bxs", "-o", artDir + "/wasm-attempt.wasm"])

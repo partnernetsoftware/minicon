@@ -2297,7 +2297,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 81;
+const IMPORT_COUNT: u32 = 82;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -2367,6 +2367,7 @@ const WHICH: u32 = 77;
 const PRINT_RECORD_TYPED: u32 = 78;
 const PRINT_ARR_OBJ_TYPED: u32 = 79;
 const EXEC_RECORD: u32 = 80;
+const EXEC_RECORD_SOFT: u32 = 81;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -4191,9 +4192,39 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Op(0xa7));
         self.builder.push(Instr::Local(0x20, shell_flag));
         self.builder.push(Instr::Const(0x41, WVal::I32(0)));
-        self.builder.push(Instr::Call(EXEC_RECORD));
+        let soft = !self.attempts.is_empty();
+        self.builder.push(Instr::Call(if soft {
+            EXEC_RECORD_SOFT
+        } else {
+            EXEC_RECORD
+        }));
         let block = self.builder.add_local(ValType::I32);
         self.builder.push(Instr::Local(0x21, block));
+        if soft {
+            // flags bit 1: the host could not start the command; report it as
+            // the attempt error instead of trapping.
+            self.builder.push(Instr::Local(0x20, block));
+            self.builder.push(Instr::Mem(0x28, 2, 24));
+            self.builder.push(Instr::Const(0x41, WVal::I32(2)));
+            self.builder.push(Instr::Op(0x71));
+            self.builder.push(Instr::Block {
+                opcode: 0x04,
+                end: 0,
+                else_at: 0,
+                start: 0,
+            });
+            self.labels.push(0x04);
+            self.builder.push(Instr::Local(0x20, block));
+            self.builder.push(Instr::Mem(0x28, 2, 12));
+            self.builder.push(Instr::Local(0x20, block));
+            self.builder.push(Instr::Mem(0x28, 2, 16));
+            if let Some(ctx) = self.attempts.last().copied() {
+                self.emit_attempt_error_pair(ctx.record);
+            }
+            self.emit_attempt_jump();
+            self.labels.pop();
+            self.builder.push(Instr::Op(0x0b));
+        }
         let _shape = self.checker.exec_result_shape();
         self.emit_alloc_const(48);
         let record = self.builder.add_local(ValType::I32);
@@ -11389,6 +11420,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "print_record_typed", print_record_typed_ty);
     builder.import_func("env", "print_arr_obj_typed", print_arr_obj_typed_ty);
     builder.import_func("bx", "exec_record", exec_record_ty);
+    builder.import_func("bx", "exec_record_soft", exec_record_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -12363,6 +12395,19 @@ mod tests {
                 "x".to_string(),
                 "true".to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn attempt_catches_exec_spawn_failures_and_matches_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let r = attempt(fn() { return exec(\"definitely-not-a-command-xyz\").code })\nprint(r.ok)\nprint(len(r.error) > 0)\nlet q = attempt(fn() { return sh(\"definitely-not-a-command-xyz\").code })\nprint(q.ok)",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec!["false".to_string(), "true".to_string(), "true".to_string()]
         );
     }
 

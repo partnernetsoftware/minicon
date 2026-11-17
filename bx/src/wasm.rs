@@ -672,6 +672,32 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> PrintHost<'a, F, G> {
     }
 }
 /// Run one command line through the platform shell, mirroring bx `sh`.
+/// Soft (`attempt`-visible) exec failure: return a result block whose `flags`
+/// bit 1 marks a spawn error, with the message in the `err` fields.
+fn exec_error_block(
+    memory: &mut [u8],
+    next_proc: &mut u32,
+    message: &str,
+) -> Result<Vec<WVal>, String> {
+    let bytes = message.as_bytes();
+    let size = 28 + bytes.len();
+    let start = *next_proc as usize;
+    if start + size > memory.len() {
+        return Err("exec error does not fit the result region".to_string());
+    }
+    let err_ptr = start + 28;
+    memory[start..start + 4].copy_from_slice(&127i32.to_le_bytes());
+    memory[start + 4..start + 8].copy_from_slice(&0u32.to_le_bytes());
+    memory[start + 8..start + 12].copy_from_slice(&0u32.to_le_bytes());
+    memory[start + 12..start + 16].copy_from_slice(&(err_ptr as u32).to_le_bytes());
+    memory[start + 16..start + 20].copy_from_slice(&(bytes.len() as u32).to_le_bytes());
+    memory[start + 20..start + 24].copy_from_slice(&0u32.to_le_bytes());
+    memory[start + 24..start + 28].copy_from_slice(&2u32.to_le_bytes());
+    memory[err_ptr..err_ptr + bytes.len()].copy_from_slice(bytes);
+    *next_proc = (start + size + 7) as u32 & !7;
+    Ok(vec![WVal::I32(start as i32)])
+}
+
 fn shell_command(line: &str) -> std::process::Command {
     #[cfg(windows)]
     {
@@ -2380,7 +2406,8 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 let millis = self.started.elapsed().as_secs_f64() * 1000.0;
                 Ok(vec![WVal::F64(millis)])
             }
-            ("bx", "exec_record") => {
+            ("bx", name @ ("exec_record" | "exec_record_soft")) => {
+                let soft = name == "exec_record_soft";
                 let read = |value: Option<&WVal>| match value {
                     Some(WVal::I32(v)) => Some(*v as usize),
                     _ => None,
@@ -2419,6 +2446,13 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                         }
                     }
                     let Some(program) = argv.first() else {
+                        if soft {
+                            return exec_error_block(
+                                memory,
+                                &mut self.next_proc,
+                                "exec() needs at least one argument",
+                            );
+                        }
                         return Err("exec() needs at least one argument".to_string());
                     };
                     let mut command = std::process::Command::new(program);
@@ -2431,6 +2465,13 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     } else {
                         let mut words = line.split_whitespace();
                         let Some(program) = words.next() else {
+                            if soft {
+                                return exec_error_block(
+                                    memory,
+                                    &mut self.next_proc,
+                                    "exec() needs a command",
+                                );
+                            }
                             return Err("exec() needs a command".to_string());
                         };
                         let mut command = std::process::Command::new(program);
@@ -2455,7 +2496,11 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                             Some(name) => name.to_string(),
                             None => String::new(),
                         };
-                        return Err(format!("cannot run '{}': program not found", program));
+                        let message = format!("cannot run '{}': program not found", program);
+                        if soft {
+                            return exec_error_block(memory, &mut self.next_proc, &message);
+                        }
+                        return Err(message);
                     }
                 };
                 if wants_stdin {
