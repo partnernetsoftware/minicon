@@ -156,7 +156,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 90 in-tree unit tests (plus the self-hosted differential tool) cover the encoder and the core host; the interpreter tests retired with the engine
+- 91 in-tree unit tests (plus the self-hosted differential tool) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -180,6 +180,12 @@ bx wasm target
 - **Record/array writes**: `r.a = v`, `r.a += v`, `xs[i] = v`, `xs[-1] = v` and
   `xs[i] += v` are supported with the same negative-index normalisation and
   bounds checks as reads (`+ - * %` for compound).
+- **Nested rows and generic `reduce`**: arrays of int arrays participate in
+  `map`/`filter`/`each`/comparator `sort`/`reverse`/`slice` (a row is a value
+  slot, so `map(rows, fn(r) { return sum(r) })` returns an int array and a
+  callback returning an array yields another row array). `reduce` now takes any
+  array kind with a number/string accumulator: `(acc, elem) -> acc`, seed or
+  first-element start, and the empty-with-seed case returns the seed.
 - **Record-array collections**: `map` over record arrays returns int, float,
   string or record arrays (the callback result picks the element kind),
   `filter` keeps the record shape, `each` iterates records, comparator `sort`

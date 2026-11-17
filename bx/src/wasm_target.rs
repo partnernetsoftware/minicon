@@ -901,7 +901,9 @@ impl Checker {
                         }
                         return match base {
                             Ty::Str => Ok(Ty::Str),
-                            Ty::Arr | Ty::ArrF | Ty::ArrStr | Ty::ArrObj(_) => Ok(base),
+                            Ty::Arr | Ty::ArrF | Ty::ArrStr | Ty::ArrObj(_) | Ty::ArrArr => {
+                                Ok(base)
+                            }
                             other => Err(format!("wasm target cannot slice {}", ty_name(other))),
                         };
                     }
@@ -923,7 +925,7 @@ impl Checker {
                     if matches!(name.as_str(), "reverse" | "sort") && args.len() == 1 {
                         let input = self.infer(&args[0])?;
                         let supported = matches!(input, Ty::Arr | Ty::ArrF | Ty::ArrStr)
-                            || (name == "reverse" && matches!(input, Ty::ArrObj(_)));
+                            || (name == "reverse" && matches!(input, Ty::ArrObj(_) | Ty::ArrArr));
                         if !supported {
                             return Err(format!(
                                 "wasm target {}() takes a numeric or string array, got {}",
@@ -940,6 +942,7 @@ impl Checker {
                             Ty::ArrF => Ty::Float,
                             Ty::ArrStr => Ty::Str,
                             Ty::ArrObj(shape) => Ty::Obj(shape),
+                            Ty::ArrArr => Ty::Arr,
                             other => {
                                 return Err(format!(
                                     "wasm target {}() takes an array, got {}",
@@ -972,8 +975,9 @@ impl Checker {
                                 Some(Ty::Float) => Ok(Ty::ArrF),
                                 Some(Ty::Str) => Ok(Ty::ArrStr),
                                 Some(Ty::Obj(shape)) => Ok(Ty::ArrObj(shape)),
+                                Some(Ty::Arr) => Ok(Ty::ArrArr),
                                 _ => Err(
-                                    "wasm target map() callbacks return numbers, strings or records"
+                                    "wasm target map() callbacks return numbers, strings, records or arrays"
                                         .to_string(),
                                 ),
                             },
@@ -989,9 +993,19 @@ impl Checker {
                         };
                     }
                     if name == "reduce" && (args.len() == 2 || args.len() == 3) {
-                        if self.infer(&args[0])? != Ty::Arr {
-                            return Err("wasm target reduce() takes an int array".to_string());
-                        }
+                        let elem = match self.infer(&args[0])? {
+                            Ty::Arr => Ty::Int,
+                            Ty::ArrF => Ty::Float,
+                            Ty::ArrStr => Ty::Str,
+                            Ty::ArrObj(shape) => Ty::Obj(shape),
+                            Ty::ArrArr => Ty::Arr,
+                            other => {
+                                return Err(format!(
+                                    "wasm target reduce() takes an array, got {}",
+                                    ty_name(other)
+                                ))
+                            }
+                        };
                         let Ty::Func(id) = self.infer(&args[1])? else {
                             return Err("wasm target reduce() needs a function literal callback"
                                 .to_string());
@@ -1001,18 +1015,26 @@ impl Checker {
                             .get(id as usize)
                             .ok_or_else(|| "wasm target lost a function literal".to_string())?
                             .clone();
-                        if sig.params != vec![Ty::Int, Ty::Int] || sig.result != Some(Ty::Int) {
+                        let acc = if args.len() == 3 {
+                            self.infer(&args[2])?
+                        } else {
+                            elem
+                        };
+                        if !matches!(acc, Ty::Int | Ty::Float | Ty::Str) {
                             return Err(
-                                "wasm target reduce() callbacks take (int, int) and return int"
+                                "wasm target reduce() accumulator must be a number or string"
                                     .to_string(),
                             );
                         }
-                        if args.len() == 3 && self.infer(&args[2])? != Ty::Int {
-                            return Err(
-                                "wasm target reduce() initial value must be an int".to_string()
-                            );
+                        if sig.params != vec![acc, elem] || sig.result != Some(acc) {
+                            return Err(format!(
+                                "wasm target reduce() callbacks take ({}, {}) and return {}",
+                                ty_name(acc),
+                                ty_name(elem),
+                                ty_name(acc)
+                            ));
                         }
-                        return Ok(Ty::Int);
+                        return Ok(acc);
                     }
                     if name == "keys" && args.len() == 1 {
                         if matches!(self.infer(&args[0])?, Ty::Obj(_) | Ty::Map) {
@@ -1064,6 +1086,7 @@ impl Checker {
                             Ty::ArrF => Ty::Float,
                             Ty::ArrStr => Ty::Str,
                             Ty::ArrObj(shape) => Ty::Obj(shape),
+                            Ty::ArrArr => Ty::Arr,
                             _ => {
                                 return Err(
                                     "wasm target comparator sort() takes a numeric, string or record array"
@@ -1378,6 +1401,7 @@ impl Checker {
                             Ty::ArrF => Ty::Float,
                             Ty::ArrStr => Ty::Str,
                             Ty::ArrObj(shape) => Ty::Obj(shape),
+                            Ty::ArrArr => Ty::Arr,
                             other => {
                                 return Err(format!(
                                     "wasm target each() takes an array, got {}",
@@ -4119,7 +4143,7 @@ impl<'a> Emitter<'a> {
         match kind {
             Ty::Int => emitter.builder.push(Instr::Mem(0x29, 3, 0)),
             Ty::Float => emitter.builder.push(Instr::Mem(0x2b, 3, 0)),
-            Ty::Obj(_) => emitter.builder.push(Instr::Mem(0x28, 2, 0)),
+            Ty::Obj(_) | Ty::Arr => emitter.builder.push(Instr::Mem(0x28, 2, 0)),
             Ty::Str => {
                 emitter.builder.push(Instr::Mem(0x28, 2, 0));
                 emitter.builder.push(Instr::Local(0x20, arr));
@@ -4136,6 +4160,31 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// Push a reduce/sort accumulator of `kind` from its local slots.
+    fn emit_push_acc(&mut self, kind: Ty, i64: u32, f64: u32, ptr: u32, len: u32) {
+        match kind {
+            Ty::Int => self.builder.push(Instr::Local(0x20, i64)),
+            Ty::Float => self.builder.push(Instr::Local(0x20, f64)),
+            Ty::Str => {
+                self.builder.push(Instr::Local(0x20, ptr));
+                self.builder.push(Instr::Local(0x20, len));
+            }
+            _ => {}
+        }
+    }
+
+    /// Pop the stack into a reduce/sort accumulator of `kind`.
+    fn emit_store_acc(&mut self, kind: Ty, i64: u32, f64: u32, ptr: u32, len: u32) {
+        match kind {
+            Ty::Int => self.builder.push(Instr::Local(0x21, i64)),
+            Ty::Float => self.builder.push(Instr::Local(0x21, f64)),
+            Ty::Str => {
+                self.builder.push(Instr::Local(0x21, len));
+                self.builder.push(Instr::Local(0x21, ptr));
+            }
+            _ => {}
+        }
+    }
     /// Store the value already on the operand stack into `addr` as `kind`.
     #[allow(clippy::too_many_arguments)]
     fn emit_store_slot(
@@ -4162,7 +4211,7 @@ impl<'a> Emitter<'a> {
                 b.push(Instr::Local(0x20, val_f64));
                 b.push(Instr::Mem(0x39, 3, 0));
             }
-            Ty::Obj(_) => {
+            Ty::Obj(_) | Ty::Arr => {
                 b.push(Instr::Local(0x21, val_i32));
                 b.push(Instr::Local(0x20, addr));
                 b.push(Instr::Local(0x20, val_i32));
@@ -4190,6 +4239,7 @@ impl<'a> Emitter<'a> {
             Ty::Float => Ty::ArrF,
             Ty::Str => Ty::ArrStr,
             Ty::Obj(shape) => Ty::ArrObj(shape),
+            Ty::Arr => Ty::ArrArr,
             other => other,
         }
     }
@@ -5301,7 +5351,7 @@ impl<'a> Emitter<'a> {
                                 self.push_block_as_pair();
                                 return Ok(Ty::Str);
                             }
-                            Ty::Arr | Ty::ArrF | Ty::ArrStr | Ty::ArrObj(_) => {
+                            Ty::Arr | Ty::ArrF | Ty::ArrStr | Ty::ArrObj(_) | Ty::ArrArr => {
                                 let ptr_tmp = self.builder.add_local(ValType::I32);
                                 let len_tmp = self.builder.add_local(ValType::I32);
                                 self.emit_expr(&args[0])?;
@@ -5359,7 +5409,10 @@ impl<'a> Emitter<'a> {
                     }
                     if name == "sort"
                         && args.len() == 2
-                        && matches!(self.type_of(&args[0])?, Ty::ArrF | Ty::ArrObj(_))
+                        && matches!(
+                            self.type_of(&args[0])?,
+                            Ty::ArrF | Ty::ArrObj(_) | Ty::ArrArr
+                        )
                     {
                         let input_ty = self.type_of(&args[0])?;
                         let conv = if input_ty == Ty::ArrF {
@@ -5831,9 +5884,10 @@ impl<'a> Emitter<'a> {
                     if matches!(name.as_str(), "reverse" | "sort") && args.len() == 1 {
                         let ty = self.type_of(&args[0])?;
                         let import = match (name.as_str(), ty) {
-                            ("reverse", Ty::Arr | Ty::ArrF | Ty::ArrStr | Ty::ArrObj(_)) => {
-                                ARR_REVERSE
-                            }
+                            (
+                                "reverse",
+                                Ty::Arr | Ty::ArrF | Ty::ArrStr | Ty::ArrObj(_) | Ty::ArrArr,
+                            ) => ARR_REVERSE,
                             ("sort", Ty::Arr) => ARR_SORT,
                             ("sort", Ty::ArrF) => ARR_SORT_F,
                             ("sort", Ty::ArrStr) => ARR_SORT_STR,
@@ -5856,6 +5910,7 @@ impl<'a> Emitter<'a> {
                             Ty::ArrF => Ty::Float,
                             Ty::ArrStr => Ty::Str,
                             Ty::ArrObj(shape) => Ty::Obj(shape),
+                            Ty::ArrArr => Ty::Arr,
                             other => {
                                 return Err(format!(
                                     "wasm target {}() takes an array, got {}",
@@ -5886,7 +5941,10 @@ impl<'a> Emitter<'a> {
                         } else {
                             elem
                         };
-                        if !matches!(result_elem, Ty::Int | Ty::Float | Ty::Str | Ty::Obj(_)) {
+                        if !matches!(
+                            result_elem,
+                            Ty::Int | Ty::Float | Ty::Str | Ty::Obj(_) | Ty::Arr
+                        ) {
                             return Err(
                                 "wasm target map() callbacks return numbers, strings or records"
                                     .to_string(),
@@ -6023,6 +6081,31 @@ impl<'a> Emitter<'a> {
                         return Ok(output_ty);
                     }
                     if name == "reduce" && (args.len() == 2 || args.len() == 3) {
+                        let input_ty = self.type_of(&args[0])?;
+                        let elem = match input_ty {
+                            Ty::Arr => Ty::Int,
+                            Ty::ArrF => Ty::Float,
+                            Ty::ArrStr => Ty::Str,
+                            Ty::ArrObj(shape) => Ty::Obj(shape),
+                            Ty::ArrArr => Ty::Arr,
+                            other => {
+                                return Err(format!(
+                                    "wasm target reduce() takes an array, got {}",
+                                    ty_name(other)
+                                ))
+                            }
+                        };
+                        let acc_ty = if args.len() == 3 {
+                            self.type_of(&args[2])?
+                        } else {
+                            elem
+                        };
+                        if !matches!(acc_ty, Ty::Int | Ty::Float | Ty::Str) {
+                            return Err(
+                                "wasm target reduce() accumulator must be a number or string"
+                                    .to_string(),
+                            );
+                        }
                         let Ty::Func(id) = self.type_of(&args[1])? else {
                             return Err("wasm target reduce() needs a function literal callback"
                                 .to_string());
@@ -6034,19 +6117,21 @@ impl<'a> Emitter<'a> {
                             .cloned()
                             .ok_or_else(|| "wasm target lost a function literal".to_string())?;
                         let cb_env = self.builder.add_local(ValType::I32);
-                        self.emit_expr(&args[1])?;
-                        self.builder.push(Instr::Local(0x21, cb_env));
                         let arr_tmp = self.builder.add_local(ValType::I32);
                         let idx_tmp = self.builder.add_local(ValType::I64);
-                        let acc_tmp = self.builder.add_local(ValType::I64);
+                        let acc_i64 = self.builder.add_local(ValType::I64);
+                        let acc_f64 = self.builder.add_local(ValType::F64);
+                        let acc_ptr = self.builder.add_local(ValType::I32);
+                        let acc_len = self.builder.add_local(ValType::I32);
+                        self.emit_expr(&args[1])?;
+                        self.builder.push(Instr::Local(0x21, cb_env));
                         self.emit_expr(&args[0])?;
                         self.builder.push(Instr::Local(0x21, arr_tmp));
                         if args.len() == 3 {
                             self.emit_expr(&args[2])?;
-                            self.builder.push(Instr::Local(0x21, acc_tmp));
+                            Self::emit_store_acc(self, acc_ty, acc_i64, acc_f64, acc_ptr, acc_len);
                             self.builder.push(Instr::Const(0x42, WVal::I64(0)));
                         } else {
-                            // empty array + no seed: match the VM's error path
                             self.builder.push(Instr::Local(0x20, arr_tmp));
                             self.builder.push(Instr::Mem(0x28, 2, 0));
                             self.builder.push(Instr::Op(0x45));
@@ -6060,11 +6145,9 @@ impl<'a> Emitter<'a> {
                             self.emit_panic("reduce of empty array with no initial value");
                             self.labels.pop();
                             self.builder.push(Instr::Op(0x0b));
-                            self.builder.push(Instr::Local(0x20, arr_tmp));
-                            self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                            self.builder.push(Instr::Op(0x6a));
-                            self.builder.push(Instr::Mem(0x29, 3, 0));
-                            self.builder.push(Instr::Local(0x21, acc_tmp));
+                            let zero_idx = self.builder.add_local(ValType::I64);
+                            Self::emit_load_slot(self, arr_tmp, zero_idx, elem);
+                            Self::emit_store_acc(self, acc_ty, acc_i64, acc_f64, acc_ptr, acc_len);
                             self.builder.push(Instr::Const(0x42, WVal::I64(1)));
                         }
                         self.builder.push(Instr::Local(0x21, idx_tmp));
@@ -6090,18 +6173,10 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Op(0x45));
                         self.builder.push(Instr::BrIf(1));
                         self.builder.push(Instr::Local(0x20, cb_env));
-                        self.builder.push(Instr::Local(0x20, acc_tmp));
-                        self.builder.push(Instr::Local(0x20, arr_tmp));
-                        self.builder.push(Instr::Local(0x20, idx_tmp));
-                        self.builder.push(Instr::Op(0xa7));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
-                        self.builder.push(Instr::Op(0x6c));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Mem(0x29, 3, 0));
+                        Self::emit_push_acc(self, acc_ty, acc_i64, acc_f64, acc_ptr, acc_len);
+                        Self::emit_load_slot(self, arr_tmp, idx_tmp, elem);
                         self.builder.push(Instr::Call(sig.index));
-                        self.builder.push(Instr::Local(0x21, acc_tmp));
+                        Self::emit_store_acc(self, acc_ty, acc_i64, acc_f64, acc_ptr, acc_len);
                         self.builder.push(Instr::Local(0x20, idx_tmp));
                         self.builder.push(Instr::Const(0x42, WVal::I64(1)));
                         self.builder.push(Instr::Op(0x7c));
@@ -6111,8 +6186,8 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Op(0x0b));
                         self.labels.pop();
                         self.builder.push(Instr::Op(0x0b));
-                        self.builder.push(Instr::Local(0x20, acc_tmp));
-                        return Ok(Ty::Int);
+                        Self::emit_push_acc(self, acc_ty, acc_i64, acc_f64, acc_ptr, acc_len);
+                        return Ok(acc_ty);
                     }
                     if name == "keys" && args.len() == 1 && self.type_of(&args[0])? == Ty::Map {
                         let map_tmp = self.builder.add_local(ValType::I32);
@@ -7071,8 +7146,8 @@ impl<'a> Emitter<'a> {
                         return Ok(());
                     }
                     "reverse" | "sort" | "slice" | "join" | "sum" | "min" | "max" | "index_of"
-                    | "range" | "keys" | "values" | "split" | "trim" | "upper" | "lower"
-                    | "replace" | "repeat" | "str" | "int" => {
+                    | "map" | "filter" | "reduce" | "range" | "keys" | "values" | "split"
+                    | "trim" | "upper" | "lower" | "replace" | "repeat" | "str" | "int" => {
                         let ty = self.emit_expr(expr)?;
                         match ty {
                             Ty::Str => {
@@ -7136,6 +7211,7 @@ impl<'a> Emitter<'a> {
                             Ty::ArrF => Ty::Float,
                             Ty::ArrStr => Ty::Str,
                             Ty::ArrObj(shape) => Ty::Obj(shape),
+                            Ty::ArrArr => Ty::Arr,
                             other => {
                                 return Err(format!(
                                     "wasm target each() takes an array, got {}",
@@ -7746,8 +7822,20 @@ impl<'a> InferState<'a> {
                 }
                 match name.as_str() {
                     "len" | "argc" | "write_file" | "run" | "gl_pixel" | "gl_png" | "int"
-                    | "abs" | "floor" | "ceil" | "round" | "sum" | "reduce" | "get" | "now"
-                    | "sleep" | "mkdir" => Some(Ty::Int),
+                    | "abs" | "floor" | "ceil" | "round" | "sum" | "get" | "now" | "sleep"
+                    | "mkdir" => Some(Ty::Int),
+                    "reduce" => args
+                        .get(2)
+                        .and_then(|init| self.soft(init, locals))
+                        .or_else(|| {
+                            args.first()
+                                .and_then(|arg| self.soft(arg, locals))
+                                .map(|ty| match ty {
+                                    Ty::ArrF => Ty::Float,
+                                    Ty::ArrStr => Ty::Str,
+                                    _ => Ty::Int,
+                                })
+                        }),
                     "str" | "type" | "arg" | "read_file" | "capture" | "cwd" | "env" | "join"
                     | "slice" => Some(Ty::Str),
                     "float" | "sqrt" => Some(Ty::Float),
@@ -7766,6 +7854,9 @@ impl<'a> InferState<'a> {
                                 .flatten()
                             {
                                 Some(Ty::Str) => Some(Ty::ArrStr),
+                                Some(Ty::Float) => Some(Ty::ArrF),
+                                Some(Ty::Obj(shape)) => Some(Ty::ArrObj(shape)),
+                                Some(Ty::Arr) => Some(Ty::ArrArr),
                                 _ => Some(Ty::Arr),
                             }
                         } else {
@@ -7952,6 +8043,7 @@ impl<'a> InferState<'a> {
                                 Some(Ty::ArrStr) => Ty::Str,
                                 Some(Ty::ArrF) => Ty::Float,
                                 Some(Ty::ArrObj(shape)) => Ty::Obj(shape),
+                                Some(Ty::ArrArr) => Ty::Arr,
                                 _ => Ty::Int,
                             };
                             changed |= self.unify_param(index, 0, elem)?;
@@ -7972,18 +8064,18 @@ impl<'a> InferState<'a> {
                                 Some(Ty::ArrStr) => Ty::Str,
                                 Some(Ty::ArrF) => Ty::Float,
                                 Some(Ty::ArrObj(shape)) => Ty::Obj(shape),
+                                Some(Ty::ArrArr) => Ty::Arr,
                                 _ => Ty::Int,
                             };
                             match name.as_str() {
                                 "reduce" => {
-                                    changed |= self.unify_param(index, 0, elem)?;
+                                    let acc = match args.get(2) {
+                                        Some(init) => self.soft(init, locals).unwrap_or(elem),
+                                        None => elem,
+                                    };
+                                    changed |= self.unify_param(index, 0, acc)?;
                                     changed |= self.unify_param(index, 1, elem)?;
-                                    changed |= self.unify_result(index, elem)?;
-                                    if let Some(init) = args.get(2) {
-                                        if let Some(init_ty) = self.soft(init, locals) {
-                                            changed |= self.unify_param(index, 0, init_ty)?;
-                                        }
-                                    }
+                                    changed |= self.unify_result(index, acc)?;
                                 }
                                 "filter" => {
                                     changed |= self.unify_param(index, 0, elem)?;
@@ -8314,7 +8406,15 @@ impl<'a> CaptureWalker<'a> {
                 "int" => Ty::Int,
                 "float" => Ty::Float,
                 "len" | "argc" | "write_file" | "run" | "now" | "sleep" | "mkdir" | "get"
-                | "sum" | "reduce" => Ty::Int,
+                | "sum" => Ty::Int,
+                "reduce" => args
+                    .get(2)
+                    .map(|init| self.ty_of(init))
+                    .unwrap_or_else(|| match args.first().map(|arg| self.ty_of(arg)) {
+                        Some(Ty::ArrF) => Ty::Float,
+                        Some(Ty::ArrStr) => Ty::Str,
+                        _ => Ty::Int,
+                    }),
                 "abs" | "floor" | "ceil" | "round" => Ty::Int,
                 "sqrt" => Ty::Float,
                 "type" | "arg" | "read_file" | "capture" | "cwd" | "env" | "join" => Ty::Str,
@@ -10071,6 +10171,27 @@ mod tests {
                 "9.5".to_string(),
                 "array".to_string(),
                 "19.25".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn array_of_arrays_and_reduce_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let rows = [[1, 2], [3], []]\nprint(map(rows, fn(r) { return sum(r) }))\nprint(filter(rows, fn(r) { return len(r) > 0 }))\neach(rows, fn(r) { print(len(r)) })\nprint(reduce(rows, fn(acc, r) { return acc + len(r) }, 0))\nprint(reduce([1.5, 2.5], fn(a, x) { return a + x }, 0.0))\nprint(reduce([\"a\", \"b\"], fn(a, x) { return a + x }, \"\"))\nprint(reduce([\"a\", \"b\"], fn(a, x) { return a + x }))\nprint(reduce([{a: 1}, {a: 2}], fn(acc, r) { return acc + r.a }, 0))\nprint(sort(rows, fn(a, b) { return len(a) - len(b) }))\nprint(reverse(rows))",
+            &[],
+        );
+        assert_eq!(numbers, vec![2, 1, 0, 3, 3]);
+        assert_eq!(
+            strings,
+            vec![
+                "[3,3,0]".to_string(),
+                "[[1,2],[3]]".to_string(),
+                "4".to_string(),
+                "ab".to_string(),
+                "ab".to_string(),
+                "[[],[3],[1,2]]".to_string(),
+                "[[1,2],[3],[]]".to_string(),
             ]
         );
     }

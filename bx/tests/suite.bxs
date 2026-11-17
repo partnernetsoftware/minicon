@@ -989,6 +989,16 @@ if (wasmSortCmp.code == 0 && wasmSortCmpRun.out == wasmSortCmpVm.out && wasmSort
   casesFail += 1
   failures.push("wasm sort comparator\n    wasm=" + json(wasmSortCmpRun.out) + " vm=" + json(wasmSortCmpVm.out) + " err=" + json(wasmSortCmpRun.err))
 }
+write(artDir + "/wasm-rows.bxs", 'let rows = [[1, 2], [3], []]\nprint(map(rows, fn(r) { return sum(r) }))\nprint(filter(rows, fn(r) { return len(r) > 0 }))\neach(rows, fn(r) { print(len(r)) })\nprint(reduce(rows, fn(acc, r) { return acc + len(r) }, 0))\nprint(reduce([1.5, 2.5], fn(a, x) { return a + x }, 0.0))\nprint(reduce(["a", "b"], fn(a, x) { return a + x }))\n')
+let wasmRows = exec([BX, "build", "--wasm", artDir + "/wasm-rows.bxs", "-o", artDir + "/wasm-rows.wasm"])
+let wasmRowsRun = exec([BX, "run", artDir + "/wasm-rows.wasm"])
+let wasmRowsVm = exec([BX, "run", artDir + "/wasm-rows.bxs"])
+if (wasmRows.code == 0 && wasmRowsRun.out == wasmRowsVm.out && wasmRowsRun.out.trim() == "[3,3,0]\n[[1,2],[3]]\n2\n1\n0\n3\n4\nab") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm array-of-arrays and reduce\n    wasm=" + json(wasmRowsRun.out) + " vm=" + json(wasmRowsVm.out) + " err=" + json(wasmRowsRun.err))
+}
 write(artDir + "/wasm-recarr.bxs", 'let xs = [{a: 2}, {a: 1}]\nprint(map(xs, fn(r) { return r.a * 10 }))\nprint(map(xs, fn(r) { return {b: r.a + 1} }))\nprint(filter(xs, fn(r) { return r.a > 1 }))\neach(xs, fn(r) { print(r.a) })\nprint(sort(xs, fn(x, y) { return x.a - y.a }))\nprint(reverse([{a: 1}, {a: 2}]))\nprint(slice([{a: 1}, {a: 2}, {a: 3}], 1, 2))\n')
 let wasmRecArr = exec([BX, "build", "--wasm", artDir + "/wasm-recarr.bxs", "-o", artDir + "/wasm-recarr.wasm"])
 let wasmRecArrRun = exec([BX, "run", artDir + "/wasm-recarr.wasm"])
