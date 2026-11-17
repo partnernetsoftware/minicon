@@ -228,7 +228,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 123 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 124 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -323,6 +323,13 @@ bx wasm target
 - **stderr**: `eprint(text)` writes `text` plus a newline to the process stderr
   through a third host sink (`env.eprint`); `print(eprint(...))` yields `0` where
   the VM yields `null`. The browser/node demo glue routes it to `console.error`.
+- **File helpers**: `append(path, text)` opens the file in append mode (returns
+  `0`, the VM returns `null`), `remove(path)` deletes a file, and
+  `list(dir)` returns the sorted entry names as a string array, all matching the
+  VM apart from the null-vs-0 return of `append`. They use
+  `env.append_file`/`env.remove_file`/`env.dir_count`/`env.dir_entry` (the
+  entry imports re-read the directory per index; fine for the small
+  directories scripts list).
 - **Path helpers**: `basename(path)` and `dirname(path)` follow the VM's rules
   (both `/` and `\` separate, trailing separators trimmed, `dirname("/a") == "/"`,
   `dirname("file.txt") == ""`), served by `env.basename`/`env.dirname` host

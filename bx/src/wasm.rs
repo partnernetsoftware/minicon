@@ -1483,6 +1483,77 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 }
                 Ok(vec![WVal::I64(found)])
             }
+            ("env", "append_file") => {
+                let read = |value: Option<&WVal>| match value {
+                    Some(WVal::I32(v)) => Some(*v as usize),
+                    _ => None,
+                };
+                let (pp, pl, dp, dl) = match (
+                    read(args.first()),
+                    read(args.get(1)),
+                    read(args.get(2)),
+                    read(args.get(3)),
+                ) {
+                    (Some(pp), Some(pl), Some(dp), Some(dl)) => (pp, pl, dp, dl),
+                    _ => return Err("env.append_file expects four i32s".to_string()),
+                };
+                let path = memory_text(memory, pp, pl);
+                let data = memory
+                    .get(dp..dp.saturating_add(dl))
+                    .ok_or_else(|| "env.append_file data is outside memory".to_string())?;
+                match std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&path)
+                    .and_then(|mut file| std::io::Write::write_all(&mut file, data))
+                {
+                    Ok(()) => Ok(vec![WVal::I32(0)]),
+                    Err(error) => Err(format!("cannot append '{}': {}", path, error)),
+                }
+            }
+            ("env", "remove_file") => {
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("env.remove_file expects (i32 ptr, i32 len)".to_string()),
+                };
+                let path = memory_text(memory, ptr, len);
+                match std::fs::remove_file(&path) {
+                    Ok(()) => Ok(vec![WVal::I32(0)]),
+                    Err(error) => Err(format!("cannot remove '{}': {}", path, error)),
+                }
+            }
+            ("env", "dir_count") | ("env", "dir_entry") => {
+                let is_count = name == "dir_count";
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("dir_count/dir_entry expect (i32 ptr, i32 len)".to_string()),
+                };
+                let path = memory_text(memory, ptr, len);
+                let mut names: Vec<String> = match std::fs::read_dir(&path) {
+                    Ok(entries) => entries
+                        .filter_map(|entry| entry.ok())
+                        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                        .collect(),
+                    Err(error) => return Err(format!("cannot list '{}': {}", path, error)),
+                };
+                names.sort();
+                if is_count {
+                    return Ok(vec![WVal::I32(names.len() as i32)]);
+                }
+                let index = match args.get(2) {
+                    Some(WVal::I32(index)) => *index as usize,
+                    _ => {
+                        return Err(
+                            "env.dir_entry expects (i32 ptr, i32 len, i32 index)".to_string()
+                        )
+                    }
+                };
+                let text = names.get(index).cloned().unwrap_or_default();
+                match store_text_block(memory, &mut self.next_file, text.as_bytes()) {
+                    Some(start) => Ok(vec![WVal::I32(start as i32)]),
+                    None => Err("dir_entry result does not fit the file region".to_string()),
+                }
+            }
             ("bx", "exec_env_clear") => {
                 self.exec_env.clear();
                 Ok(Vec::new())

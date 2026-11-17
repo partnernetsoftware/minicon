@@ -97,6 +97,10 @@ const imports = {
       emit(new TextDecoder("utf-8").decode(bytes));
     },    format_container: () => 0,
     json_str: () => 0,
+    append_file: () => -1,
+    remove_file: () => -1,
+    dir_count: () => 0,
+    dir_entry: () => 0,
     eprint: (ptr, len) => {
       const bytes = new Uint8Array(instance.exports.memory.buffer, ptr, len);
       const line = new TextDecoder("utf-8").decode(bytes);

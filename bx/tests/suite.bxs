@@ -577,6 +577,16 @@ if (wasmAttempt.code == 0 && wasmAttemptRun.out == wasmAttemptVm.out && wasmAtte
   casesFail += 1
   failures.push("wasm attempt()\n    wasm=" + json(wasmAttemptRun.out) + " vm=" + json(wasmAttemptVm.out) + " err=" + json(wasmAttemptRun.err))
 }
+write(artDir + "/wasm-files.bxs", 'let d = "target/bx-files-" + str(now())\nmkdir(d)\nwrite(d + "/b.txt", "x")\nwrite(d + "/a.txt", "y")\nprint(list(d))\nlet f = d + "/log.txt"\nwrite(f, "a")\nappend(f, "b")\nprint(read(f))\nremove(f)\nprint(exists(f))\n')
+let wasmFiles = exec([BX, "build", "--wasm", artDir + "/wasm-files.bxs", "-o", artDir + "/wasm-files.wasm"])
+let wasmFilesRun = exec([BX, "run", artDir + "/wasm-files.wasm"])
+let wasmFilesVm = exec([BX, "run", artDir + "/wasm-files.bxs"])
+if (wasmFiles.code == 0 && wasmFilesRun.out == wasmFilesVm.out && wasmFilesRun.out.trim() == "[\"a.txt\",\"b.txt\"]\nab\nfalse") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm append/remove/list\n    wasm=" + json(wasmFilesRun.out) + " vm=" + json(wasmFilesVm.out) + " err=" + json(wasmFilesRun.err))
+}
 write(artDir + "/wasm-exec-env.bxs", 'let win = env("OS") == "Windows_NT"\nlet r = win ? exec(["cmd", "/c", "echo %BX_WASM_ENV%"], {env: {"BX_WASM_ENV": "from-env-opt"}}) : exec(["sh", "-c", "echo $BX_WASM_ENV"], {env: {"BX_WASM_ENV": "from-env-opt"}})\nprint(r.code)\nprint(r.out.trim())\n')
 let wasmExecEnv = exec([BX, "build", "--wasm", artDir + "/wasm-exec-env.bxs", "-o", artDir + "/wasm-exec-env.wasm"])
 let wasmExecEnvRun = exec([BX, "run", artDir + "/wasm-exec-env.wasm"])
@@ -1198,6 +1208,16 @@ if (wasmAttempt.code == 0 && wasmAttemptRun.out == wasmAttemptVm.out && wasmAtte
 } else {
   casesFail += 1
   failures.push("wasm attempt()\n    wasm=" + json(wasmAttemptRun.out) + " vm=" + json(wasmAttemptVm.out) + " err=" + json(wasmAttemptRun.err))
+}
+write(artDir + "/wasm-files.bxs", 'let d = "target/bx-files-" + str(now())\nmkdir(d)\nwrite(d + "/b.txt", "x")\nwrite(d + "/a.txt", "y")\nprint(list(d))\nlet f = d + "/log.txt"\nwrite(f, "a")\nappend(f, "b")\nprint(read(f))\nremove(f)\nprint(exists(f))\n')
+let wasmFiles = exec([BX, "build", "--wasm", artDir + "/wasm-files.bxs", "-o", artDir + "/wasm-files.wasm"])
+let wasmFilesRun = exec([BX, "run", artDir + "/wasm-files.wasm"])
+let wasmFilesVm = exec([BX, "run", artDir + "/wasm-files.bxs"])
+if (wasmFiles.code == 0 && wasmFilesRun.out == wasmFilesVm.out && wasmFilesRun.out.trim() == "[\"a.txt\",\"b.txt\"]\nab\nfalse") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm append/remove/list\n    wasm=" + json(wasmFilesRun.out) + " vm=" + json(wasmFilesVm.out) + " err=" + json(wasmFilesRun.err))
 }
 write(artDir + "/wasm-exec-env.bxs", 'let win = env("OS") == "Windows_NT"\nlet r = win ? exec(["cmd", "/c", "echo %BX_WASM_ENV%"], {env: {"BX_WASM_ENV": "from-env-opt"}}) : exec(["sh", "-c", "echo $BX_WASM_ENV"], {env: {"BX_WASM_ENV": "from-env-opt"}})\nprint(r.code)\nprint(r.out.trim())\n')
 let wasmExecEnv = exec([BX, "build", "--wasm", artDir + "/wasm-exec-env.bxs", "-o", artDir + "/wasm-exec-env.wasm"])

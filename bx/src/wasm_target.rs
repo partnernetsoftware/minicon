@@ -1229,6 +1229,25 @@ impl Checker {
                         }
                         return Ok(Ty::Int);
                     }
+
+                    if name == "append" && args.len() == 2 {
+                        if self.infer(&args[0])? != Ty::Str || self.infer(&args[1])? != Ty::Str {
+                            return Err("wasm target append(path, text) needs strings".to_string());
+                        }
+                        return Ok(Ty::Int);
+                    }
+                    if name == "remove" && args.len() == 1 {
+                        if self.infer(&args[0])? != Ty::Str {
+                            return Err("wasm target remove(path) needs a string".to_string());
+                        }
+                        return Ok(Ty::Int);
+                    }
+                    if name == "list" && args.len() == 1 {
+                        if self.infer(&args[0])? != Ty::Str {
+                            return Err("wasm target list(dir) needs a string".to_string());
+                        }
+                        return Ok(Ty::ArrStr);
+                    }
                     if name == "which" && args.len() == 1 {
                         if self.infer(&args[0])? != Ty::Str {
                             return Err("wasm target which(name) needs a string".to_string());
@@ -2724,7 +2743,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 94;
+const IMPORT_COUNT: u32 = 98;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -2806,6 +2825,10 @@ const FORMAT_CONTAINER: u32 = 90;
 const JSON_STR: u32 = 91;
 const EXEC_ENV_CLEAR: u32 = 92;
 const EXEC_ENV_ADD: u32 = 93;
+const APPEND_FILE: u32 = 94;
+const REMOVE_FILE: u32 = 95;
+const DIR_COUNT: u32 = 96;
+const DIR_ENTRY: u32 = 97;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -5903,11 +5926,14 @@ impl<'a> Emitter<'a> {
                         "str" | "json" => Some(Ty::Str),
                         "int" => Some(Ty::Int),
                         "len" => Some(Ty::Int),
-                        "argc" | "run" | "capture" | "write_file" => Some(Ty::Int),
+                        "argc" | "run" | "capture" | "write_file" | "append" | "remove" => {
+                            Some(Ty::Int)
+                        }
                         "arg" | "read_file" | "basename" | "dirname" => Some(Ty::Str),
                         "map_new" => Some(Ty::Map),
                         "map_get" | "map_has" | "map_len" | "file_exists" => Some(Ty::Int),
                         "exists" | "starts_with" | "ends_with" | "contains" => Some(Ty::Bool),
+                        "list" => Some(Ty::ArrStr),
                         "now" | "mkdir" | "eprint" => Some(Ty::Int),
                         "cwd" | "env" => Some(Ty::Str),
                         "performance_now" => Some(Ty::Float),
@@ -7841,6 +7867,7 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Op(0xac));
                         return Ok(Ty::Int);
                     }
+
                     if name == "which" && args.len() == 1 {
                         self.emit_str(&args[0])?;
                         self.builder.push(Instr::Call(WHICH));
@@ -7915,6 +7942,195 @@ impl<'a> Emitter<'a> {
                         self.emit_soft_io_panic(self.temp(ARG_TMP));
                         self.builder.push(Instr::Const(0x42, WVal::I64(0)));
                         return Ok(Ty::Int);
+                    }
+                    if name == "append" && args.len() == 2 {
+                        self.emit_str(&args[0])?;
+                        self.emit_str(&args[1])?;
+                        self.builder.push(Instr::Call(APPEND_FILE));
+                        self.builder.push(Instr::Op(0xac));
+                        return Ok(Ty::Int);
+                    }
+                    if name == "remove" && args.len() == 1 {
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Call(REMOVE_FILE));
+                        self.builder.push(Instr::Op(0xac));
+                        return Ok(Ty::Int);
+                    }
+                    if name == "list" && args.len() == 1 {
+                        if self.type_of(&args[0])? != Ty::Str {
+                            return Err("wasm target list(dir) takes a string".to_string());
+                        }
+                        let ptr = self.builder.add_local(ValType::I32);
+                        let len = self.builder.add_local(ValType::I32);
+                        let count = self.builder.add_local(ValType::I32);
+                        let base = self.builder.add_local(ValType::I32);
+                        let index = self.builder.add_local(ValType::I32);
+                        let block = self.builder.add_local(ValType::I32);
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Local(0x21, len));
+                        self.builder.push(Instr::Local(0x21, ptr));
+                        self.builder.push(Instr::Local(0x20, ptr));
+                        self.builder.push(Instr::Local(0x20, len));
+                        self.builder.push(Instr::Call(DIR_COUNT));
+                        self.builder.push(Instr::Local(0x21, count));
+                        self.builder.push(Instr::Local(0x20, count));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                        self.builder.push(Instr::Op(0x6c));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.emit_alloc_dynamic();
+                        self.builder.push(Instr::Local(0x21, base));
+                        self.builder.push(Instr::Local(0x20, base));
+                        self.builder.push(Instr::Local(0x20, count));
+                        self.builder.push(Instr::Mem(0x36, 2, 0));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                        self.builder.push(Instr::Local(0x21, index));
+                        self.builder.push(Instr::Block {
+                            opcode: 0x02,
+                            end: 0,
+                            else_at: 0,
+                            start: 0,
+                        });
+                        self.labels.push(0x02);
+                        self.builder.push(Instr::Block {
+                            opcode: 0x03,
+                            end: 0,
+                            else_at: 0,
+                            start: 0,
+                        });
+                        self.labels.push(0x03);
+                        self.builder.push(Instr::Local(0x20, index));
+                        self.builder.push(Instr::Local(0x20, count));
+                        self.builder.push(Instr::Op(0x4f));
+                        self.builder.push(Instr::BrIf(1));
+                        self.builder.push(Instr::Local(0x20, ptr));
+                        self.builder.push(Instr::Local(0x20, len));
+                        self.builder.push(Instr::Local(0x20, index));
+                        self.builder.push(Instr::Call(DIR_ENTRY));
+                        self.builder.push(Instr::Local(0x21, block));
+                        self.builder.push(Instr::Local(0x20, base));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x20, index));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                        self.builder.push(Instr::Op(0x6c));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x20, block));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Mem(0x36, 2, 0));
+                        self.builder.push(Instr::Local(0x20, base));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x20, index));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                        self.builder.push(Instr::Op(0x6c));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x20, block));
+                        self.builder.push(Instr::Mem(0x28, 2, 0));
+                        self.builder.push(Instr::Mem(0x36, 2, 4));
+                        self.builder.push(Instr::Local(0x20, index));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x21, index));
+                        self.builder.push(Instr::Br(0));
+                        self.labels.pop();
+                        self.builder.push(Instr::Op(0x0b));
+                        self.labels.pop();
+                        self.builder.push(Instr::Op(0x0b));
+                        self.builder.push(Instr::Local(0x20, base));
+                        return Ok(Ty::ArrStr);
+                    }
+                    if name == "remove" && args.len() == 1 {
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Call(REMOVE_FILE));
+                        self.builder.push(Instr::Op(0xac));
+                        return Ok(Ty::Int);
+                    }
+                    if name == "list" && args.len() == 1 {
+                        if self.type_of(&args[0])? != Ty::Str {
+                            return Err("wasm target list(dir) takes a string".to_string());
+                        }
+                        let ptr = self.builder.add_local(ValType::I32);
+                        let len = self.builder.add_local(ValType::I32);
+                        let count = self.builder.add_local(ValType::I32);
+                        let base = self.builder.add_local(ValType::I32);
+                        let index = self.builder.add_local(ValType::I32);
+                        let block = self.builder.add_local(ValType::I32);
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Local(0x21, len));
+                        self.builder.push(Instr::Local(0x21, ptr));
+                        self.builder.push(Instr::Local(0x20, ptr));
+                        self.builder.push(Instr::Local(0x20, len));
+                        self.builder.push(Instr::Call(DIR_COUNT));
+                        self.builder.push(Instr::Local(0x21, count));
+                        self.builder.push(Instr::Local(0x20, count));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                        self.builder.push(Instr::Op(0x6c));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.emit_alloc_dynamic();
+                        self.builder.push(Instr::Local(0x21, base));
+                        self.builder.push(Instr::Local(0x20, base));
+                        self.builder.push(Instr::Local(0x20, count));
+                        self.builder.push(Instr::Mem(0x36, 2, 0));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                        self.builder.push(Instr::Local(0x21, index));
+                        self.builder.push(Instr::Block {
+                            opcode: 0x02,
+                            end: 0,
+                            else_at: 0,
+                            start: 0,
+                        });
+                        self.labels.push(0x02);
+                        self.builder.push(Instr::Block {
+                            opcode: 0x03,
+                            end: 0,
+                            else_at: 0,
+                            start: 0,
+                        });
+                        self.labels.push(0x03);
+                        self.builder.push(Instr::Local(0x20, index));
+                        self.builder.push(Instr::Local(0x20, count));
+                        self.builder.push(Instr::Op(0x4f));
+                        self.builder.push(Instr::BrIf(1));
+                        self.builder.push(Instr::Local(0x20, ptr));
+                        self.builder.push(Instr::Local(0x20, len));
+                        self.builder.push(Instr::Local(0x20, index));
+                        self.builder.push(Instr::Call(DIR_ENTRY));
+                        self.builder.push(Instr::Local(0x21, block));
+                        self.builder.push(Instr::Local(0x20, base));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x20, index));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                        self.builder.push(Instr::Op(0x6c));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x20, block));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Mem(0x36, 2, 0));
+                        self.builder.push(Instr::Local(0x20, base));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x20, index));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                        self.builder.push(Instr::Op(0x6c));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x20, block));
+                        self.builder.push(Instr::Mem(0x28, 2, 0));
+                        self.builder.push(Instr::Mem(0x36, 2, 4));
+                        self.builder.push(Instr::Local(0x20, index));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x21, index));
+                        self.builder.push(Instr::Br(0));
+                        self.labels.pop();
+                        self.builder.push(Instr::Op(0x0b));
+                        self.labels.pop();
+                        self.builder.push(Instr::Op(0x0b));
+                        self.builder.push(Instr::Local(0x20, base));
+                        return Ok(Ty::ArrStr);
                     }
                     if name == "performance_now" && args.is_empty() {
                         self.builder.push(Instr::Call(WEB_PERFORMANCE_NOW));
@@ -10857,7 +11073,7 @@ impl<'a> InferState<'a> {
                     "exists" | "file_exists" | "has" | "contains" | "starts_with" | "ends_with" => {
                         Some(Ty::Bool)
                     }
-                    "split" | "keys" => Some(Ty::ArrStr),
+                    "split" | "keys" | "list" => Some(Ty::ArrStr),
                     "range" | "values" => Some(Ty::Arr),
                     "reverse" | "sort" => args.first().and_then(|arg| self.soft(arg, locals)),
                     "map" => {
@@ -11496,7 +11712,7 @@ impl<'a> CaptureWalker<'a> {
                 "exists" | "file_exists" | "has" | "contains" | "starts_with" | "ends_with" => {
                     Ty::Bool
                 }
-                "split" | "keys" => Ty::ArrStr,
+                "split" | "keys" | "list" => Ty::ArrStr,
                 "range" | "values" => Ty::Arr,
                 "reverse" | "sort" | "slice" => {
                     args.first().map(|arg| self.ty_of(arg)).unwrap_or(Ty::Arr)
@@ -12397,6 +12613,10 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "json_str", which_ty);
     builder.import_func("bx", "exec_env_clear", empty_ty);
     builder.import_func("bx", "exec_env_add", env_add_ty);
+    builder.import_func("env", "append_file", write_file_ty);
+    builder.import_func("env", "remove_file", which_ty);
+    builder.import_func("env", "dir_count", which_ty);
+    builder.import_func("env", "dir_entry", format_container_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -13791,6 +14011,26 @@ mod tests {
         let (numbers, strings) = run_with_argv(&source, &[]);
         assert_eq!(numbers, vec![0]);
         assert_eq!(strings, vec!["hello-env".to_string()]);
+    }
+
+    #[test]
+    fn append_remove_and_list_match_the_vm() {
+        let dir = std::env::temp_dir().join(format!("bx-wasm-files-{}", std::process::id()));
+        let dir = dir.to_string_lossy().replace('\\', "/");
+        let source = format!(
+            "let d = \"{}/run-\" + str(now())\nmkdir(d)\nwrite(d + \"/b.txt\", \"x\")\nwrite(d + \"/a.txt\", \"y\")\nprint(list(d))\nlet f = d + \"/log.txt\"\nwrite(f, \"a\")\nappend(f, \"b\")\nprint(read(f))\nremove(f)\nprint(exists(f))\nprint(len(list(d)))",
+            dir
+        );
+        let (numbers, strings) = run_with_argv(&source, &[]);
+        assert_eq!(numbers, vec![2]);
+        assert_eq!(
+            strings,
+            vec![
+                "[\"a.txt\",\"b.txt\"]".to_string(),
+                "ab".to_string(),
+                "false".to_string(),
+            ]
+        );
     }
 
     #[test]
