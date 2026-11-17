@@ -587,6 +587,16 @@ if (wasmExecAll.code == 0 && wasmExecAllRun.out == wasmExecAllVm.out && wasmExec
   casesFail += 1
   failures.push("wasm exec_all\n    wasm=" + json(wasmExecAllRun.out) + " vm=" + json(wasmExecAllVm.out) + " err=" + json(wasmExecAllRun.err))
 }
+write(artDir + "/wasm-aggmethods.bxs", 'print(str([1, 2, 3].slice(1)))\nprint(str([1, 2, 3].slice(0, 2)))\nprint("abc".slice(1))\nprint(str([1, 2].sum()))\nprint(str([1.5, 2.5].sum()))\nprint(str([3, 1].min()))\nprint(str([3, 1].max()))\nprint(str([true, false].sum()))\nprint(str([true, false].min()))\nprint(str([true, false].max()))\nprint(str(["b", "a"].min()))\nprint(str([1.5, 2.5].min()))\nprint(str([1.5, 2.5].max()))\n')
+let wasmAgg = exec([BX, "build", "--wasm", artDir + "/wasm-aggmethods.bxs", "-o", artDir + "/wasm-aggmethods.wasm"])
+let wasmAggRun = exec([BX, "run", artDir + "/wasm-aggmethods.wasm"])
+let wasmAggVm = exec([BX, "run", artDir + "/wasm-aggmethods.bxs"])
+if (wasmAgg.code == 0 && wasmAggRun.out == wasmAggVm.out && wasmAggRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm aggregate methods\n    wasm=" + json(wasmAggRun.out) + " vm=" + json(wasmAggVm.out) + " err=" + json(wasmAggRun.err))
+}
 write(artDir + "/wasm-recsearch.bxs", 'let rs = [{a: 1}, {a: 2}]\nprint(rs.contains({a: 2}))\nprint(rs.index_of({a: 1}))\nprint(contains(rs, {a: 3}))\nprint(index_of(rs, {a: 2}))\nlet rows = [[1, 2], [3]]\nprint(rows.contains([3]))\nprint(rows.index_of([1, 2]))\nlet trs = [["a"], ["b"]]\nprint(trs.contains(["b"]))\nprint(trs.index_of(["a"]))\n')
 let wasmRecSearch = exec([BX, "build", "--wasm", artDir + "/wasm-recsearch.bxs", "-o", artDir + "/wasm-recsearch.wasm"])
 let wasmRecSearchRun = exec([BX, "run", artDir + "/wasm-recsearch.wasm"])
@@ -1288,6 +1298,16 @@ if (wasmExecAll.code == 0 && wasmExecAllRun.out == wasmExecAllVm.out && wasmExec
 } else {
   casesFail += 1
   failures.push("wasm exec_all\n    wasm=" + json(wasmExecAllRun.out) + " vm=" + json(wasmExecAllVm.out) + " err=" + json(wasmExecAllRun.err))
+}
+write(artDir + "/wasm-aggmethods.bxs", 'print(str([1, 2, 3].slice(1)))\nprint(str([1, 2, 3].slice(0, 2)))\nprint("abc".slice(1))\nprint(str([1, 2].sum()))\nprint(str([1.5, 2.5].sum()))\nprint(str([3, 1].min()))\nprint(str([3, 1].max()))\nprint(str([true, false].sum()))\nprint(str([true, false].min()))\nprint(str([true, false].max()))\nprint(str(["b", "a"].min()))\nprint(str([1.5, 2.5].min()))\nprint(str([1.5, 2.5].max()))\n')
+let wasmAgg = exec([BX, "build", "--wasm", artDir + "/wasm-aggmethods.bxs", "-o", artDir + "/wasm-aggmethods.wasm"])
+let wasmAggRun = exec([BX, "run", artDir + "/wasm-aggmethods.wasm"])
+let wasmAggVm = exec([BX, "run", artDir + "/wasm-aggmethods.bxs"])
+if (wasmAgg.code == 0 && wasmAggRun.out == wasmAggVm.out && wasmAggRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm aggregate methods\n    wasm=" + json(wasmAggRun.out) + " vm=" + json(wasmAggVm.out) + " err=" + json(wasmAggRun.err))
 }
 write(artDir + "/wasm-recsearch.bxs", 'let rs = [{a: 1}, {a: 2}]\nprint(rs.contains({a: 2}))\nprint(rs.index_of({a: 1}))\nprint(contains(rs, {a: 3}))\nprint(index_of(rs, {a: 2}))\nlet rows = [[1, 2], [3]]\nprint(rows.contains([3]))\nprint(rows.index_of([1, 2]))\nlet trs = [["a"], ["b"]]\nprint(trs.contains(["b"]))\nprint(trs.index_of(["a"]))\n')
 let wasmRecSearch = exec([BX, "build", "--wasm", artDir + "/wasm-recsearch.bxs", "-o", artDir + "/wasm-recsearch.wasm"])

@@ -100,6 +100,8 @@ fn int_methods(lines, name) {
     lines.push("print(" + name + ".sort())")
   } else if (choice == 2) {
     lines.push("print(slice(" + name + ", 0, 2))")
+    lines.push("print(" + name + ".slice(0, 2))")
+    lines.push("print(" + name + ".slice(1))")
   } else if (choice == 3) {
     lines.push("print(" + name + ".contains(" + name + "[0]))")
     lines.push("print(" + name + ".index_of(" + name + "[0]))")
@@ -118,6 +120,9 @@ fn int_methods(lines, name) {
     lines.push("print(sum(" + name + "))")
     lines.push("print(min(" + name + "))")
     lines.push("print(max(" + name + "))")
+    lines.push("print(" + name + ".sum())")
+    lines.push("print(" + name + ".min())")
+    lines.push("print(" + name + ".max())")
   } else if (choice == 10) {
     lines.push("print(" + name + ")")
     lines.push("print(len(" + name + "))")
@@ -138,6 +143,7 @@ fn str_methods(lines, name) {
     lines.push("print(" + name + ".sort())")
   } else if (choice == 2) {
     lines.push("print(slice(" + name + ", 0, 2))")
+    lines.push("print(" + name + ".slice(0, 2))")
   } else if (choice == 3) {
     lines.push("print(" + name + ".contains(" + name + "[0]))")
     lines.push("print(" + name + ".index_of(" + name + "[0]))")
@@ -173,6 +179,10 @@ fn float_methods(lines, name) {
     lines.push("print(sum(" + name + "))")
     lines.push("print(min(" + name + "))")
     lines.push("print(max(" + name + "))")
+    lines.push("print(" + name + ".sum())")
+    lines.push("print(" + name + ".min())")
+    lines.push("print(" + name + ".max())")
+    lines.push("print(" + name + ".slice(0, 2))")
   } else if (choice == 5) {
     lines.push("print(map(" + name + ", fn(x) { return x * 2.0 }))")
     lines.push("print(map(" + name + ", fn(x) { return x > 1.5 }))")
@@ -207,6 +217,9 @@ fn bool_methods(lines, name) {
     lines.push("print(sum(" + name + "))")
     lines.push("print(min(" + name + "))")
     lines.push("print(max(" + name + "))")
+    lines.push("print(" + name + ".sum())")
+    lines.push("print(" + name + ".min())")
+    lines.push("print(" + name + ".max())")
   } else {
     lines.push("print(" + name + ")")
     lines.push("print(str(" + name + "))")

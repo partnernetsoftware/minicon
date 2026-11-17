@@ -1042,6 +1042,52 @@ impl Checker {
                     }
                     return Ok(base);
                 }
+                if key == "slice" && (args.len() == 1 || args.len() == 2) {
+                    let base = self.infer(object)?;
+                    if !matches!(
+                        base,
+                        Ty::Str
+                            | Ty::Arr
+                            | Ty::ArrF
+                            | Ty::ArrStr
+                            | Ty::ArrBool
+                            | Ty::ArrObj(_)
+                            | Ty::ArrArr
+                            | Ty::ArrStrArr
+                    ) {
+                        return Err(format!("wasm target .slice cannot slice {}", ty_name(base)));
+                    }
+                    for arg in args {
+                        if !is_number(self.infer(arg)?) {
+                            return Err("wasm target .slice needs numeric bounds".to_string());
+                        }
+                    }
+                    return Ok(base);
+                }
+                if key == "sum" && args.is_empty() {
+                    return match self.infer(object)? {
+                        Ty::Arr => Ok(Ty::Int),
+                        Ty::ArrBool => Ok(Ty::Int),
+                        Ty::ArrF => Ok(Ty::Float),
+                        other => Err(format!(
+                            "wasm target .sum() takes a numeric array, got {}",
+                            ty_name(other)
+                        )),
+                    };
+                }
+                if matches!(key.as_str(), "min" | "max") && args.is_empty() {
+                    return match self.infer(object)? {
+                        Ty::Arr => Ok(Ty::Int),
+                        Ty::ArrBool => Ok(Ty::Bool),
+                        Ty::ArrF => Ok(Ty::Float),
+                        Ty::ArrStr => Ok(Ty::Str),
+                        other => Err(format!(
+                            "wasm target .{}(), takes an int, float, string or bool array, got {}",
+                            key,
+                            ty_name(other)
+                        )),
+                    };
+                }
                 let str_method = match key.as_str() {
                     "trim" | "upper" | "lower" => Some((0usize, Ty::Str)),
                     "repeat" => Some((1usize, Ty::Str)),
@@ -8447,6 +8493,144 @@ impl<'a> Emitter<'a> {
                     self.push_block_as_pair();
                     return Ok(Ty::Str);
                 }
+                if key == "slice" && (args.len() == 1 || args.len() == 2) {
+                    let base = self.type_of(object)?;
+                    match base {
+                        Ty::Str => {
+                            let ptr_tmp = self.builder.add_local(ValType::I32);
+                            let len_tmp = self.builder.add_local(ValType::I32);
+                            self.emit_str(object)?;
+                            self.builder.push(Instr::Local(0x21, len_tmp));
+                            self.builder.push(Instr::Local(0x21, ptr_tmp));
+                            self.builder.push(Instr::Local(0x20, ptr_tmp));
+                            self.builder.push(Instr::Local(0x20, len_tmp));
+                            self.emit_expr(&args[0])?;
+                            if args.len() == 2 {
+                                self.emit_expr(&args[1])?;
+                            } else {
+                                self.builder.push(Instr::Local(0x20, len_tmp));
+                                self.builder.push(Instr::Op(0xad));
+                            }
+                            self.builder.push(Instr::Call(STR_SLICE));
+                            self.push_block_as_pair();
+                            return Ok(Ty::Str);
+                        }
+                        _ if is_array_ty(base) => {
+                            let ptr_tmp = self.builder.add_local(ValType::I32);
+                            let len_tmp = self.builder.add_local(ValType::I32);
+                            self.emit_expr(object)?;
+                            self.builder.push(Instr::Local(0x21, ptr_tmp));
+                            self.builder.push(Instr::Local(0x20, ptr_tmp));
+                            self.builder.push(Instr::Mem(0x28, 2, 0));
+                            self.builder.push(Instr::Local(0x21, len_tmp));
+                            self.builder.push(Instr::Local(0x20, ptr_tmp));
+                            self.emit_expr(&args[0])?;
+                            if args.len() == 2 {
+                                self.emit_expr(&args[1])?;
+                            } else {
+                                self.builder.push(Instr::Local(0x20, len_tmp));
+                                self.builder.push(Instr::Op(0xad));
+                            }
+                            self.builder.push(Instr::Call(ARR_SLICE));
+                            return Ok(base);
+                        }
+                        other => {
+                            return Err(format!(
+                                "wasm target .slice cannot slice {}",
+                                ty_name(other)
+                            ))
+                        }
+                    }
+                }
+                if key == "sum" && args.is_empty() {
+                    return match self.type_of(object)? {
+                        Ty::ArrF => {
+                            self.emit_expr(object)?;
+                            self.builder.push(Instr::Call(ARR_SUM_F));
+                            Ok(Ty::Float)
+                        }
+                        Ty::Arr | Ty::ArrBool => {
+                            self.emit_expr(object)?;
+                            self.builder.push(Instr::Call(ARR_SUM));
+                            Ok(Ty::Int)
+                        }
+                        other => Err(format!(
+                            "wasm target .sum() takes a numeric array, got {}",
+                            ty_name(other)
+                        )),
+                    };
+                }
+                if matches!(key.as_str(), "min" | "max") && args.is_empty() {
+                    let want_min = key == "min";
+                    return match self.type_of(object)? {
+                        Ty::Arr => {
+                            self.emit_expr(object)?;
+                            self.builder
+                                .push(Instr::Const(0x41, WVal::I32(if want_min { 1 } else { 0 })));
+                            self.builder.push(Instr::Call(ARR_MINMAX));
+                            Ok(Ty::Int)
+                        }
+                        Ty::ArrBool => {
+                            self.emit_expr(object)?;
+                            self.builder
+                                .push(Instr::Const(0x41, WVal::I32(if want_min { 1 } else { 0 })));
+                            self.builder.push(Instr::Call(ARR_MINMAX));
+                            self.builder.push(Instr::Op(0xa7));
+                            Ok(Ty::Bool)
+                        }
+                        Ty::ArrF => {
+                            let arr_tmp = self.builder.add_local(ValType::I32);
+                            self.emit_expr(object)?;
+                            self.builder.push(Instr::Local(0x21, arr_tmp));
+                            self.builder.push(Instr::Local(0x20, arr_tmp));
+                            self.builder.push(Instr::Mem(0x28, 2, 0));
+                            self.builder.push(Instr::Op(0x45));
+                            self.builder.push(Instr::Block {
+                                opcode: 0x04,
+                                end: 0,
+                                else_at: 0,
+                                start: 0,
+                            });
+                            self.labels.push(0x04);
+                            self.emit_panic("min()/max() of an empty array");
+                            self.labels.pop();
+                            self.builder.push(Instr::Op(0x0b));
+                            self.builder.push(Instr::Local(0x20, arr_tmp));
+                            self.builder
+                                .push(Instr::Const(0x41, WVal::I32(if want_min { 1 } else { 0 })));
+                            self.builder.push(Instr::Call(ARR_MINMAX_F));
+                            Ok(Ty::Float)
+                        }
+                        Ty::ArrStr => {
+                            let arr_tmp = self.builder.add_local(ValType::I32);
+                            self.emit_expr(object)?;
+                            self.builder.push(Instr::Local(0x21, arr_tmp));
+                            self.builder.push(Instr::Local(0x20, arr_tmp));
+                            self.builder.push(Instr::Mem(0x28, 2, 0));
+                            self.builder.push(Instr::Op(0x45));
+                            self.builder.push(Instr::Block {
+                                opcode: 0x04,
+                                end: 0,
+                                else_at: 0,
+                                start: 0,
+                            });
+                            self.labels.push(0x04);
+                            self.emit_panic("min()/max() of an empty array");
+                            self.labels.pop();
+                            self.builder.push(Instr::Op(0x0b));
+                            self.builder.push(Instr::Local(0x20, arr_tmp));
+                            self.builder
+                                .push(Instr::Const(0x41, WVal::I32(if want_min { 1 } else { 0 })));
+                            self.builder.push(Instr::Call(ARR_MINMAX_STR));
+                            self.push_block_as_pair();
+                            Ok(Ty::Str)
+                        }
+                        other => Err(format!(
+                            "wasm target min()/max() takes an int or string array, got {}",
+                            ty_name(other)
+                        )),
+                    };
+                }
                 if key == "sort" && args.len() == 1 {
                     let input_ty = self.type_of(object)?;
                     let mode = match input_ty {
@@ -15362,6 +15546,22 @@ mod tests {
                 .into_iter()
                 .map(|s| s.to_string())
                 .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn array_aggregate_methods_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "print(str([1, 2, 3].slice(1)))\nprint(str([1, 2, 3].slice(0, 2)))\nprint(\"abc\".slice(1))\nprint(str([1, 2].sum()))\nprint(str([1.5, 2.5].sum()))\nprint(str([3, 1].min()))\nprint(str([3, 1].max()))\nprint(str([true, false].sum()))\nprint(str([true, false].min()))\nprint(str([true, false].max()))\nprint(str([\"b\", \"a\"].min()))\nprint(str([1.5, 2.5].min()))\nprint(str([1.5, 2.5].max()))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = [
+            "[2,3]", "[1,2]", "bc", "3", "4", "1", "3", "1", "false", "true", "a", "1.5", "2.5",
+        ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
         );
     }
 
