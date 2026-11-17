@@ -330,6 +330,29 @@ fn gen() {
     lines.push("  print(" + expr(vars) + ")")
     lines.push("}")
   }
+  if (pick(2) == 0) {
+    lines.push("print(" + atom(vars) + " < " + atom(vars) + " ? " + expr(vars) + " : " + expr(vars) + ")")
+    lines.push("print((" + atom(vars) + " < " + atom(vars) + " ? \"a\" : \"b\") == \"a\")")
+    lines.push("print(!" + "(" + atom(vars) + " > " + atom(vars) + "))")
+    lines.push("print(" + atom(vars) + " > " + atom(vars) + " && " + atom(vars) + " < " + atom(vars) + ")")
+    lines.push("print(" + atom(vars) + " > " + atom(vars) + " || " + atom(vars) + " < " + atom(vars) + ")")
+  }
+  if (pick(2) == 0) {
+    lines.push("let cfor_n = 0")
+    lines.push("for (let cfor_i = 0; cfor_i < " + str(1 + pick(5)) + "; cfor_i += 1) {")
+    lines.push("  cfor_n += cfor_i")
+    lines.push("  if (cfor_i == " + str(pick(3)) + ") { continue }")
+    lines.push("  print(cfor_n + " + atom(vars) + ")")
+    lines.push("}")
+    lines.push("print(cfor_n)")
+  }
+  if (pick(3) == 0) {
+    lines.push("fn ternf(x) {")
+    lines.push("  if (x < 0) { return \"neg\" }")
+    lines.push("  return x < 2 ? \"small\" : \"big\"")
+    lines.push("}")
+    lines.push("print(ternf(" + atom(vars) + " - " + atom(vars) + "))")
+  }
   let source = ""
   for (let i = 0; i < len(lines); i += 1) {
     source = source + lines[i] + "\n"

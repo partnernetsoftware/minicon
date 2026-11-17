@@ -180,7 +180,10 @@ bx wasm target
   from the shared numeric subset (including float literals, `/`, user functions,
   recursion and rich local variables in functions) and runs each one through both the bx VM and the wasm
   backend; stdout and exit codes must match byte-for-byte. The suite runs 15 cases
-  and the verifier 8; a 100-case local run passes. The generator also appends
+  and the verifier 8; a 100-case local run passes. It now also emits random
+  ternaries (numeric and string branches), `&&`/`||`/`!`, C-style `for` loops
+  with `continue`, and a helper function whose body returns a ternary; twelve
+  seeds at 80 cases each (960 programs) pass. The generator also appends
   fixed edge cases (unicode strings, empty containers, negative indexes, text
   rows) and accepts `[cases] [seed]`; on 2026-11-17 seeds 1/7/42/1234567/999999937
   at 100 cases each all passed, which is how the byte-vs-character string bugs
