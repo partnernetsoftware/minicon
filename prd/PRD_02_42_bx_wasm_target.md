@@ -26,6 +26,31 @@ module should run in a browser once the Web ABI lands.
 - Host imports are **web-shaped**, not WASI: the ABI mirrors browser surface
   names so one module can serve both native and browser hosts.
 
+## Host ABI contract
+
+Every host (the in-tree interpreter, the browser/node demo glue, and the future
+`tinyvm`-based host profile) must implement these exact shapes; they are not
+documented by the module beyond its import types:
+
+- Strings are passed as `(ptr, len)` pairs. Results that are strings or string
+  arrays are returned as a block pointer `[len: u32][utf8 bytes]` allocated by
+  the host; multi-string results are `[count][ptr, len]*N`.
+- `str_char_at(ptr, len, index)` indexes **Unicode scalar values**, and a
+  negative index counts from the end.
+- `print_record(table, count, rec_ptr)` and `print_arr_obj(table, count, arr_ptr)`
+  take the shape table first; `table` holds `u32` offsets to length-prefixed key
+  blocks, and record fields are `i64` at `rec + 8*index`.
+- `print_arr_i64`/`print_arr_str`/`print_arr_f64`/`print_arr_arr`/
+  `print_map`/`print_arr_obj` must render the VM's compact JSON shape so the
+  products stay interchangeable.
+- Maps are a wasm-target extension: `map_new()` returns an opaque id whose
+  entries are `[count][ptr,len,value i64]*N`; `map_*` order is insertion order.
+- `print_i64` returns the value it printed (`i64 -> i64`); the other print
+  imports return nothing.
+
+Portability note: the ABI is intentionally small and web-shaped, but it is
+*bx's* ABI, not WASI. A standard-wasm engine can still run the module because
+`env.*` is just an import namespace; only the host has to provide it.
 ## Tree DAG
 
 ```text

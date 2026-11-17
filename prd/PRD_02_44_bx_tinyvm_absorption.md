@@ -2,8 +2,8 @@
 
 Owner of the decision to replace the `bx` wasm runtime with the `tinyvm`
 engine, and of the migration that lets `tinyvm` be retired with `minicon-bx`
-carrying its needs. Status: `[-]` decision accepted, P0 decisive experiment not
-started.
+carrying its needs. Status: `[-]` decision accepted, P0 decisive experiment completed
+2026-11-17 with a shim host; P1 (engine swap) not started.
 
 Related: [bx surface](PRD_02_41_bx.md) · [wasm target](PRD_02_42_bx_wasm_target.md) ·
 [wasm migration](PRD_02_43_bx_wasm_migration.md). `tinyvm` facts below are owned
@@ -59,12 +59,12 @@ surface; `bx` already emits standard modules (`\0asm`, version 1).
 ```text
 minicon-bx owns a standard wasm core and one language skin      [-]
 │
-├── P0 decisive experiment                                      [_]
-│   ├── core vendored into the bx workspace as a path crate      [_]
-│   ├── `env.*` host profile over the core's host table          [_]
-│   ├── bx suite / verifier / differential run on the core       [_]
-│   ├── module accepted by an independent engine (node)          [_]  existing demo already proves the emitter
-│   └── core-inside-wasm + `.com` size/startup measurement       [_]
+├── P0 decisive experiment                                      [v]
+│   ├── core linked into an ignored harness (path crate)         [v]  not yet a workspace member
+│   ├── `env.*` host profile over the core's host table         [~]  ~45 of 68 imports bound
+│   ├── bx differential run on the core                          [v]  300 cases
+│   ├── module accepted by an independent engine (node)          [v]  existing demo already proves the emitter
+│   └── core-inside-wasm + `.com` size/startup measurement       [_]  linked std delta measured only
 │
 ├── P1 engine swap                                              [_]
 │   ├── `bx run --wasm` executes through the core                [_]
@@ -108,11 +108,55 @@ flowchart LR
   CORE -.->|retires after cutover| TV[tinyvm repo]
 ```
 
+## P0 results (2026-11-17)
+
+Experiment shape: the `tinyvm` clone at `D:\dev\partnernetsoftware\tinyvm`
+(`f476cd2`) was linked into an ignored harness
+(`bx/target/p0/harness`, not committed). It registers the `env.*` imports the
+probe programs call through `Module::bind_import_typed`, instantiates the
+module, and invokes the exported `_start`. A `bx-shim` binary delegates
+everything that is not `run <module>.wasm` to the real `bx`, so the existing
+`bx/tools/wasm-diff.bxs` differential could run unchanged with the core as the
+wasm runner.
+
+| Evidence | Result |
+| --- | --- |
+| feature matrix (closures/records/strings/maps/arrays/floats/nested/sorts/control) | 7/7 modules byte-identical between the core and bx's interpreter |
+| 300-case generated differential (`wasm-diff.bxs` via shim) | `PASS 300 differential cases`; no rejected module |
+| `bx` gates after the fix below | unit 91, suite 180, verifier 76, native differential 300 |
+| linked size (std harness) | 523,776 B vs 121,344 B control ⇒ ~402 KB delta on `.com` (published static core in tinyvm: 101,256 B) |
+
+Findings that change the plan:
+
+1. **The validator pays for itself immediately.** It rejected the differential's
+   first case with `validation: type mismatch in function #68`. Delta-reducing
+   the 183-chunk program found `grow.push(8)`: the int-array `push` path loaded
+   the value into an `i64` local and then wrote it through an `i32` local
+   (i32/i64 store mismatch). bx's own interpreter accepted it and printed the
+   right answer; node had also been validating less strictly than tinyvm here
+   for method-form pushes. Fixed in the emitter
+   (`bx wasm: fix int push local types`), after which the 300-case differential
+   ran clean.
+2. **The host ABI was under-specified.** Porting the host surfaced two implicit
+   contracts: `print_record`/`print_arr_obj` take `(table, count, pointer)` (not
+   pointer-first), and `str_char_at` accepts a negative index meaning "count
+   from the end" (bx's native host and the JS demo both normalize it; a naive
+   host returns an empty string). Both are now written into
+   [PRD_02_42_bx_wasm_target.md](PRD_02_42_bx_wasm_target.md) as the host
+   contract every host must satisfy.
+3. **Do not ship two engines.** The invalid module passed every existing bx gate
+   because the in-tree interpreter does not type-check locals. P1's first
+   safety rule is therefore: once the core executes the module, delete the
+   in-tree interpreter rather than keeping it as a lenient fallback.
+4. **Host coverage is the real P1 work.** The shim binds ~45 of 68 imports;
+   `web.*`/`webgl.*`, `bx.run`/`bx.capture`, and some container printers were not
+   exercised. P1 must port the whole surface as one Rust host profile and prove
+   it with the differential plus the browser demo.
 ## Gates
 
 | Gate | Meaning | Evidence required | Status |
 | --- | --- | --- | --- |
-| G0 | absorption is worth it | `bx` suite (180 checks), verifier (76 tests) and 300-case differential pass through the core; one deliberate emitter bug is caught by the core's validator (the 2026-11-17 invalid local-type class) | `[_]` |
+| G0 | absorption is worth it | 300-case differential and a 7-case feature matrix run byte-identically through the core with a shim host; the core's validator caught one real emitter bug (int-array `push` local types) | `[v]` |
 | G1 | one engine | `bx/src/wasm.rs` interpreter deleted; no dual semantics in the product | `[_]` |
 | G2 | no matrix tax | a new container kind is added by one representation change, no per-operation host imports | `[_]` |
 | G3 | embeddable parity | static lib + C ABI passes `tinyvm`'s C-ABI smoke shapes; XCFramework + Swift smoke exit 0 in CI | `[_]` |

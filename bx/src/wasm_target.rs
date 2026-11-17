@@ -3327,16 +3327,14 @@ impl<'a> Emitter<'a> {
         let value_ptr = self.builder.add_local(ValType::I32);
         let value_len = self.builder.add_local(ValType::I32);
         let value_f = self.builder.add_local(ValType::F64);
+        let value_i64 = self.builder.add_local(ValType::I64);
         match element {
             Ty::Int => {
                 let actual = self.emit_expr(value)?;
                 if actual != Ty::Int {
                     return Err("wasm target arrays hold ints only".to_string());
                 }
-                let tmp = self.builder.add_local(ValType::I64);
-                self.builder.push(Instr::Local(0x21, tmp));
-                self.builder.push(Instr::Local(0x20, tmp));
-                self.builder.push(Instr::Local(0x21, value_ptr));
+                self.builder.push(Instr::Local(0x21, value_i64));
             }
             Ty::Str => {
                 self.emit_str(value)?;
@@ -3404,7 +3402,7 @@ impl<'a> Emitter<'a> {
         match element {
             Ty::Int => {
                 self.builder.push(Instr::Local(0x20, addr_tmp));
-                self.builder.push(Instr::Local(0x20, value_ptr));
+                self.builder.push(Instr::Local(0x20, value_i64));
                 self.builder.push(Instr::Mem(0x37, 3, 0));
             }
             Ty::Str => {
