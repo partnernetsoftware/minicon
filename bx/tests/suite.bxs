@@ -930,6 +930,15 @@ if (wasmHof.code == 0 && wasmHofRun.out == wasmHofVm.out && wasmHofRun.out.trim(
   casesFail += 1
   failures.push("wasm higher-order array builtins\n    wasm=" + json(wasmHofRun.out) + " vm=" + json(wasmHofVm.out) + " err=" + json(wasmHofRun.err))
 }
+write(artDir + "/wasm-mapx.bxs", 'let m = map_new()\nmap_set(m, "one", 1)\nmap_set(m, "two", 2)\nprint(m)\nprint(len(keys(m)))\nprint(join(keys(m), "+"))\nprint(values(m))\nprint(has(m, "one"))\nprint(has(m, "zzz"))\nprint(get(m, "two"))\nprint(get(m, "zzz", 9))\nprint(len(m))\nfor k, v in m { print(k + "=" + str(v)) }\n')
+let wasmMapX = exec([BX, "build", "--wasm", artDir + "/wasm-mapx.bxs", "-o", artDir + "/wasm-mapx.wasm"])
+let wasmMapXRun = exec([BX, "run", artDir + "/wasm-mapx.wasm"])
+if (wasmMapX.code == 0 && wasmMapXRun.out.trim() == "{\"one\":1,\"two\":2}\n2\none+two\n[1,2]\ntrue\nfalse\n2\n9\n2\none=1\ntwo=2") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm map printing and builtins\n    out=" + json(wasmMapXRun.out) + " err=" + json(wasmMapXRun.err))
+}
 write(artDir + "/wasm-nested.bxs", 'let m = [[1, 2], [3, 4]]\nprint(m)\nprint(m[1][0])\nprint(len(m))\nfor row in m { print(row) }\nm[0] = [9, 8]\nprint(m)\npush(m, [5])\nprint(m)\nprint(m[-1])\nfor i, row in m { print(i) }\nlet total = 0\nfor row in m { for v in row { total = total + v } }\nprint(total)\nfn sum_row(r) { let s = 0; for v in r { s = s + v }; return s }\nprint(sum_row(m[0]))\n')
 let wasmNested = exec([BX, "build", "--wasm", artDir + "/wasm-nested.bxs", "-o", artDir + "/wasm-nested.wasm"])
 let wasmNestedRun = exec([BX, "run", artDir + "/wasm-nested.wasm"])

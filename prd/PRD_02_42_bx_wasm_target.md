@@ -128,7 +128,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 88 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 89 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -152,6 +152,12 @@ bx wasm target
 - **Record/array writes**: `r.a = v`, `r.a += v`, `xs[i] = v`, `xs[-1] = v` and
   `xs[i] += v` are supported with the same negative-index normalisation and
   bounds checks as reads (`+ - * %` for compound).
+- **Map ergonomics + printing**: maps are a wasm-target extension over the VM.
+  `keys(map)` -> string array, `values(map)` -> int array, `has(map, key)`,
+  `get(map, key[, default])` (missing without a default aborts), and `len(map)`
+  all work; `print(map)` renders `{"k":1,"k2":2}` in insertion order via the
+  `print_map` host import (browser glue reads its JS map table instead of guest
+  memory). Maps still cannot be compared/sorted.
 - **Nested arrays**: `[[1,2],[3,4]]` types as `Ty::ArrArr` (entries hold inner
   array pointers); `len`, element read (including `m[1][0]`), element write,
   single/two-variable `for row in m`, `push`, negative indexes, passing rows to

@@ -128,7 +128,17 @@ const imports = {
       }
       emit("{" + pieces.join(",") + "}");
     },
-    print_arr_arr: (ptr) => {
+    print_map: (ptr) => {
+      // The browser glue keeps maps in a JS Map table keyed by the map id.
+      const map = maps[ptr];
+      const pieces = [];
+      if (map) {
+        for (const [key, value] of map) {
+          pieces.push(JSON.stringify(key) + ":" + value.toString());
+        }
+      }
+      emit("{" + pieces.join(",") + "}");
+    },    print_arr_arr: (ptr) => {
       const view = new DataView(instance.exports.memory.buffer);
       const formatInner = (inner) => {
         const count = view.getUint32(inner, true);

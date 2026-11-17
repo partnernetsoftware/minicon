@@ -198,6 +198,13 @@ write(dir + "/wasm-sortcmp.bxs", 'let a = [3, 1, 2]\nlet b = sort(a, fn(x, y) { 
 write(dir + "/wasm-push2.bxs", 'let xs = ["a"]\npush(xs, "b")\nfor v in xs { print(v) }\nlet rs = [{a: 1}]\npush(rs, {a: 2})\nprint(rs[1].a)\nlet e = {}\nprint(len(keys(merge(e, {x: 4}))))\n')
 write(dir + "/wasm-printc.bxs", 'print([1, 2])\nprint({a: 1})\nprint(["x"])\n')
 write(dir + "/wasm-nested.bxs", 'let m = [[1, 2], [3, 4]]\nprint(m)\nprint(m[1][0])\nm[0] = [5, 6]\n')
+write(dir + "/wasm-mapx.bxs", 'let m = map_new()\nmap_set(m, "a", 7)\nprint(m)\nprint(get(m, "a"))\nprint(has(m, "b"))\nprint(values(m))\n')
+test("wasm map printing and builtins", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-mapx.bxs", "-o", dir + "/wasm-mapx.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-mapx.wasm"])
+  assert(ran.code == 0 && ran.out.trim() == "{\"a\":7}\n7\nfalse\n[7]", "out=" + json(ran.out) + " err=" + json(ran.err))
+})
 test("wasm nested arrays", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-nested.bxs", "-o", dir + "/wasm-nested.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

@@ -1066,6 +1066,28 @@ fn format_str_array(memory: &[u8], ptr: usize) -> String {
     format!("[{}]", pieces.join(","))
 }
 
+fn format_map(memory: &[u8], ptr: usize) -> String {
+    if ptr + 4 > memory.len() {
+        return "{}".to_string();
+    }
+    let count = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+    let mut pieces: Vec<String> = Vec::new();
+    for index in 0..count.min(64) {
+        let at = ptr + 8 + index * 16;
+        if at + 16 > memory.len() {
+            break;
+        }
+        let key_ptr = u32::from_le_bytes(memory[at..at + 4].try_into().unwrap()) as usize;
+        let key_len = u32::from_le_bytes(memory[at + 4..at + 8].try_into().unwrap()) as usize;
+        let value = i64::from_le_bytes(memory[at + 8..at + 16].try_into().unwrap());
+        pieces.push(format!(
+            "\"{}\":{}",
+            memory_text(memory, key_ptr, key_len),
+            value
+        ));
+    }
+    format!("{{{}}}", pieces.join(","))
+}
 fn format_arr_arr(memory: &[u8], ptr: usize) -> String {
     if ptr + 4 > memory.len() {
         return "[]".to_string();
@@ -2182,6 +2204,15 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 (self.on_str)(&format!("[{}]", pieces.join(",")));
                 Ok(Vec::new())
             }
+            ("env", "print_map") => {
+                let ptr = match args.first() {
+                    Some(WVal::I32(ptr)) => *ptr as usize,
+                    _ => return Err("env.print_map expects one i32".to_string()),
+                };
+                let text = format_map(memory, ptr);
+                (self.on_str)(&text);
+                Ok(Vec::new())
+            }
             ("env", "print_arr_arr") => {
                 let ptr = match args.first() {
                     Some(WVal::I32(ptr)) => *ptr as usize,
@@ -3273,6 +3304,14 @@ mod tests {
                     }
                     self.next_alloc = (end + 7) & !7;
                     Ok(vec![WVal::I32(start as i32)])
+                }
+                ("env", "print_map") => {
+                    let ptr = match args.first() {
+                        Some(WVal::I32(ptr)) => *ptr as usize,
+                        _ => return Err("env.print_map expects one i32".to_string()),
+                    };
+                    self.strings.push(format_map(memory, ptr));
+                    Ok(Vec::new())
                 }
                 ("env", "print_arr_arr") => {
                     let ptr = match args.first() {
