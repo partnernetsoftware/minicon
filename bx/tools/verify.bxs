@@ -201,6 +201,14 @@ write(dir + "/wasm-nested.bxs", 'let m = [[1, 2], [3, 4]]\nprint(m)\nprint(m[1][
 write(dir + "/wasm-mapx.bxs", 'let m = map_new()\nmap_set(m, "a", 7)\nprint(m)\nprint(get(m, "a"))\nprint(has(m, "b"))\nprint(values(m))\n')
 write(dir + "/wasm-arrb2.bxs", 'print(index_of([1, 2, 3], 2))\nprint([1, 2].contains(9))\nprint(min([4, 2]))\nprint(max(["b", "a"]))\n')
 write(dir + "/wasm-arrkind.bxs", 'print(sort(["b", "a"]))\nprint(join([1, 2], "-"))\nprint(slice([1.5, 2.5, 3.5], 0, 2))\n')
+write(dir + "/wasm-recarr.bxs", 'let xs = [{a: 2}]\nprint(map(xs, fn(r) { return {b: r.a + 1} }))\nprint(filter([{a: 1}], fn(r) { return r.a == 1 }))\n')
+test("wasm record array helpers", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-recarr.bxs", "-o", dir + "/wasm-recarr.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-recarr.wasm"])
+  let vm = exec([bin, "run", dir + "/wasm-recarr.bxs"])
+  assert(ran.code == 0 && ran.out == vm.out && ran.out.trim() == "[{\"b\":3}]\n[{\"a\":1}]", "wasm=" + json(ran.out) + " vm=" + json(vm.out))
+})
 test("wasm numeric/string array helpers", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-arrkind.bxs", "-o", dir + "/wasm-arrkind.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

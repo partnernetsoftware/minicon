@@ -989,6 +989,16 @@ if (wasmSortCmp.code == 0 && wasmSortCmpRun.out == wasmSortCmpVm.out && wasmSort
   casesFail += 1
   failures.push("wasm sort comparator\n    wasm=" + json(wasmSortCmpRun.out) + " vm=" + json(wasmSortCmpVm.out) + " err=" + json(wasmSortCmpRun.err))
 }
+write(artDir + "/wasm-recarr.bxs", 'let xs = [{a: 2}, {a: 1}]\nprint(map(xs, fn(r) { return r.a * 10 }))\nprint(map(xs, fn(r) { return {b: r.a + 1} }))\nprint(filter(xs, fn(r) { return r.a > 1 }))\neach(xs, fn(r) { print(r.a) })\nprint(sort(xs, fn(x, y) { return x.a - y.a }))\nprint(reverse([{a: 1}, {a: 2}]))\nprint(slice([{a: 1}, {a: 2}, {a: 3}], 1, 2))\n')
+let wasmRecArr = exec([BX, "build", "--wasm", artDir + "/wasm-recarr.bxs", "-o", artDir + "/wasm-recarr.wasm"])
+let wasmRecArrRun = exec([BX, "run", artDir + "/wasm-recarr.wasm"])
+let wasmRecArrVm = exec([BX, "run", artDir + "/wasm-recarr.bxs"])
+if (wasmRecArr.code == 0 && wasmRecArrRun.out == wasmRecArrVm.out && wasmRecArrRun.out.trim() == "[20,10]\n[{\"b\":3},{\"b\":2}]\n[{\"a\":2}]\n2\n1\n[{\"a\":1},{\"a\":2}]\n[{\"a\":2},{\"a\":1}]\n[{\"a\":2}]") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm record array helpers\n    wasm=" + json(wasmRecArrRun.out) + " vm=" + json(wasmRecArrVm.out) + " err=" + json(wasmRecArrRun.err))
+}
 write(artDir + "/wasm-arrkind.bxs", 'print(sort(["b", "c", "a"]))\nprint(sort([2.5, 1.5]))\nlet words = ["a", "b"]\nreverse(words)\nprint(words)\nprint(slice(["a", "b", "c"], 1, 2))\nprint(slice([1.5, 2.5, 3.5], 0, 2))\nprint(join(["a", "b"]))\nprint(join([1, 2], "-"))\nprint(join([1.5, 2], "+"))\n')
 let wasmArrKind = exec([BX, "build", "--wasm", artDir + "/wasm-arrkind.bxs", "-o", artDir + "/wasm-arrkind.wasm"])
 let wasmArrKindRun = exec([BX, "run", artDir + "/wasm-arrkind.wasm"])

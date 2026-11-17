@@ -156,7 +156,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 89 in-tree unit tests (plus the self-hosted differential tool) cover the encoder and the core host; the interpreter tests retired with the engine
+- 90 in-tree unit tests (plus the self-hosted differential tool) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -180,6 +180,15 @@ bx wasm target
 - **Record/array writes**: `r.a = v`, `r.a += v`, `xs[i] = v`, `xs[-1] = v` and
   `xs[i] += v` are supported with the same negative-index normalisation and
   bounds checks as reads (`+ - * %` for compound).
+- **Record-array collections**: `map` over record arrays returns int, float,
+  string or record arrays (the callback result picks the element kind),
+  `filter` keeps the record shape, `each` iterates records, comparator `sort`
+  works for int/float/string/record arrays, and `reverse`/`slice` accept record
+  arrays too. Fixing this exposed a real slot-allocation bug: function-literal
+  scratch locals were numbered as if the capture-environment was not a wasm
+  parameter, so building an array/record literal inside a closure could
+  overwrite its own parameters (`map(xs, fn(r) { return {b: r.a + 1} })` read
+  `r.a` from the freshly allocated record instead of the argument).
 - **Kind-generic array helpers**: default `sort` (int, float, string arrays),
   `reverse` (in place for every array kind), `slice` (int/float/string arrays)
   and `join` (one or two arguments; int and float arrays stringify their
