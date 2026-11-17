@@ -2259,6 +2259,26 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 self.next_file = (start + size + 7) as u32 & !7;
                 Ok(vec![WVal::I32(start as i32)])
             }
+            ("env", "mkdir_soft") => {
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("env.mkdir_soft expects (i32 ptr, i32 len)".to_string()),
+                };
+                let path = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .ok_or_else(|| "env.mkdir_soft path is outside memory".to_string())?;
+                let start = match std::fs::create_dir_all(&path) {
+                    Ok(()) => store_soft_block(memory, &mut self.next_file, 0, &[])?,
+                    Err(error) => store_soft_block(
+                        memory,
+                        &mut self.next_file,
+                        1,
+                        format!("cannot create '{}': {}", path, error).as_bytes(),
+                    )?,
+                };
+                Ok(vec![WVal::I32(start)])
+            }
             ("env", "mkdir") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {
                     (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),

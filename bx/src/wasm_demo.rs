@@ -372,6 +372,7 @@ const imports = {
     cwd: () => writeStringBlock(typeof process !== "undefined" ? process.cwd() : "/"),
     env_get: () => writeStringBlock(typeof process !== "undefined" ? (process.env.PATH || "") : ""),
     mkdir: () => -1,
+  mkdir_soft: () => 0,
     file_exists: (ptr, len) => {
       try {
         if (typeof process !== "undefined" && process.versions && process.versions.node) {

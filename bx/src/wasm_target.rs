@@ -1563,6 +1563,12 @@ impl Checker {
                         }
                         return Ok(Ty::Bool);
                     }
+                    if name == "mkdir" && args.len() == 1 {
+                        if self.infer(&args[0])? != Ty::Str {
+                            return Err("wasm target mkdir(path) takes a string".to_string());
+                        }
+                        return Ok(Ty::Int);
+                    }
                     if name == "argc" && args.is_empty() {
                         return Ok(Ty::Int);
                     }
@@ -2297,7 +2303,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 84;
+const IMPORT_COUNT: u32 = 85;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -2315,7 +2321,6 @@ const NOW_MS: u32 = 23;
 const SLEEP_MS: u32 = 24;
 const CWD: u32 = 25;
 const ENV_GET: u32 = 26;
-const MKDIR: u32 = 27;
 const FILE_EXISTS: u32 = 28;
 const MAP_NEW: u32 = 29;
 const MAP_SET: u32 = 30;
@@ -2370,6 +2375,7 @@ const EXEC_RECORD: u32 = 80;
 const EXEC_RECORD_SOFT: u32 = 81;
 const READ_FILE_SOFT: u32 = 82;
 const WRITE_FILE_SOFT: u32 = 83;
+const MKDIR_SOFT: u32 = 84;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -4731,6 +4737,28 @@ impl<'a> Emitter<'a> {
         Ok(Ty::Obj(shape))
     }
 
+    /// Non-attempt soft call: trap with the block's runtime message on failure,
+    /// leaving nothing on the stack afterwards.
+    fn emit_soft_io_panic(&mut self, block: u32) {
+        self.builder.push(Instr::Local(0x20, block));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Block {
+            opcode: 0x04,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x04);
+        self.builder.push(Instr::Local(0x20, block));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, block));
+        self.builder.push(Instr::Mem(0x28, 2, 4));
+        self.builder.push(Instr::Call(PANIC));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+    }
+
     /// `[status][len][data]` block from the soft file imports: branch to the
     /// active attempt with the message when status is non-zero.
     fn emit_soft_io_check(&mut self, block: u32) {
@@ -5229,7 +5257,7 @@ impl<'a> Emitter<'a> {
                         "map_new" => Some(Ty::Map),
                         "map_get" | "map_has" | "map_len" | "file_exists" => Some(Ty::Int),
                         "exists" => Some(Ty::Bool),
-                        "now" => Some(Ty::Int),
+                        "now" | "mkdir" => Some(Ty::Int),
                         "cwd" | "env" => Some(Ty::Str),
                         "performance_now" => Some(Ty::Float),
                         "gl_create" | "gl_pixel" | "gl_png" => Some(Ty::Int),
@@ -7169,6 +7197,25 @@ impl<'a> Emitter<'a> {
                         self.emit_str(&args[1])?;
                         self.builder.push(Instr::Call(5));
                         self.builder.push(Instr::Op(0xac));
+                        return Ok(Ty::Int);
+                    }
+                    if name == "mkdir" && args.len() == 1 {
+                        if self.type_of(&args[0])? != Ty::Str {
+                            return Err("wasm target mkdir(path) takes a string".to_string());
+                        }
+                        if !self.attempts.is_empty() {
+                            self.emit_str(&args[0])?;
+                            self.builder.push(Instr::Call(MKDIR_SOFT));
+                            self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
+                            self.emit_soft_io_check(self.temp(ARG_TMP));
+                            self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                            return Ok(Ty::Int);
+                        }
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Call(MKDIR_SOFT));
+                        self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
+                        self.emit_soft_io_panic(self.temp(ARG_TMP));
+                        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
                         return Ok(Ty::Int);
                     }
                     if name == "performance_now" && args.is_empty() {
@@ -9280,9 +9327,17 @@ impl<'a> Emitter<'a> {
                         if args.len() != 1 || self.type_of(&args[0])? != Ty::Str {
                             return Err("wasm target mkdir(path) takes a string".to_string());
                         }
+                        if !self.attempts.is_empty() {
+                            self.emit_str(&args[0])?;
+                            self.builder.push(Instr::Call(MKDIR_SOFT));
+                            self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
+                            self.emit_soft_io_check(self.temp(ARG_TMP));
+                            return Ok(());
+                        }
                         self.emit_str(&args[0])?;
-                        self.builder.push(Instr::Call(MKDIR));
-                        self.builder.push(Instr::Op(0x1a));
+                        self.builder.push(Instr::Call(MKDIR_SOFT));
+                        self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
+                        self.emit_soft_io_panic(self.temp(ARG_TMP));
                         return Ok(());
                     }
                     "gl_create" => {
@@ -9347,7 +9402,14 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Op(0x0b));
                         return Ok(());
                     }
-                    _ => {}
+                    "print" | "console_log" => {}
+                    _ => {
+                        // Any other call is an expression statement: evaluate it
+                        // and drop the value (the VM allows this everywhere).
+                        self.emit_expr(expr)?;
+                        self.builder.push(Instr::Op(0x1a));
+                        return Ok(());
+                    }
                 }
                 if (name != "print" && name != "console_log") || args.len() != 1 {
                     return Err(
@@ -11493,6 +11555,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("bx", "exec_record_soft", exec_record_ty);
     builder.import_func("bx", "read_file_soft", read_file_ty);
     builder.import_func("bx", "write_file_soft", write_file_ty);
+    builder.import_func("env", "mkdir_soft", mkdir_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -12498,6 +12561,19 @@ mod tests {
                 "false".to_string(),
                 "true".to_string()
             ]
+        );
+    }
+
+    #[test]
+    fn mkdir_expression_is_fatal_and_attempt_catches_it() {
+        let (numbers, strings) = run_with_argv(
+            "write(\"target/mkdir-attempt-probe.txt\", \"x\")\nlet ok = attempt(fn() { return mkdir(\"target\") })\nprint(ok.ok)\nlet bad = attempt(fn() { return mkdir(\"target/mkdir-attempt-probe.txt\") })\nprint(bad.ok)\nprint(len(bad.error) > 0)",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec!["true".to_string(), "false".to_string(), "true".to_string()]
         );
     }
 

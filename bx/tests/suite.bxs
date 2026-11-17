@@ -537,6 +537,16 @@ if (wasmRec.code == 0 && wasmRecRun.code == 0 && wasmRecRun.out.trim() == "30\n2
   failures.push("wasm records + in-module heap\n    build=" + wasmRec.code + " out=" + json(wasmRecRun.out) + " err=" + json(wasmRecRun.err))
 }
 let safeArtDir = replace(artDir, "\\", "/")
+write(artDir + "/wasm-attempt-mkdir.bxs", 'write("target/mkdir-suite-probe.txt", "x")\nlet ok = attempt(fn() { return mkdir("target") })\nprint(ok.ok)\nlet bad = attempt(fn() { return mkdir("target/mkdir-suite-probe.txt") })\nprint(bad.ok)\nprint(len(bad.error) > 0)\n')
+let wasmAttemptMkdir = exec([BX, "build", "--wasm", artDir + "/wasm-attempt-mkdir.bxs", "-o", artDir + "/wasm-attempt-mkdir.wasm"])
+let wasmAttemptMkdirRun = exec([BX, "run", artDir + "/wasm-attempt-mkdir.wasm"])
+let wasmAttemptMkdirVm = exec([BX, "run", artDir + "/wasm-attempt-mkdir.bxs"])
+if (wasmAttemptMkdir.code == 0 && wasmAttemptMkdirRun.out == wasmAttemptMkdirVm.out && wasmAttemptMkdirRun.out.trim() == "true\nfalse\ntrue") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm attempt() mkdir\n    wasm=" + json(wasmAttemptMkdirRun.out) + " vm=" + json(wasmAttemptMkdirVm.out) + " err=" + json(wasmAttemptMkdirRun.err))
+}
 write(artDir + "/wasm-attempt-io.bxs", 'let r = attempt(fn() { return read("definitely-missing-file-xyz.txt") })\nprint(r.ok)\nprint(len(r.error) > 0)\nlet w = attempt(fn() { return write("Z:/definitely/missing/dir/x.txt", "x") })\nprint(w.ok)\nprint(len(w.error) > 0)\n')
 let wasmAttemptIo = exec([BX, "build", "--wasm", artDir + "/wasm-attempt-io.bxs", "-o", artDir + "/wasm-attempt-io.wasm"])
 let wasmAttemptIoRun = exec([BX, "run", artDir + "/wasm-attempt-io.wasm"])
@@ -1032,6 +1042,16 @@ if (wasmAssign.code == 0 && wasmAssignRun.out == wasmAssignVm.out && wasmAssignR
 } else {
   casesFail += 1
   failures.push("wasm interpolation and assignments\n    wasm=" + json(wasmAssignRun.out) + " vm=" + json(wasmAssignVm.out) + " err=" + json(wasmAssignRun.err))
+}
+write(artDir + "/wasm-attempt-mkdir.bxs", 'write("target/mkdir-suite-probe.txt", "x")\nlet ok = attempt(fn() { return mkdir("target") })\nprint(ok.ok)\nlet bad = attempt(fn() { return mkdir("target/mkdir-suite-probe.txt") })\nprint(bad.ok)\nprint(len(bad.error) > 0)\n')
+let wasmAttemptMkdir = exec([BX, "build", "--wasm", artDir + "/wasm-attempt-mkdir.bxs", "-o", artDir + "/wasm-attempt-mkdir.wasm"])
+let wasmAttemptMkdirRun = exec([BX, "run", artDir + "/wasm-attempt-mkdir.wasm"])
+let wasmAttemptMkdirVm = exec([BX, "run", artDir + "/wasm-attempt-mkdir.bxs"])
+if (wasmAttemptMkdir.code == 0 && wasmAttemptMkdirRun.out == wasmAttemptMkdirVm.out && wasmAttemptMkdirRun.out.trim() == "true\nfalse\ntrue") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm attempt() mkdir\n    wasm=" + json(wasmAttemptMkdirRun.out) + " vm=" + json(wasmAttemptMkdirVm.out) + " err=" + json(wasmAttemptMkdirRun.err))
 }
 write(artDir + "/wasm-attempt-io.bxs", 'let r = attempt(fn() { return read("definitely-missing-file-xyz.txt") })\nprint(r.ok)\nprint(len(r.error) > 0)\nlet w = attempt(fn() { return write("Z:/definitely/missing/dir/x.txt", "x") })\nprint(w.ok)\nprint(len(w.error) > 0)\n')
 let wasmAttemptIo = exec([BX, "build", "--wasm", artDir + "/wasm-attempt-io.bxs", "-o", artDir + "/wasm-attempt-io.wasm"])
