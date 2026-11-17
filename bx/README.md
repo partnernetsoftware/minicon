@@ -176,7 +176,7 @@ let r = patch("src/lib.rs", read(__dir__ + "/fix.diff"))   // -> {ok, path, hunk
 | 20 万次函数调用 | ~66 ms | ~254 ms |
 | 20 万次 `map` 回调 | ~30 ms | — |
 
-wasm 目标（内置 tinyvm 核，`bash bx/scripts/bench.sh --wasm`，含进程启动，BX_BENCH_RUNS=9）：`fib(24)` VM 134 ms / wasm 232 ms，1e6 次循环 VM 337 ms / wasm 256 ms，20 万次调用 VM 199 ms / wasm 318 ms，集合重负载（2000 元素 map/filter/reduce/sort）VM 109 ms / wasm 104 ms，记录重负载（2000 记录 map/reduce）VM 106 ms / wasm 101 ms。取舍与后续优化候选见 [PRD 42](../prd/PRD_02_42_bx_wasm_target.md)。
+wasm 目标（内置 tinyvm 核，`bash bx/scripts/bench.sh --wasm`，含进程启动，BX_BENCH_RUNS=9）：`fib(24)` VM 132 ms / wasm 223 ms，1e6 次循环 VM 328 ms / wasm 238 ms，20 万次调用 VM 159 ms / wasm 255 ms，集合重负载（2000 元素 map/filter/reduce/sort）VM 92 ms / wasm 99 ms，记录重负载（500 记录 map/比较器 sort/reduce）VM 94 ms / wasm 178 ms。取舍与后续优化候选见 [PRD 42](../prd/PRD_02_42_bx_wasm_target.md)。
 
 全局名解析成槽位下标并按 chunk 缓存，热路径不再查哈希表；全局读写也不 clone 名字。调用路径做过四次去分配：chunk 名/来源文件走 `Rc<String>`、帧槽用复用池、`CALL` 参数直接 `drain` 进帧槽、内建回调（`map`/`filter`/`reduce`/`sort`）不再为每个元素构造 `Vec`。`fib(24)` 从 ~137 ms 降到 ~56 ms，20 万次 `map` 从 ~46 ms 降到 ~29 ms；两边 `dis` 字节码逐条一致，继续优化需要 profiler。
 ## wasm 目标（实验）

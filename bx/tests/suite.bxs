@@ -537,6 +537,16 @@ if (wasmRec.code == 0 && wasmRecRun.code == 0 && wasmRecRun.out.trim() == "30\n2
   failures.push("wasm records + in-module heap\n    build=" + wasmRec.code + " out=" + json(wasmRecRun.out) + " err=" + json(wasmRecRun.err))
 }
 let safeArtDir = replace(artDir, "\\", "/")
+write(artDir + "/wasm-sortchain.bxs", 'let rows = map(range(5), fn(i) { return {a: i} })\nlet ordered = sort(rows, fn(x, y) { return x.a - y.a })\nprint(reduce(ordered, fn(acc, r) { return acc + r.a }, 0))\nprint(map(ordered, fn(r) { return r.a }))\n')
+let wasmSortChain = exec([BX, "build", "--wasm", artDir + "/wasm-sortchain.bxs", "-o", artDir + "/wasm-sortchain.wasm"])
+let wasmSortChainRun = exec([BX, "run", artDir + "/wasm-sortchain.wasm"])
+let wasmSortChainVm = exec([BX, "run", artDir + "/wasm-sortchain.bxs"])
+if (wasmSortChain.code == 0 && wasmSortChainRun.out == wasmSortChainVm.out && wasmSortChainRun.out.trim() == "10\n[0,1,2,3,4]") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm sort chain keeps record types\n    wasm=" + json(wasmSortChainRun.out) + " vm=" + json(wasmSortChainVm.out) + " err=" + json(wasmSortChainRun.err))
+}
 write(artDir + "/wasm-interpfield.bxs", 'let o = {a: 1, b: "x"}\nprint("v=" + str(o.a) + "-" + o.b)\nprint(o.b + "+" + str(o.a))\nprint(o.b + "!")\nlet t = o.b + o.b\nprint(t)\nprint(len(t))\n')
 let wasmInterpField = exec([BX, "build", "--wasm", artDir + "/wasm-interpfield.bxs", "-o", artDir + "/wasm-interpfield.wasm"])
 let wasmInterpFieldRun = exec([BX, "run", artDir + "/wasm-interpfield.wasm"])
@@ -982,6 +992,16 @@ if (wasmAssign.code == 0 && wasmAssignRun.out == wasmAssignVm.out && wasmAssignR
 } else {
   casesFail += 1
   failures.push("wasm interpolation and assignments\n    wasm=" + json(wasmAssignRun.out) + " vm=" + json(wasmAssignVm.out) + " err=" + json(wasmAssignRun.err))
+}
+write(artDir + "/wasm-sortchain.bxs", 'let rows = map(range(5), fn(i) { return {a: i} })\nlet ordered = sort(rows, fn(x, y) { return x.a - y.a })\nprint(reduce(ordered, fn(acc, r) { return acc + r.a }, 0))\nprint(map(ordered, fn(r) { return r.a }))\n')
+let wasmSortChain = exec([BX, "build", "--wasm", artDir + "/wasm-sortchain.bxs", "-o", artDir + "/wasm-sortchain.wasm"])
+let wasmSortChainRun = exec([BX, "run", artDir + "/wasm-sortchain.wasm"])
+let wasmSortChainVm = exec([BX, "run", artDir + "/wasm-sortchain.bxs"])
+if (wasmSortChain.code == 0 && wasmSortChainRun.out == wasmSortChainVm.out && wasmSortChainRun.out.trim() == "10\n[0,1,2,3,4]") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm sort chain keeps record types\n    wasm=" + json(wasmSortChainRun.out) + " vm=" + json(wasmSortChainVm.out) + " err=" + json(wasmSortChainRun.err))
 }
 write(artDir + "/wasm-interpfield.bxs", 'let o = {a: 1, b: "x"}\nprint("v=" + str(o.a) + "-" + o.b)\nprint(o.b + "+" + str(o.a))\nprint(o.b + "!")\nlet t = o.b + o.b\nprint(t)\nprint(len(t))\n')
 let wasmInterpField = exec([BX, "build", "--wasm", artDir + "/wasm-interpfield.bxs", "-o", artDir + "/wasm-interpfield.wasm"])

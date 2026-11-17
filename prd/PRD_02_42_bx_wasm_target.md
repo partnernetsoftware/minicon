@@ -36,11 +36,11 @@ re-measured 2026-11-17 after the feature rounds):
 
 | benchmark | VM (`.bxb` source) | wasm target (core) |
 | --- | --- | --- |
-| fib | 134 ms | 232 ms |
-| loop | 337 ms | 256 ms |
-| calls | 199 ms | 318 ms |
-| coll (`map`/`filter`/`reduce`/`sort` over 2000 ints) | 109 ms | 104 ms |
-| recs (`map`/`reduce` over 2000 records) | 106 ms | 101 ms |
+| fib | 132 ms | 223 ms |
+| loop | 328 ms | 238 ms |
+| calls | 159 ms | 255 ms |
+| coll (`map`/`filter`/`reduce`/`sort` over 2000 ints) | 92 ms | 99 ms |
+| recs (`map`/comparator-`sort`/`reduce` over 500 records) | 94 ms | 178 ms |
 
 So the absorbed core is ~1.6–1.7× slower on call-heavy code, ~0.75× on tight
 numeric loops and about equal on collection/record-heavy work; the table is the
@@ -202,7 +202,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 104 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 105 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -232,13 +232,12 @@ bx wasm target
   other side; interpolation like `"v=${o.a}-${o.b}"` and `o.s + "!"` match the
   VM. Record fields still hold scalars only (`int`/`string`/`float`/`bool`);
   array- or record-valued fields are rejected explicitly (the VM allows them).
-- **Known inference edge**: a record array produced by `map` and then passed
-  through a `let`-bound comparator `sort` before being re-consumed
-  (`let ordered = sort(rows, cmp)` → `map(ordered, fn(r) { return r.a })`) can
-  still infer the callback parameter as int and fail with "can read fields of
-  objects only, got int". Inlining the sort (`map(sort(rows, cmp), ...)`) or
-  using literal records works; the fixpoint's provisional int needs a better
-  source of truth than `soft()` for such chains (tracked for a later round).
+- **Type inference across statements**: both fixpoint passes now keep one
+  locals map across top-level statements instead of a fresh clone per
+  statement, and a provisional `int` guess no longer overrides a later,
+  more specific type. That fixes record-array chains such as
+  `let ordered = sort(rows, cmp)` followed by `map`/`reduce` over `ordered`
+  (previously "can read fields of objects only, got int").
 - **Dynamic record keys**: `get(record, key)` accepts a non-literal key when every
   field of the record has the same type (int/string/float/bool); the key search
   runs in the guest and returns that field type, falling back to the default or

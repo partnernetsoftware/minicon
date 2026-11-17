@@ -10743,12 +10743,14 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
         };
         for _ in 0..8 {
             let mut changed = false;
+            // One locals map across the statements: a `let` typed by an earlier
+            // statement must be visible to later ones during the same pass.
+            let mut top_locals = globals.clone();
             for stmt in &stmts {
                 if let Stmt::Fn(..) = stmt {
                     continue;
                 }
-                let mut locals = globals.clone();
-                changed |= infer.walk(std::slice::from_ref(stmt), &mut locals, None)?;
+                changed |= infer.walk(std::slice::from_ref(stmt), &mut top_locals, None)?;
             }
             for (slot, decl) in declarations.iter().enumerate() {
                 let mut locals = globals.clone();
@@ -10846,12 +10848,14 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
         };
         for _ in 0..8 {
             let mut changed = false;
+            // One locals map across the statements: a `let` typed by an earlier
+            // statement must be visible to later ones during the same pass.
+            let mut top_locals = globals.clone();
             for stmt in &stmts {
                 if let Stmt::Fn(..) = stmt {
                     continue;
                 }
-                let mut locals = globals.clone();
-                changed |= infer.walk(std::slice::from_ref(stmt), &mut locals, None)?;
+                changed |= infer.walk(std::slice::from_ref(stmt), &mut top_locals, None)?;
             }
             for (slot, decl) in declarations.iter().enumerate() {
                 let mut locals = globals.clone();
@@ -12123,6 +12127,19 @@ mod tests {
                 "[x]x".to_string(),
                 "xx".to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn sort_chain_into_let_keeps_record_types() {
+        let (numbers, strings) = run_with_argv(
+            "let rows = map(range(5), fn(i) { return {a: i} })\nlet ordered = sort(rows, fn(x, y) { return x.a - y.a })\nprint(reduce(ordered, fn(acc, r) { return acc + r.a }, 0))\nprint(map(ordered, fn(r) { return r.a }))\nlet reversed = reverse(ordered)\nprint(map(reversed, fn(r) { return r.a }))",
+            &[],
+        );
+        assert_eq!(numbers, vec![10]);
+        assert_eq!(
+            strings,
+            vec!["[0,1,2,3,4]".to_string(), "[4,3,2,1,0]".to_string(),]
         );
     }
 
