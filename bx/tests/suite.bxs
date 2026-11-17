@@ -587,6 +587,16 @@ if (wasmExecAll.code == 0 && wasmExecAllRun.out == wasmExecAllVm.out && wasmExec
   casesFail += 1
   failures.push("wasm exec_all\n    wasm=" + json(wasmExecAllRun.out) + " vm=" + json(wasmExecAllVm.out) + " err=" + json(wasmExecAllRun.err))
 }
+write(artDir + "/wasm-recsearch.bxs", 'let rs = [{a: 1}, {a: 2}]\nprint(rs.contains({a: 2}))\nprint(rs.index_of({a: 1}))\nprint(contains(rs, {a: 3}))\nprint(index_of(rs, {a: 2}))\nlet rows = [[1, 2], [3]]\nprint(rows.contains([3]))\nprint(rows.index_of([1, 2]))\nlet trs = [["a"], ["b"]]\nprint(trs.contains(["b"]))\nprint(trs.index_of(["a"]))\n')
+let wasmRecSearch = exec([BX, "build", "--wasm", artDir + "/wasm-recsearch.bxs", "-o", artDir + "/wasm-recsearch.wasm"])
+let wasmRecSearchRun = exec([BX, "run", artDir + "/wasm-recsearch.wasm"])
+let wasmRecSearchVm = exec([BX, "run", artDir + "/wasm-recsearch.bxs"])
+if (wasmRecSearch.code == 0 && wasmRecSearchRun.out == wasmRecSearchVm.out && wasmRecSearchRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm record/row search\n    wasm=" + json(wasmRecSearchRun.out) + " vm=" + json(wasmRecSearchVm.out) + " err=" + json(wasmRecSearchRun.err))
+}
 write(artDir + "/wasm-sortjoin.bxs", 'let xs = [3, 1, 2]\nprint(xs.sort(fn(a, b) { return a - b }))\nprint(xs)\nlet rs = [{a: 2}, {a: 1}]\nprint(rs.sort(fn(x, y) { return x.a - y.a }))\nprint(rs)\nprint(join(rs, "|"))\nprint(rs.join("-"))\nlet rows = [[1, 2], [3]]\nprint(join(rows, ";"))\nlet trs = [["a"], ["b", "c"]]\nprint(trs.join("+"))\n')
 let wasmSortJoin = exec([BX, "build", "--wasm", artDir + "/wasm-sortjoin.bxs", "-o", artDir + "/wasm-sortjoin.wasm"])
 let wasmSortJoinRun = exec([BX, "run", artDir + "/wasm-sortjoin.wasm"])
@@ -1278,6 +1288,16 @@ if (wasmExecAll.code == 0 && wasmExecAllRun.out == wasmExecAllVm.out && wasmExec
 } else {
   casesFail += 1
   failures.push("wasm exec_all\n    wasm=" + json(wasmExecAllRun.out) + " vm=" + json(wasmExecAllVm.out) + " err=" + json(wasmExecAllRun.err))
+}
+write(artDir + "/wasm-recsearch.bxs", 'let rs = [{a: 1}, {a: 2}]\nprint(rs.contains({a: 2}))\nprint(rs.index_of({a: 1}))\nprint(contains(rs, {a: 3}))\nprint(index_of(rs, {a: 2}))\nlet rows = [[1, 2], [3]]\nprint(rows.contains([3]))\nprint(rows.index_of([1, 2]))\nlet trs = [["a"], ["b"]]\nprint(trs.contains(["b"]))\nprint(trs.index_of(["a"]))\n')
+let wasmRecSearch = exec([BX, "build", "--wasm", artDir + "/wasm-recsearch.bxs", "-o", artDir + "/wasm-recsearch.wasm"])
+let wasmRecSearchRun = exec([BX, "run", artDir + "/wasm-recsearch.wasm"])
+let wasmRecSearchVm = exec([BX, "run", artDir + "/wasm-recsearch.bxs"])
+if (wasmRecSearch.code == 0 && wasmRecSearchRun.out == wasmRecSearchVm.out && wasmRecSearchRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm record/row search\n    wasm=" + json(wasmRecSearchRun.out) + " vm=" + json(wasmRecSearchVm.out) + " err=" + json(wasmRecSearchRun.err))
 }
 write(artDir + "/wasm-sortjoin.bxs", 'let xs = [3, 1, 2]\nprint(xs.sort(fn(a, b) { return a - b }))\nprint(xs)\nlet rs = [{a: 2}, {a: 1}]\nprint(rs.sort(fn(x, y) { return x.a - y.a }))\nprint(rs)\nprint(join(rs, "|"))\nprint(rs.join("-"))\nlet rows = [[1, 2], [3]]\nprint(join(rows, ";"))\nlet trs = [["a"], ["b", "c"]]\nprint(trs.join("+"))\n')
 let wasmSortJoin = exec([BX, "build", "--wasm", artDir + "/wasm-sortjoin.bxs", "-o", artDir + "/wasm-sortjoin.wasm"])

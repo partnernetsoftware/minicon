@@ -260,9 +260,10 @@ fn record_methods(lines, name) {
     lines.push("print(" + name + ".sort(fn(x, y) { return x.a - y.a }))")
     lines.push("print(" + name + ")")
   } else if (choice == 3) {
-    lines.push("print(" + name + ")")
-    lines.push("print(len(" + name + "))")
-    lines.push("print(" + name + "[0].a)")
+    lines.push("print(" + name + ".contains(" + name + "[0]))")
+    lines.push("print(" + name + ".index_of(" + name + "[0]))")
+    lines.push("print(contains(" + name + ", " + name + "[0]))")
+    lines.push("print(index_of(" + name + ", " + name + "[0]))")
   } else if (choice == 4) {
     lines.push("print(" + name + ".pop())")
     lines.push("print(" + name + ")")
@@ -335,10 +336,14 @@ fn gen() {
     lines.push("let rows0 = " + int_rows())
     lines.push("print(join(rows0, \";\"))")
     lines.push("print(rows0.join(\"+\"))")
+    lines.push("print(rows0.contains(rows0[0]))")
+    lines.push("print(rows0.index_of(rows0[0]))")
   }
   if (pick(3) == 0) {
     lines.push("let trs0 = " + text_rows())
     lines.push("print(join(trs0, \"|\"))")
+    lines.push("print(trs0.contains(trs0[0]))")
+    lines.push("print(contains(trs0, trs0[0]))")
   }
   if (pick(2) == 0) {
     let extra = null_program()

@@ -1114,6 +1114,30 @@ impl Checker {
                                     .to_string());
                             }
                         }
+                        Ty::ArrObj(shape) => {
+                            if key != "contains" || self.infer(&args[0])? != Ty::Obj(shape) {
+                                return Err(
+                                    "wasm target record arrays support .contains(record) only"
+                                        .to_string(),
+                                );
+                            }
+                        }
+                        Ty::ArrArr => {
+                            if key != "contains" || self.infer(&args[0])? != Ty::Arr {
+                                return Err(
+                                    "wasm target int-row arrays support .contains(int array) only"
+                                        .to_string(),
+                                );
+                            }
+                        }
+                        Ty::ArrStrArr => {
+                            if key != "contains" || self.infer(&args[0])? != Ty::ArrStr {
+                                return Err(
+                                    "wasm target text-row arrays support .contains(string array) only"
+                                        .to_string(),
+                                );
+                            }
+                        }
                         _ => {
                             return Err(format!(
                                 "wasm target .{} works on strings and arrays only",
@@ -1131,6 +1155,9 @@ impl Checker {
                         Ty::ArrF => Ty::Float,
                         Ty::ArrStr => Ty::Str,
                         Ty::ArrBool => Ty::Bool,
+                        Ty::ArrObj(shape) => Ty::Obj(shape),
+                        Ty::ArrArr => Ty::Arr,
+                        Ty::ArrStrArr => Ty::ArrStr,
                         _ => {
                             return Err("wasm target .index_of() works on strings and arrays only"
                                 .to_string())
@@ -8557,6 +8584,18 @@ impl<'a> Emitter<'a> {
                             self.builder.push(Instr::Call(ARR_INDEX_OF));
                             return Ok(Ty::Int);
                         }
+                        Ty::ArrObj(shape) => {
+                            self.emit_array_search(object, &args[0], Ty::Obj(shape), true)?;
+                            return Ok(Ty::Int);
+                        }
+                        Ty::ArrArr => {
+                            self.emit_array_search(object, &args[0], Ty::Arr, true)?;
+                            return Ok(Ty::Int);
+                        }
+                        Ty::ArrStrArr => {
+                            self.emit_array_search(object, &args[0], Ty::ArrStr, true)?;
+                            return Ok(Ty::Int);
+                        }
                         _ => {
                             self.emit_str(object)?;
                             self.emit_str(&args[0])?;
@@ -8602,6 +8641,18 @@ impl<'a> Emitter<'a> {
                                 self.builder.push(Instr::Call(ARR_INDEX_OF));
                                 self.builder.push(Instr::Const(0x42, WVal::I64(-1)));
                                 self.builder.push(Instr::Op(0x52));
+                                return Ok(Ty::Bool);
+                            }
+                            Ty::ArrObj(shape) => {
+                                self.emit_array_search(object, &args[0], Ty::Obj(shape), false)?;
+                                return Ok(Ty::Bool);
+                            }
+                            Ty::ArrArr => {
+                                self.emit_array_search(object, &args[0], Ty::Arr, false)?;
+                                return Ok(Ty::Bool);
+                            }
+                            Ty::ArrStrArr => {
+                                self.emit_array_search(object, &args[0], Ty::ArrStr, false)?;
                                 return Ok(Ty::Bool);
                             }
                             _ => {}
@@ -15295,6 +15346,22 @@ mod tests {
         assert_eq!(
             strings,
             expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn record_and_row_search_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let rs = [{a: 1}, {a: 2}]\nprint(rs.contains({a: 2}))\nprint(rs.index_of({a: 1}))\nprint(contains(rs, {a: 3}))\nprint(index_of(rs, {a: 2}))\nlet rows = [[1, 2], [3]]\nprint(rows.contains([3]))\nprint(rows.index_of([1, 2]))\nlet trs = [[\"a\"], [\"b\"]]\nprint(trs.contains([\"b\"]))\nprint(trs.index_of([\"a\"]))",
+            &[],
+        );
+        assert_eq!(numbers, vec![0, 1, 0, 0]);
+        assert_eq!(
+            strings,
+            vec!["true", "false", "true", "true"]
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
         );
     }
 

@@ -218,9 +218,9 @@ bx wasm target
   method surface and null: `.join([sep])`, `.sort()`, `.sort(cmp)`,
   `.reverse()`, `.pop()`, `slice`, `contains`/`index_of`, `map`/`filter`/
   `reduce`/`each`, `sum`/`min`/`max` over int/float/string/bool arrays, plus
-  record `join`/`.join`/`.sort(cmp)` and nested-row joins, plus the full null
-  scalar set. Sweep on 2026-11-18 (record join added): three seeds at 40 cases
-  each and the 12-case smoke, all pass.
+  record `join`/`.join`/`.sort(cmp)` and nested-row joins plus record/nested
+  `contains`/`index_of`, plus the full null scalar set. Sweep on 2026-11-18
+  (search added): three seeds at 40 cases each and the 12-case smoke, all pass.
 Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
   collection cases and 15 numeric cases. The generator also emits random string
   expressions (trim/upper/lower/replace/repeat/slice/concat/split-join,
@@ -235,7 +235,7 @@ Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 130 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 131 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -502,8 +502,9 @@ Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
   (bool arrays also gained `slice`). `join` and the method form `.sort(cmp)` now
   also cover record arrays and nested rows: each record/row is stringified
   through `env.format_container` into a temporary string array, then joined, which
-  matches the VM's `{"a":1}|{"a":2}` and `[1,2];[3]` output. Record/nested
-  `.contains`/`.index_of` remain explicit errors (not claimed).
+  matches the VM's `{"a":1}|{"a":2}` and `[1,2];[3]` output. Record and nested-row
+  arrays also support `contains`/`index_of` in both call and method form
+  (structural equality, VM ordering preserved).
 - **`null` (static marker)**: `null` is typed `Ty::Null` and covers the VM's
   scalar semantics: printing/`str`/`json`/`type`/interpolation give `null`,
   `null == null`, `null == 0`, `null == 0.0`, `null == false` are true while
