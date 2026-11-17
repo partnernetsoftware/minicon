@@ -478,6 +478,7 @@ impl Checker {
             Expr::Int(_) => Ok(Ty::Int),
             Expr::Float(_) => Ok(Ty::Float),
             Expr::Str(_) => Ok(Ty::Str),
+            Expr::Ident(name) if name == "__dir__" => Ok(Ty::Str),
             Expr::Ident(name) if name == "argv" => Ok(Ty::ArrStr),
             Expr::Ident(name) => self.lookup(name),
             Expr::Neg(inner) => {
@@ -2335,7 +2336,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 89;
+const IMPORT_COUNT: u32 = 90;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -2412,6 +2413,7 @@ const BASENAME: u32 = 85;
 const DIRNAME: u32 = 86;
 const EPRINT: u32 = 87;
 const ENV_GET_DEFAULT: u32 = 88;
+const SCRIPT_DIR: u32 = 89;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -4682,6 +4684,17 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Call(sig.index));
     }
 
+    /// `__dir__`: the executed module's directory, via `bx.script_dir`.
+    fn emit_script_dir(&mut self) -> Result<Ty, String> {
+        self.builder.push(Instr::Call(SCRIPT_DIR));
+        self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
+        self.builder.push(Instr::Local(0x20, self.temp(ARG_TMP)));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, self.temp(ARG_TMP)));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        Ok(Ty::Str)
+    }
     /// Materialise the VM's `argv` array: `argc()` entries from `arg(i)`, each
     /// a `(ptr, len)` slot in a fresh `Ty::ArrStr` block.
     fn emit_argv_array(&mut self) -> Result<Ty, String> {
@@ -5213,6 +5226,7 @@ impl<'a> Emitter<'a> {
 
     fn type_of(&self, expr: &Expr) -> Result<Ty, String> {
         match expr {
+            Expr::Ident(name) if name == "__dir__" => Ok(Ty::Str),
             Expr::Ident(name) if name == "argv" => Ok(Ty::ArrStr),
             Expr::Ident(name) => match self.local_of(name) {
                 Some(slot) => Ok(slot.ty),
@@ -6125,6 +6139,13 @@ impl<'a> Emitter<'a> {
             return Ok(());
         }
         match expr {
+            Expr::Ident(name) if name == "__dir__" => {
+                self.emit_script_dir()?;
+                Ok(())
+            }
+            Expr::Ident(name) if name == "argv" => {
+                Err("wasm target uses argv as an array, not a string".to_string())
+            }
             Expr::Ident(name) => {
                 if let Some(slot) = self.local_of(name) {
                     if slot.ty != Ty::Str {
@@ -6378,6 +6399,7 @@ impl<'a> Emitter<'a> {
                     .push(Instr::Const(0x41, WVal::I32(*value as i32)));
                 Ok(Ty::Bool)
             }
+            Expr::Ident(name) if name == "__dir__" => self.emit_script_dir(),
             Expr::Ident(name) if name == "argv" => self.emit_argv_array(),
             Expr::Ident(name) => {
                 if let Some(slot) = self.local_of(name) {
@@ -10055,6 +10077,7 @@ impl<'a> InferState<'a> {
             Expr::Int(_) => Some(Ty::Int),
             Expr::Float(_) => Some(Ty::Float),
             Expr::Str(_) => Some(Ty::Str),
+            Expr::Ident(name) if name == "__dir__" => Some(Ty::Str),
             Expr::Ident(name) if name == "argv" => Some(Ty::ArrStr),
             Expr::Ident(name) => locals
                 .get(name)
@@ -10694,6 +10717,7 @@ impl<'a> CaptureWalker<'a> {
             Expr::Int(_) => Ty::Int,
             Expr::Float(_) => Ty::Float,
             Expr::Str(_) => Ty::Str,
+            Expr::Ident(name) if name == "__dir__" => Ty::Str,
             Expr::Ident(name) if name == "argv" => Ty::ArrStr,
             Expr::Ident(name) => self.lookup_ty(name).unwrap_or(Ty::Int),
             Expr::Array(items) => {
@@ -11748,6 +11772,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "dirname", which_ty);
     builder.import_func("env", "eprint", print_utf8_ty);
     builder.import_func("env", "env_get_default", env_get_default_ty);
+    builder.import_func("bx", "script_dir", argc_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -12131,7 +12156,31 @@ where
     crate::wasm_core::run_start(bytes, argv, max_steps, timeout_ms, on_i64, on_str)
 }
 
+/// Like [`execute_with_stderr`], also exposing the executed module's directory
+/// to `__dir__` (`bx.script_dir`).
+#[allow(clippy::too_many_arguments)]
+pub fn execute_with_dir<F, G, H>(
+    bytes: &[u8],
+    argv: &[String],
+    script_dir: Option<&str>,
+    max_steps: u64,
+    timeout_ms: u64,
+    on_i64: F,
+    on_str: G,
+    on_err: H,
+) -> Result<i64, String>
+where
+    F: FnMut(i64) + 'static,
+    G: FnMut(&str) + 'static,
+    H: FnMut(&str) + 'static,
+{
+    crate::wasm_core::run_start_full(
+        bytes, argv, max_steps, timeout_ms, script_dir, on_i64, on_str, on_err,
+    )
+}
+
 /// Like [`execute`], with a sink for `eprint()` stderr lines.
+#[allow(dead_code)]
 pub fn execute_with_stderr<F, G, H>(
     bytes: &[u8],
     argv: &[String],
@@ -12969,6 +13018,28 @@ mod tests {
                 "[2,3]".to_string(),
                 "fallback".to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn script_dir_reaches_the_guest_as_dir() {
+        let bytes = compile_to_wasm("print(__dir__)\nprint(basename(__dir__))").expect("compile");
+        let out = Arc::new(Mutex::new(Vec::new()));
+        let sink = out.clone();
+        execute_with_dir(
+            &bytes,
+            &[],
+            Some("/tmp/bx-scripts"),
+            0,
+            0,
+            |_value| {},
+            move |text| sink.lock().expect("lock").push(text.to_string()),
+            |_text| {},
+        )
+        .expect("execute");
+        assert_eq!(
+            *out.lock().expect("lock"),
+            vec!["/tmp/bx-scripts".to_string(), "bx-scripts".to_string()]
         );
     }
 

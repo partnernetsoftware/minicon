@@ -228,7 +228,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 116 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 117 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -307,6 +307,11 @@ bx wasm target
   captures see the field's real type. `for k, v in record` stays int-only
   (mixed value types would need a dynamic tag); nested records are still
   rejected explicitly.
+- **`__dir__`**: resolves to the directory of the executed module through
+  `bx.script_dir` (canonicalised, verbatim Windows prefixes stripped), matching
+  the VM's `__dir__` when a script is run from the same directory as the module.
+  A module moved elsewhere reports its own directory, which is the useful
+  deployment behaviour (the VM has no equivalent).
 - **`argv` and `env(name, default)`**: the VM's `argv` global works as a
   materialised `Ty::ArrStr` (built on each access from `argc()`/`arg(i)`), so
   `len(argv)`, `argv[i]`, `for` loops, `join(argv, ...)`, captures and `map`

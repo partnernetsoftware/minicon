@@ -644,6 +644,7 @@ pub(crate) fn core_print_host(
     on_str: BoxedStrSink,
     on_err: BoxedStrSink,
     argv: &[String],
+    script_dir: Option<String>,
 ) -> PrintHost<'static, BoxedI64Sink, BoxedStrSink> {
     let on_i64: &'static mut BoxedI64Sink = Box::leak(Box::new(on_i64));
     let on_str: &'static mut BoxedStrSink = Box::leak(Box::new(on_str));
@@ -651,6 +652,7 @@ pub(crate) fn core_print_host(
         on_i64,
         on_str,
         on_err,
+        script_dir,
         next_alloc: 8192,
         argv: argv.to_vec(),
         next_argv: 65_536,
@@ -818,6 +820,8 @@ pub(crate) struct PrintHost<'a, F: FnMut(i64), G: FnMut(&str)> {
     on_str: &'a mut G,
     /// `env.eprint` sink (stderr); cloned lines include the trailing newline.
     on_err: BoxedStrSink,
+    /// Directory of the executed module, exposed as `bx.script_dir` (`__dir__`).
+    script_dir: Option<String>,
     /// Bump allocator for the prototype `env.alloc` import, 8-byte aligned.
     next_alloc: u32,
     /// Command-line arguments exposed through `bx.argc` / `bx.arg`.
@@ -845,6 +849,13 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
         memory: &mut [u8],
     ) -> Result<Vec<WVal>, String> {
         match (module, name) {
+            ("bx", "script_dir") => {
+                let text = self.script_dir.clone().unwrap_or_default();
+                match store_text_block(memory, &mut self.next_file, text.as_bytes()) {
+                    Some(start) => Ok(vec![WVal::I32(start as i32)]),
+                    None => Err("bx.script_dir result does not fit the file region".to_string()),
+                }
+            }
             ("env", "eprint") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {
                     (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),

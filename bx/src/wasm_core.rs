@@ -130,6 +130,29 @@ where
     G: FnMut(&str) + 'static,
     H: FnMut(&str) + 'static,
 {
+    run_start_full(
+        bytes, argv, max_steps, timeout_ms, None, on_i64, on_str, on_err,
+    )
+}
+
+/// Full entry point: also tells `bx.script_dir` which directory the executed
+/// module lives in (`__dir__` in guest code).
+#[allow(clippy::too_many_arguments)]
+pub fn run_start_full<F, G, H>(
+    bytes: &[u8],
+    argv: &[String],
+    max_steps: u64,
+    timeout_ms: u64,
+    script_dir: Option<&str>,
+    on_i64: F,
+    on_str: G,
+    on_err: H,
+) -> Result<i64, String>
+where
+    F: FnMut(i64) + 'static,
+    G: FnMut(&str) + 'static,
+    H: FnMut(&str) + 'static,
+{
     let limits = Limits {
         max_steps: if max_steps > 0 { max_steps } else { u64::MAX },
         max_memory_pages: 64,
@@ -144,7 +167,11 @@ where
     let sink_str: BoxedStrSink = Box::new(on_str);
     let sink_err: BoxedStrSink = Box::new(on_err);
     let host = Rc::new(RefCell::new(crate::wasm::core_print_host(
-        sink_i64, sink_str, sink_err, argv,
+        sink_i64,
+        sink_str,
+        sink_err,
+        argv,
+        script_dir.map(|dir| dir.to_string()),
     )));
 
     for (module_name, field) in import_names(&module) {

@@ -203,6 +203,19 @@ fn json_quote(text: &str) -> String {
     out
 }
 
+/// Directory of the executed script/module, for `__dir__`. Canonicalised while
+/// stripping Windows' verbatim prefix so the value matches the VM's text.
+fn executed_script_dir(path: &str) -> Option<String> {
+    let canonical = fs::canonicalize(path).ok()?;
+    let dir = canonical.parent()?.to_string_lossy().into_owned();
+    let dir = dir
+        .strip_prefix(r"\\?\UNC\")
+        .map(|rest| format!(r"\\{}", rest))
+        .or_else(|| dir.strip_prefix(r"\\?\").map(|rest| rest.to_string()))
+        .unwrap_or(dir);
+    Some(dir)
+}
+
 fn cmd_run(args: Vec<String>) -> i32 {
     let budget = match parse_budget(args) {
         Ok(v) => v,
@@ -232,9 +245,11 @@ fn cmd_run(args: Vec<String>) -> i32 {
             }
         };
         let wasm_argv: Vec<String> = args[1..].to_vec();
-        return match wasm_target::execute_with_stderr(
+        let script_dir = executed_script_dir(path);
+        return match wasm_target::execute_with_dir(
             &bytes,
             &wasm_argv,
+            script_dir.as_deref(),
             budget.max_steps.unwrap_or(0),
             budget.timeout_ms.unwrap_or(0),
             |value| println!("{}", value),
@@ -288,9 +303,11 @@ fn cmd_run(args: Vec<String>) -> i32 {
                 }
             },
         };
-        return match wasm_target::execute_with_stderr(
+        let script_dir = executed_script_dir(path);
+        return match wasm_target::execute_with_dir(
             &bytes,
             &wasm_argv,
+            script_dir.as_deref(),
             budget.max_steps.unwrap_or(0),
             budget.timeout_ms.unwrap_or(0),
             |value| println!("{}", value),
