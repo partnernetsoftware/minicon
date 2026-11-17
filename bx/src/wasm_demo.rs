@@ -95,6 +95,11 @@ const imports = {
     print_utf8: (ptr, len) => {
       const bytes = new Uint8Array(instance.exports.memory.buffer, ptr, len);
       emit(new TextDecoder("utf-8").decode(bytes));
+    },    eprint: (ptr, len) => {
+      const bytes = new Uint8Array(instance.exports.memory.buffer, ptr, len);
+      const line = new TextDecoder("utf-8").decode(bytes);
+      if (typeof console !== "undefined" && console.error) console.error(line);
+      else emit(line);
     },
     print_f64: (value) => { emit(formatFloat(value)); },
     print_arr_i64: (ptr) => {

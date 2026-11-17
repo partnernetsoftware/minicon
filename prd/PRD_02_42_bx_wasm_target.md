@@ -228,7 +228,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 114 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 115 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -307,6 +307,9 @@ bx wasm target
   captures see the field's real type. `for k, v in record` stays int-only
   (mixed value types would need a dynamic tag); nested records are still
   rejected explicitly.
+- **stderr**: `eprint(text)` writes `text` plus a newline to the process stderr
+  through a third host sink (`env.eprint`); `print(eprint(...))` yields `0` where
+  the VM yields `null`. The browser/node demo glue routes it to `console.error`.
 - **Path helpers**: `basename(path)` and `dirname(path)` follow the VM's rules
   (both `/` and `\` separate, trailing separators trimmed, `dirname("/a") == "/"`,
   `dirname("file.txt") == ""`), served by `env.basename`/`env.dirname` host

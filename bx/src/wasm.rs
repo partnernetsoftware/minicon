@@ -642,6 +642,7 @@ pub(crate) type BoxedStrSink = Box<dyn FnMut(&str)>;
 pub(crate) fn core_print_host(
     on_i64: BoxedI64Sink,
     on_str: BoxedStrSink,
+    on_err: BoxedStrSink,
     argv: &[String],
 ) -> PrintHost<'static, BoxedI64Sink, BoxedStrSink> {
     let on_i64: &'static mut BoxedI64Sink = Box::leak(Box::new(on_i64));
@@ -649,6 +650,7 @@ pub(crate) fn core_print_host(
     PrintHost {
         on_i64,
         on_str,
+        on_err,
         next_alloc: 8192,
         argv: argv.to_vec(),
         next_argv: 65_536,
@@ -814,6 +816,8 @@ impl GlBackend {
 pub(crate) struct PrintHost<'a, F: FnMut(i64), G: FnMut(&str)> {
     on_i64: &'a mut F,
     on_str: &'a mut G,
+    /// `env.eprint` sink (stderr); cloned lines include the trailing newline.
+    on_err: BoxedStrSink,
     /// Bump allocator for the prototype `env.alloc` import, 8-byte aligned.
     next_alloc: u32,
     /// Command-line arguments exposed through `bx.argc` / `bx.arg`.
@@ -841,6 +845,20 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
         memory: &mut [u8],
     ) -> Result<Vec<WVal>, String> {
         match (module, name) {
+            ("env", "eprint") => {
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("env.eprint expects (i32 ptr, i32 len)".to_string()),
+                };
+                let text = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .unwrap_or_default();
+                let mut line = text;
+                line.push('\n');
+                (self.on_err)(&line);
+                Ok(vec![])
+            }
             ("env", "print_i64") => {
                 let value = match args.first() {
                     Some(WVal::I64(value)) => *value,

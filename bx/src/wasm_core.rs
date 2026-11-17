@@ -89,6 +89,9 @@ pub fn validate(bytes: &[u8]) -> Result<(), String> {
 }
 
 /// Execute the module's `_start` export through the absorbed core.
+// Kept as the convenience wrapper for callers that have no stderr sink; the CLI
+// uses `run_start_with_stderr` directly.
+#[allow(dead_code)]
 pub fn run_start<F, G>(
     bytes: &[u8],
     argv: &[String],
@@ -100,6 +103,32 @@ pub fn run_start<F, G>(
 where
     F: FnMut(i64) + 'static,
     G: FnMut(&str) + 'static,
+{
+    run_start_with_stderr(
+        bytes,
+        argv,
+        max_steps,
+        timeout_ms,
+        on_i64,
+        on_str,
+        |_: &str| {},
+    )
+}
+
+/// Like [`run_start`], with a sink for `env.eprint` lines (stderr).
+pub fn run_start_with_stderr<F, G, H>(
+    bytes: &[u8],
+    argv: &[String],
+    max_steps: u64,
+    timeout_ms: u64,
+    on_i64: F,
+    on_str: G,
+    on_err: H,
+) -> Result<i64, String>
+where
+    F: FnMut(i64) + 'static,
+    G: FnMut(&str) + 'static,
+    H: FnMut(&str) + 'static,
 {
     let limits = Limits {
         max_steps: if max_steps > 0 { max_steps } else { u64::MAX },
@@ -113,8 +142,9 @@ where
     let error_slot = host_error.clone();
     let sink_i64: BoxedI64Sink = Box::new(on_i64);
     let sink_str: BoxedStrSink = Box::new(on_str);
+    let sink_err: BoxedStrSink = Box::new(on_err);
     let host = Rc::new(RefCell::new(crate::wasm::core_print_host(
-        sink_i64, sink_str, argv,
+        sink_i64, sink_str, sink_err, argv,
     )));
 
     for (module_name, field) in import_names(&module) {

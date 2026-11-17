@@ -1575,6 +1575,12 @@ impl Checker {
                         }
                         return Ok(Ty::Bool);
                     }
+                    if name == "eprint" && args.len() == 1 {
+                        if self.infer(&args[0])? != Ty::Str {
+                            return Err("wasm target eprint(text) takes a string".to_string());
+                        }
+                        return Ok(Ty::Int);
+                    }
                     if name == "mkdir" && args.len() == 1 {
                         if self.infer(&args[0])? != Ty::Str {
                             return Err("wasm target mkdir(path) takes a string".to_string());
@@ -2322,7 +2328,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 87;
+const IMPORT_COUNT: u32 = 88;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -2397,6 +2403,7 @@ const WRITE_FILE_SOFT: u32 = 83;
 const MKDIR_SOFT: u32 = 84;
 const BASENAME: u32 = 85;
 const DIRNAME: u32 = 86;
+const EPRINT: u32 = 87;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -5278,7 +5285,7 @@ impl<'a> Emitter<'a> {
                         "map_new" => Some(Ty::Map),
                         "map_get" | "map_has" | "map_len" | "file_exists" => Some(Ty::Int),
                         "exists" => Some(Ty::Bool),
-                        "now" | "mkdir" => Some(Ty::Int),
+                        "now" | "mkdir" | "eprint" => Some(Ty::Int),
                         "cwd" | "env" => Some(Ty::Str),
                         "performance_now" => Some(Ty::Float),
                         "gl_create" | "gl_pixel" | "gl_png" => Some(Ty::Int),
@@ -7237,6 +7244,15 @@ impl<'a> Emitter<'a> {
                         self.emit_str(&args[1])?;
                         self.builder.push(Instr::Call(5));
                         self.builder.push(Instr::Op(0xac));
+                        return Ok(Ty::Int);
+                    }
+                    if name == "eprint" && args.len() == 1 {
+                        if self.type_of(&args[0])? != Ty::Str {
+                            return Err("wasm target eprint(text) takes a string".to_string());
+                        }
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Call(EPRINT));
+                        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
                         return Ok(Ty::Int);
                     }
                     if name == "mkdir" && args.len() == 1 {
@@ -9378,6 +9394,14 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Call(SLEEP_MS));
                         return Ok(());
                     }
+                    "eprint" => {
+                        if args.len() != 1 || self.type_of(&args[0])? != Ty::Str {
+                            return Err("wasm target eprint(text) takes a string".to_string());
+                        }
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Call(EPRINT));
+                        return Ok(());
+                    }
                     "mkdir" => {
                         if args.len() != 1 || self.type_of(&args[0])? != Ty::Str {
                             return Err("wasm target mkdir(path) takes a string".to_string());
@@ -10081,7 +10105,7 @@ impl<'a> InferState<'a> {
                 match name.as_str() {
                     "len" | "argc" | "write_file" | "write" | "run" | "gl_pixel" | "gl_png"
                     | "int" | "abs" | "floor" | "ceil" | "round" | "sum" | "get" | "now"
-                    | "sleep" | "mkdir" => Some(Ty::Int),
+                    | "sleep" | "mkdir" | "eprint" => Some(Ty::Int),
                     "reduce" => args
                         .get(2)
                         .and_then(|init| self.soft(init, locals))
@@ -10719,8 +10743,8 @@ impl<'a> CaptureWalker<'a> {
                 "str" => Ty::Str,
                 "int" => Ty::Int,
                 "float" => Ty::Float,
-                "len" | "argc" | "write_file" | "run" | "now" | "sleep" | "mkdir" | "get"
-                | "sum" => Ty::Int,
+                "len" | "argc" | "write_file" | "run" | "now" | "sleep" | "mkdir" | "eprint"
+                | "get" | "sum" => Ty::Int,
                 "reduce" => args
                     .get(2)
                     .map(|init| self.ty_of(init))
@@ -11614,6 +11638,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "mkdir_soft", mkdir_ty);
     builder.import_func("env", "basename", which_ty);
     builder.import_func("env", "dirname", which_ty);
+    builder.import_func("env", "eprint", print_utf8_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -11979,6 +12004,9 @@ pub fn validate(bytes: &[u8]) -> Result<(), String> {
 /// Sinks are owned because the core stores its callback table for the module's
 /// lifetime. The CLI uses this entry; the in-tree interpreter stays reachable
 /// through [`execute`] until P1 deletes it.
+// Convenience wrapper for tests and callers without a stderr sink; the CLI
+// uses `execute_with_stderr` directly.
+#[allow(dead_code)]
 pub fn execute<F, G>(
     bytes: &[u8],
     argv: &[String],
@@ -11992,6 +12020,26 @@ where
     G: FnMut(&str) + 'static,
 {
     crate::wasm_core::run_start(bytes, argv, max_steps, timeout_ms, on_i64, on_str)
+}
+
+/// Like [`execute`], with a sink for `eprint()` stderr lines.
+pub fn execute_with_stderr<F, G, H>(
+    bytes: &[u8],
+    argv: &[String],
+    max_steps: u64,
+    timeout_ms: u64,
+    on_i64: F,
+    on_str: G,
+    on_err: H,
+) -> Result<i64, String>
+where
+    F: FnMut(i64) + 'static,
+    G: FnMut(&str) + 'static,
+    H: FnMut(&str) + 'static,
+{
+    crate::wasm_core::run_start_with_stderr(
+        bytes, argv, max_steps, timeout_ms, on_i64, on_str, on_err,
+    )
 }
 
 #[cfg(test)]
@@ -12768,6 +12816,31 @@ mod tests {
                 "b".to_string(),
                 "a".to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn eprint_writes_to_the_stderr_sink() {
+        let bytes = compile_to_wasm("eprint(\"first\")\neprint(\"second\")\nprint(\"out\")")
+            .expect("compile");
+        let out = Arc::new(Mutex::new(Vec::new()));
+        let err = Arc::new(Mutex::new(Vec::new()));
+        let out_sink = out.clone();
+        let err_sink = err.clone();
+        execute_with_stderr(
+            &bytes,
+            &[],
+            0,
+            0,
+            |_value| {},
+            move |text| out_sink.lock().expect("lock").push(text.to_string()),
+            move |text| err_sink.lock().expect("lock").push(text.to_string()),
+        )
+        .expect("execute");
+        assert_eq!(*out.lock().expect("lock"), vec!["out".to_string()]);
+        assert_eq!(
+            *err.lock().expect("lock"),
+            vec!["first\n".to_string(), "second\n".to_string()]
         );
     }
 

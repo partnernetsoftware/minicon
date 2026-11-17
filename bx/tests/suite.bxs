@@ -577,6 +577,16 @@ if (wasmAttempt.code == 0 && wasmAttemptRun.out == wasmAttemptVm.out && wasmAtte
   casesFail += 1
   failures.push("wasm attempt()\n    wasm=" + json(wasmAttemptRun.out) + " vm=" + json(wasmAttemptVm.out) + " err=" + json(wasmAttemptRun.err))
 }
+write(artDir + "/wasm-eprint.bxs", 'eprint("first")\neprint("second")\nprint("out")\n')
+let wasmEprint = exec([BX, "build", "--wasm", artDir + "/wasm-eprint.bxs", "-o", artDir + "/wasm-eprint.wasm"])
+let wasmEprintRun = exec([BX, "run", artDir + "/wasm-eprint.wasm"])
+let wasmEprintVm = exec([BX, "run", artDir + "/wasm-eprint.bxs"])
+if (wasmEprint.code == 0 && wasmEprintRun.out == wasmEprintVm.out && wasmEprintRun.err == wasmEprintVm.err && wasmEprintRun.out.trim() == "out" && wasmEprintRun.err.trim() == "first\nsecond") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm eprint stderr\n    wasm out=" + json(wasmEprintRun.out) + " err=" + json(wasmEprintRun.err) + " vm out=" + json(wasmEprintVm.out) + " err=" + json(wasmEprintVm.err))
+}
 write(artDir + "/wasm-basename.bxs", 'print(basename("/a/b/c.txt"))\nprint(dirname("/a/b/c.txt"))\nprint(basename("file.txt"))\nprint(dirname("file.txt"))\nprint(basename("/a"))\nprint(dirname("/a"))\nprint(basename("a//b"))\nprint(dirname("a//b"))\n')
 let wasmBasename = exec([BX, "build", "--wasm", artDir + "/wasm-basename.bxs", "-o", artDir + "/wasm-basename.wasm"])
 let wasmBasenameRun = exec([BX, "run", artDir + "/wasm-basename.wasm"])
@@ -1108,6 +1118,16 @@ if (wasmAttempt.code == 0 && wasmAttemptRun.out == wasmAttemptVm.out && wasmAtte
 } else {
   casesFail += 1
   failures.push("wasm attempt()\n    wasm=" + json(wasmAttemptRun.out) + " vm=" + json(wasmAttemptVm.out) + " err=" + json(wasmAttemptRun.err))
+}
+write(artDir + "/wasm-eprint.bxs", 'eprint("first")\neprint("second")\nprint("out")\n')
+let wasmEprint = exec([BX, "build", "--wasm", artDir + "/wasm-eprint.bxs", "-o", artDir + "/wasm-eprint.wasm"])
+let wasmEprintRun = exec([BX, "run", artDir + "/wasm-eprint.wasm"])
+let wasmEprintVm = exec([BX, "run", artDir + "/wasm-eprint.bxs"])
+if (wasmEprint.code == 0 && wasmEprintRun.out == wasmEprintVm.out && wasmEprintRun.err == wasmEprintVm.err && wasmEprintRun.out.trim() == "out" && wasmEprintRun.err.trim() == "first\nsecond") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm eprint stderr\n    wasm out=" + json(wasmEprintRun.out) + " err=" + json(wasmEprintRun.err) + " vm out=" + json(wasmEprintVm.out) + " err=" + json(wasmEprintVm.err))
 }
 write(artDir + "/wasm-basename.bxs", 'print(basename("/a/b/c.txt"))\nprint(dirname("/a/b/c.txt"))\nprint(basename("file.txt"))\nprint(dirname("file.txt"))\nprint(basename("/a"))\nprint(dirname("/a"))\nprint(basename("a//b"))\nprint(dirname("a//b"))\n')
 let wasmBasename = exec([BX, "build", "--wasm", artDir + "/wasm-basename.bxs", "-o", artDir + "/wasm-basename.wasm"])

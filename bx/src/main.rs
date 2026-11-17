@@ -232,13 +232,14 @@ fn cmd_run(args: Vec<String>) -> i32 {
             }
         };
         let wasm_argv: Vec<String> = args[1..].to_vec();
-        return match wasm_target::execute(
+        return match wasm_target::execute_with_stderr(
             &bytes,
             &wasm_argv,
             budget.max_steps.unwrap_or(0),
             budget.timeout_ms.unwrap_or(0),
             |value| println!("{}", value),
             |text| println!("{}", text),
+            |text| eprint!("{}", text),
         ) {
             Ok(code) => code as i32,
             Err(e) => {
@@ -287,13 +288,14 @@ fn cmd_run(args: Vec<String>) -> i32 {
                 }
             },
         };
-        return match wasm_target::execute(
+        return match wasm_target::execute_with_stderr(
             &bytes,
             &wasm_argv,
             budget.max_steps.unwrap_or(0),
             budget.timeout_ms.unwrap_or(0),
             |value| println!("{}", value),
             |text| println!("{}", text),
+            |text| eprint!("{}", text),
         ) {
             Ok(code) => code as i32,
             Err(e) => {
