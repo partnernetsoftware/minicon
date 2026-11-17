@@ -385,7 +385,11 @@ bx wasm target
   nested arrays (raw 8-byte slot copies for the merge, per-kind argument
   conversion for the callback). This is O(n log n) callback calls instead of
   insertion sort's O(n²), which brought the 500-record benchmark from 178 ms to
-  103 ms (VM 95 ms).
+  103 ms (VM 95 ms). Equal keys keep their input order (the merge takes the
+  left run on `<= 0`); the collection differential covers ties, both directions,
+  empty/single arrays and random sizes. `sort(records)` **without** a comparator
+  is rejected explicitly here, while the VM silently returns the array unchanged
+  (it only knows how to default-sort numbers and strings).
 - **Arrays of records**: `[{a: 1}, {b: 2}]` with one consistent shape types as
   `Ty::ArrObj(shape)`; entries hold record pointers in the usual 8-byte slots, so
   `len`, element read (negative indexes included), element write, `for r in xs`
