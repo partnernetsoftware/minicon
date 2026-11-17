@@ -15,6 +15,9 @@ use std::sync::Arc;
 use tinyvm::wasm::{ImportDesc, Module, Val};
 use tinyvm::{FunctionSite, Limits, LoadError, WasmError};
 
+/// Host error prefix that carries a requested process exit code.
+pub const EXIT_MARKER: &str = "\u{0}bx-exit:";
+
 fn to_wval(value: &Val) -> Result<WVal, WasmError> {
     match value {
         Val::I32(v) => Ok(WVal::I32(*v)),
@@ -93,7 +96,7 @@ pub fn run_start<F, G>(
     timeout_ms: u64,
     on_i64: F,
     on_str: G,
-) -> Result<(), String>
+) -> Result<i64, String>
 where
     F: FnMut(i64) + 'static,
     G: FnMut(&str) + 'static,
@@ -152,11 +155,14 @@ where
         .map_err(|err| trap_text(&err))?;
     if let Err(err) = instance.invoke_by_name_with_interrupt("_start", &[], interrupt.as_ref()) {
         if let Some(message) = host_error.borrow().clone() {
+            if let Some(code) = message.strip_prefix(EXIT_MARKER) {
+                return Ok(code.parse::<i64>().unwrap_or(1));
+            }
             return Err(message);
         }
         return Err(trap_text(&err));
     }
-    Ok(())
+    Ok(0)
 }
 
 #[cfg(test)]

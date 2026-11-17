@@ -128,7 +128,13 @@ const imports = {
       }
       emit("{" + pieces.join(",") + "}");
     },
-    str_len: (ptr, len) => {
+    exit: (code) => {
+      throw new Error("bx exit " + code);
+    },
+    error: (ptr, len) => {
+      const text = new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, ptr, len));
+      throw new Error(text);
+    },    str_len: (ptr, len) => {
       const text = new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, ptr, len));
       return BigInt(Array.from(text).length);
     },    print_arr_strarr: (ptr) => {

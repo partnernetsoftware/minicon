@@ -215,6 +215,18 @@ test("wasm source runs reuse a module cache", fn() {
 write(dir + "/wasm-words.bxs", 'let words = [["a"], ["b", "c"]]\nprint(words)\nprint(len(words[1]))\n')
 write(dir + "/wasm-unicode.bxs", 'print(len("héllo"))\nprint(slice("héllo", 1, 4))\nfor ch in "hé" { print(ch) }\n')
 write(dir + "/wasm-flow2.bxs", 'for x in [1, 2, 3] { if (x == 2) { break }\n  print(x) }\nprint(1 < 2 ? "yes" : "no")\n')
+write(dir + "/wasm-exit.bxs", 'print("before")\nexit(5)\n')
+test("wasm exit and assert", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-exit.bxs", "-o", dir + "/wasm-exit.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-exit.wasm"])
+  assert(ran.code == 5 && ran.out.trim() == "before", "run=" + ran.code + " out=" + json(ran.out))
+  write(dir + "/wasm-assert.bxs", 'assert(false, "boom")\n')
+  let failing = exec([bin, "build", "--wasm", dir + "/wasm-assert.bxs", "-o", dir + "/wasm-assert.wasm"])
+  assert(failing.code == 0, "build failed: " + failing.err)
+  let failed = exec([bin, "run", dir + "/wasm-assert.wasm"])
+  assert(failed.code == 1 && failed.err.contains("boom"), "run=" + failed.code + " err=" + json(failed.err))
+})
 test("wasm break/continue and string ternaries", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-flow2.bxs", "-o", dir + "/wasm-flow2.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

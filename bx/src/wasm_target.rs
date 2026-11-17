@@ -690,6 +690,31 @@ impl Checker {
 
             Expr::Call(callee, args, _) => {
                 if let Expr::Ident(name) = &**callee {
+                    if name == "exit" && args.len() == 1 {
+                        if !is_number(self.infer(&args[0])?) {
+                            return Err("wasm target exit() needs a numeric code".to_string());
+                        }
+                        return Ok(Ty::Int);
+                    }
+                    if name == "error" && args.len() == 1 {
+                        if self.infer(&args[0])? != Ty::Str {
+                            return Err("wasm target error() needs a string".to_string());
+                        }
+                        return Ok(Ty::Int);
+                    }
+                    if name == "assert" && (args.len() == 1 || args.len() == 2) {
+                        if self.infer(&args[0])? != Ty::Bool {
+                            return Err("wasm target assert() needs a bool condition".to_string());
+                        }
+                        if let Some(message) = args.get(1) {
+                            if self.infer(message)? != Ty::Str {
+                                return Err(
+                                    "wasm target assert() needs a string message".to_string()
+                                );
+                            }
+                        }
+                        return Ok(Ty::Int);
+                    }
                     if let Some(sig) = self.fn_sig(name) {
                         let result = sig.result;
                         let params = sig.params.clone();
@@ -1891,7 +1916,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 74;
+const IMPORT_COUNT: u32 = 76;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -1956,6 +1981,8 @@ const ARR_JOIN_INT: u32 = 70;
 const ARR_JOIN_F: u32 = 71;
 const PRINT_ARR_STRARR: u32 = 72;
 const STR_LEN: u32 = 73;
+const EXIT: u32 = 74;
+const ERROR: u32 = 75;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -5316,6 +5343,38 @@ impl<'a> Emitter<'a> {
                 ))
             }
             Expr::Call(callee, args, _) => {
+                if let Expr::Ident(name) = &**callee {
+                    if name == "exit" && args.len() == 1 {
+                        self.emit_expr(&args[0])?;
+                        self.builder.push(Instr::Op(0xa7));
+                        self.builder.push(Instr::Call(EXIT));
+                        return Ok(Ty::Int);
+                    }
+                    if name == "error" && args.len() == 1 {
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Call(ERROR));
+                        return Ok(Ty::Int);
+                    }
+                    if name == "assert" && (args.len() == 1 || args.len() == 2) {
+                        self.emit_cond(&args[0])?;
+                        self.builder.push(Instr::Op(0x45));
+                        self.builder.push(Instr::Block {
+                            opcode: 0x04,
+                            end: 0,
+                            else_at: 0,
+                            start: 0,
+                        });
+                        self.labels.push(0x04);
+                        match args.get(1) {
+                            Some(message) => self.emit_str(message)?,
+                            None => self.emit_str(&Expr::Str("assertion failed".to_string()))?,
+                        }
+                        self.builder.push(Instr::Call(ERROR));
+                        self.labels.pop();
+                        self.builder.push(Instr::Op(0x0b));
+                        return Ok(Ty::Int);
+                    }
+                }
                 if let Some((params, result, index)) = self.callable(callee)? {
                     let literal_call = match &**callee {
                         Expr::Ident(name) => self.checker.fn_sig(name).is_none(),
@@ -7706,6 +7765,36 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Op(0x1a));
                         return Ok(());
                     }
+                    "exit" => {
+                        self.emit_expr(&args[0])?;
+                        self.builder.push(Instr::Op(0xa7));
+                        self.builder.push(Instr::Call(EXIT));
+                        return Ok(());
+                    }
+                    "error" => {
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Call(ERROR));
+                        return Ok(());
+                    }
+                    "assert" => {
+                        self.emit_cond(&args[0])?;
+                        self.builder.push(Instr::Op(0x45));
+                        self.builder.push(Instr::Block {
+                            opcode: 0x04,
+                            end: 0,
+                            else_at: 0,
+                            start: 0,
+                        });
+                        self.labels.push(0x04);
+                        match args.get(1) {
+                            Some(message) => self.emit_str(message)?,
+                            None => self.emit_str(&Expr::Str("assertion failed".to_string()))?,
+                        }
+                        self.builder.push(Instr::Call(ERROR));
+                        self.labels.pop();
+                        self.builder.push(Instr::Op(0x0b));
+                        return Ok(());
+                    }
                     _ => {}
                 }
                 if (name != "print" && name != "console_log") || args.len() != 1 {
@@ -9566,6 +9655,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let print_arr_f64_ty = builder.add_type(vec![ValType::I32], vec![]);
     let print_arr_strarr_ty = builder.add_type(vec![ValType::I32], vec![]);
     let str_len_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I64]);
+    let exit_ty = builder.add_type(vec![ValType::I32], vec![]);
+    let error_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![]);
     let arr_sum_f_ty = builder.add_type(vec![ValType::I32], vec![ValType::F64]);
     let arr_minmax_f_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::F64]);
     let arr_index_of_f_ty = builder.add_type(vec![ValType::I32, ValType::F64], vec![ValType::I64]);
@@ -9690,6 +9781,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "arr_join_f", arr_join_ty);
     builder.import_func("env", "print_arr_strarr", print_arr_strarr_ty);
     builder.import_func("env", "str_len", str_len_ty);
+    builder.import_func("env", "exit", exit_ty);
+    builder.import_func("env", "error", error_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -10056,7 +10149,7 @@ pub fn execute<F, G>(
     timeout_ms: u64,
     on_i64: F,
     on_str: G,
-) -> Result<(), String>
+) -> Result<i64, String>
 where
     F: FnMut(i64) + 'static,
     G: FnMut(&str) + 'static,
@@ -10618,6 +10711,37 @@ mod tests {
                 "19.25".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn exit_assert_and_error_report_through_the_host() {
+        let bytes = compile_to_wasm("print(\"before\")\nexit(7)\nprint(\"after\")").unwrap();
+        let printed = Arc::new(Mutex::new(Vec::new()));
+        let sink = printed.clone();
+        let code = execute(
+            &bytes,
+            &[],
+            0,
+            0,
+            |_value| {},
+            move |text| sink.lock().expect("lock").push(text.to_string()),
+        )
+        .expect("execute");
+        assert_eq!(code, 7);
+        assert_eq!(*printed.lock().expect("lock"), vec!["before".to_string()]);
+
+        let bytes = compile_to_wasm("assert(false, \"boom\")").unwrap();
+        let error =
+            execute(&bytes, &[], 0, 0, |_value| {}, |_text| {}).expect_err("assert must fail");
+        assert_eq!(error, "boom");
+
+        let bytes = compile_to_wasm("error(\"kaput\")").unwrap();
+        let error =
+            execute(&bytes, &[], 0, 0, |_value| {}, |_text| {}).expect_err("error must fail");
+        assert_eq!(error, "kaput");
+
+        let bytes = compile_to_wasm("assert(true)\nprint(1)").unwrap();
+        execute(&bytes, &[], 0, 0, |_value| {}, |_text| {}).expect("assert(true) passes");
     }
 
     #[test]

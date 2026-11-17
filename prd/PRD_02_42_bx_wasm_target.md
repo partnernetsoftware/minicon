@@ -187,7 +187,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 96 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 97 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -211,6 +211,13 @@ bx wasm target
 - **Record/array writes**: `r.a = v`, `r.a += v`, `xs[i] = v`, `xs[-1] = v` and
   `xs[i] += v` are supported with the same negative-index normalisation and
   bounds checks as reads (`+ - * %` for compound).
+- **Exit, errors and assertions**: `exit(code)` ends the module through the host
+  and the CLI returns that code (stdout before it is kept); `error(msg)` and
+  `assert(cond, msg?)` abort with the message on stderr and exit 1. The VM
+  prefixes those messages with `file(line):`; the wasm host has no source
+  location, so the message text is exactly `msg` (documented divergence). Both
+  statement and expression positions are handled; the browser demo throws a JS
+  error instead of terminating the page.
 - **Control flow**: `break`/`continue` work inside every loop form (`while`,
   `for` over int/float/string arrays, rows, records and strings, including
   two-variable forms and nested `if`s); `break` leaves the loop's own exit

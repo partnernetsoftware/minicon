@@ -536,6 +536,24 @@ if (wasmRec.code == 0 && wasmRecRun.code == 0 && wasmRecRun.out.trim() == "30\n2
   casesFail += 1
   failures.push("wasm records + in-module heap\n    build=" + wasmRec.code + " out=" + json(wasmRecRun.out) + " err=" + json(wasmRecRun.err))
 }
+write(artDir + "/wasm-exit.bxs", 'print("before")\nexit(3)\nprint("after")\n')
+let wasmExitBuild = exec([BX, "build", "--wasm", artDir + "/wasm-exit.bxs", "-o", artDir + "/wasm-exit.wasm"])
+let wasmExitRun = exec([BX, "run", artDir + "/wasm-exit.wasm"])
+if (wasmExitBuild.code == 0 && wasmExitRun.code == 3 && wasmExitRun.out.trim() == "before") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm exit(code) returns the process code\n    build=" + wasmExitBuild.code + " run=" + wasmExitRun.code + " out=" + json(wasmExitRun.out))
+}
+write(artDir + "/wasm-assert.bxs", 'assert(false, "boom")\nprint("after")\n')
+let wasmAssertBuild = exec([BX, "build", "--wasm", artDir + "/wasm-assert.bxs", "-o", artDir + "/wasm-assert.wasm"])
+let wasmAssertRun = exec([BX, "run", artDir + "/wasm-assert.wasm"])
+if (wasmAssertBuild.code == 0 && wasmAssertRun.code == 1 && wasmAssertRun.err.contains("boom") && wasmAssertRun.out.trim() == "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm assert() fails the run\n    build=" + wasmAssertBuild.code + " run=" + wasmAssertRun.code + " err=" + json(wasmAssertRun.err))
+}
 write(artDir + "/wasm-flow.bxs", 'let i = 0\nlet sum = 0\nwhile (i < 10) {\n  i = i + 2\n  if (i == 6) { continue }\n  sum = sum + i\n}\nprint(sum)\nfor (let k = 0; k < 3; k = k + 1) {\n  print(k)\n}\n')
 let wasmFlow = exec([BX, "build", "--wasm", artDir + "/wasm-flow.bxs", "-o", artDir + "/wasm-flow.wasm"])
 let wasmFlowRun = exec([BX, "run", artDir + "/wasm-flow.wasm"])
@@ -994,6 +1012,24 @@ if (wasmSortCmp.code == 0 && wasmSortCmpRun.out == wasmSortCmpVm.out && wasmSort
 } else {
   casesFail += 1
   failures.push("wasm sort comparator\n    wasm=" + json(wasmSortCmpRun.out) + " vm=" + json(wasmSortCmpVm.out) + " err=" + json(wasmSortCmpRun.err))
+}
+write(artDir + "/wasm-exit.bxs", 'print("before")\nexit(3)\nprint("after")\n')
+let wasmExitBuild = exec([BX, "build", "--wasm", artDir + "/wasm-exit.bxs", "-o", artDir + "/wasm-exit.wasm"])
+let wasmExitRun = exec([BX, "run", artDir + "/wasm-exit.wasm"])
+if (wasmExitBuild.code == 0 && wasmExitRun.code == 3 && wasmExitRun.out.trim() == "before") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm exit(code) returns the process code\n    build=" + wasmExitBuild.code + " run=" + wasmExitRun.code + " out=" + json(wasmExitRun.out))
+}
+write(artDir + "/wasm-assert.bxs", 'assert(false, "boom")\nprint("after")\n')
+let wasmAssertBuild = exec([BX, "build", "--wasm", artDir + "/wasm-assert.bxs", "-o", artDir + "/wasm-assert.wasm"])
+let wasmAssertRun = exec([BX, "run", artDir + "/wasm-assert.wasm"])
+if (wasmAssertBuild.code == 0 && wasmAssertRun.code == 1 && wasmAssertRun.err.contains("boom") && wasmAssertRun.out.trim() == "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm assert() fails the run\n    build=" + wasmAssertBuild.code + " run=" + wasmAssertRun.code + " err=" + json(wasmAssertRun.err))
 }
 write(artDir + "/wasm-flow.bxs", 'for x in [1, 2, 3] {\n  if (x == 2) { break }\n  print(x)\n}\nfor y in [1, 2, 3] {\n  if (y == 2) { continue }\n  print(y)\n}\nfor r in [[1], [2, 3]] {\n  if (len(r) > 1) { break }\n  print(len(r))\n}\nprint(1 < 2 ? "yes" : "no")\nprint(1 < 2 ? (2 < 3 ? "a" : "b") : "c")\n')
 let wasmFlow = exec([BX, "build", "--wasm", artDir + "/wasm-flow.bxs", "-o", artDir + "/wasm-flow.wasm"])

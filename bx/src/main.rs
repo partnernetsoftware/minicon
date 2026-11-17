@@ -240,7 +240,7 @@ fn cmd_run(args: Vec<String>) -> i32 {
             |value| println!("{}", value),
             |text| println!("{}", text),
         ) {
-            Ok(()) => 0,
+            Ok(code) => code as i32,
             Err(e) => {
                 eprintln!("bx: {}", e);
                 1
@@ -295,7 +295,7 @@ fn cmd_run(args: Vec<String>) -> i32 {
             |value| println!("{}", value),
             |text| println!("{}", text),
         ) {
-            Ok(()) => 0,
+            Ok(code) => code as i32,
             Err(e) => {
                 eprintln!("bx: {}", e);
                 1

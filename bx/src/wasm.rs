@@ -1065,6 +1065,24 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 (self.on_str)(&format!("[{}]", rows.join(",")));
                 Ok(Vec::new())
             }
+            ("env", "exit") => {
+                let code = match args.first() {
+                    Some(WVal::I32(code)) => *code as i64,
+                    _ => return Err("env.exit expects one i32".to_string()),
+                };
+                Err(format!("{}{}", crate::wasm_core::EXIT_MARKER, code))
+            }
+            ("env", "error") => {
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("env.error expects (i32 ptr, i32 len)".to_string()),
+                };
+                let text = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .ok_or_else(|| "env.error message is outside memory".to_string())?;
+                Err(text)
+            }
             ("env", "str_len") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {
                     (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
