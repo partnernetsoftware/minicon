@@ -192,6 +192,13 @@ fn kind_ty(kind: u8) -> Ty {
 }
 
 #[derive(Clone, Copy)]
+struct AttemptCtx {
+    /// Record being filled: error (str at 0/4), ok (bool at 8), value at 16.
+    record: u32,
+    result_ty: Ty,
+}
+
+#[derive(Clone, Copy)]
 enum SortMode {
     Int,
     Str,
@@ -374,6 +381,17 @@ impl Checker {
     fn exec_result_shape(&self) -> u32 {
         let (keys, kinds) = exec_result_keys();
         self.shape_id(&keys, &kinds)
+    }
+
+    /// Shape of the `attempt()` record for a callback returning `result_ty`.
+    fn attempt_shape(&self, result_ty: Ty) -> Result<u32, String> {
+        let kind = field_kind(result_ty).ok_or_else(|| {
+            "wasm target attempt() callbacks return a number, string or bool".to_string()
+        })?;
+        Ok(self.shape_id(
+            &["error".to_string(), "ok".to_string(), "value".to_string()],
+            &[1, 3, kind],
+        ))
     }
 
     fn shape_union(&self, left: u32, right: u32) -> Result<u32, String> {
@@ -1396,6 +1414,25 @@ impl Checker {
                         }
                         return Ok(Ty::Int);
                     }
+                    if name == "attempt" && args.len() == 1 {
+                        let Ty::Func(id) = self.infer(&args[0])? else {
+                            return Err(
+                                "wasm target attempt() needs a function literal".to_string()
+                            );
+                        };
+                        let sig = self
+                            .lit_sigs
+                            .get(id as usize)
+                            .cloned()
+                            .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+                        if !sig.params.is_empty() {
+                            return Err(
+                                "wasm target attempt() callbacks take no parameters".to_string()
+                            );
+                        }
+                        let result_ty = sig.result.unwrap_or(Ty::Int);
+                        return Ok(Ty::Obj(self.attempt_shape(result_ty)?));
+                    }
                     if name == "exec" && (args.len() == 1 || args.len() == 2) {
                         match self.infer(&args[0])? {
                             Ty::Str | Ty::ArrStr => {}
@@ -2365,6 +2402,8 @@ struct Emitter<'a> {
     record_tables: HashMap<u32, (u32, u32)>,
     /// shape id -> data-segment base of its field-kind bytes.
     record_kind_tables: HashMap<u32, u32>,
+    /// Active `attempt()` regions (innermost last); errors branch to the nearest.
+    attempts: Vec<AttemptCtx>,
     /// Labels index that `continue` must branch to (innermost last).
     continue_targets: Vec<usize>,
     /// Captures of the literal currently being emitted (empty for functions).
@@ -2680,12 +2719,100 @@ impl<'a> Emitter<'a> {
 
     /// Abort the module with `message` (host `env.panic`), mirroring VM aborts.
     fn emit_panic(&mut self, message: &str) {
+        if let Some(ctx) = self.attempts.last().copied() {
+            let base = self.builder.add_data(message.as_bytes());
+            self.emit_attempt_error_constant(ctx.record, base, message.len() as u32);
+            self.emit_attempt_jump();
+            return;
+        }
         let base = self.builder.add_data(message.as_bytes());
         self.builder
             .push(Instr::Const(0x41, WVal::I32(base as i32)));
         self.builder
             .push(Instr::Const(0x41, WVal::I32(message.len() as i32)));
         self.builder.push(Instr::Call(PANIC));
+    }
+
+    /// Store a constant error message into the attempt record and clear `ok`.
+    fn emit_attempt_error_constant(&mut self, record: u32, base: u32, len: u32) {
+        for (offset, value) in [(0u32, base), (4u32, len)] {
+            self.builder.push(Instr::Local(0x20, record));
+            self.builder
+                .push(Instr::Const(0x41, WVal::I32(value as i32)));
+            self.builder.push(Instr::Mem(0x36, 2, offset));
+        }
+        self.builder.push(Instr::Local(0x20, record));
+        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+        self.builder.push(Instr::Mem(0x37, 3, 8));
+    }
+
+    /// Store a runtime `(ptr, len)` error message into the attempt record.
+    fn emit_attempt_error_pair(&mut self, record: u32) {
+        let len = self.builder.add_local(ValType::I32);
+        let ptr = self.builder.add_local(ValType::I32);
+        self.builder.push(Instr::Local(0x21, len));
+        self.builder.push(Instr::Local(0x21, ptr));
+        self.builder.push(Instr::Local(0x20, record));
+        self.builder.push(Instr::Local(0x20, ptr));
+        self.builder.push(Instr::Mem(0x36, 2, 0));
+        self.builder.push(Instr::Local(0x20, record));
+        self.builder.push(Instr::Local(0x20, len));
+        self.builder.push(Instr::Mem(0x36, 2, 4));
+        self.builder.push(Instr::Local(0x20, record));
+        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+        self.builder.push(Instr::Mem(0x37, 3, 8));
+    }
+
+    /// Branch to the innermost enclosing `attempt` block.
+    fn emit_attempt_jump(&mut self) {
+        if let Some(depth) = self.labels.iter().rev().position(|kind| *kind == 0x05) {
+            self.builder.push(Instr::Br(depth as u32));
+        }
+    }
+
+    /// Store the attempt's success value into the record.
+    fn emit_attempt_value(&mut self, record: u32, ty: Ty, value: &Expr) -> Result<(), String> {
+        match ty {
+            Ty::Str => {
+                self.emit_str(value)?;
+                self.builder.push(Instr::Local(0x21, self.temp(LEN_A)));
+                self.builder.push(Instr::Local(0x21, self.temp(PTR_A)));
+                self.builder.push(Instr::Local(0x20, record));
+                self.builder.push(Instr::Local(0x20, self.temp(PTR_A)));
+                self.builder.push(Instr::Mem(0x36, 2, 16));
+                self.builder.push(Instr::Local(0x20, record));
+                self.builder.push(Instr::Local(0x20, self.temp(LEN_A)));
+                self.builder.push(Instr::Mem(0x36, 2, 20));
+            }
+            Ty::Float => {
+                self.builder.push(Instr::Local(0x20, record));
+                self.emit_f64(value)?;
+                self.builder.push(Instr::Mem(0x39, 3, 16));
+            }
+            Ty::Bool => {
+                self.builder.push(Instr::Local(0x20, record));
+                self.emit_expr(value)?;
+                self.builder.push(Instr::Op(0xad));
+                self.builder.push(Instr::Mem(0x37, 3, 16));
+            }
+            Ty::Obj(_)
+            | Ty::Arr
+            | Ty::ArrStr
+            | Ty::ArrF
+            | Ty::ArrObj(_)
+            | Ty::ArrArr
+            | Ty::ArrStrArr => {
+                self.builder.push(Instr::Local(0x20, record));
+                self.emit_expr(value)?;
+                self.builder.push(Instr::Mem(0x36, 2, 16));
+            }
+            _ => {
+                self.builder.push(Instr::Local(0x20, record));
+                self.emit_expr(value)?;
+                self.builder.push(Instr::Mem(0x37, 3, 16));
+            }
+        }
+        Ok(())
     }
 
     /// Push a continue-target block around a loop body so `continue` can reach
@@ -4478,6 +4605,97 @@ impl<'a> Emitter<'a> {
             }
         }
         self.builder.push(Instr::Call(sig.index));
+    }
+
+    /// `attempt(fn() { ... })`: run the literal body inline, turning the subset's
+    /// guest-detected failures (bounds, division by zero, explicit `error()`,
+    /// min/max/reduce/get/pop guards) into the VM's `{error, ok, value}` record.
+    fn emit_attempt(&mut self, callback: &Expr) -> Result<Ty, String> {
+        let Ty::Func(id) = self.type_of(callback)? else {
+            return Err("wasm target attempt() needs a function literal".to_string());
+        };
+        let sig = self
+            .checker
+            .lit_sigs
+            .get(id as usize)
+            .cloned()
+            .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+        if !sig.params.is_empty() {
+            return Err("wasm target attempt() callbacks take no parameters".to_string());
+        }
+        let result_ty = sig.result.unwrap_or(Ty::Int);
+        let shape = self.checker.attempt_shape(result_ty)?;
+        let record = self.builder.add_local(ValType::I32);
+        self.emit_alloc_const(24);
+        self.builder.push(Instr::Local(0x21, record));
+        // error = "", ok = true, value = zero value of the result kind
+        for (offset, value) in [(0u32, 0i32), (4, 0)] {
+            self.builder.push(Instr::Local(0x20, record));
+            self.builder.push(Instr::Const(0x41, WVal::I32(value)));
+            self.builder.push(Instr::Mem(0x36, 2, offset));
+        }
+        self.builder.push(Instr::Local(0x20, record));
+        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+        self.builder.push(Instr::Mem(0x37, 3, 8));
+        match result_ty {
+            Ty::Str => {
+                self.builder.push(Instr::Local(0x20, record));
+                self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                self.builder.push(Instr::Mem(0x36, 2, 16));
+                self.builder.push(Instr::Local(0x20, record));
+                self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                self.builder.push(Instr::Mem(0x36, 2, 20));
+            }
+            Ty::Float => {
+                self.builder.push(Instr::Local(0x20, record));
+                self.builder.push(Instr::Const(0x44, WVal::F64(0.0)));
+                self.builder.push(Instr::Mem(0x39, 3, 16));
+            }
+            _ => {
+                self.builder.push(Instr::Local(0x20, record));
+                self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                self.builder.push(Instr::Mem(0x37, 3, 16));
+            }
+        }
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x05);
+        self.attempts.push(AttemptCtx { record, result_ty });
+        self.scoped.push(HashMap::new());
+        let Expr::Func(_, body, _) = callback else {
+            return Err("wasm target attempt() needs a function literal".to_string());
+        };
+        // The body is inlined into the current function, so `let` must use frame
+        // locals (the callback still also exists as its own function; cleanup
+        // below keeps its names out of the enclosing scope afterwards).
+        let saved_mode = self.fn_mode;
+        self.fn_mode = true;
+        let declared_before: Vec<String> = self.locals.keys().cloned().collect();
+        let mut outcome = Ok(());
+        for stmt in body {
+            if let Err(error) = self.emit_stmt(stmt) {
+                outcome = Err(error);
+                break;
+            }
+        }
+        let declared_after: Vec<String> = self.locals.keys().cloned().collect();
+        for name in declared_after {
+            if !declared_before.contains(&name) {
+                self.locals.remove(&name);
+            }
+        }
+        self.fn_mode = saved_mode;
+        outcome?;
+        self.scoped.pop();
+        self.attempts.pop();
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.builder.push(Instr::Local(0x20, record));
+        Ok(Ty::Obj(shape))
     }
 
     /// Emit the address of an assignable record field / array element.
@@ -6711,6 +6929,12 @@ impl<'a> Emitter<'a> {
                         return Ok(Ty::Int);
                     }
                     if name == "error" && args.len() == 1 {
+                        if let Some(ctx) = self.attempts.last().copied() {
+                            self.emit_str(&args[0])?;
+                            self.emit_attempt_error_pair(ctx.record);
+                            self.emit_attempt_jump();
+                            return Ok(Ty::Int);
+                        }
                         self.emit_str(&args[0])?;
                         self.builder.push(Instr::Call(ERROR));
                         return Ok(Ty::Int);
@@ -6934,6 +7158,9 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Call(FILE_EXISTS));
                         self.builder.push(Instr::Op(0xad));
                         return Ok(Ty::Int);
+                    }
+                    if name == "attempt" && args.len() == 1 {
+                        return self.emit_attempt(&args[0]);
                     }
                     if name == "exec" && (args.len() == 1 || args.len() == 2) {
                         return self.emit_exec_record(args, false);
@@ -8798,6 +9025,11 @@ impl<'a> Emitter<'a> {
                     return Ok(());
                 }
                 match name.as_str() {
+                    "attempt" => {
+                        self.emit_attempt(&args[0])?;
+                        self.builder.push(Instr::Op(0x1a));
+                        return Ok(());
+                    }
                     "exec" | "sh" => {
                         let shell = name == "sh";
                         self.emit_exec_record(args, shell)?;
@@ -8985,6 +9217,12 @@ impl<'a> Emitter<'a> {
                         return Ok(());
                     }
                     "error" => {
+                        if let Some(ctx) = self.attempts.last().copied() {
+                            self.emit_str(&args[0])?;
+                            self.emit_attempt_error_pair(ctx.record);
+                            self.emit_attempt_jump();
+                            return Ok(());
+                        }
                         self.emit_str(&args[0])?;
                         self.builder.push(Instr::Call(ERROR));
                         return Ok(());
@@ -9243,6 +9481,13 @@ impl<'a> Emitter<'a> {
                 Ok(())
             }
             Stmt::Return(expr, _) => {
+                if let Some(ctx) = self.attempts.last().copied() {
+                    if let Some(value) = expr {
+                        self.emit_attempt_value(ctx.record, ctx.result_ty, value)?;
+                    }
+                    self.emit_attempt_jump();
+                    return Ok(());
+                }
                 match (expr, self.result) {
                     (Some(expr), Some(expected)) => {
                         let actual = self.emit_expr(expr)?;
@@ -9571,6 +9816,28 @@ impl<'a> InferState<'a> {
             }
             Expr::Call(callee, args, _) => {
                 if let Expr::Ident(name) = &**callee {
+                    if name == "attempt" && args.len() == 1 {
+                        if let Some(Ty::Func(id)) =
+                            args.first().and_then(|arg| self.soft(arg, locals))
+                        {
+                            if let Some(result_ty) = Some(
+                                self.results
+                                    .get(self.decl_count + id as usize)
+                                    .copied()
+                                    .flatten()
+                                    .unwrap_or(Ty::Int),
+                            )
+                            .filter(|ty| field_kind(*ty).is_some())
+                            {
+                                let kind = field_kind(result_ty).unwrap();
+                                return Some(Ty::Obj(self.shape_id(
+                                    &["error".to_string(), "ok".to_string(), "value".to_string()],
+                                    &[1, 3, kind],
+                                )));
+                            }
+                        }
+                        return None;
+                    }
                     if matches!(name.as_str(), "exec" | "sh") {
                         self.soft(&args[0], locals)?;
                         let (keys, kinds) = exec_result_keys();
@@ -10213,6 +10480,24 @@ impl<'a> CaptureWalker<'a> {
                 }
             }
             return match name.as_str() {
+                "attempt" => {
+                    if let Some(Ty::Func(id)) = args.first().map(|arg| self.ty_of(arg)) {
+                        if let Some(result_ty) = self
+                            .checker
+                            .lit_sigs
+                            .get(id as usize)
+                            .and_then(|sig| sig.result)
+                            .filter(|ty| field_kind(*ty).is_some())
+                        {
+                            let kind = field_kind(result_ty).unwrap();
+                            return Ty::Obj(self.shape_id(
+                                &["error".to_string(), "ok".to_string(), "value".to_string()],
+                                &[1, 3, kind],
+                            ));
+                        }
+                    }
+                    Ty::Int
+                }
                 "str" => Ty::Str,
                 "int" => Ty::Int,
                 "float" => Ty::Float,
@@ -11143,6 +11428,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             literal_ids: literal_ids.clone(),
             record_tables: HashMap::new(),
             record_kind_tables: HashMap::new(),
+            attempts: Vec::new(),
             continue_targets: Vec::new(),
             captures: Vec::new(),
             env_slot: None,
@@ -11181,6 +11467,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                 literal_ids: literal_ids.clone(),
                 record_tables: HashMap::new(),
                 record_kind_tables: HashMap::new(),
+                attempts: Vec::new(),
                 continue_targets: Vec::new(),
                 captures: Vec::new(),
                 env_slot: None,
@@ -11263,6 +11550,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                 literal_ids: literal_ids.clone(),
                 record_tables: HashMap::new(),
                 record_kind_tables: HashMap::new(),
+                attempts: Vec::new(),
                 continue_targets: Vec::new(),
                 captures: analysis.lit_captures.get(id).cloned().unwrap_or_default(),
                 env_slot: Some(0),
@@ -12054,6 +12342,26 @@ mod tests {
                 "x!".to_string(),
                 "[x]x".to_string(),
                 "xx".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn attempt_catches_guarded_errors_and_matches_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "print(attempt(fn() { return 1 }).ok)\nprint(attempt(fn() { return 1 }).value)\nprint(attempt(fn() { return 1 / 0 }).ok)\nlet e = attempt(fn() { error(\"boom\") })\nprint(e.ok)\nprint(len(e.error) > 0)\nprint(attempt(fn() { return \"x\" }).value)\nprint(attempt(fn() { return 1 < 2 }).value)\nlet looped = 0\nlet i = 0\nwhile (i < 3) {\n  let r = attempt(fn() { return 10 / (i - 1) })\n  if (r.ok) { looped += 1 }\n  i += 1\n}\nprint(looped)",
+            &[],
+        );
+        assert_eq!(numbers, vec![1, 2]);
+        assert_eq!(
+            strings,
+            vec![
+                "true".to_string(),
+                "false".to_string(),
+                "false".to_string(),
+                "true".to_string(),
+                "x".to_string(),
+                "true".to_string(),
             ]
         );
     }

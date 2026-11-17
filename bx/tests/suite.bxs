@@ -537,6 +537,16 @@ if (wasmRec.code == 0 && wasmRecRun.code == 0 && wasmRecRun.out.trim() == "30\n2
   failures.push("wasm records + in-module heap\n    build=" + wasmRec.code + " out=" + json(wasmRecRun.out) + " err=" + json(wasmRecRun.err))
 }
 let safeArtDir = replace(artDir, "\\", "/")
+write(artDir + "/wasm-attempt.bxs", 'print(attempt(fn() { return 1 }).ok)\nprint(attempt(fn() { return 1 }).value)\nprint(attempt(fn() { return 1 / 0 }).ok)\nlet e = attempt(fn() { error("boom") })\nprint(e.ok)\nprint(len(e.error) > 0)\nprint(attempt(fn() { return "x" }).value)\nprint(attempt(fn() { return 1 < 2 }).value)\nlet looped = 0\nlet i = 0\nwhile (i < 3) {\n  let r = attempt(fn() { return 10 / (i - 1) })\n  if (r.ok) { looped += 1 }\n  i += 1\n}\nprint(looped)\n')
+let wasmAttempt = exec([BX, "build", "--wasm", artDir + "/wasm-attempt.bxs", "-o", artDir + "/wasm-attempt.wasm"])
+let wasmAttemptRun = exec([BX, "run", artDir + "/wasm-attempt.wasm"])
+let wasmAttemptVm = exec([BX, "run", artDir + "/wasm-attempt.bxs"])
+if (wasmAttempt.code == 0 && wasmAttemptRun.out == wasmAttemptVm.out && wasmAttemptRun.out.trim() == "true\n1\nfalse\nfalse\ntrue\nx\ntrue\n2") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm attempt()\n    wasm=" + json(wasmAttemptRun.out) + " vm=" + json(wasmAttemptVm.out) + " err=" + json(wasmAttemptRun.err))
+}
 write(artDir + "/wasm-mergesort.bxs", 'print(sort([3, 1, 2], fn(x, y) { return x - y }))\nprint(sort([2.5, 1.5], fn(x, y) { return x < y ? -1 : 1 }))\nprint(sort(["bb", "a", "ccc"], fn(x, y) { return len(x) - len(y) }))\nlet rows = [[3], [1, 2], [2]]\nprint(sort(rows, fn(x, y) { return len(x) - len(y) }))\nlet rs = [{a: 3}, {a: 1}, {a: 2}]\nprint(sort(rs, fn(x, y) { return x.a - y.a }))\n')
 let wasmMergeSort = exec([BX, "build", "--wasm", artDir + "/wasm-mergesort.bxs", "-o", artDir + "/wasm-mergesort.wasm"])
 let wasmMergeSortRun = exec([BX, "run", artDir + "/wasm-mergesort.wasm"])
@@ -1002,6 +1012,16 @@ if (wasmAssign.code == 0 && wasmAssignRun.out == wasmAssignVm.out && wasmAssignR
 } else {
   casesFail += 1
   failures.push("wasm interpolation and assignments\n    wasm=" + json(wasmAssignRun.out) + " vm=" + json(wasmAssignVm.out) + " err=" + json(wasmAssignRun.err))
+}
+write(artDir + "/wasm-attempt.bxs", 'print(attempt(fn() { return 1 }).ok)\nprint(attempt(fn() { return 1 }).value)\nprint(attempt(fn() { return 1 / 0 }).ok)\nlet e = attempt(fn() { error("boom") })\nprint(e.ok)\nprint(len(e.error) > 0)\nprint(attempt(fn() { return "x" }).value)\nprint(attempt(fn() { return 1 < 2 }).value)\nlet looped = 0\nlet i = 0\nwhile (i < 3) {\n  let r = attempt(fn() { return 10 / (i - 1) })\n  if (r.ok) { looped += 1 }\n  i += 1\n}\nprint(looped)\n')
+let wasmAttempt = exec([BX, "build", "--wasm", artDir + "/wasm-attempt.bxs", "-o", artDir + "/wasm-attempt.wasm"])
+let wasmAttemptRun = exec([BX, "run", artDir + "/wasm-attempt.wasm"])
+let wasmAttemptVm = exec([BX, "run", artDir + "/wasm-attempt.bxs"])
+if (wasmAttempt.code == 0 && wasmAttemptRun.out == wasmAttemptVm.out && wasmAttemptRun.out.trim() == "true\n1\nfalse\nfalse\ntrue\nx\ntrue\n2") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm attempt()\n    wasm=" + json(wasmAttemptRun.out) + " vm=" + json(wasmAttemptVm.out) + " err=" + json(wasmAttemptRun.err))
 }
 write(artDir + "/wasm-mergesort.bxs", 'print(sort([3, 1, 2], fn(x, y) { return x - y }))\nprint(sort([2.5, 1.5], fn(x, y) { return x < y ? -1 : 1 }))\nprint(sort(["bb", "a", "ccc"], fn(x, y) { return len(x) - len(y) }))\nlet rows = [[3], [1, 2], [2]]\nprint(sort(rows, fn(x, y) { return len(x) - len(y) }))\nlet rs = [{a: 3}, {a: 1}, {a: 2}]\nprint(sort(rs, fn(x, y) { return x.a - y.a }))\n')
 let wasmMergeSort = exec([BX, "build", "--wasm", artDir + "/wasm-mergesort.bxs", "-o", artDir + "/wasm-mergesort.wasm"])

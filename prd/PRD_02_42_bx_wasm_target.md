@@ -168,8 +168,17 @@ bx wasm target
   `__heap_alloc` / `__heap_free` exports (M2).
 - **Exports**: `_start` is the script entry; `memory` and the heap helpers are
   exported once the data model lands.
-- **Errors**: a trap aborts the module. bx-side `attempt` maps to status-code
-  returns from imports in M3+.
+- **Errors and `attempt`**: an uncaught trap aborts the module.
+  `attempt(fn() { ... })` is compiled by inlining the zero-parameter literal
+  body inside a labelled block: guest-detected fatal guards (index bounds,
+  division/modulo by zero, `min`/`max`/`reduce`/`pop` on an empty container,
+  `get` missing key without a default, explicit `error()`) store the message in
+  the `{error, ok, value}` record and branch to the block end instead of
+  trapping. Host-side traps (missing `exec` program, file IO) still abort.
+  Divergences from the VM: `error` is `""` on success where the VM has `null`;
+  `value` is `0` for callbacks without a return value where the VM has `null`;
+  messages omit the VM's `file(line) in <lambda>()` prefix; out-of-range reads
+  the VM turns into `null` are fatal here, so `attempt` reports them as errors.
 
 ## Evidence
 
