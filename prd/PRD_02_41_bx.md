@@ -124,6 +124,10 @@ flowchart LR
 - 2026-11-16 round 10: `bx check <script>` compiles (and caches) without
   executing, so an agent can gate a run on syntax/compile errors; covered for
   good, broken and missing files. Suite: 87 checks.
+- 2026-11-17 round 105: `bx run --wasm script.bxs` forces the wasm target for a
+  source script (the flag wins over `BX_TARGET`); unit test
+  `run_flag_selects_the_wasm_target`. The engine under that target is now the
+  vendored tinyvm core (PRD_02_44 P1), not the retired interpreter.
 - 2026-11-16 round 11: `bx run`/`eval` accept `--max-steps N` and `--timeout MS`
   (wall clock checked every 4096 instructions); flags after the script stay in
   `argv`. A runaway script is stopped with a clear message and exit 1. Suite: 90

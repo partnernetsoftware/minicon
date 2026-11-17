@@ -88,7 +88,7 @@ fn print_help() {
         r#"bx {version} - binary scripting for agents
 
 usage
-  bx run [--max-steps N] [--timeout MS] <script.bxs|.bxb|.wasm> [args...]
+  bx run [--wasm] [--max-steps N] [--timeout MS] <script.bxs|.bxb|.wasm> [args...]
   bx build [--target wasm|bxb] <script> [-o out]  compile (default target: bxb)
 bx build --wasm <script.bxs> [-o out.wasm]      alias for --target wasm
   bx build --wasm --html <script> [-o demo.html]  self-contained browser demo (module base64 + glue)
@@ -142,11 +142,14 @@ struct Budget {
     args: Vec<String>,
     max_steps: Option<u64>,
     timeout_ms: Option<u64>,
+    /// `--wasm` forces the wasm target for a source script (overrides BX_TARGET).
+    wasm: bool,
 }
 
 fn parse_budget(mut args: Vec<String>) -> Result<Budget, String> {
     let mut max_steps = None;
     let mut timeout_ms = None;
+    let mut wasm = false;
     loop {
         match args.first().map(String::as_str) {
             Some("--max-steps") => {
@@ -167,6 +170,10 @@ fn parse_budget(mut args: Vec<String>) -> Result<Budget, String> {
                 timeout_ms = Some(value);
                 args.drain(0..2);
             }
+            Some("--wasm") => {
+                wasm = true;
+                args.drain(0..1);
+            }
             _ => break,
         }
     }
@@ -174,6 +181,7 @@ fn parse_budget(mut args: Vec<String>) -> Result<Budget, String> {
         args,
         max_steps,
         timeout_ms,
+        wasm,
     })
 }
 
@@ -240,6 +248,7 @@ fn cmd_run(args: Vec<String>) -> i32 {
         };
     }
     let target = match std::env::var("BX_TARGET").as_deref() {
+        _ if budget.wasm => "wasm",
         Ok("wasm") => "wasm",
         Ok("bxb") | Err(_) => "bxb",
         Ok(other) => {
@@ -385,6 +394,15 @@ fn resolve_target(
 
 #[cfg(test)]
 mod target_tests {
+    #[test]
+    fn run_flag_selects_the_wasm_target() {
+        let budget = parse_budget(vec!["--wasm".to_string(), "x.bxs".to_string()]).unwrap();
+        assert!(budget.wasm);
+        assert_eq!(budget.args, vec!["x.bxs".to_string()]);
+        let plain = parse_budget(vec!["x.bxs".to_string()]).unwrap();
+        assert!(!plain.wasm);
+    }
+    use super::parse_budget;
     use super::resolve_target;
 
     #[test]

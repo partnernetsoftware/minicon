@@ -48,6 +48,7 @@ bx test tools/verify.bxs <bx 或 .com>      # bx 原生端到端自检（跨平�
 git log | bx run filter.bxs               # read("-") 读 stdin，脚本可当管道过滤器
 bx run --timeout 5000 script.bxs           # 墙钟超时（毫秒），超时退出 1
 bx run --max-steps 1000000 script.bxs      # 指令步数上限，防止死循环
+bx run --wasm script.bxs                   # 强制走 wasm 目标（覆盖 BX_TARGET）
 bx help exec                                # 单个内建的契约
 bx --version                                # 等价 bx version（-v/-V 亦可）
 bx --help                                   # 等价 bx help
@@ -182,7 +183,7 @@ let r = patch("src/lib.rs", read(__dir__ + "/fix.diff"))   // -> {ok, path, hunk
 
 ```bash
 bx build --wasm script.bxs -o script.wasm   # 标准 core wasm（\0asm v1）
-bx run script.wasm                          # 用 bx 自己的解释器执行（支持 --max-steps / --timeout 预算）
+bx run script.wasm                          # 由内置 tinyvm 核校验并执行（支持 --max-steps / --timeout 预算）
 bx check script.wasm                        # 只校验模块（--json 输出 imports/exports/functions）
 bx build --wasm --html script.bxs -o demo.html  # 自包含浏览器 demo（内嵌 base64 模块 + 胶水；同目录 .js 可直接用 node 跑）
 ```

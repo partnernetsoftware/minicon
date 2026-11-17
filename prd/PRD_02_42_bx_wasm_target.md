@@ -29,6 +29,24 @@ glue.
 - Host imports are **web-shaped**, not WASI: the ABI mirrors browser surface
   names so one module can serve both native and browser hosts.
 
+## Engine performance (measured 2026-11-17)
+
+`bx/scripts/bench.sh` (`BX_BENCH_RUNS=5`, wall clock, process start included):
+
+| benchmark | VM (`.bxb` source) | wasm target (core) |
+| --- | --- | --- |
+| fib | 134 ms | 223 ms |
+| loop | 332 ms | 243 ms |
+| calls | 166 ms | 260 ms |
+
+Split for `fib(24)` on the same machine: `bx run source.bxs` (compile+VM) 56 ms,
+`bx run prebuilt.wasm` 153 ms, `bx build --wasm` 20 ms. So the wasm path's cost
+is dominated by the generic core interpreter (per-instruction budget/stack
+accounting), and it is faster on tight numeric loops while slower on call-heavy
+code. This is an accepted trade-off for validation, budgets, and one engine;
+candidates for later optimization (not scheduled): skip step accounting while
+no budget is set, and avoid per-instruction live-slot checks in the vendored
+core.
 ## Host ABI contract
 
 Every host (the native `PrintHost` in `bx/src/wasm.rs`, the browser/node demo glue, and the
