@@ -219,6 +219,14 @@ test("wasm push string & record arrays and empty objects", fn() {
   let vm = exec([bin, "run", dir + "/wasm-push2.bxs"])
   assert(ran.code == 0 && ran.out == vm.out && ran.out.trim() == "a\nb\n2\n1", "wasm=" + json(ran.out) + " vm=" + json(vm.out))
 })
+write(dir + "/wasm-sortstr.bxs", 'for v in sort(["bbb", "a"], fn(x, y) { return len(x) - len(y) }) { print(v) }\n')
+test("wasm sort string comparator", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-sortstr.bxs", "-o", dir + "/wasm-sortstr.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-sortstr.wasm"])
+  let vm = exec([bin, "run", dir + "/wasm-sortstr.bxs"])
+  assert(ran.code == 0 && ran.out == vm.out && ran.out.trim() == "a\nbbb", "wasm=" + json(ran.out) + " vm=" + json(vm.out))
+})
 test("wasm sort comparator", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-sortcmp.bxs", "-o", dir + "/wasm-sortcmp.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

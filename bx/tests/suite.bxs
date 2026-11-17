@@ -960,6 +960,16 @@ if (wasmPush2.code == 0 && wasmPush2Run.out == wasmPush2Vm.out && wasmPush2Run.o
   casesFail += 1
   failures.push("wasm push/pop string & record arrays, empty objects\n    wasm=" + json(wasmPush2Run.out) + " vm=" + json(wasmPush2Vm.out) + " err=" + json(wasmPush2Run.err))
 }
+write(artDir + "/wasm-sortstr.bxs", 'let xs = ["bbb", "a", "cc"]\nfor v in sort(xs, fn(x, y) { return len(x) - len(y) }) { print(v) }\nfn prefixed(base) { return sort(["bb", "a", "ccc"], fn(x, y) { return (len(x) - len(y)) + base }) }\nfor v in prefixed(0) { print(v) }\nprint(sort(["b", "a"], fn(x, y) { return len(x) - len(y) }))\n')
+let wasmSortStr = exec([BX, "build", "--wasm", artDir + "/wasm-sortstr.bxs", "-o", artDir + "/wasm-sortstr.wasm"])
+let wasmSortStrRun = exec([BX, "run", artDir + "/wasm-sortstr.wasm"])
+let wasmSortStrVm = exec([BX, "run", artDir + "/wasm-sortstr.bxs"])
+if (wasmSortStr.code == 0 && wasmSortStrRun.out == wasmSortStrVm.out && wasmSortStrRun.out.trim() == "a\ncc\nbbb\na\nbb\nccc\n[\"b\",\"a\"]") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm sort string comparator\n    wasm=" + json(wasmSortStrRun.out) + " vm=" + json(wasmSortStrVm.out) + " err=" + json(wasmSortStrRun.err))
+}
 write(artDir + "/wasm-sortcmp.bxs", 'let a = [3, 1, 2]\nlet b = sort(a, fn(x, y) { return x - y })\nprint(a[0])\nprint(b[0])\nfor v in sort([5, 9, 1, 4], fn(x, y) { return y - x }) { print(v) }\nfn with_capture(offset) {\n  let limit = 0\n  return sort([3, 2, 1], fn(x, y) { return (x - y) + limit + offset })\n}\nfor v in with_capture(0) { print(v) }\nprint(len(sort([], fn(x, y) { return x - y })))\n')
 let wasmSortCmp = exec([BX, "build", "--wasm", artDir + "/wasm-sortcmp.bxs", "-o", artDir + "/wasm-sortcmp.wasm"])
 let wasmSortCmpRun = exec([BX, "run", artDir + "/wasm-sortcmp.wasm"])

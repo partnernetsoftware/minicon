@@ -149,6 +149,7 @@ fn gen() {
   lines.push("let pe = {}")
   lines.push("print(len(keys(pe)))")
   lines.push("print(merge(pe, {z: 4}).z)")
+  lines.push('for ssv in sort(["bbb", "a", "cc"], fn(x, y) { return len(x) - len(y) }) { print(ssv) }')
   lines.push("let srt = [3, 1, 2]")
   lines.push("let srt_sorted = sort(srt, fn(x, y) { return x - y })")
   lines.push("for sv in srt_sorted { print(sv) }")

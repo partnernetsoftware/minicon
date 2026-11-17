@@ -128,7 +128,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 87 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 88 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -175,8 +175,9 @@ bx wasm target
 - **Comparator sort**: `sort(arr, fn(a, b) { return a - b })` runs an in-place
   insertion sort in wasm calling the literal comparator (environment included);
   the comparator receives two ints and returns an int whose sign decides the
-  order, the array is mutated and returned like the VM. Comparator sort over
-  string arrays is still rejected (int arrays only for now).
+  order, the array is mutated and returned like the VM. String arrays take a
+  comparator over `(str, str) -> int` the same way (insertion sort swapping
+  ptr/len pairs); int and string arrays are the supported element kinds.
 - **Arrays of records**: `[{a: 1}, {b: 2}]` with one consistent shape types as
   `Ty::ArrObj(shape)`; entries hold record pointers in the usual 8-byte slots, so
   `len`, element read (negative indexes included), element write, `for r in xs`
