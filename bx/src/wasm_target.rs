@@ -469,9 +469,6 @@ impl Checker {
             }
 
             Expr::Object(fields) => {
-                if fields.is_empty() {
-                    return Err("wasm target does not support empty objects yet".to_string());
-                }
                 let mut keys: Vec<String> = Vec::new();
                 for (key, value) in fields {
                     if keys.iter().any(|seen| seen == key) {
@@ -1162,6 +1159,54 @@ impl Checker {
                     return Err("wasm target only supports calls to print()".to_string());
                 };
                 match name.as_str() {
+                    "push" => {
+                        if args.len() != 2 {
+                            return Err(
+                                "wasm target push(array, value) takes two arguments".to_string()
+                            );
+                        }
+                        if !matches!(args[0], Expr::Ident(_)) {
+                            return Err(
+                                "wasm target pushes into a named array variable only".to_string()
+                            );
+                        }
+                        let arr_ty = self.infer(&args[0])?;
+                        let element = match arr_ty {
+                            Ty::Arr => Ty::Int,
+                            Ty::ArrStr => Ty::Str,
+                            Ty::ArrObj(shape) => Ty::Obj(shape),
+                            other => {
+                                return Err(format!(
+                                    "wasm target pushes into arrays only, got {}",
+                                    ty_name(other)
+                                ))
+                            }
+                        };
+                        if self.infer(&args[1])? != element {
+                            return Err(format!(
+                                "wasm target array elements hold {}",
+                                ty_name(element)
+                            ));
+                        }
+                        return Ok(());
+                    }
+                    "pop" => {
+                        if args.len() != 1 || !matches!(args[0], Expr::Ident(_)) {
+                            return Err(
+                                "wasm target pop(array) takes a named array".to_string()
+                            );
+                        }
+                        match self.infer(&args[0])? {
+                            Ty::Arr | Ty::ArrStr | Ty::ArrObj(_) => {}
+                            other => {
+                                return Err(format!(
+                                    "wasm target pops arrays only, got {}",
+                                    ty_name(other)
+                                ))
+                            }
+                        }
+                        return Ok(());
+                    }
                     "map_set" => {
                         if args.len() != 3
                             || self.infer(&args[0])? != Ty::Map
@@ -1339,9 +1384,14 @@ impl Checker {
             }
             Stmt::Expr(Expr::MethodCall(object, name, args, _), _) => {
                 let base = self.infer(object)?;
-                if base != Ty::Arr {
-                    return Err("wasm target supports .push on arrays only".to_string());
-                }
+                let element = match base {
+                    Ty::Arr => Ty::Int,
+                    Ty::ArrStr => Ty::Str,
+                    Ty::ArrObj(shape) => Ty::Obj(shape),
+                    _ => {
+                        return Err("wasm target supports .push on arrays only".to_string())
+                    }
+                };
                 if name == "pop" {
                     if !args.is_empty() {
                         return Err("wasm target .pop takes no arguments".to_string());
@@ -1357,8 +1407,11 @@ impl Checker {
                 if args.len() != 1 {
                     return Err("wasm target .push takes one value".to_string());
                 }
-                if self.infer(&args[0])? != Ty::Int {
-                    return Err("wasm target arrays hold ints only".to_string());
+                if self.infer(&args[0])? != element {
+                    return Err(format!(
+                        "wasm target array elements hold {}",
+                        ty_name(element)
+                    ));
                 }
             }
             Stmt::Expr(expr, _) => {
@@ -2830,17 +2883,51 @@ impl<'a> Emitter<'a> {
     /// `arr.push(value)`: allocate a larger block, copy the old one, append and
     /// write the new pointer back into the array variable.
     fn emit_push(&mut self, name: &str, value: &Expr) -> Result<(), String> {
+        let arr_ty = match self.local_of(name) {
+            Some(slot) => slot.ty,
+            None => self.checker.binding(name)?.ty,
+        };
+        let element = match arr_ty {
+            Ty::Arr => Ty::Int,
+            Ty::ArrStr => Ty::Str,
+            Ty::ArrObj(shape) => Ty::Obj(shape),
+            other => {
+                return Err(format!(
+                    "wasm target pushes into arrays only, got {}",
+                    ty_name(other)
+                ))
+            }
+        };
         let arr_tmp = self.builder.add_local(ValType::I32);
         let new_tmp = self.builder.add_local(ValType::I32);
-        let val_tmp = self.builder.add_local(ValType::I64);
-        let value_ty = self.emit_expr(value)?;
-        if value_ty != Ty::Int {
-            return Err("wasm target arrays hold ints only".to_string());
+        let value_ptr = self.builder.add_local(ValType::I32);
+        let value_len = self.builder.add_local(ValType::I32);
+        match element {
+            Ty::Int => {
+                let actual = self.emit_expr(value)?;
+                if actual != Ty::Int {
+                    return Err("wasm target arrays hold ints only".to_string());
+                }
+                let tmp = self.builder.add_local(ValType::I64);
+                self.builder.push(Instr::Local(0x21, tmp));
+                self.builder.push(Instr::Local(0x20, tmp));
+                self.builder.push(Instr::Local(0x21, value_ptr));
+            }
+            Ty::Str => {
+                self.emit_str(value)?;
+                self.builder.push(Instr::Local(0x21, value_len));
+                self.builder.push(Instr::Local(0x21, value_ptr));
+            }
+            _ => {
+                let actual = self.emit_expr(value)?;
+                if !matches!(actual, Ty::Obj(_)) {
+                    return Err("wasm target record arrays hold records only".to_string());
+                }
+                self.builder.push(Instr::Local(0x21, value_ptr));
+            }
         }
-        self.builder.push(Instr::Local(0x21, val_tmp));
         self.emit_load(name)?;
         self.builder.push(Instr::Local(0x21, arr_tmp));
-        // size = 4 + 8 * (len + 1)
         self.builder.push(Instr::Local(0x20, arr_tmp));
         self.builder.push(Instr::Mem(0x28, 2, 0));
         self.builder.push(Instr::Const(0x41, WVal::I32(8)));
@@ -2849,7 +2936,6 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Op(0x6a));
         self.emit_alloc_dynamic();
         self.builder.push(Instr::Local(0x21, new_tmp));
-        // copy [ptr, ptr + 4 + 8*len)
         self.builder.push(Instr::Local(0x20, new_tmp));
         self.builder.push(Instr::Local(0x20, arr_tmp));
         self.builder.push(Instr::Local(0x20, arr_tmp));
@@ -2859,14 +2945,14 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Const(0x41, WVal::I32(4)));
         self.builder.push(Instr::Op(0x6a));
         self.builder.push(Instr::MemoryCopy);
-        // len += 1
         self.builder.push(Instr::Local(0x20, new_tmp));
         self.builder.push(Instr::Local(0x20, arr_tmp));
         self.builder.push(Instr::Mem(0x28, 2, 0));
         self.builder.push(Instr::Const(0x41, WVal::I32(1)));
         self.builder.push(Instr::Op(0x6a));
         self.builder.push(Instr::Mem(0x36, 2, 0));
-        // new_ptr[4 + 8*len] = value
+        // value slot address = new + 4 + 8*len
+        let addr_tmp = self.builder.add_local(ValType::I32);
         self.builder.push(Instr::Local(0x20, new_tmp));
         self.builder.push(Instr::Local(0x20, arr_tmp));
         self.builder.push(Instr::Mem(0x28, 2, 0));
@@ -2875,9 +2961,29 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Const(0x41, WVal::I32(4)));
         self.builder.push(Instr::Op(0x6a));
         self.builder.push(Instr::Op(0x6a));
-        self.builder.push(Instr::Local(0x20, val_tmp));
-        self.builder.push(Instr::Mem(0x37, 3, 0));
-        // store the new pointer back into the variable
+        self.builder.push(Instr::Local(0x21, addr_tmp));
+        match element {
+            Ty::Int => {
+                self.builder.push(Instr::Local(0x20, addr_tmp));
+                self.builder.push(Instr::Local(0x20, value_ptr));
+                self.builder.push(Instr::Mem(0x37, 3, 0));
+            }
+            Ty::Str => {
+                self.builder.push(Instr::Local(0x20, addr_tmp));
+                self.builder.push(Instr::Local(0x20, value_ptr));
+                self.builder.push(Instr::Mem(0x36, 2, 0));
+                self.builder.push(Instr::Local(0x20, addr_tmp));
+                self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                self.builder.push(Instr::Op(0x6a));
+                self.builder.push(Instr::Local(0x20, value_len));
+                self.builder.push(Instr::Mem(0x36, 2, 0));
+            }
+            _ => {
+                self.builder.push(Instr::Local(0x20, addr_tmp));
+                self.builder.push(Instr::Local(0x20, value_ptr));
+                self.builder.push(Instr::Mem(0x36, 2, 0));
+            }
+        }
         self.builder.push(Instr::Local(0x20, new_tmp));
         self.emit_store(name)?;
         Ok(())
@@ -5551,6 +5657,22 @@ impl<'a> Emitter<'a> {
                     return Ok(());
                 }
                 match name.as_str() {
+                    "push" => {
+                        let Expr::Ident(array) = &args[0] else {
+                            return Err(
+                                "wasm target pushes into a named array variable only".to_string()
+                            );
+                        };
+                        self.emit_push(array, &args[1])?;
+                        return Ok(());
+                    }
+                    "pop" => {
+                        let Expr::Ident(array) = &args[0] else {
+                            return Err("wasm target pops a named array variable only".to_string());
+                        };
+                        self.emit_pop(array)?;
+                        return Ok(());
+                    }
                     "map_set" => {
                         if args.len() != 3
                             || self.type_of(&args[0])? != Ty::Map
@@ -8204,6 +8326,19 @@ mod tests {
     }
 
     #[test]
+    fn push_pop_string_and_record_arrays_and_empty_objects() {
+        let (numbers, strings) = run_with_argv(
+            "let xs = [\"a\"]\npush(xs, \"b\")\nfor v in xs {\n  print(v)\n}\nprint(len(xs))\npop(xs)\nprint(len(xs))\nlet rs = [{a: 1}]\npush(rs, {a: 2})\nfor r in rs {\n  print(r.a)\n}\npop(rs)\nprint(len(rs))\nlet empty = {}\nprint(len(keys(empty)))\nlet m = merge(empty, {x: 5})\nprint(m.x)\nprint(type(empty))",
+            &[],
+        );
+        assert_eq!(numbers, vec![2, 1, 1, 2, 1, 0, 5]);
+        assert_eq!(
+            strings,
+            vec!["a".to_string(), "b".to_string(), "object".to_string()]
+        );
+    }
+
+    #[test]
     fn sort_with_comparator() {
         let (numbers, strings) = run_with_argv(
             "let a = [3, 1, 2]\nlet b = sort(a, fn(x, y) { return x - y })\nprint(a[0])\nprint(b[0])\nfor v in sort([5, 9, 1, 4], fn(x, y) { return y - x }) {\n  print(v)\n}\nfn with_capture(offset) {\n  let limit = 0\n  return sort([3, 2, 1], fn(x, y) { return (x - y) + limit + offset })\n}\nfor v in with_capture(0) {\n  print(v)\n}\nprint(len(sort([], fn(x, y) { return x - y })))",
@@ -8519,5 +8654,6 @@ mod tests {
         assert!(compile_to_wasm("print(unknown)").is_err());
         assert!(compile_to_wasm("let a = [1, \"x\"]").is_err());
         assert!(compile_to_wasm("let o = {}\nprint(o)").is_err());
+        assert!(compile_to_wasm("print(unknown_name)").is_err());
     }
 }

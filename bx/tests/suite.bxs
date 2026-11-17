@@ -782,7 +782,7 @@ if (wasmExists.code == 0 && wasmExistsRun.out == wasmExistsVm.out && wasmExistsR
   failures.push("wasm exists()\n    wasm=" + json(wasmExistsRun.out) + " vm=" + json(wasmExistsVm.out) + " err=" + json(wasmExistsRun.err))
 }
 write(artDir + "/g1.bxs", 'let a = [3, 4]\nlet total = 0\nfor v in a { total = total + v }\nprint(total)\nprint("ok")\n')
-write(artDir + "/g1-bad.bxs", 'let o = {}\nprint(o)\n')
+write(artDir + "/g1-bad.bxs", 'print(unknown_name)\n')
 let g1Default = exec([BX, "build", artDir + "/g1.bxs"])
 let g1Wasm = exec([BX, "build", "--target", "wasm", artDir + "/g1.bxs", "-o", artDir + "/g1-target.wasm"])
 let g1EnvBuild = exec([BX, "build", artDir + "/g1.bxs", "-o", artDir + "/g1-env.wasm"], { env: { BX_TARGET: "wasm" } })
@@ -930,6 +930,16 @@ if (wasmHof.code == 0 && wasmHofRun.out == wasmHofVm.out && wasmHofRun.out.trim(
   casesFail += 1
   failures.push("wasm higher-order array builtins\n    wasm=" + json(wasmHofRun.out) + " vm=" + json(wasmHofVm.out) + " err=" + json(wasmHofRun.err))
 }
+write(artDir + "/wasm-push2.bxs", 'let xs = ["a"]\npush(xs, "b")\nfor v in xs { print(v) }\nprint(len(xs))\npop(xs)\nprint(len(xs))\nlet rs = [{a: 1}]\npush(rs, {a: 2})\nfor r in rs { print(r.a) }\npop(rs)\nprint(len(rs))\nlet empty = {}\nprint(len(keys(empty)))\nlet m = merge(empty, {x: 5})\nprint(m.x)\nprint(type(empty))\n')
+let wasmPush2 = exec([BX, "build", "--wasm", artDir + "/wasm-push2.bxs", "-o", artDir + "/wasm-push2.wasm"])
+let wasmPush2Run = exec([BX, "run", artDir + "/wasm-push2.wasm"])
+let wasmPush2Vm = exec([BX, "run", artDir + "/wasm-push2.bxs"])
+if (wasmPush2.code == 0 && wasmPush2Run.out == wasmPush2Vm.out && wasmPush2Run.out.trim() == "a\nb\n2\n1\n1\n2\n1\n0\n5\nobject") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm push/pop string & record arrays, empty objects\n    wasm=" + json(wasmPush2Run.out) + " vm=" + json(wasmPush2Vm.out) + " err=" + json(wasmPush2Run.err))
+}
 write(artDir + "/wasm-sortcmp.bxs", 'let a = [3, 1, 2]\nlet b = sort(a, fn(x, y) { return x - y })\nprint(a[0])\nprint(b[0])\nfor v in sort([5, 9, 1, 4], fn(x, y) { return y - x }) { print(v) }\nfn with_capture(offset) {\n  let limit = 0\n  return sort([3, 2, 1], fn(x, y) { return (x - y) + limit + offset })\n}\nfor v in with_capture(0) { print(v) }\nprint(len(sort([], fn(x, y) { return x - y })))\n')
 let wasmSortCmp = exec([BX, "build", "--wasm", artDir + "/wasm-sortcmp.bxs", "-o", artDir + "/wasm-sortcmp.wasm"])
 let wasmSortCmpRun = exec([BX, "run", artDir + "/wasm-sortcmp.wasm"])
@@ -1019,9 +1029,9 @@ if (wasmHofStr.code == 0 && wasmHofStrRun.out == wasmHofStrVm.out && wasmHofStrR
   casesFail += 1
   failures.push("wasm higher-order string arrays\n    wasm=" + json(wasmHofStrRun.out) + " vm=" + json(wasmHofStrVm.out) + " err=" + json(wasmHofStrRun.err))
 }
-write(artDir + "/wasm-bad.bxs", 'let o = {}\nprint(o)\n')
+write(artDir + "/wasm-bad.bxs", 'print(unknown_name)\n')
 let wasmBad = exec([BX, "build", "--wasm", artDir + "/wasm-bad.bxs", "-o", artDir + "/wasm-bad.wasm"])
-if (wasmBad.code == 1 && wasmBad.err.contains("empty")) {
+if (wasmBad.code == 1 && wasmBad.err.contains("undefined variable")) {
   casesOk += 1
 } else {
   casesFail += 1

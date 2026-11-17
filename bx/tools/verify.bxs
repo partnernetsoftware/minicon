@@ -195,6 +195,14 @@ write(dir + "/wasm-clocap.bxs", 'fn scale_all(base) {\n  let factor = 2\n  retur
 write(dir + "/wasm-loopcap.bxs", 'let o = {x: 1}\nfor k in o { print(fn() { return k }()) }\nfor s in ["a", "bb"] { print(fn() { return s }()) }\n')
 write(dir + "/wasm-arrobj.bxs", 'let xs = [{a: 1}, {a: 2}]\nprint(xs[0].a + xs[1].a)\nxs[0] = {a: 5}\nprint(xs[0].a)\n')
 write(dir + "/wasm-sortcmp.bxs", 'let a = [3, 1, 2]\nlet b = sort(a, fn(x, y) { return x - y })\nprint(a[0])\nfor v in sort([2, 1], fn(x, y) { return y - x }) { print(v) }\n')
+write(dir + "/wasm-push2.bxs", 'let xs = ["a"]\npush(xs, "b")\nfor v in xs { print(v) }\nlet rs = [{a: 1}]\npush(rs, {a: 2})\nprint(rs[1].a)\nlet e = {}\nprint(len(keys(merge(e, {x: 4}))))\n')
+test("wasm push string & record arrays and empty objects", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-push2.bxs", "-o", dir + "/wasm-push2.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-push2.wasm"])
+  let vm = exec([bin, "run", dir + "/wasm-push2.bxs"])
+  assert(ran.code == 0 && ran.out == vm.out && ran.out.trim() == "a\nb\n2\n1", "wasm=" + json(ran.out) + " vm=" + json(vm.out))
+})
 test("wasm sort comparator", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-sortcmp.bxs", "-o", dir + "/wasm-sortcmp.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

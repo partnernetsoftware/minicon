@@ -128,7 +128,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 84 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 85 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -152,6 +152,14 @@ bx wasm target
 - **Record/array writes**: `r.a = v`, `r.a += v`, `xs[i] = v`, `xs[-1] = v` and
   `xs[i] += v` are supported with the same negative-index normalisation and
   bounds checks as reads (`+ - * %` for compound).
+- **push/pop on every array kind**: both the method form (`xs.push(v)`) and the
+  call form (`push(xs, v)`) append a value for int, string and record arrays;
+  `pop` shrinks the length (the removed value is still not returned in an
+  expression). Growth copies the header and all 8-byte entries, then writes the
+  element (int64 / ptr+len pair / record pointer).
+- **Empty record literals**: `{}` is now a valid zero-field record, so
+  `merge({}, {x: 1})`, `keys({})`, `values({})` and `type({})` work; printing a
+  record is still rejected.
 - **Comparator sort**: `sort(arr, fn(a, b) { return a - b })` runs an in-place
   insertion sort in wasm calling the literal comparator (environment included);
   the comparator receives two ints and returns an int whose sign decides the
