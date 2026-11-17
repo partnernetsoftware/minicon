@@ -577,6 +577,16 @@ if (wasmAttempt.code == 0 && wasmAttemptRun.out == wasmAttemptVm.out && wasmAtte
   casesFail += 1
   failures.push("wasm attempt()\n    wasm=" + json(wasmAttemptRun.out) + " vm=" + json(wasmAttemptVm.out) + " err=" + json(wasmAttemptRun.err))
 }
+write(artDir + "/wasm-parse.bxs", 'print(parse("1"))\nprint(parse("[1,2]"))\nprint(len(parse("[1,2,3]")))\nprint(parse("true"))\n')
+let wasmParse = exec([BX, "build", "--wasm", artDir + "/wasm-parse.bxs", "-o", artDir + "/wasm-parse.wasm"])
+let wasmParseRun = exec([BX, "run", artDir + "/wasm-parse.wasm"])
+let wasmParseVm = exec([BX, "run", artDir + "/wasm-parse.bxs"])
+if (wasmParse.code == 0 && wasmParseRun.out == wasmParseVm.out && wasmParseRun.out.trim() == "1\n[1,2]\n3\ntrue") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm parse() literal\n    wasm=" + json(wasmParseRun.out) + " vm=" + json(wasmParseVm.out) + " err=" + json(wasmParseRun.err))
+}
 write(artDir + "/wasm-strpred.bxs", 'print(starts_with("hello", "he"))\nprint(ends_with("hello", "lo"))\nprint(contains("hello", "ell"))\nprint(contains("hello", "z"))\nprint("hello".starts_with("he"))\n')
 let wasmStrPred = exec([BX, "build", "--wasm", artDir + "/wasm-strpred.bxs", "-o", artDir + "/wasm-strpred.wasm"])
 let wasmStrPredRun = exec([BX, "run", artDir + "/wasm-strpred.wasm"])
@@ -1178,6 +1188,16 @@ if (wasmAttempt.code == 0 && wasmAttemptRun.out == wasmAttemptVm.out && wasmAtte
 } else {
   casesFail += 1
   failures.push("wasm attempt()\n    wasm=" + json(wasmAttemptRun.out) + " vm=" + json(wasmAttemptVm.out) + " err=" + json(wasmAttemptRun.err))
+}
+write(artDir + "/wasm-parse.bxs", 'print(parse("1"))\nprint(parse("[1,2]"))\nprint(len(parse("[1,2,3]")))\nprint(parse("true"))\n')
+let wasmParse = exec([BX, "build", "--wasm", artDir + "/wasm-parse.bxs", "-o", artDir + "/wasm-parse.wasm"])
+let wasmParseRun = exec([BX, "run", artDir + "/wasm-parse.wasm"])
+let wasmParseVm = exec([BX, "run", artDir + "/wasm-parse.bxs"])
+if (wasmParse.code == 0 && wasmParseRun.out == wasmParseVm.out && wasmParseRun.out.trim() == "1\n[1,2]\n3\ntrue") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm parse() literal\n    wasm=" + json(wasmParseRun.out) + " vm=" + json(wasmParseVm.out) + " err=" + json(wasmParseRun.err))
 }
 write(artDir + "/wasm-strpred.bxs", 'print(starts_with("hello", "he"))\nprint(ends_with("hello", "lo"))\nprint(contains("hello", "ell"))\nprint(contains("hello", "z"))\nprint("hello".starts_with("he"))\n')
 let wasmStrPred = exec([BX, "build", "--wasm", artDir + "/wasm-strpred.bxs", "-o", artDir + "/wasm-strpred.wasm"])

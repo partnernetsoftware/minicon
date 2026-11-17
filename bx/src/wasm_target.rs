@@ -59,6 +59,41 @@ fn ty_name(ty: Ty) -> &'static str {
 }
 
 /// Element type of a supported array, or `None` for non-arrays.
+/// Convert a parsed JSON value into a bx literal expression. Containers must be
+/// homogeneous (the static value model has one element kind per array/record).
+fn json_value_expr(value: &crate::value::Value) -> Result<Expr, String> {
+    use crate::value::Value;
+    match value {
+        Value::Null => Err(
+            "wasm target parse() cannot represent null values; keep JSON without nulls".to_string(),
+        ),
+        Value::Bool(flag) => Ok(Expr::Bool(*flag)),
+        Value::Int(number) => Ok(Expr::Int(*number)),
+        Value::Float(number) => Ok(Expr::Float(*number)),
+        Value::Str(text) => Ok(Expr::Str(text.to_string())),
+        Value::Array(items) => {
+            let mut exprs = Vec::with_capacity(items.borrow().len());
+            for item in items.borrow().iter() {
+                exprs.push(json_value_expr(item)?);
+            }
+            Ok(Expr::Array(exprs))
+        }
+        Value::Object(map) => {
+            let mut fields = Vec::with_capacity(map.borrow().len());
+            for (key, item) in map.borrow().iter() {
+                fields.push((key.clone(), json_value_expr(item)?));
+            }
+            Ok(Expr::Object(fields))
+        }
+        _ => Err("wasm target parse() cannot represent this JSON value".to_string()),
+    }
+}
+
+/// Compile-time JSON literal for `parse("...")`; returns the literal expression.
+fn parse_literal(json: &str) -> Result<Expr, String> {
+    let value = crate::json::parse(json).map_err(|error| format!("parse(): {}", error))?;
+    json_value_expr(&value)
+}
 fn is_array_ty(ty: Ty) -> bool {
     matches!(
         ty,
@@ -1686,6 +1721,7 @@ impl Checker {
                         }
                         return Ok(Ty::Str);
                     }
+
                     if name == "json" && args.len() == 1 {
                         let ty = self.infer(&args[0])?;
                         if !is_number(ty)
@@ -1700,6 +1736,16 @@ impl Checker {
                             );
                         }
                         return Ok(Ty::Str);
+                    }
+                    if name == "parse" && args.len() == 1 {
+                        let Expr::Str(text) = &args[0] else {
+                            return Err(
+                                "wasm target parse() needs a compile-time JSON string literal"
+                                    .to_string(),
+                            );
+                        };
+                        let literal = parse_literal(text)?;
+                        return self.infer(&literal);
                     }
                     if name == "int" && args.len() == 1 {
                         let ty = self.infer(&args[0])?;
@@ -1879,6 +1925,7 @@ impl Checker {
                         }
                         return Ok(Ty::Int);
                     }
+
                     if matches!(name.as_str(), "starts_with" | "ends_with") && args.len() == 2 {
                         for arg in args {
                             if self.infer(arg)? != Ty::Str {
@@ -9506,6 +9553,7 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Mem(0x28, 2, 0));
                         return Ok(Ty::Str);
                     }
+
                     if name == "json" && args.len() == 1 {
                         let ty = self.type_of(&args[0])?;
                         if is_array_ty(ty) || matches!(ty, Ty::Obj(_)) {
@@ -9538,6 +9586,16 @@ impl<'a> Emitter<'a> {
                         }
                         self.push_block_as_pair();
                         return Ok(Ty::Str);
+                    }
+                    if name == "parse" && args.len() == 1 {
+                        let Expr::Str(text) = &args[0] else {
+                            return Err(
+                                "wasm target parse() needs a compile-time JSON string literal"
+                                    .to_string(),
+                            );
+                        };
+                        let literal = parse_literal(text)?;
+                        return self.emit_expr(&literal);
                     }
                     if name == "int" && args.len() == 1 {
                         match self.type_of(&args[0])? {
@@ -13638,6 +13696,24 @@ mod tests {
                 "true".to_string(),
                 "true".to_string(),
                 "true".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_of_json_literals_matches_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "print(parse(\"1\"))\nprint(parse(\"1.5\"))\nprint(parse(\"\\\"a\\\"\"))\nprint(parse(\"true\"))\nprint(parse(\"[1,2]\"))\nprint(parse(\"{\\\"x\\\":9}\").x)\nlet v = parse(\"[{\\\"a\\\":1}]\")\nprint(v[0].a)\nprint(len(parse(\"[1,2,3]\")))",
+            &[],
+        );
+        assert_eq!(numbers, vec![1, 9, 1, 3]);
+        assert_eq!(
+            strings,
+            vec![
+                "1.5".to_string(),
+                "a".to_string(),
+                "true".to_string(),
+                "[1,2]".to_string(),
             ]
         );
     }
