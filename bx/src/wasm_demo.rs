@@ -359,7 +359,55 @@ const imports = {
       }
       return base;
     },
-    str_join: (arrayPtr, sepPtr, sepLen) => {
+    arr_sort_f: (ptr) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const count = view.getUint32(ptr, true);
+      const values = [];
+      for (let i = 0; i < count; i++) values.push(view.getFloat64(ptr + 4 + i * 8, true));
+      values.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+      values.forEach((value, index) => view.setFloat64(ptr + 4 + index * 8, value, true));
+      return ptr;
+    },
+    arr_sort_str: (ptr) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const decode = (p, l) => new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, p, l));
+      const count = view.getUint32(ptr, true);
+      const entries = [];
+      for (let i = 0; i < count; i++) {
+        entries.push([
+          view.getUint32(ptr + 4 + i * 8, true),
+          view.getUint32(ptr + 8 + i * 8, true),
+        ]);
+      }
+      entries.sort((a, b) => {
+        const left = decode(a[0], a[1]);
+        const right = decode(b[0], b[1]);
+        return left < right ? -1 : left > right ? 1 : 0;
+      });
+      entries.forEach((entry, index) => {
+        view.setUint32(ptr + 4 + index * 8, entry[0], true);
+        view.setUint32(ptr + 8 + index * 8, entry[1], true);
+      });
+      return ptr;
+    },
+    arr_join_int: (ptr, sepPtr, sepLen) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const decode = (p, l) => new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, p, l));
+      const sep = decode(sepPtr, sepLen);
+      const count = view.getUint32(ptr, true);
+      const parts = [];
+      for (let i = 0; i < count; i++) parts.push(view.getBigInt64(ptr + 4 + i * 8, true).toString());
+      return writeStringBlock(parts.join(sep));
+    },
+    arr_join_f: (ptr, sepPtr, sepLen) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const decode = (p, l) => new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, p, l));
+      const sep = decode(sepPtr, sepLen);
+      const count = view.getUint32(ptr, true);
+      const parts = [];
+      for (let i = 0; i < count; i++) parts.push(formatFloat(view.getFloat64(ptr + 4 + i * 8, true)));
+      return writeStringBlock(parts.join(sep));
+    },    str_join: (arrayPtr, sepPtr, sepLen) => {
       const view = new DataView(instance.exports.memory.buffer);
       const decode = (p, l) => new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, p, l));
       const sep = decode(sepPtr, sepLen);

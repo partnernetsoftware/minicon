@@ -156,7 +156,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 88 in-tree unit tests (plus the self-hosted differential tool) cover the encoder and the core host; the interpreter tests retired with the engine
+- 89 in-tree unit tests (plus the self-hosted differential tool) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -180,6 +180,12 @@ bx wasm target
 - **Record/array writes**: `r.a = v`, `r.a += v`, `xs[i] = v`, `xs[-1] = v` and
   `xs[i] += v` are supported with the same negative-index normalisation and
   bounds checks as reads (`+ - * %` for compound).
+- **Kind-generic array helpers**: default `sort` (int, float, string arrays),
+  `reverse` (in place for every array kind), `slice` (int/float/string arrays)
+  and `join` (one or two arguments; int and float arrays stringify their
+  elements) now dispatch on the array kind instead of failing on non-int arrays.
+  A call whose value is discarded is accepted in statement position
+  (`reverse(a)`, `sort(a)`), matching the VM.
 - **Array search and min/max**: `index_of(array, value)` works on int and string
   arrays (function and method form, `-1` when absent), `.contains(value)` on
   arrays is `index_of(...) != -1`, and `min`/`max` work on int arrays (int) and

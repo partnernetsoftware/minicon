@@ -74,7 +74,7 @@ minicon-bx owns a standard wasm core and one language skin      [-]
 │   ├── step/memory budgets owned by the core                    [v]  steps, interrupt, memory pages
 │   └── core vendored as a workspace member                      [v]  `bx/vendor/tinyvm` (no crates.io wasm crate)
 │
-├── P2 language front end simplification                        [_]
+├── P2 language front end simplification                        [_]  deferred: the static element-kind matrix still ships (2026-11-17 review measured the remaining gaps: nested/mixed containers, record-array map/filter/sort)
 │   ├── uniform tagged value ABI (containers hold values)        [_]
 │   ├── element-kind matrix and its host imports deleted         [_]
 │   ├── `.bxb` default flip and retirement (PRD_02_43)           [_]

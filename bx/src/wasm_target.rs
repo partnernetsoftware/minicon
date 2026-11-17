@@ -880,11 +880,15 @@ impl Checker {
                         }
                         return Ok(Ty::ArrStr);
                     }
-                    if name == "join" && args.len() == 2 {
-                        if self.infer(&args[0])? != Ty::ArrStr || self.infer(&args[1])? != Ty::Str {
+                    if name == "join" && (args.len() == 1 || args.len() == 2) {
+                        let base = self.infer(&args[0])?;
+                        if !matches!(base, Ty::Arr | Ty::ArrF | Ty::ArrStr) {
                             return Err(
-                                "wasm target join() takes a string array and a string".to_string()
+                                "wasm target join() takes a numeric or string array".to_string()
                             );
+                        }
+                        if args.len() == 2 && self.infer(&args[1])? != Ty::Str {
+                            return Err("wasm target join() separator is a string".to_string());
                         }
                         return Ok(Ty::Str);
                     }
@@ -897,10 +901,7 @@ impl Checker {
                         }
                         return match base {
                             Ty::Str => Ok(Ty::Str),
-                            Ty::Arr => Ok(Ty::Arr),
-                            Ty::ArrStr => {
-                                Err("wasm target cannot slice string arrays yet".to_string())
-                            }
+                            Ty::Arr | Ty::ArrF | Ty::ArrStr => Ok(base),
                             other => Err(format!("wasm target cannot slice {}", ty_name(other))),
                         };
                     }
@@ -920,10 +921,15 @@ impl Checker {
                         };
                     }
                     if matches!(name.as_str(), "reverse" | "sort") && args.len() == 1 {
-                        if self.infer(&args[0])? != Ty::Arr {
-                            return Err(format!("wasm target {}() takes an int array", name));
+                        let input = self.infer(&args[0])?;
+                        if !matches!(input, Ty::Arr | Ty::ArrF | Ty::ArrStr) {
+                            return Err(format!(
+                                "wasm target {}() takes a numeric or string array, got {}",
+                                name,
+                                ty_name(input)
+                            ));
                         }
-                        return Ok(Ty::Arr);
+                        return Ok(input);
                     }
                     if matches!(name.as_str(), "map" | "filter" | "each") && args.len() == 2 {
                         let input = self.infer(&args[0])?;
@@ -1280,7 +1286,7 @@ impl Checker {
                     }
                 }
             }
-            Stmt::Expr(Expr::Call(callee, args, _), _) => {
+            Stmt::Expr(expr @ Expr::Call(callee, args, _), _) => {
                 let Expr::Ident(name) = &**callee else {
                     return Err("wasm target only supports calls to print()".to_string());
                 };
@@ -1349,6 +1355,7 @@ impl Checker {
                         }
                         return Ok(());
                     }
+
                     "each" => {
                         if args.len() != 2 || self.infer(&args[0])? != Ty::Arr {
                             return Err("wasm target each() takes an int array and a callback".to_string());
@@ -1438,10 +1445,9 @@ impl Checker {
                     }
                     return Ok(());
                 } else if name != "print" && name != "console_log" {
-                    return Err(format!(
-                        "wasm target does not support calling '{}' yet",
-                        name
-                    ));
+                    // Any other call whose result can be discarded is allowed in
+                    // statement position (e.g. `sort(a)` or `reverse(a)`).
+                    return self.infer(expr).map(|_| ());
                 }
                 if args.len() != 1 {
                     return Err("wasm target supports print(<value>) with one argument".to_string());
@@ -1766,7 +1772,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 68;
+const IMPORT_COUNT: u32 = 72;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -1825,6 +1831,10 @@ const PRINT_ARR_F64: u32 = 64;
 const ARR_SUM_F: u32 = 65;
 const ARR_MINMAX_F: u32 = 66;
 const ARR_INDEX_OF_F: u32 = 67;
+const ARR_SORT_F: u32 = 68;
+const ARR_SORT_STR: u32 = 69;
+const ARR_JOIN_INT: u32 = 70;
+const ARR_JOIN_F: u32 = 71;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -5128,10 +5138,27 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Call(STR_SPLIT));
                         return Ok(Ty::ArrStr);
                     }
-                    if name == "join" && args.len() == 2 {
+                    if name == "join" && (args.len() == 1 || args.len() == 2) {
+                        let base = self.type_of(&args[0])?;
+                        let import = match base {
+                            Ty::Arr => ARR_JOIN_INT,
+                            Ty::ArrF => ARR_JOIN_F,
+                            Ty::ArrStr => STR_JOIN,
+                            other => {
+                                return Err(format!(
+                                    "wasm target join() takes a numeric or string array, got {}",
+                                    ty_name(other)
+                                ))
+                            }
+                        };
                         self.emit_expr(&args[0])?;
-                        self.emit_str(&args[1])?;
-                        self.builder.push(Instr::Call(STR_JOIN));
+                        if args.len() == 2 {
+                            self.emit_str(&args[1])?;
+                        } else {
+                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                        }
+                        self.builder.push(Instr::Call(import));
                         self.push_block_as_pair();
                         return Ok(Ty::Str);
                     }
@@ -5157,7 +5184,7 @@ impl<'a> Emitter<'a> {
                                 self.push_block_as_pair();
                                 return Ok(Ty::Str);
                             }
-                            Ty::Arr => {
+                            Ty::Arr | Ty::ArrF | Ty::ArrStr => {
                                 let ptr_tmp = self.builder.add_local(ValType::I32);
                                 let len_tmp = self.builder.add_local(ValType::I32);
                                 self.emit_expr(&args[0])?;
@@ -5174,7 +5201,7 @@ impl<'a> Emitter<'a> {
                                     self.builder.push(Instr::Op(0xad));
                                 }
                                 self.builder.push(Instr::Call(ARR_SLICE));
-                                return Ok(Ty::Arr);
+                                return Ok(base);
                             }
                             other => {
                                 return Err(format!("wasm target cannot slice {}", ty_name(other)))
@@ -5523,14 +5550,23 @@ impl<'a> Emitter<'a> {
                         return Ok(Ty::Arr);
                     }
                     if matches!(name.as_str(), "reverse" | "sort") && args.len() == 1 {
-                        let import = if name == "reverse" {
-                            ARR_REVERSE
-                        } else {
-                            ARR_SORT
+                        let ty = self.type_of(&args[0])?;
+                        let import = match (name.as_str(), ty) {
+                            ("reverse", Ty::Arr | Ty::ArrF | Ty::ArrStr) => ARR_REVERSE,
+                            ("sort", Ty::Arr) => ARR_SORT,
+                            ("sort", Ty::ArrF) => ARR_SORT_F,
+                            ("sort", Ty::ArrStr) => ARR_SORT_STR,
+                            _ => {
+                                return Err(format!(
+                                    "wasm target {}() takes a numeric or string array, got {}",
+                                    name,
+                                    ty_name(ty)
+                                ))
+                            }
                         };
                         self.emit_expr(&args[0])?;
                         self.builder.push(Instr::Call(import));
-                        return Ok(Ty::Arr);
+                        return Ok(ty);
                     }
                     if matches!(name.as_str(), "map" | "filter") && args.len() == 2 {
                         let input_ty = self.type_of(&args[0])?;
@@ -6708,7 +6744,7 @@ impl<'a> Emitter<'a> {
                 }
                 Ok(())
             }
-            Stmt::Expr(Expr::Call(callee, args, _), _) => {
+            Stmt::Expr(expr @ Expr::Call(callee, args, _), _) => {
                 if let Some((params, result, index)) = self.callable(callee)? {
                     if args.len() != params.len() {
                         return Err(
@@ -6786,6 +6822,19 @@ impl<'a> Emitter<'a> {
                         self.emit_expr(&args[2])?;
                         self.builder.push(Instr::Call(MAP_SET));
                         self.builder.push(Instr::Op(0x1a));
+                        return Ok(());
+                    }
+                    "reverse" | "sort" | "slice" | "join" | "sum" | "min" | "max" | "index_of"
+                    | "range" | "keys" | "values" | "split" | "trim" | "upper" | "lower"
+                    | "replace" | "repeat" | "str" | "int" => {
+                        let ty = self.emit_expr(expr)?;
+                        match ty {
+                            Ty::Str => {
+                                self.builder.push(Instr::Op(0x1a));
+                                self.builder.push(Instr::Op(0x1a));
+                            }
+                            _ => self.builder.push(Instr::Op(0x1a)),
+                        }
                         return Ok(());
                     }
                     "each" => {
@@ -8724,6 +8773,11 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let arr_sum_f_ty = builder.add_type(vec![ValType::I32], vec![ValType::F64]);
     let arr_minmax_f_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::F64]);
     let arr_index_of_f_ty = builder.add_type(vec![ValType::I32, ValType::F64], vec![ValType::I64]);
+    let arr_sort_f_ty = builder.add_type(vec![ValType::I32], vec![ValType::I32]);
+    let arr_join_ty = builder.add_type(
+        vec![ValType::I32, ValType::I32, ValType::I32],
+        vec![ValType::I32],
+    );
     let str_test_ty = builder.add_type(
         vec![
             ValType::I32,
@@ -8834,6 +8888,10 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "arr_sum_f", arr_sum_f_ty);
     builder.import_func("env", "arr_minmax_f", arr_minmax_f_ty);
     builder.import_func("env", "arr_index_of_f", arr_index_of_f_ty);
+    builder.import_func("env", "arr_sort_f", arr_sort_f_ty);
+    builder.import_func("env", "arr_sort_str", arr_sort_f_ty);
+    builder.import_func("env", "arr_join_int", arr_join_ty);
+    builder.import_func("env", "arr_join_f", arr_join_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -9756,6 +9814,31 @@ mod tests {
                 "9.5".to_string(),
                 "array".to_string(),
                 "19.25".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn numeric_and_string_array_helpers_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "print(sort([\"b\", \"c\", \"a\"]))\nprint(sort([2.5, 1.5]))\nlet words = [\"a\", \"b\"]\nlet reversed = reverse(words)\nprint(words)\nprint(reversed)\nlet floats = [1.5, 0.5]\nreverse(floats)\nprint(floats)\nprint(slice([\"a\", \"b\", \"c\"], 1, 2))\nprint(slice([1.5, 2.5, 3.5], 0, 2))\nprint(join([\"a\", \"b\"]))\nprint(join([1, 2], \"-\"))\nprint(join([1.5, 2], \"+\"))\nlet unsorted = [\"b\", \"a\"]\nsort(unsorted)\nprint(unsorted)",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec![
+                "[\"a\",\"b\",\"c\"]".to_string(),
+                "[1.5,2.5]".to_string(),
+                "[\"b\",\"a\"]".to_string(),
+                "[\"b\",\"a\"]".to_string(),
+                "[0.5,1.5]".to_string(),
+                "[\"b\"]".to_string(),
+                "[1.5,2.5]".to_string(),
+                "ab".to_string(),
+                "1-2".to_string(),
+                "1.5+2".to_string(),
+                "[\"a\",\"b\"]".to_string(),
             ]
         );
     }

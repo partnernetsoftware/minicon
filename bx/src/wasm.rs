@@ -1148,6 +1148,131 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 (self.on_str)(&text);
                 Ok(Vec::new())
             }
+            ("env", "arr_sort_f") => {
+                let ptr = match args.first() {
+                    Some(WVal::I32(ptr)) => *ptr as usize,
+                    _ => return Err("env.arr_sort_f expects one i32".to_string()),
+                };
+                if ptr + 4 > memory.len() {
+                    return Err("env.arr_sort_f array is outside memory".to_string());
+                }
+                let count = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+                let mut values: Vec<f64> = Vec::with_capacity(count);
+                for index in 0..count {
+                    let offset = ptr + 4 + index * 8;
+                    if offset + 8 > memory.len() {
+                        break;
+                    }
+                    values.push(f64::from_le_bytes(
+                        memory[offset..offset + 8].try_into().unwrap(),
+                    ));
+                }
+                values.sort_by(|left, right| left.total_cmp(right));
+                for (index, value) in values.iter().enumerate() {
+                    let offset = ptr + 4 + index * 8;
+                    memory[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+                }
+                Ok(vec![WVal::I32(ptr as i32)])
+            }
+            ("env", "arr_sort_str") => {
+                let ptr = match args.first() {
+                    Some(WVal::I32(ptr)) => *ptr as usize,
+                    _ => return Err("env.arr_sort_str expects one i32".to_string()),
+                };
+                if ptr + 4 > memory.len() {
+                    return Err("env.arr_sort_str array is outside memory".to_string());
+                }
+                let count = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+                let mut entries: Vec<(usize, usize)> = Vec::with_capacity(count);
+                for index in 0..count {
+                    let offset = ptr + 4 + index * 8;
+                    if offset + 8 > memory.len() {
+                        break;
+                    }
+                    let piece_ptr =
+                        u32::from_le_bytes(memory[offset..offset + 4].try_into().unwrap()) as usize;
+                    let piece_len =
+                        u32::from_le_bytes(memory[offset + 4..offset + 8].try_into().unwrap())
+                            as usize;
+                    entries.push((piece_ptr, piece_len));
+                }
+                entries.sort_by(|left, right| {
+                    let a = memory
+                        .get(left.0..left.0.saturating_add(left.1))
+                        .unwrap_or(&[]);
+                    let b = memory
+                        .get(right.0..right.0.saturating_add(right.1))
+                        .unwrap_or(&[]);
+                    a.cmp(b)
+                });
+                for (index, (piece_ptr, piece_len)) in entries.iter().enumerate() {
+                    let offset = ptr + 4 + index * 8;
+                    memory[offset..offset + 4].copy_from_slice(&(*piece_ptr as u32).to_le_bytes());
+                    memory[offset + 4..offset + 8]
+                        .copy_from_slice(&(*piece_len as u32).to_le_bytes());
+                }
+                Ok(vec![WVal::I32(ptr as i32)])
+            }
+            ("env", "arr_join_int") => {
+                let (ptr, sep_ptr, sep_len) = match (args.first(), args.get(1), args.get(2)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(sp)), Some(WVal::I32(sl))) => {
+                        (*ptr as usize, *sp as usize, *sl as usize)
+                    }
+                    _ => return Err("env.arr_join_int expects (i32, i32, i32)".to_string()),
+                };
+                if ptr + 4 > memory.len() {
+                    return Err("env.arr_join_int array is outside memory".to_string());
+                }
+                let sep = memory_text(memory, sep_ptr, sep_len);
+                let count = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+                let mut text = String::new();
+                for index in 0..count {
+                    if index > 0 {
+                        text.push_str(&sep);
+                    }
+                    let offset = ptr + 4 + index * 8;
+                    if offset + 8 > memory.len() {
+                        break;
+                    }
+                    text.push_str(
+                        &i64::from_le_bytes(memory[offset..offset + 8].try_into().unwrap())
+                            .to_string(),
+                    );
+                }
+                match store_text_block(memory, &mut self.next_file, text.as_bytes()) {
+                    Some(start) => Ok(vec![WVal::I32(start as i32)]),
+                    None => Ok(vec![WVal::I32(0)]),
+                }
+            }
+            ("env", "arr_join_f") => {
+                let (ptr, sep_ptr, sep_len) = match (args.first(), args.get(1), args.get(2)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(sp)), Some(WVal::I32(sl))) => {
+                        (*ptr as usize, *sp as usize, *sl as usize)
+                    }
+                    _ => return Err("env.arr_join_f expects (i32, i32, i32)".to_string()),
+                };
+                if ptr + 4 > memory.len() {
+                    return Err("env.arr_join_f array is outside memory".to_string());
+                }
+                let sep = memory_text(memory, sep_ptr, sep_len);
+                let count = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+                let mut text = String::new();
+                for index in 0..count {
+                    if index > 0 {
+                        text.push_str(&sep);
+                    }
+                    let offset = ptr + 4 + index * 8;
+                    if offset + 8 > memory.len() {
+                        break;
+                    }
+                    let value = f64::from_le_bytes(memory[offset..offset + 8].try_into().unwrap());
+                    text.push_str(&crate::value::fmt_float(value));
+                }
+                match store_text_block(memory, &mut self.next_file, text.as_bytes()) {
+                    Some(start) => Ok(vec![WVal::I32(start as i32)]),
+                    None => Ok(vec![WVal::I32(0)]),
+                }
+            }
             ("env", "arr_sort") => {
                 let ptr = match args.first() {
                     Some(WVal::I32(ptr)) => *ptr as usize,
