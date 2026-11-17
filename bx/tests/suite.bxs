@@ -577,6 +577,16 @@ if (wasmAttempt.code == 0 && wasmAttemptRun.out == wasmAttemptVm.out && wasmAtte
   casesFail += 1
   failures.push("wasm attempt()\n    wasm=" + json(wasmAttemptRun.out) + " vm=" + json(wasmAttemptVm.out) + " err=" + json(wasmAttemptRun.err))
 }
+write(artDir + "/wasm-basename.bxs", 'print(basename("/a/b/c.txt"))\nprint(dirname("/a/b/c.txt"))\nprint(basename("file.txt"))\nprint(dirname("file.txt"))\nprint(basename("/a"))\nprint(dirname("/a"))\nprint(basename("a//b"))\nprint(dirname("a//b"))\n')
+let wasmBasename = exec([BX, "build", "--wasm", artDir + "/wasm-basename.bxs", "-o", artDir + "/wasm-basename.wasm"])
+let wasmBasenameRun = exec([BX, "run", artDir + "/wasm-basename.wasm"])
+let wasmBasenameVm = exec([BX, "run", artDir + "/wasm-basename.bxs"])
+if (wasmBasename.code == 0 && wasmBasenameRun.out == wasmBasenameVm.out && wasmBasenameRun.out.trim() == "c.txt\n/a/b\nfile.txt\n\na\n/\nb\na") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm basename/dirname\n    wasm=" + json(wasmBasenameRun.out) + " vm=" + json(wasmBasenameVm.out) + " err=" + json(wasmBasenameRun.err))
+}
 write(artDir + "/wasm-defsort.bxs", 'print(sort([3, 1]))\nprint(sort([2.5, 1.5]))\nprint(sort(["b", "a"]))\nlet recs = [{a: 2}, {a: 1}]\nprint(sort(recs))\nprint(sort([[3], [1]]))\n')
 let wasmDefSort = exec([BX, "build", "--wasm", artDir + "/wasm-defsort.bxs", "-o", artDir + "/wasm-defsort.wasm"])
 let wasmDefSortRun = exec([BX, "run", artDir + "/wasm-defsort.wasm"])
@@ -1098,6 +1108,16 @@ if (wasmAttempt.code == 0 && wasmAttemptRun.out == wasmAttemptVm.out && wasmAtte
 } else {
   casesFail += 1
   failures.push("wasm attempt()\n    wasm=" + json(wasmAttemptRun.out) + " vm=" + json(wasmAttemptVm.out) + " err=" + json(wasmAttemptRun.err))
+}
+write(artDir + "/wasm-basename.bxs", 'print(basename("/a/b/c.txt"))\nprint(dirname("/a/b/c.txt"))\nprint(basename("file.txt"))\nprint(dirname("file.txt"))\nprint(basename("/a"))\nprint(dirname("/a"))\nprint(basename("a//b"))\nprint(dirname("a//b"))\n')
+let wasmBasename = exec([BX, "build", "--wasm", artDir + "/wasm-basename.bxs", "-o", artDir + "/wasm-basename.wasm"])
+let wasmBasenameRun = exec([BX, "run", artDir + "/wasm-basename.wasm"])
+let wasmBasenameVm = exec([BX, "run", artDir + "/wasm-basename.bxs"])
+if (wasmBasename.code == 0 && wasmBasenameRun.out == wasmBasenameVm.out && wasmBasenameRun.out.trim() == "c.txt\n/a/b\nfile.txt\n\na\n/\nb\na") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm basename/dirname\n    wasm=" + json(wasmBasenameRun.out) + " vm=" + json(wasmBasenameVm.out) + " err=" + json(wasmBasenameRun.err))
 }
 write(artDir + "/wasm-defsort.bxs", 'print(sort([3, 1]))\nprint(sort([2.5, 1.5]))\nprint(sort(["b", "a"]))\nlet recs = [{a: 2}, {a: 1}]\nprint(sort(recs))\nprint(sort([[3], [1]]))\n')
 let wasmDefSort = exec([BX, "build", "--wasm", artDir + "/wasm-defsort.bxs", "-o", artDir + "/wasm-defsort.wasm"])

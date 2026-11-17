@@ -942,6 +942,12 @@ impl Checker {
                         }
                         return Ok(Ty::Str);
                     }
+                    if (name == "basename" || name == "dirname") && args.len() == 1 {
+                        if self.infer(&args[0])? != Ty::Str {
+                            return Err(format!("wasm target {}() takes a string", name));
+                        }
+                        return Ok(Ty::Str);
+                    }
                     if name == "write_file" && args.len() == 2 {
                         if self.infer(&args[0])? != Ty::Str || self.infer(&args[1])? != Ty::Str {
                             return Err(
@@ -2316,7 +2322,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 85;
+const IMPORT_COUNT: u32 = 87;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -2389,6 +2395,8 @@ const EXEC_RECORD_SOFT: u32 = 81;
 const READ_FILE_SOFT: u32 = 82;
 const WRITE_FILE_SOFT: u32 = 83;
 const MKDIR_SOFT: u32 = 84;
+const BASENAME: u32 = 85;
+const DIRNAME: u32 = 86;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -5266,7 +5274,7 @@ impl<'a> Emitter<'a> {
                         "int" => Some(Ty::Int),
                         "len" => Some(Ty::Int),
                         "argc" | "run" | "capture" | "write_file" => Some(Ty::Int),
-                        "arg" | "read_file" => Some(Ty::Str),
+                        "arg" | "read_file" | "basename" | "dirname" => Some(Ty::Str),
                         "map_new" => Some(Ty::Map),
                         "map_get" | "map_has" | "map_len" | "file_exists" => Some(Ty::Int),
                         "exists" => Some(Ty::Bool),
@@ -7187,6 +7195,25 @@ impl<'a> Emitter<'a> {
                     if name == "which" && args.len() == 1 {
                         self.emit_str(&args[0])?;
                         self.builder.push(Instr::Call(WHICH));
+                        self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
+                        self.builder.push(Instr::Local(0x20, self.temp(ARG_TMP)));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x20, self.temp(ARG_TMP)));
+                        self.builder.push(Instr::Mem(0x28, 2, 0));
+                        return Ok(Ty::Str);
+                    }
+                    if (name == "basename" || name == "dirname") && args.len() == 1 {
+                        if self.type_of(&args[0])? != Ty::Str {
+                            return Err(format!("wasm target {}() takes a string", name));
+                        }
+                        self.emit_str(&args[0])?;
+                        let import = if name == "basename" {
+                            BASENAME
+                        } else {
+                            DIRNAME
+                        };
+                        self.builder.push(Instr::Call(import));
                         self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
                         self.builder.push(Instr::Local(0x20, self.temp(ARG_TMP)));
                         self.builder.push(Instr::Const(0x41, WVal::I32(4)));
@@ -10069,7 +10096,7 @@ impl<'a> InferState<'a> {
                         }),
                     "str" | "type" | "arg" | "read_file" | "read" | "which" | "capture" | "cwd"
                     | "env" | "join" | "slice" | "trim" | "upper" | "lower" | "replace"
-                    | "repeat" => Some(Ty::Str),
+                    | "basename" | "dirname" | "repeat" => Some(Ty::Str),
                     "float" | "sqrt" => Some(Ty::Float),
                     "exists" | "file_exists" | "has" => Some(Ty::Bool),
                     "split" | "keys" => Some(Ty::ArrStr),
@@ -10704,7 +10731,8 @@ impl<'a> CaptureWalker<'a> {
                     }),
                 "abs" | "floor" | "ceil" | "round" => Ty::Int,
                 "sqrt" => Ty::Float,
-                "type" | "arg" | "read_file" | "capture" | "cwd" | "env" | "join" => Ty::Str,
+                "type" | "arg" | "read_file" | "capture" | "cwd" | "env" | "join" | "basename"
+                | "dirname" => Ty::Str,
                 "exists" | "file_exists" | "has" => Ty::Bool,
                 "split" | "keys" => Ty::ArrStr,
                 "range" | "values" => Ty::Arr,
@@ -11584,6 +11612,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("bx", "read_file_soft", read_file_ty);
     builder.import_func("bx", "write_file_soft", write_file_ty);
     builder.import_func("env", "mkdir_soft", mkdir_ty);
+    builder.import_func("env", "basename", which_ty);
+    builder.import_func("env", "dirname", which_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -12707,6 +12737,36 @@ mod tests {
                 "[{\"a\":2},{\"a\":1}]".to_string(),
                 "[[3],[1]]".to_string(),
                 "[[\"b\"],[\"a\"]]".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn basename_and_dirname_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "print(basename(\"/a/b/c.txt\"))\nprint(dirname(\"/a/b/c.txt\"))\nprint(basename(\"file.txt\"))\nprint(dirname(\"file.txt\"))\nprint(basename(\"/a/b/\"))\nprint(dirname(\"/a/b/\"))\nprint(basename(\"a\\\\b\\\\c.txt\"))\nprint(dirname(\"a\\\\b\\\\c.txt\"))\nprint(basename(\"\"))\nprint(dirname(\"\"))\nprint(basename(\"/\"))\nprint(dirname(\"/\"))\nprint(basename(\"/a\"))\nprint(dirname(\"/a\"))\nprint(basename(\"a//b\"))\nprint(dirname(\"a//b\"))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec![
+                "c.txt".to_string(),
+                "/a/b".to_string(),
+                "file.txt".to_string(),
+                "".to_string(),
+                "b".to_string(),
+                "/a".to_string(),
+                "c.txt".to_string(),
+                "a\\b".to_string(),
+                "".to_string(),
+                "".to_string(),
+                "".to_string(),
+                "".to_string(),
+                "a".to_string(),
+                "/".to_string(),
+                "b".to_string(),
+                "a".to_string(),
             ]
         );
     }

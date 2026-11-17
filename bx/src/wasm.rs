@@ -718,6 +718,34 @@ fn exec_error_block(
     Ok(vec![WVal::I32(start as i32)])
 }
 
+/// Last path component; the VM treats both `/` and `\` as separators and
+/// trims trailing separators first.
+fn path_basename(path: &str) -> &str {
+    let trimmed = path.trim_end_matches(['/', '\\']);
+    match trimmed.rfind(['/', '\\']) {
+        Some(index) => &trimmed[index + 1..],
+        None => trimmed,
+    }
+}
+
+/// Parent path with the VM's rules: trim trailing separators, cut at the last
+/// separator, keep a bare root (for example `dirname("/a") == "/"`).
+fn path_dirname(path: &str) -> &str {
+    let trimmed = path.trim_end_matches(['/', '\\']);
+    match trimmed.rfind(['/', '\\']) {
+        Some(index) => {
+            let parent = &trimmed[..index];
+            let parent = parent.trim_end_matches(['/', '\\']);
+            if parent.is_empty() {
+                &trimmed[..1]
+            } else {
+                parent
+            }
+        }
+        None => "",
+    }
+}
+
 fn shell_command(line: &str) -> std::process::Command {
     #[cfg(windows)]
     {
@@ -2765,6 +2793,26 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     .ok_or_else(|| "bx.write_file data is outside memory".to_string())?;
                 let ok = std::fs::write(&path, data).is_ok();
                 Ok(vec![WVal::I32(if ok { 0 } else { -1 })])
+            }
+            ("env", "basename") | ("env", "dirname") => {
+                let is_base = name == "basename";
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("basename/dirname expect (i32 ptr, i32 len)".to_string()),
+                };
+                let text = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .ok_or_else(|| "basename/dirname path is outside memory".to_string())?;
+                let result = if is_base {
+                    path_basename(&text).to_string()
+                } else {
+                    path_dirname(&text).to_string()
+                };
+                match store_text_block(memory, &mut self.next_file, result.as_bytes()) {
+                    Some(start) => Ok(vec![WVal::I32(start as i32)]),
+                    None => Err("basename/dirname result does not fit the file region".to_string()),
+                }
             }
             ("bx", "which") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {
