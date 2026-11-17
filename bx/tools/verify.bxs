@@ -213,6 +213,14 @@ test("wasm source runs reuse a module cache", fn() {
   assert(exists(cache), "no wasm cache directory at " + cache)
 })
 write(dir + "/wasm-words.bxs", 'let words = [["a"], ["b", "c"]]\nprint(words)\nprint(len(words[1]))\n')
+write(dir + "/wasm-unicode.bxs", 'print(len("héllo"))\nprint(slice("héllo", 1, 4))\nfor ch in "hé" { print(ch) }\n')
+test("wasm unicode strings", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-unicode.bxs", "-o", dir + "/wasm-unicode.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-unicode.wasm"])
+  let vm = exec([bin, "run", dir + "/wasm-unicode.bxs"])
+  assert(ran.code == 0 && ran.out == vm.out && ran.out.trim() == "5\néll\nh\né", "wasm=" + json(ran.out) + " vm=" + json(vm.out))
+})
 test("wasm string array rows", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-words.bxs", "-o", dir + "/wasm-words.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

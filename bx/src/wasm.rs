@@ -1065,6 +1065,17 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 (self.on_str)(&format!("[{}]", rows.join(",")));
                 Ok(Vec::new())
             }
+            ("env", "str_len") => {
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("env.str_len expects (i32 ptr, i32 len)".to_string()),
+                };
+                let text = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .ok_or_else(|| "env.str_len string is outside memory".to_string())?;
+                Ok(vec![WVal::I64(text.chars().count() as i64)])
+            }
             ("env", "print_arr_f64") => {
                 let ptr = match args.first() {
                     Some(WVal::I32(ptr)) => *ptr as usize,
@@ -1430,22 +1441,24 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                             )
                         }
                     };
-                let bytes = memory
+                let text = memory
                     .get(ptr..ptr.saturating_add(len))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
                     .ok_or_else(|| "env.str_slice string is outside memory".to_string())?;
-                let length = bytes.len() as i64;
+                let chars: Vec<char> = text.chars().collect();
+                let length = chars.len() as i64;
                 let clamp = |value: i64| -> i64 {
                     let normalized = if value < 0 { length + value } else { value };
                     normalized.clamp(0, length)
                 };
                 let from = clamp(start);
                 let to = clamp(end);
-                let slice: Vec<u8> = if from <= to {
-                    bytes[from as usize..to as usize].to_vec()
+                let slice: String = if from <= to {
+                    chars[from as usize..to as usize].iter().collect()
                 } else {
-                    Vec::new()
+                    String::new()
                 };
-                match store_text_block(memory, &mut self.next_file, &slice) {
+                match store_text_block(memory, &mut self.next_file, slice.as_bytes()) {
                     Some(start) => Ok(vec![WVal::I32(start as i32)]),
                     None => Err("string result does not fit the memory region".to_string()),
                 }
@@ -1587,7 +1600,10 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     .get(needle_ptr..needle_ptr.saturating_add(needle_len))
                     .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
                     .ok_or_else(|| "env.str_index_of needle is outside memory".to_string())?;
-                let position = text.find(&needle).map(|at| at as i64).unwrap_or(-1);
+                let position = text
+                    .find(&needle)
+                    .map(|at| text[..at].chars().count() as i64)
+                    .unwrap_or(-1);
                 Ok(vec![WVal::I64(position)])
             }
             ("env", "str_repeat") => {

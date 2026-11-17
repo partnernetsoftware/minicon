@@ -7,7 +7,7 @@
 // if/else, while, print) so a mismatch always means an implementation bug in
 // one of the two backends rather than an unsupported feature.
 if (len(argv) < 1) {
-  eprint("usage: bx run tools/wasm-diff.bxs <bx-binary-or-com> [cases]\n")
+  eprint("usage: bx run tools/wasm-diff.bxs <bx-binary-or-com> [cases] [seed]\n")
   exit(2)
 }
 let bin = argv[0]
@@ -26,6 +26,12 @@ let dir = tmp + "/bx-wasm-diff-" + str(now())
 mkdir(dir)
 
 let seed = 987654321
+if (len(argv) > 2) {
+  seed = int(argv[2])
+  if (seed <= 0) {
+    seed = 987654321
+  }
+}
 fn next() {
   seed = (seed * 48271) % 2147483647
   if (seed == 0) {
@@ -204,6 +210,28 @@ fn gen() {
   lines.push("push(words, [\"z\"])")
   lines.push("print(words)")
   lines.push('print(sort([["a"], ["b", "c"]], fn(x, y) { return len(x) - len(y) }))')
+  // Fixed edge cases: unicode, empty containers, negative indexes, rows.
+  lines.push('print("héllo"[1])')
+  lines.push('print(len("héllo"))')
+  lines.push('print(upper("héllo") + lower("ABC"))')
+  lines.push('print(index_of("héllo", "llo"))')
+  lines.push('for ech in "héllo" { print(ech) }')
+  lines.push('for eidx, ech2 in "hé" { print(str(eidx) + ech2) }')
+  lines.push('print(slice("héllo", 1, 4))')
+  lines.push('print(split("", ","))')
+  lines.push('print(join([], "-"))')
+  lines.push("print(len([]))")
+  lines.push('print(sort([]))')
+  lines.push('print(slice([1, 2, 3], 3, 3))')
+  lines.push("print([1, 2][-2])")
+  lines.push('print("abc"[-1])')
+  lines.push('print(reduce([], fn(a, x) { return a + x }, 7))')
+  lines.push('print(filter([], fn(x) { return true }))')
+  lines.push('print(map([], fn(x) { return x * 2 }))')
+  lines.push('let er = [["a"], []]')
+  lines.push("print(er)")
+  lines.push("print(map(er, fn(r) { return len(r) }))")
+  lines.push("print(reduce(er, fn(a, r) { return a + len(r) }, 0))")
   lines.push("let rows = [[1, 2], [3], []]")
   lines.push("print(map(rows, fn(r) { return sum(r) }))")
   lines.push("print(filter(rows, fn(r) { return len(r) > 0 }))")

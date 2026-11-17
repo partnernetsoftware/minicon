@@ -56,8 +56,12 @@ documented by the module beyond its import types:
 - Strings are passed as `(ptr, len)` pairs. Results that are strings or string
   arrays are returned as a block pointer `[len: u32][utf8 bytes]` allocated by
   the host; multi-string results are `[count][ptr, len]*N`.
-- `str_char_at(ptr, len, index)` indexes **Unicode scalar values**, and a
-  negative index counts from the end.
+- **String lengths and offsets are Unicode scalar values, not bytes**:
+  `str_len` (length), `str_char_at`, `str_slice` and `str_index_of` all count
+  characters, and negative indexes/slices count from the end. Byte offsets
+  diverge from the VM for any non-ASCII text (found and fixed 2026-11-17).
+- `for ch in text { .. }` iterates scalar values; the two-variable form
+  (`for i, ch in text`) yields the character index.
 - `print_record(table, count, rec_ptr)` and `print_arr_obj(table, count, arr_ptr)`
   take the shape table first; `table` holds `u32` offsets to length-prefixed key
   blocks, and record fields are `i64` at `rec + 8*index`.
@@ -167,14 +171,18 @@ bx wasm target
   from the shared numeric subset (including float literals, `/`, user functions,
   recursion and rich local variables in functions) and runs each one through both the bx VM and the wasm
   backend; stdout and exit codes must match byte-for-byte. The suite runs 15 cases
-  and the verifier 8; a 100-case local run passes. This is what caught the VM/floats
+  and the verifier 8; a 100-case local run passes. The generator also appends
+  fixed edge cases (unicode strings, empty containers, negative indexes, text
+  rows) and accepts `[cases] [seed]`; on 2026-11-17 seeds 1/7/42/1234567/999999937
+  at 100 cases each all passed, which is how the byte-vs-character string bugs
+  above were found. This is what caught the VM/floats
   divergence: bx's `/` is float division, so the wasm target now rejects `/` with a
   clear message instead of silently producing integer results.
 - `bx build --wasm` output starts with `\0asm` and is instantiated by **node v24**
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 94 in-tree unit tests (plus the self-hosted differential tool) cover the encoder and the core host; the interpreter tests retired with the engine
+- 95 in-tree unit tests (plus the self-hosted differential tool) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of

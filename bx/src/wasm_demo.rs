@@ -128,7 +128,10 @@ const imports = {
       }
       emit("{" + pieces.join(",") + "}");
     },
-    print_arr_strarr: (ptr) => {
+    str_len: (ptr, len) => {
+      const text = new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, ptr, len));
+      return BigInt(Array.from(text).length);
+    },    print_arr_strarr: (ptr) => {
       const view = new DataView(instance.exports.memory.buffer);
       const decode = (p, l) => new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, p, l));
       const formatRow = (inner) => {

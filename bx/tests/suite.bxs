@@ -989,6 +989,16 @@ if (wasmSortCmp.code == 0 && wasmSortCmpRun.out == wasmSortCmpVm.out && wasmSort
   casesFail += 1
   failures.push("wasm sort comparator\n    wasm=" + json(wasmSortCmpRun.out) + " vm=" + json(wasmSortCmpVm.out) + " err=" + json(wasmSortCmpRun.err))
 }
+write(artDir + "/wasm-unicode.bxs", 'print(len("héllo"))\nprint("héllo"[1])\nprint(slice("héllo", 1, 4))\nprint(index_of("héllo", "llo"))\nfor ch in "hé" { print(ch) }\nfor i, ch in "ab" { print(str(i) + ":" + ch) }\nlet s = "日本語"\nprint(len(s))\nprint(s[0])\n')
+let wasmUnicode = exec([BX, "build", "--wasm", artDir + "/wasm-unicode.bxs", "-o", artDir + "/wasm-unicode.wasm"])
+let wasmUnicodeRun = exec([BX, "run", artDir + "/wasm-unicode.wasm"])
+let wasmUnicodeVm = exec([BX, "run", artDir + "/wasm-unicode.bxs"])
+if (wasmUnicode.code == 0 && wasmUnicodeRun.out == wasmUnicodeVm.out && wasmUnicodeRun.out.trim() == "5\né\néll\n2\nh\né\n0:a\n1:b\n3\n日") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm unicode strings\n    wasm=" + json(wasmUnicodeRun.out) + " vm=" + json(wasmUnicodeVm.out) + " err=" + json(wasmUnicodeRun.err))
+}
 write(artDir + "/wasm-words.bxs", 'let words = [["a", "b"], ["c"]]\nprint(words)\nprint(words[1][0])\nfor wrow in words { print(wrow) }\nprint(map(words, fn(r) { return len(r) }))\npush(words, ["z"])\nprint(words)\nprint(sort([["a"], ["b", "c"]], fn(x, y) { return len(x) - len(y) }))\n')
 let wasmWords = exec([BX, "build", "--wasm", artDir + "/wasm-words.bxs", "-o", artDir + "/wasm-words.wasm"])
 let wasmWordsRun = exec([BX, "run", artDir + "/wasm-words.wasm"])
