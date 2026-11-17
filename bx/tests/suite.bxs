@@ -587,6 +587,16 @@ if (wasmExecAll.code == 0 && wasmExecAllRun.out == wasmExecAllVm.out && wasmExec
   casesFail += 1
   failures.push("wasm exec_all\n    wasm=" + json(wasmExecAllRun.out) + " vm=" + json(wasmExecAllVm.out) + " err=" + json(wasmExecAllRun.err))
 }
+write(artDir + "/wasm-null.bxs", 'print(null)\nprint(str(null))\nprint(json(null))\nprint(type(null))\nprint(str(null == null))\nprint(str(null == 0))\nprint(str(null == false))\nprint(str(null == ""))\nprint(!null)\nprint(null ? "t" : "f")\nprint("v=${null}")\nprint(str(null || true))\nprint(str(null && true))\nprint(str(int(null)))\nprint(str(float(null)))\nprint(str(null + 1))\nprint(str(-null))\nprint(str(null - 1))\nprint(str(null * 3))\nprint(str(null / 2))\nprint(str(null % 2))\nprint(str(null < 1))\nprint(str(null >= 0))\nprint(str(1 > null))\nprint(str(null < 1.5))\n')
+let wasmNull = exec([BX, "build", "--wasm", artDir + "/wasm-null.bxs", "-o", artDir + "/wasm-null.wasm"])
+let wasmNullRun = exec([BX, "run", artDir + "/wasm-null.wasm"])
+let wasmNullVm = exec([BX, "run", artDir + "/wasm-null.bxs"])
+if (wasmNull.code == 0 && wasmNullRun.out == wasmNullVm.out && len(wasmNullRun.out) > 100) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm null semantics\n    wasm=" + json(wasmNullRun.out) + " vm=" + json(wasmNullVm.out) + " err=" + json(wasmNullRun.err))
+}
 write(artDir + "/wasm-popjoin.bxs", 'let ints = [1, 2]\nprint(ints.pop())\nprint(ints)\nlet bools = [true, false]\nprint(bools.pop())\nprint(bools)\nprint(join([true, false], ","))\nprint(join([true, false]))\n')
 let wasmPopJoin = exec([BX, "build", "--wasm", artDir + "/wasm-popjoin.bxs", "-o", artDir + "/wasm-popjoin.wasm"])
 let wasmPopJoinRun = exec([BX, "run", artDir + "/wasm-popjoin.wasm"])
@@ -1248,6 +1258,16 @@ if (wasmExecAll.code == 0 && wasmExecAllRun.out == wasmExecAllVm.out && wasmExec
 } else {
   casesFail += 1
   failures.push("wasm exec_all\n    wasm=" + json(wasmExecAllRun.out) + " vm=" + json(wasmExecAllVm.out) + " err=" + json(wasmExecAllRun.err))
+}
+write(artDir + "/wasm-null.bxs", 'print(null)\nprint(str(null))\nprint(json(null))\nprint(type(null))\nprint(str(null == null))\nprint(str(null == 0))\nprint(str(null == false))\nprint(str(null == ""))\nprint(!null)\nprint(null ? "t" : "f")\nprint("v=${null}")\nprint(str(null || true))\nprint(str(null && true))\nprint(str(int(null)))\nprint(str(float(null)))\nprint(str(null + 1))\nprint(str(-null))\nprint(str(null - 1))\nprint(str(null * 3))\nprint(str(null / 2))\nprint(str(null % 2))\nprint(str(null < 1))\nprint(str(null >= 0))\nprint(str(1 > null))\nprint(str(null < 1.5))\n')
+let wasmNull = exec([BX, "build", "--wasm", artDir + "/wasm-null.bxs", "-o", artDir + "/wasm-null.wasm"])
+let wasmNullRun = exec([BX, "run", artDir + "/wasm-null.wasm"])
+let wasmNullVm = exec([BX, "run", artDir + "/wasm-null.bxs"])
+if (wasmNull.code == 0 && wasmNullRun.out == wasmNullVm.out && len(wasmNullRun.out) > 100) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm null semantics\n    wasm=" + json(wasmNullRun.out) + " vm=" + json(wasmNullVm.out) + " err=" + json(wasmNullRun.err))
 }
 write(artDir + "/wasm-popjoin.bxs", 'let ints = [1, 2]\nprint(ints.pop())\nprint(ints)\nlet bools = [true, false]\nprint(bools.pop())\nprint(bools)\nprint(join([true, false], ","))\nprint(join([true, false]))\n')
 let wasmPopJoin = exec([BX, "build", "--wasm", artDir + "/wasm-popjoin.bxs", "-o", artDir + "/wasm-popjoin.wasm"])

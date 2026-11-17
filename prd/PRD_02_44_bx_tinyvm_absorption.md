@@ -75,7 +75,7 @@ minicon-bx owns a standard wasm core and one language skin      [-]
 │   └── core vendored as a workspace member                      [v]  `bx/vendor/tinyvm` (no crates.io wasm crate)
 │
 ├── P2 language front end simplification                        [-]  hybrid tagged-value design done 2026-11-18; implementation staged P2a-P2d
-│   ├── uniform tagged value ABI (containers hold values)        [-]  design: 16-byte [tag][aux][payload] cells, hybrid boundary
+│   ├── uniform tagged value ABI (containers hold values)        [-]  design: 16-byte [tag][aux][payload] cells, hybrid boundary; P2a null marker done
 │   ├── element-kind matrix and its host imports deleted         [_]
 │   ├── `.bxb` default flip and retirement (PRD_02_43)           [_]
 │   └── float/nested/mixed containers from the uniform layout    [_]
@@ -286,7 +286,7 @@ number/string coercion).
 
 | step | scope | gate |
 | --- | --- | --- |
-| P2a | `Ty::Dyn` scalars + `null`, `dyn_*` conversions, `parse(exec.out)` for 1/1.5/"a"/true | differential: null/JSON scalar programs match VM; static suite unchanged |
+| P2a | `Ty::Dyn` scalars + `null`, `dyn_*` conversions, `parse(exec.out)` for 1/1.5/"a"/true | `null` static marker landed 2026-11-18: printing/equality/ordering/arithmetic/conditions match the VM (128 unit, 249 suite); dynamic `Dyn` cells and runtime `parse` remain |
 | P2b | dynamic arrays/maps/records, heterogeneous containers, `dyn_index`/`dyn_member`/`dyn_set_*` | `parse` over `exec(...).out` with arrays of records matches VM; collection differential extended with mixed fixtures |
 | P2c | record field kind 8 (pointer to cell) + `get`/`merge` on heterogeneous shapes | `{a:{b:1}}`, `{xs:[1,2]}` round-trip (construct, read, print, json) match VM |
 | P2d | front-end simplification: delete element-kind matrix arms/imports that Dyn makes redundant, flip `.bxb` default (PRD_02_43) | one shared value path; import count and emitter arm count drop; suite/verify/both differentials green |

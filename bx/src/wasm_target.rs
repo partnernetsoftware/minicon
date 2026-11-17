@@ -23,6 +23,8 @@ enum Ty {
     ArrStr,
     /// Array of bools: `[len][0/1 i64]*N`.
     ArrBool,
+    /// The VM null value (P2a static marker: comparisons/printing only).
+    Null,
     /// Array of records of one fixed shape; entries hold record pointers.
     ArrObj(u32),
     /// Array of int arrays; entries hold inner-array pointers.
@@ -50,6 +52,7 @@ fn ty_name(ty: Ty) -> &'static str {
         Ty::Arr => "array",
         Ty::ArrStr => "array",
         Ty::ArrBool => "array",
+        Ty::Null => "null",
         Ty::ArrObj(_) => "array",
         Ty::ArrArr => "array",
         Ty::ArrF => "array",
@@ -339,7 +342,8 @@ fn wasm_types(ty: Ty) -> Vec<ValType> {
         | Ty::Obj(_)
         | Ty::Map
         | Ty::Func(_)
-        | Ty::Bool => {
+        | Ty::Bool
+        | Ty::Null => {
             vec![ValType::I32]
         }
     }
@@ -724,10 +728,7 @@ impl Checker {
                 .map(|id| Ty::Func(*id))
                 .ok_or_else(|| "wasm target lost a function literal".to_string()),
             Expr::Bool(_) => Ok(Ty::Bool),
-            Expr::Null => Err(
-                "wasm target has no null value; nullable data needs the dynamic VM (BX_TARGET=bxb) or a sentinel such as 0 or an empty string"
-                    .to_string(),
-            ),
+            Expr::Null => Ok(Ty::Null),
             Expr::Int(_) => Ok(Ty::Int),
             Expr::Float(_) => Ok(Ty::Float),
             Expr::Str(_) => Ok(Ty::Str),
@@ -738,6 +739,7 @@ impl Checker {
                 let ty = self.infer(inner)?;
                 match ty {
                     Ty::Int => Ok(Ty::Int),
+                    Ty::Null => Ok(Ty::Int),
                     Ty::Float => Ok(Ty::Float),
                     other => Err(format!(
                         "wasm target negates numbers only, got {}",
@@ -745,20 +747,39 @@ impl Checker {
                     )),
                 }
             }
-            Expr::Not(inner) => {
-                if self.infer(inner)? == Ty::Bool {
+            Expr::Not(inner) => match self.infer(inner)? {
+                Ty::Bool => Ok(Ty::Bool),
+                Ty::Null => Ok(Ty::Bool),
+                _ => Err("wasm target negates bools only".to_string()),
+            },
+            Expr::And(left, right) => {
+                let lt = self.infer(left)?;
+                let rt = self.infer(right)?;
+                if lt == Ty::Bool && rt == Ty::Bool {
                     return Ok(Ty::Bool);
                 }
-                Err("wasm target negates bools only".to_string())
+                if lt == Ty::Null {
+                    return Ok(Ty::Null);
+                }
+                Err("wasm target combines bools with && and || only".to_string())
             }
-            Expr::And(left, right) | Expr::Or(left, right) => {
-                if self.infer(left)? == Ty::Bool && self.infer(right)? == Ty::Bool {
+            Expr::Or(left, right) => {
+                let lt = self.infer(left)?;
+                let rt = self.infer(right)?;
+                if lt == Ty::Bool && rt == Ty::Bool {
                     return Ok(Ty::Bool);
+                }
+                if lt == Ty::Null && matches!(rt, Ty::Bool | Ty::Int | Ty::Float | Ty::Str) {
+                    return Ok(rt);
+                }
+                if lt == Ty::Null {
+                    return Ok(Ty::Null);
                 }
                 Err("wasm target combines bools with && and || only".to_string())
             }
             Expr::Ternary(cond, then, other, _) => {
-                if self.infer(cond)? != Ty::Bool {
+                let cond_ty = self.infer(cond)?;
+                if cond_ty != Ty::Bool && cond_ty != Ty::Null {
                     return Err("wasm target ternaries need a bool condition".to_string());
                 }
                 let lt = self.infer(then)?;
@@ -821,10 +842,16 @@ impl Checker {
                             | Ty::ArrStrArr
                     )
                     && matches!(op, BinOp::Eq | BinOp::Ne);
+                let null_cmp = (lt == Ty::Null || rt == Ty::Null)
+                    && matches!(
+                        if lt == Ty::Null { rt } else { lt },
+                        Ty::Null | Ty::Int | Ty::Float | Ty::Bool | Ty::Str
+                    );
                 let comparable = structural
                     || (is_number(lt) && is_number(rt))
                     || (lt == Ty::Str && rt == Ty::Str)
-                    || (lt == Ty::Bool && rt == Ty::Bool);
+                    || (lt == Ty::Bool && rt == Ty::Bool)
+                    || null_cmp;
                 if !comparable {
                     return Err(format!(
                         "wasm target compares two numbers, strings or bools, got {} and {}",
@@ -850,12 +877,21 @@ impl Checker {
                         return Ok(lt);
                     }
                     let stringifies = |ty: Ty| {
-                        matches!(ty, Ty::Int | Ty::Float | Ty::Bool | Ty::Str)
+                        matches!(ty, Ty::Int | Ty::Float | Ty::Bool | Ty::Str | Ty::Null)
                             || is_array_ty(ty)
                             || matches!(ty, Ty::Obj(_))
                     };
                     if lt == Ty::Str && stringifies(rt) || rt == Ty::Str && stringifies(lt) {
                         return Ok(Ty::Str);
+                    }
+                    if lt == Ty::Null && rt == Ty::Null {
+                        return Ok(Ty::Int);
+                    }
+                    if lt == Ty::Null && is_number(rt) {
+                        return Ok(rt);
+                    }
+                    if rt == Ty::Null && is_number(lt) {
+                        return Ok(lt);
                     }
                 }
                 let lt = self.infer(left)?;
@@ -872,13 +908,16 @@ impl Checker {
                 }
                 if op == &BinOp::Add && (lt == Ty::Str || rt == Ty::Str) {
                     let other = if lt == Ty::Str { rt } else { lt };
-                    if matches!(other, Ty::Str | Ty::Int | Ty::Float | Ty::Bool) {
+                    if matches!(other, Ty::Str | Ty::Int | Ty::Float | Ty::Bool | Ty::Null) {
                         return Ok(Ty::Str);
                     }
                 }
                 match (lt, rt) {
-                    (Ty::Int, Ty::Int) => Ok(Ty::Int),
-                    (Ty::Int | Ty::Float, Ty::Int | Ty::Float) => Ok(Ty::Float),
+                    (Ty::Int, Ty::Int) | (Ty::Int, Ty::Null) | (Ty::Null, Ty::Int) => Ok(Ty::Int),
+                    (Ty::Null, Ty::Null) => Ok(Ty::Int),
+                    (Ty::Int | Ty::Float | Ty::Null, Ty::Int | Ty::Float | Ty::Null) => {
+                        Ok(Ty::Float)
+                    }
                     (Ty::Arr, _) | (_, Ty::Arr) => Err(format!(
                         "wasm target does not support {:?} on arrays yet",
                         op
@@ -894,7 +933,7 @@ impl Checker {
             Expr::Bin(BinOp::Div, left, right) => {
                 let lt = self.infer(left)?;
                 let rt = self.infer(right)?;
-                if !is_number(lt) || !is_number(rt) {
+                if !is_number(lt) && lt != Ty::Null || !is_number(rt) && rt != Ty::Null {
                     return Err("wasm target divides numbers only".to_string());
                 }
                 Ok(Ty::Float)
@@ -902,10 +941,10 @@ impl Checker {
             Expr::Bin(BinOp::Mod, left, right) => {
                 let lt = self.infer(left)?;
                 let rt = self.infer(right)?;
-                if !is_number(lt) || !is_number(rt) {
+                if !is_number(lt) && lt != Ty::Null || !is_number(rt) && rt != Ty::Null {
                     return Err("wasm target takes % of numbers only".to_string());
                 }
-                if lt == Ty::Int && rt == Ty::Int {
+                if (lt == Ty::Int || lt == Ty::Null) && (rt == Ty::Int || rt == Ty::Null) {
                     Ok(Ty::Int)
                 } else {
                     Ok(Ty::Float)
@@ -1005,10 +1044,8 @@ impl Checker {
                         }
                         Ty::ArrBool => {
                             if key != "contains" || self.infer(&args[0])? != Ty::Bool {
-                                return Err(
-                                    "wasm target bool arrays support .contains(bool) only"
-                                        .to_string(),
-                                );
+                                return Err("wasm target bool arrays support .contains(bool) only"
+                                    .to_string());
                             }
                         }
                         _ => {
@@ -1118,13 +1155,7 @@ impl Checker {
                 let kinds = if saw_strarr && empty_rows_only {
                     1
                 } else {
-                    [
-                        saw_str,
-                        saw_arr,
-                        saw_strarr,
-                        saw_obj.is_some(),
-                        saw_bool,
-                    ]
+                    [saw_str, saw_arr, saw_strarr, saw_obj.is_some(), saw_bool]
                         .iter()
                         .filter(|seen| **seen)
                         .count()
@@ -1175,7 +1206,7 @@ impl Checker {
                 }
                 Ok(match arr_ty {
                     Ty::Str | Ty::ArrStr => Ty::Str,
-                Ty::ArrBool => Ty::Bool,
+                    Ty::ArrBool => Ty::Bool,
                     Ty::ArrObj(shape) => Ty::Obj(shape),
                     Ty::ArrArr => Ty::Arr,
                     Ty::ArrStrArr => Ty::ArrStr,
@@ -1387,7 +1418,10 @@ impl Checker {
                     }
 
                     if name == "float" && args.len() == 1 {
-                        if !matches!(self.infer(&args[0])?, Ty::Int | Ty::Float | Ty::Str) {
+                        if !matches!(
+                            self.infer(&args[0])?,
+                            Ty::Int | Ty::Float | Ty::Str | Ty::Null
+                        ) {
                             return Err(
                                 "wasm target float() takes a number or a string".to_string()
                             );
@@ -1437,7 +1471,7 @@ impl Checker {
                             Ty::Arr => Ty::Int,
                             Ty::ArrF => Ty::Float,
                             Ty::ArrStr => Ty::Str,
-                Ty::ArrBool => Ty::Bool,
+                            Ty::ArrBool => Ty::Bool,
                             Ty::ArrObj(shape) => Ty::Obj(shape),
                             Ty::ArrArr => Ty::Arr,
                             Ty::ArrStrArr => Ty::ArrStr,
@@ -1560,7 +1594,7 @@ impl Checker {
                             Ty::Arr => Ty::Int,
                             Ty::ArrF => Ty::Float,
                             Ty::ArrStr => Ty::Str,
-                Ty::ArrBool => Ty::Bool,
+                            Ty::ArrBool => Ty::Bool,
                             Ty::ArrObj(shape) => Ty::Obj(shape),
                             Ty::ArrArr => Ty::Arr,
                             Ty::ArrStrArr => Ty::ArrStr,
@@ -1620,7 +1654,7 @@ impl Checker {
                             Ty::Arr => Ty::Int,
                             Ty::ArrF => Ty::Float,
                             Ty::ArrStr => Ty::Str,
-                Ty::ArrBool => Ty::Bool,
+                            Ty::ArrBool => Ty::Bool,
                             Ty::ArrObj(shape) => Ty::Obj(shape),
                             Ty::ArrArr => Ty::Arr,
                             Ty::ArrStrArr => Ty::ArrStr,
@@ -1783,6 +1817,7 @@ impl Checker {
                         let ty = self.infer(&args[0])?;
                         if !is_number(ty)
                             && ty != Ty::Bool
+                            && ty != Ty::Null
                             && ty != Ty::Str
                             && !is_array_ty(ty)
                             && !matches!(ty, Ty::Obj(_))
@@ -1799,6 +1834,7 @@ impl Checker {
                         let ty = self.infer(&args[0])?;
                         if !is_number(ty)
                             && ty != Ty::Bool
+                            && ty != Ty::Null
                             && ty != Ty::Str
                             && !is_array_ty(ty)
                             && !matches!(ty, Ty::Obj(_))
@@ -1822,7 +1858,7 @@ impl Checker {
                     }
                     if name == "int" && args.len() == 1 {
                         let ty = self.infer(&args[0])?;
-                        if !is_number(ty) && ty != Ty::Str && ty != Ty::Bool {
+                        if !is_number(ty) && ty != Ty::Str && ty != Ty::Bool && ty != Ty::Null {
                             return Err(
                                 "wasm target int() takes a number, string or bool".to_string()
                             );
@@ -1917,7 +1953,11 @@ impl Checker {
                                         };
                                         for (_, item) in pairs {
                                             let ty = self.infer(item)?;
-                                            if !is_number(ty) && ty != Ty::Str && ty != Ty::Bool {
+                                            if !is_number(ty)
+                                                && ty != Ty::Str
+                                                && ty != Ty::Bool
+                                                && ty != Ty::Null
+                                            {
                                                 return Err(
                                                     "wasm target exec() env values are scalars"
                                                         .to_string(),
@@ -2189,7 +2229,7 @@ impl Checker {
 
     fn check_cond(&self, expr: &Expr) -> Result<(), String> {
         match self.infer(expr)? {
-            Ty::Bool => Ok(()),
+            Ty::Bool | Ty::Null => Ok(()),
             other => Err(format!(
                 "wasm target conditions must be bool, got {}",
                 ty_name(other)
@@ -6151,6 +6191,7 @@ impl<'a> Emitter<'a> {
             Expr::Float(_) => Ok(Ty::Float),
             Expr::Neg(inner) => match self.type_of(inner)? {
                 Ty::Int => Ok(Ty::Int),
+                Ty::Null => Ok(Ty::Int),
                 Ty::Float => Ok(Ty::Float),
                 other => Err(format!(
                     "wasm target negates numbers only, got {}",
@@ -6165,9 +6206,20 @@ impl<'a> Emitter<'a> {
                     op,
                     BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge
                 ) {
+                    let null_cmp = (lt == Ty::Null || rt == Ty::Null)
+                        && matches!(
+                            if lt == Ty::Null { rt } else { lt },
+                            Ty::Null | Ty::Int | Ty::Float | Ty::Bool | Ty::Str
+                        )
+                        && (matches!(op, BinOp::Eq | BinOp::Ne)
+                            || matches!(
+                                if lt == Ty::Null { rt } else { lt },
+                                Ty::Null | Ty::Int | Ty::Float
+                            ));
                     let comparable = (is_number(lt) && is_number(rt))
                         || (lt == Ty::Str && rt == Ty::Str)
                         || (lt == Ty::Bool && rt == Ty::Bool)
+                        || null_cmp
                         || (lt == rt
                             && matches!(op, BinOp::Eq | BinOp::Ne)
                             && (is_array_ty(lt) || matches!(lt, Ty::Obj(_))));
@@ -6192,21 +6244,25 @@ impl<'a> Emitter<'a> {
                 }
                 if op == &BinOp::Add && (lt == Ty::Str || rt == Ty::Str) {
                     let other = if lt == Ty::Str { rt } else { lt };
-                    if matches!(other, Ty::Str | Ty::Int | Ty::Float | Ty::Bool) {
+                    if matches!(other, Ty::Str | Ty::Int | Ty::Float | Ty::Bool | Ty::Null) {
                         return Ok(Ty::Str);
                     }
                 }
-                if !is_number(lt) || !is_number(rt) {
+                if (!is_number(lt) && lt != Ty::Null) || (!is_number(rt) && rt != Ty::Null) {
                     return Err(format!(
                         "wasm target does not support {:?} on {} yet",
                         op,
-                        ty_name(if !is_number(lt) { lt } else { rt })
+                        ty_name(if !is_number(lt) && lt != Ty::Null {
+                            lt
+                        } else {
+                            rt
+                        })
                     ));
                 }
                 match op {
                     BinOp::Div => Ok(Ty::Float),
                     _ => {
-                        if lt == Ty::Int && rt == Ty::Int {
+                        if lt != Ty::Float && rt != Ty::Float {
                             Ok(Ty::Int)
                         } else {
                             Ok(Ty::Float)
@@ -6214,20 +6270,38 @@ impl<'a> Emitter<'a> {
                     }
                 }
             }
-            Expr::Not(inner) => {
-                if self.type_of(inner)? == Ty::Bool {
+            Expr::Not(inner) => match self.type_of(inner)? {
+                Ty::Bool | Ty::Null => Ok(Ty::Bool),
+                _ => Err("wasm target negates bools only".to_string()),
+            },
+            Expr::And(left, right) => {
+                let lt = self.type_of(left)?;
+                let rt = self.type_of(right)?;
+                if lt == Ty::Bool && rt == Ty::Bool {
                     return Ok(Ty::Bool);
                 }
-                Err("wasm target negates bools only".to_string())
+                if lt == Ty::Null {
+                    return Ok(Ty::Null);
+                }
+                Err("wasm target combines bools with && and || only".to_string())
             }
-            Expr::And(left, right) | Expr::Or(left, right) => {
-                if self.type_of(left)? == Ty::Bool && self.type_of(right)? == Ty::Bool {
+            Expr::Or(left, right) => {
+                let lt = self.type_of(left)?;
+                let rt = self.type_of(right)?;
+                if lt == Ty::Bool && rt == Ty::Bool {
                     return Ok(Ty::Bool);
+                }
+                if lt == Ty::Null && matches!(rt, Ty::Bool | Ty::Int | Ty::Float | Ty::Str) {
+                    return Ok(rt);
+                }
+                if lt == Ty::Null {
+                    return Ok(Ty::Null);
                 }
                 Err("wasm target combines bools with && and || only".to_string())
             }
             Expr::Ternary(cond, then, other, _) => {
-                if self.type_of(cond)? != Ty::Bool {
+                let cond_ty = self.type_of(cond)?;
+                if cond_ty != Ty::Bool && cond_ty != Ty::Null {
                     return Err("wasm target ternaries need a bool condition".to_string());
                 }
                 let lt = self.type_of(then)?;
@@ -6394,6 +6468,10 @@ impl<'a> Emitter<'a> {
         }
     }
     fn emit_f64(&mut self, expr: &Expr) -> Result<(), String> {
+        if self.type_of(expr)? == Ty::Null {
+            self.builder.push(Instr::Const(0x44, WVal::F64(0.0)));
+            return Ok(());
+        }
         let ty = self.emit_expr(expr)?;
         match ty {
             Ty::Int => {
@@ -6408,17 +6486,31 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// Push an int operand, treating null as 0.
+    fn emit_int_operand(&mut self, expr: &Expr) -> Result<(), String> {
+        if self.type_of(expr)? == Ty::Null {
+            self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+            return Ok(());
+        }
+        self.emit_expr(expr)?;
+        Ok(())
+    }
+
     fn emit_numeric(&mut self, op: BinOp, left: &Expr, right: &Expr) -> Result<Ty, String> {
         let lt = self.type_of(left)?;
         let rt = self.type_of(right)?;
-        if !is_number(lt) || !is_number(rt) {
+        if (!is_number(lt) && lt != Ty::Null) || (!is_number(rt) && rt != Ty::Null) {
             return Err(format!(
                 "wasm target does not support {:?} on {} yet",
                 op,
-                ty_name(if !is_number(lt) { lt } else { rt })
+                ty_name(if !is_number(lt) && lt != Ty::Null {
+                    lt
+                } else {
+                    rt
+                })
             ));
         }
-        let both_int = lt == Ty::Int && rt == Ty::Int;
+        let both_int = lt != Ty::Float && rt != Ty::Float;
         match op {
             BinOp::Div => {
                 let divisor = self.builder.add_local(ValType::F64);
@@ -6466,7 +6558,7 @@ impl<'a> Emitter<'a> {
             }
             BinOp::Mod => {
                 let divisor = self.builder.add_local(ValType::I64);
-                self.emit_expr(right)?;
+                self.emit_int_operand(right)?;
                 self.builder.push(Instr::Local(0x21, divisor));
                 self.builder.push(Instr::Local(0x20, divisor));
                 self.builder.push(Instr::Const(0x42, WVal::I64(0)));
@@ -6481,15 +6573,15 @@ impl<'a> Emitter<'a> {
                 self.emit_panic("modulo by zero");
                 self.labels.pop();
                 self.builder.push(Instr::Op(0x0b));
-                self.emit_expr(left)?;
+                self.emit_int_operand(left)?;
                 self.builder.push(Instr::Local(0x20, divisor));
                 self.builder.push(Instr::Op(0x81));
                 Ok(Ty::Int)
             }
             BinOp::Add | BinOp::Sub | BinOp::Mul => {
                 if both_int {
-                    self.emit_expr(left)?;
-                    self.emit_expr(right)?;
+                    self.emit_int_operand(left)?;
+                    self.emit_int_operand(right)?;
                     let opcode = match op {
                         BinOp::Add => 0x7c,
                         BinOp::Sub => 0x7d,
@@ -6529,16 +6621,24 @@ impl<'a> Emitter<'a> {
                 }
                 self.emit_cmp(*op, left, right)
             }
-            other => {
-                if self.type_of(other)? == Ty::Bool {
+            Expr::Null => {
+                self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                Ok(())
+            }
+            other => match self.type_of(other)? {
+                Ty::Bool => {
                     self.emit_expr(other)?;
-                    return Ok(());
+                    Ok(())
                 }
-                Err(format!(
+                Ty::Null => {
+                    self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                    Ok(())
+                }
+                _ => Err(format!(
                     "wasm target conditions must be bool, got {}",
                     expr_kind(other)
-                ))
-            }
+                )),
+            },
         }
     }
 
@@ -6816,6 +6916,86 @@ impl<'a> Emitter<'a> {
         Ok(())
     }
 
+    /// Compare a null operand against null or a scalar, following the VM's
+    /// coercions: null == 0, null == false, null == null, never equal to text.
+    fn emit_null_cmp(
+        &mut self,
+        op: BinOp,
+        left: &Expr,
+        right: &Expr,
+        lt: Ty,
+        rt: Ty,
+    ) -> Result<(), String> {
+        let (other, other_expr) = if lt == Ty::Null {
+            (rt, right)
+        } else {
+            (lt, left)
+        };
+        let negate = op == BinOp::Ne;
+        match other {
+            Ty::Null => {
+                let truthy = matches!(op, BinOp::Eq | BinOp::Le | BinOp::Ge);
+                self.builder
+                    .push(Instr::Const(0x41, WVal::I32(if truthy { 1 } else { 0 })));
+                Ok(())
+            }
+            Ty::Bool => {
+                self.emit_expr(other_expr)?;
+                self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                self.builder
+                    .push(Instr::Op(if negate { 0x47 } else { 0x46 }));
+                Ok(())
+            }
+            Ty::Str => {
+                self.builder
+                    .push(Instr::Const(0x41, WVal::I32(if negate { 1 } else { 0 })));
+                Ok(())
+            }
+            Ty::Int => {
+                if lt == Ty::Null {
+                    self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                    self.emit_expr(other_expr)?;
+                } else {
+                    self.emit_expr(other_expr)?;
+                    self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                }
+                let opcode = match op {
+                    BinOp::Eq => 0x51,
+                    BinOp::Ne => 0x52,
+                    BinOp::Lt => 0x53,
+                    BinOp::Gt => 0x55,
+                    BinOp::Le => 0x57,
+                    _ => 0x59,
+                };
+                self.builder.push(Instr::Op(opcode));
+                Ok(())
+            }
+            Ty::Float => {
+                if lt == Ty::Null {
+                    self.builder.push(Instr::Const(0x44, WVal::F64(0.0)));
+                    self.emit_f64(other_expr)?;
+                } else {
+                    self.emit_f64(other_expr)?;
+                    self.builder.push(Instr::Const(0x44, WVal::F64(0.0)));
+                }
+                let opcode = match op {
+                    BinOp::Eq => 0x61,
+                    BinOp::Ne => 0x62,
+                    BinOp::Lt => 0x63,
+                    BinOp::Le => 0x65,
+                    BinOp::Gt => 0x64,
+                    _ => 0x66,
+                };
+                self.builder.push(Instr::Op(opcode));
+                Ok(())
+            }
+            other => Err(format!(
+                "wasm target cannot order null against {}",
+                ty_name(other)
+            )),
+        }
+    }
+
     fn emit_value_eq(&mut self, left: &Expr, right: &Expr, ty: Ty) -> Result<(), String> {
         let a = self.emit_value_cell(left, ty)?;
         let b = self.emit_value_cell(right, ty)?;
@@ -6844,6 +7024,9 @@ impl<'a> Emitter<'a> {
                 self.builder.push(Instr::Op(0x45));
             }
             return Ok(());
+        }
+        if lt == Ty::Null || rt == Ty::Null {
+            return self.emit_null_cmp(op, left, right, lt, rt);
         }
         if lt == Ty::Bool && rt == Ty::Bool {
             self.emit_expr(left)?;
@@ -7054,6 +7237,10 @@ impl<'a> Emitter<'a> {
                 self.push_block_as_pair();
                 Ok(())
             }
+            Ty::Null => {
+                self.emit_text_literal("null");
+                Ok(())
+            }
             ty if is_array_ty(ty) || matches!(ty, Ty::Obj(_)) => self.emit_container_string(expr),
             other => Err(format!(
                 "wasm target cannot use {} in a string concatenation",
@@ -7071,6 +7258,15 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Local(0x20, ARG_TMP));
         self.builder.push(Instr::Mem(0x28, 2, 0));
     }
+    /// Push a constant string as a `(ptr, len)` pair.
+    fn emit_text_literal(&mut self, text: &str) {
+        let offset = self.builder.add_data(text.as_bytes());
+        self.builder
+            .push(Instr::Const(0x41, WVal::I32(offset as i32)));
+        self.builder
+            .push(Instr::Const(0x41, WVal::I32(text.len() as i32)));
+    }
+
     fn emit_str(&mut self, expr: &Expr) -> Result<(), String> {
         if let Some(text) = string_value(expr) {
             let offset = self.builder.add_data(text.as_bytes());
@@ -7081,6 +7277,10 @@ impl<'a> Emitter<'a> {
             return Ok(());
         }
         match expr {
+            Expr::Null => {
+                self.emit_text_literal("null");
+                Ok(())
+            }
             Expr::Ident(name) if name == "__dir__" => {
                 self.emit_script_dir()?;
                 Ok(())
@@ -7348,10 +7548,10 @@ impl<'a> Emitter<'a> {
                 self.builder.push(Instr::Local(0x20, env_tmp));
                 Ok(Ty::Func(id))
             }
-            Expr::Null => Err(
-                "wasm target has no null value; nullable data needs the dynamic VM (BX_TARGET=bxb) or a sentinel such as 0 or an empty string"
-                    .to_string(),
-            ),
+            Expr::Null => {
+                self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                Ok(Ty::Null)
+            }
             Expr::Int(value) => {
                 self.builder.push(Instr::Const(0x42, WVal::I64(*value)));
                 Ok(Ty::Int)
@@ -7374,7 +7574,12 @@ impl<'a> Emitter<'a> {
                 }
                 let ty = self.checker.lookup(name)?;
                 match ty {
-                    Ty::ArrObj(_) | Ty::ArrArr | Ty::ArrF | Ty::ArrStrArr | Ty::ArrBool => {
+                    Ty::ArrObj(_)
+                    | Ty::ArrArr
+                    | Ty::ArrF
+                    | Ty::ArrStrArr
+                    | Ty::ArrBool
+                    | Ty::Null => {
                         let base = self.checker.binding(name)?.base;
                         self.builder.push(Instr::Global(0x23, base));
                     }
@@ -7400,6 +7605,10 @@ impl<'a> Emitter<'a> {
                 Ok(Ty::Bool)
             }
             Expr::And(left, right) => {
+                if self.type_of(left)? == Ty::Null {
+                    self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                    return Ok(Ty::Null);
+                }
                 let slot = self.builder.add_local(ValType::I32);
                 self.emit_cond(left)?;
                 self.builder.push(Instr::Block {
@@ -7420,6 +7629,9 @@ impl<'a> Emitter<'a> {
                 Ok(Ty::Bool)
             }
             Expr::Or(left, right) => {
+                if self.type_of(left)? == Ty::Null {
+                    return self.emit_expr(right);
+                }
                 let slot = self.builder.add_local(ValType::I32);
                 self.emit_cond(left)?;
                 self.builder.push(Instr::Block {
@@ -7504,7 +7716,7 @@ impl<'a> Emitter<'a> {
                     return Ok(Ty::Float);
                 }
                 self.builder.push(Instr::Const(0x42, WVal::I64(0)));
-                self.emit_expr(inner)?;
+                self.emit_int_operand(inner)?;
                 self.builder.push(Instr::Op(0x7d));
                 Ok(Ty::Int)
             }
@@ -7893,12 +8105,7 @@ impl<'a> Emitter<'a> {
                 }
                 if !matches!(
                     array_ty,
-                    Ty::Arr
-                        | Ty::ArrBool
-                        | Ty::ArrObj(_)
-                        | Ty::ArrArr
-                        | Ty::ArrF
-                        | Ty::ArrStrArr
+                    Ty::Arr | Ty::ArrBool | Ty::ArrObj(_) | Ty::ArrArr | Ty::ArrF | Ty::ArrStrArr
                 ) {
                     return Err(format!(
                         "wasm target indexes arrays and strings only, got {}",
@@ -9048,6 +9255,7 @@ impl<'a> Emitter<'a> {
                             Ty::Float => "float",
                             Ty::Str => "str",
                             Ty::Bool => "bool",
+                            Ty::Null => "null",
                             Ty::Arr
                             | Ty::ArrStr
                             | Ty::ArrBool
@@ -9276,7 +9484,7 @@ impl<'a> Emitter<'a> {
                             Ty::Arr => Ty::Int,
                             Ty::ArrF => Ty::Float,
                             Ty::ArrStr => Ty::Str,
-                Ty::ArrBool => Ty::Bool,
+                            Ty::ArrBool => Ty::Bool,
                             Ty::ArrObj(shape) => Ty::Obj(shape),
                             Ty::ArrArr => Ty::Arr,
                             Ty::ArrStrArr => Ty::ArrStr,
@@ -9461,7 +9669,7 @@ impl<'a> Emitter<'a> {
                             Ty::Arr => Ty::Int,
                             Ty::ArrF => Ty::Float,
                             Ty::ArrStr => Ty::Str,
-                Ty::ArrBool => Ty::Bool,
+                            Ty::ArrBool => Ty::Bool,
                             Ty::ArrObj(shape) => Ty::Obj(shape),
                             Ty::ArrArr => Ty::Arr,
                             Ty::ArrStrArr => Ty::ArrStr,
@@ -10297,6 +10505,10 @@ impl<'a> Emitter<'a> {
                             self.emit_container_string(&args[0])?;
                             return Ok(Ty::Str);
                         }
+                        if ty == Ty::Null {
+                            self.emit_text_literal("null");
+                            return Ok(Ty::Str);
+                        }
                         if ty == Ty::Str {
                             self.emit_str(&args[0])?;
                             return Ok(Ty::Str);
@@ -10339,6 +10551,20 @@ impl<'a> Emitter<'a> {
                                 self.emit_str(&args[0])?;
                                 self.builder.push(Instr::Call(JSON_STR));
                             }
+                            Ty::Null => {
+                                let block = self.builder.add_local(ValType::I32);
+                                self.emit_alloc_const(8);
+                                self.builder.push(Instr::Local(0x21, block));
+                                self.builder.push(Instr::Local(0x20, block));
+                                self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                                self.builder.push(Instr::Mem(0x36, 2, 0));
+                                self.builder.push(Instr::Local(0x20, block));
+                                self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                                self.builder.push(Instr::Op(0x6a));
+                                self.builder.push(Instr::Const(0x41, WVal::I32(0x6c6c756e)));
+                                self.builder.push(Instr::Mem(0x36, 2, 0));
+                                self.builder.push(Instr::Local(0x20, block));
+                            }
                             Ty::Bool => {
                                 self.emit_expr(&args[0])?;
                                 self.builder.push(Instr::Call(BOOL_TO_STR));
@@ -10373,6 +10599,9 @@ impl<'a> Emitter<'a> {
                     }
                     if name == "int" && args.len() == 1 {
                         match self.type_of(&args[0])? {
+                            Ty::Null => {
+                                self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                            }
                             Ty::Str => {
                                 self.emit_str(&args[0])?;
                                 self.builder.push(Instr::Call(STR_TO_INT));
@@ -10471,6 +10700,7 @@ impl<'a> Emitter<'a> {
                 if self.fn_mode {
                     let slot = match ty {
                         Ty::Int => self.builder.add_local(ValType::I64),
+                        Ty::Null => self.builder.add_local(ValType::I32),
                         Ty::Float => self.builder.add_local(ValType::F64),
                         Ty::Str => {
                             let slot = self.builder.add_local(ValType::I32);
@@ -11052,6 +11282,12 @@ impl<'a> Emitter<'a> {
                         self.builder
                             .push(Instr::Call(if web { WEB_CONSOLE_UTF8 } else { 1 }));
                     }
+                    Ty::Null => {
+                        self.builder.push(Instr::Op(0x1a));
+                        self.emit_text_literal("null");
+                        self.builder
+                            .push(Instr::Call(if web { WEB_CONSOLE_UTF8 } else { 1 }));
+                    }
                     Ty::Float => {
                         self.builder
                             .push(Instr::Call(if web { WEB_CONSOLE_F64 } else { 8 }));
@@ -11131,7 +11367,12 @@ impl<'a> Emitter<'a> {
             Stmt::Expr(expr, _) => {
                 let ty = self.emit_expr(expr)?;
                 match ty {
-                    Ty::ArrObj(_) | Ty::ArrArr | Ty::ArrF | Ty::ArrStrArr | Ty::ArrBool => {
+                    Ty::ArrObj(_)
+                    | Ty::ArrArr
+                    | Ty::ArrF
+                    | Ty::ArrStrArr
+                    | Ty::ArrBool
+                    | Ty::Null => {
                         self.builder.push(Instr::Op(0x1a));
                     }
                     Ty::Str => {
@@ -12070,7 +12311,7 @@ impl<'a> CaptureWalker<'a> {
     /// Best-effort static type used only to give captured bindings a wasm type.
     fn ty_of(&self, expr: &Expr) -> Ty {
         match expr {
-            Expr::Null => Ty::Int,
+            Expr::Null => Ty::Null,
             Expr::Bool(_) => Ty::Bool,
             Expr::Int(_) => Ty::Int,
             Expr::Float(_) => Ty::Float,
@@ -13166,9 +13407,13 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
         match ty {
             Ty::Int => builder.add_global(ValType::I64, true, WVal::I64(0)),
             Ty::Float => builder.add_global(ValType::F64, true, WVal::F64(0.0)),
-            Ty::Arr | Ty::ArrObj(_) | Ty::ArrArr | Ty::ArrF | Ty::ArrStrArr | Ty::ArrBool => {
-                builder.add_global(ValType::I32, true, WVal::I32(0))
-            }
+            Ty::Arr
+            | Ty::ArrObj(_)
+            | Ty::ArrArr
+            | Ty::ArrF
+            | Ty::ArrStrArr
+            | Ty::ArrBool
+            | Ty::Null => builder.add_global(ValType::I32, true, WVal::I32(0)),
             Ty::Str => {
                 builder.add_global(ValType::I32, true, WVal::I32(0));
                 builder.add_global(ValType::I32, true, WVal::I32(0));
@@ -13275,7 +13520,9 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                     emitter.builder.push(Instr::Const(0x41, WVal::I32(0)));
                     emitter.builder.push(Instr::Const(0x41, WVal::I32(0)));
                 }
-                Some(Ty::ArrBool) => emitter.builder.push(Instr::Const(0x41, WVal::I32(0))),
+                Some(Ty::ArrBool) | Some(Ty::Null) => {
+                    emitter.builder.push(Instr::Const(0x41, WVal::I32(0)))
+                }
                 Some(
                     Ty::Arr
                     | Ty::ArrStr
@@ -13363,7 +13610,9 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                     emitter.builder.push(Instr::Const(0x41, WVal::I32(0)));
                     emitter.builder.push(Instr::Const(0x41, WVal::I32(0)));
                 }
-                Some(Ty::ArrBool) => emitter.builder.push(Instr::Const(0x41, WVal::I32(0))),
+                Some(Ty::ArrBool) | Some(Ty::Null) => {
+                    emitter.builder.push(Instr::Const(0x41, WVal::I32(0)))
+                }
                 Some(
                     Ty::Arr
                     | Ty::ArrStr
@@ -14654,6 +14903,23 @@ mod tests {
                 "".to_string(),
                 "flags: true|false".to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn null_matches_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "print(null)\nprint(str(null))\nprint(json(null))\nprint(type(null))\nprint(str(null == null))\nprint(str(null == 0))\nprint(str(null == false))\nprint(str(null == \"\"))\nprint(str(!null))\nprint(null ? \"t\" : \"f\")\nprint(\"v=${null}\")\nprint(str(null || true))\nprint(str(null && true))\nprint(str(int(null)))\nprint(str(float(null)))\nprint(str(null + 1))\nprint(str(-null))\nprint(str(null - 1))\nprint(str(null / 2))\nprint(str(null % 2))\nprint(str(null < 1))\nprint(str(null >= 0))\nprint(str(1 > null))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = [
+            "null", "null", "null", "null", "true", "true", "true", "false", "true", "f", "v=null",
+            "true", "null", "0", "0", "1", "0", "-1", "0", "0", "true", "true", "true",
+        ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
         );
     }
 

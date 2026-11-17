@@ -228,7 +228,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 127 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 128 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -490,6 +490,15 @@ bx wasm target
   expression position (the removed element is the value, the array shrinks),
   matching the VM; `join` also accepts bool arrays (`join([true, false], ",")`
   via `env.join_bool`, default separator empty).
+- **`null` (static marker)**: `null` is typed `Ty::Null` and covers the VM's
+  scalar semantics: printing/`str`/`json`/`type`/interpolation give `null`,
+  `null == null`, `null == 0`, `null == 0.0`, `null == false` are true while
+  `null == ""` is false, ordering treats null as 0, arithmetic coerces it to
+  0/`0.0` (`null + 1` -> `1`, `"a" + null` -> `"anull"`), `int(null)`/`float(null)`
+  -> 0, `!null` -> true, and conditions/ternaries see it as falsy. Arrays and
+  records still cannot hold null, and `parse` of runtime text is still P2a work
+  owned by PRD_02_44; `tmp == null` style checks now work, which moved
+  `verify.bxs` past the old "no null value" blocker to its `test()` boundary.
 - **Bool arrays**: `[true, false]` types as `Ty::ArrBool` and supports the whole
   surface: printing (`[true,false]` via `env.print_arr_bool`), `len`, indexed
   read/write, `push`/`pop`, `contains`/`index_of`, default and comparator
