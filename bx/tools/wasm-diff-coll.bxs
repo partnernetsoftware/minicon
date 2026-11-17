@@ -326,8 +326,12 @@ fn gen() {
     used += 1
   }
   if (pick(3) == 0) {
-    lines.push("let v" + str(used) + " = " + records())
-    record_ops(lines, "v" + str(used))
+    let rec = "v" + str(used)
+    lines.push("let " + rec + " = " + records())
+    record_ops(lines, rec)
+    lines.push("let recKey" + str(used) + " = \"a\"")
+    lines.push("print(get(" + rec + "[0], recKey" + str(used) + "))")
+    lines.push("print(get(" + rec + "[0], \"a\"))")
     used += 1
   }
   if (pick(2) == 0) {
