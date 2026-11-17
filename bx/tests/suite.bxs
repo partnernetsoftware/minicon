@@ -989,6 +989,16 @@ if (wasmSortCmp.code == 0 && wasmSortCmpRun.out == wasmSortCmpVm.out && wasmSort
   casesFail += 1
   failures.push("wasm sort comparator\n    wasm=" + json(wasmSortCmpRun.out) + " vm=" + json(wasmSortCmpVm.out) + " err=" + json(wasmSortCmpRun.err))
 }
+write(artDir + "/wasm-arrb2.bxs", 'print(index_of([1, 2, 3], 2))\nprint(index_of([1, 2], 9))\nprint(index_of(["a", "b"], "b"))\nprint(["a", "b"].contains("b"))\nprint([1, 2, 3].contains(4))\nprint([1, 2].index_of(2))\nprint(min([3, 1, 2]))\nprint(max([3, 1, 2]))\nprint(min(["b", "a", "c"]))\nprint(max(["b", "a"]))\nprint(index_of([], 1))\nprint("abc".index_of("b"))\nprint("abc".contains("bc"))\n')
+let wasmArrb2 = exec([BX, "build", "--wasm", artDir + "/wasm-arrb2.bxs", "-o", artDir + "/wasm-arrb2.wasm"])
+let wasmArrb2Run = exec([BX, "run", artDir + "/wasm-arrb2.wasm"])
+let wasmArrb2Vm = exec([BX, "run", artDir + "/wasm-arrb2.bxs"])
+if (wasmArrb2.code == 0 && wasmArrb2Run.out == wasmArrb2Vm.out && wasmArrb2Run.out.trim() == "1\n-1\n1\ntrue\nfalse\n1\n1\n3\na\nb\n-1\n1\ntrue") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm array search/minmax builtins\n    wasm=" + json(wasmArrb2Run.out) + " vm=" + json(wasmArrb2Vm.out) + " err=" + json(wasmArrb2Run.err))
+}
 write(artDir + "/wasm-arrobj.bxs", 'let xs = [{a: 1}, {a: 2}]\nprint(xs[0].a)\nprint(len(xs))\nfor r in xs { print(r.a) }\nxs[1] = {a: 9}\nprint(xs[-1].a)\nfor i, r in xs { print(i + r.a) }\nfn total(rows) {\n  let s = 0\n  for r in rows { s = s + r.a }\n  return s\n}\nprint(total([{a: 1}, {a: 2}, {a: 3}]))\n')
 let wasmArrObj = exec([BX, "build", "--wasm", artDir + "/wasm-arrobj.bxs", "-o", artDir + "/wasm-arrobj.wasm"])
 let wasmArrObjRun = exec([BX, "run", artDir + "/wasm-arrobj.wasm"])

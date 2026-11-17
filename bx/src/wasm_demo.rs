@@ -128,7 +128,51 @@ const imports = {
       }
       emit("{" + pieces.join(",") + "}");
     },
-    print_map: (ptr) => {
+    arr_index_of: (ptr, needle) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const count = view.getUint32(ptr, true);
+      for (let i = 0; i < count; i++) {
+        if (view.getBigInt64(ptr + 4 + i * 8, true) === needle) return BigInt(i);
+      }
+      return -1n;
+    },
+    arr_index_of_str: (ptr, keyPtr, keyLen) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const decode = (p, l) => new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, p, l));
+      const needle = decode(keyPtr, keyLen);
+      const count = view.getUint32(ptr, true);
+      for (let i = 0; i < count; i++) {
+        const data = view.getUint32(ptr + 4 + i * 8, true);
+        const size = view.getUint32(ptr + 8 + i * 8, true);
+        if (decode(data, size) === needle) return BigInt(i);
+      }
+      return -1n;
+    },
+    arr_minmax: (ptr, wantMin) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const count = view.getUint32(ptr, true);
+      let best = null;
+      for (let i = 0; i < count; i++) {
+        const value = view.getBigInt64(ptr + 4 + i * 8, true);
+        if (best === null) best = value;
+        else if (wantMin !== 0 ? value < best : value > best) best = value;
+      }
+      return best === null ? 0n : best;
+    },
+    arr_minmax_str: (ptr, wantMin) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const decode = (p, l) => new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, p, l));
+      const count = view.getUint32(ptr, true);
+      let best = null;
+      for (let i = 0; i < count; i++) {
+        const data = view.getUint32(ptr + 4 + i * 8, true);
+        const size = view.getUint32(ptr + 8 + i * 8, true);
+        const text = decode(data, size);
+        if (best === null) best = text;
+        else if (wantMin !== 0 ? text < best : text > best) best = text;
+      }
+      return writeStringBlock(best === null ? "" : best);
+    },    print_map: (ptr) => {
       // The browser glue keeps maps in a JS Map table keyed by the map id.
       const map = maps[ptr];
       const pieces = [];

@@ -2204,6 +2204,156 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 (self.on_str)(&format!("[{}]", pieces.join(",")));
                 Ok(Vec::new())
             }
+            ("env", "arr_index_of") => {
+                let ptr = match args.first() {
+                    Some(WVal::I32(ptr)) => *ptr as usize,
+                    _ => return Err("env.arr_index_of expects (i32 ptr, i64 value)".to_string()),
+                };
+                let needle = match args.get(1) {
+                    Some(WVal::I64(value)) => *value,
+                    _ => return Err("env.arr_index_of expects (i32 ptr, i64 value)".to_string()),
+                };
+                let index = if ptr + 4 <= memory.len() {
+                    let len = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+                    let mut found = -1i64;
+                    for at in 0..len {
+                        let offset = ptr + 4 + at * 8;
+                        if offset + 8 > memory.len() {
+                            break;
+                        }
+                        let value =
+                            i64::from_le_bytes(memory[offset..offset + 8].try_into().unwrap());
+                        if value == needle {
+                            found = at as i64;
+                            break;
+                        }
+                    }
+                    found
+                } else {
+                    -1
+                };
+                Ok(vec![WVal::I64(index)])
+            }
+            ("env", "arr_index_of_str") => {
+                let (ptr, key_ptr, key_len) = match (args.first(), args.get(1), args.get(2)) {
+                    (Some(WVal::I32(p)), Some(WVal::I32(kp)), Some(WVal::I32(kl))) => {
+                        (*p as usize, *kp as usize, *kl as usize)
+                    }
+                    _ => {
+                        return Err(
+                            "env.arr_index_of_str expects (i32 ptr, i32 key, i32 len)".to_string()
+                        )
+                    }
+                };
+                let needle = memory_text(memory, key_ptr, key_len);
+                let index = if ptr + 4 <= memory.len() {
+                    let len = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+                    let mut found = -1i64;
+                    for at in 0..len {
+                        let offset = ptr + 4 + at * 8;
+                        if offset + 8 > memory.len() {
+                            break;
+                        }
+                        let data =
+                            u32::from_le_bytes(memory[offset..offset + 4].try_into().unwrap())
+                                as usize;
+                        let size =
+                            u32::from_le_bytes(memory[offset + 4..offset + 8].try_into().unwrap())
+                                as usize;
+                        if memory_text(memory, data, size) == needle {
+                            found = at as i64;
+                            break;
+                        }
+                    }
+                    found
+                } else {
+                    -1
+                };
+                Ok(vec![WVal::I64(index)])
+            }
+            ("env", "arr_minmax") => {
+                let ptr = match args.first() {
+                    Some(WVal::I32(ptr)) => *ptr as usize,
+                    _ => return Err("env.arr_minmax expects (i32 ptr, i32 want_min)".to_string()),
+                };
+                let want_min = match args.get(1) {
+                    Some(WVal::I32(value)) => *value != 0,
+                    _ => return Err("env.arr_minmax expects (i32 ptr, i32 want_min)".to_string()),
+                };
+                let mut best: Option<i64> = None;
+                if ptr + 4 <= memory.len() {
+                    let len = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+                    for at in 0..len {
+                        let offset = ptr + 4 + at * 8;
+                        if offset + 8 > memory.len() {
+                            break;
+                        }
+                        let value =
+                            i64::from_le_bytes(memory[offset..offset + 8].try_into().unwrap());
+                        best = Some(match best {
+                            None => value,
+                            Some(current) => {
+                                if want_min {
+                                    current.min(value)
+                                } else {
+                                    current.max(value)
+                                }
+                            }
+                        });
+                    }
+                }
+                Ok(vec![WVal::I64(best.unwrap_or(0))])
+            }
+            ("env", "arr_minmax_str") => {
+                let ptr = match args.first() {
+                    Some(WVal::I32(ptr)) => *ptr as usize,
+                    _ => {
+                        return Err("env.arr_minmax_str expects (i32 ptr, i32 want_min)".to_string())
+                    }
+                };
+                let want_min = match args.get(1) {
+                    Some(WVal::I32(value)) => *value != 0,
+                    _ => {
+                        return Err("env.arr_minmax_str expects (i32 ptr, i32 want_min)".to_string())
+                    }
+                };
+                let mut best: Option<String> = None;
+                if ptr + 4 <= memory.len() {
+                    let len = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+                    for at in 0..len {
+                        let offset = ptr + 4 + at * 8;
+                        if offset + 8 > memory.len() {
+                            break;
+                        }
+                        let data =
+                            u32::from_le_bytes(memory[offset..offset + 4].try_into().unwrap())
+                                as usize;
+                        let size =
+                            u32::from_le_bytes(memory[offset + 4..offset + 8].try_into().unwrap())
+                                as usize;
+                        let text = memory_text(memory, data, size);
+                        best = Some(match best {
+                            None => text,
+                            Some(current) => {
+                                if (want_min && text < current) || (!want_min && text > current) {
+                                    text
+                                } else {
+                                    current
+                                }
+                            }
+                        });
+                    }
+                }
+                let text = best.unwrap_or_default();
+                let at = self.next_file as usize;
+                if at + 4 + text.len() > memory.len() {
+                    return Ok(vec![WVal::I32(0)]);
+                }
+                memory[at..at + 4].copy_from_slice(&(text.len() as u32).to_le_bytes());
+                memory[at + 4..at + 4 + text.len()].copy_from_slice(text.as_bytes());
+                self.next_file = ((at + 4 + text.len() + 7) & !7) as u32;
+                Ok(vec![WVal::I32(at as i32)])
+            }
             ("env", "print_map") => {
                 let ptr = match args.first() {
                     Some(WVal::I32(ptr)) => *ptr as usize,
@@ -3305,14 +3455,78 @@ mod tests {
                     self.next_alloc = (end + 7) & !7;
                     Ok(vec![WVal::I32(start as i32)])
                 }
-                ("env", "print_map") => {
+                ("env", "arr_index_of") => {
                     let ptr = match args.first() {
                         Some(WVal::I32(ptr)) => *ptr as usize,
-                        _ => return Err("env.print_map expects one i32".to_string()),
+                        _ => {
+                            return Err("env.arr_index_of expects (i32 ptr, i64 value)".to_string())
+                        }
                     };
-                    self.strings.push(format_map(memory, ptr));
-                    Ok(Vec::new())
+                    let needle = match args.get(1) {
+                        Some(WVal::I64(value)) => *value,
+                        _ => {
+                            return Err("env.arr_index_of expects (i32 ptr, i64 value)".to_string())
+                        }
+                    };
+                    let mut found = -1i64;
+                    if ptr + 4 <= memory.len() {
+                        let len =
+                            u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+                        for at in 0..len {
+                            let offset = ptr + 4 + at * 8;
+                            if offset + 8 > memory.len() {
+                                break;
+                            }
+                            let value =
+                                i64::from_le_bytes(memory[offset..offset + 8].try_into().unwrap());
+                            if value == needle {
+                                found = at as i64;
+                                break;
+                            }
+                        }
+                    }
+                    Ok(vec![WVal::I64(found)])
                 }
+                ("env", "arr_minmax") => {
+                    let ptr = match args.first() {
+                        Some(WVal::I32(ptr)) => *ptr as usize,
+                        _ => {
+                            return Err("env.arr_minmax expects (i32 ptr, i32 want_min)".to_string())
+                        }
+                    };
+                    let want_min = match args.get(1) {
+                        Some(WVal::I32(value)) => *value != 0,
+                        _ => {
+                            return Err("env.arr_minmax expects (i32 ptr, i32 want_min)".to_string())
+                        }
+                    };
+                    let mut best: Option<i64> = None;
+                    if ptr + 4 <= memory.len() {
+                        let len =
+                            u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+                        for at in 0..len {
+                            let offset = ptr + 4 + at * 8;
+                            if offset + 8 > memory.len() {
+                                break;
+                            }
+                            let value =
+                                i64::from_le_bytes(memory[offset..offset + 8].try_into().unwrap());
+                            best = Some(match best {
+                                None => value,
+                                Some(current) => {
+                                    if want_min {
+                                        current.min(value)
+                                    } else {
+                                        current.max(value)
+                                    }
+                                }
+                            });
+                        }
+                    }
+                    Ok(vec![WVal::I64(best.unwrap_or(0))])
+                }
+                ("env", "arr_index_of_str") => Err("not supported in tests".to_string()),
+                ("env", "arr_minmax_str") => Err("not supported in tests".to_string()),
                 ("env", "print_arr_arr") => {
                     let ptr = match args.first() {
                         Some(WVal::I32(ptr)) => *ptr as usize,

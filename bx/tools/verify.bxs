@@ -199,6 +199,14 @@ write(dir + "/wasm-push2.bxs", 'let xs = ["a"]\npush(xs, "b")\nfor v in xs { pri
 write(dir + "/wasm-printc.bxs", 'print([1, 2])\nprint({a: 1})\nprint(["x"])\n')
 write(dir + "/wasm-nested.bxs", 'let m = [[1, 2], [3, 4]]\nprint(m)\nprint(m[1][0])\nm[0] = [5, 6]\n')
 write(dir + "/wasm-mapx.bxs", 'let m = map_new()\nmap_set(m, "a", 7)\nprint(m)\nprint(get(m, "a"))\nprint(has(m, "b"))\nprint(values(m))\n')
+write(dir + "/wasm-arrb2.bxs", 'print(index_of([1, 2, 3], 2))\nprint([1, 2].contains(9))\nprint(min([4, 2]))\nprint(max(["b", "a"]))\n')
+test("wasm array search/minmax builtins", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-arrb2.bxs", "-o", dir + "/wasm-arrb2.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-arrb2.wasm"])
+  let vm = exec([bin, "run", dir + "/wasm-arrb2.bxs"])
+  assert(ran.code == 0 && ran.out == vm.out && ran.out.trim() == "1\nfalse\n2\nb", "wasm=" + json(ran.out) + " vm=" + json(vm.out))
+})
 test("wasm map printing and builtins", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-mapx.bxs", "-o", dir + "/wasm-mapx.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

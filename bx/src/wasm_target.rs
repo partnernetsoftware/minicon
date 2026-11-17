@@ -498,16 +498,60 @@ impl Checker {
             Expr::MethodCall(object, key, args, _) => {
                 if matches!(key.as_str(), "contains" | "starts_with" | "ends_with") {
                     if args.len() != 1 {
-                        return Err(format!("wasm target .{} takes one string", key));
+                        return Err(format!("wasm target .{} takes one value", key));
                     }
-                    if self.infer(object)? != Ty::Str || self.infer(&args[0])? != Ty::Str {
-                        return Err(format!("wasm target .{} works on strings only", key));
+                    let base = self.infer(object)?;
+                    match base {
+                        Ty::Str => {
+                            if self.infer(&args[0])? != Ty::Str {
+                                return Err(format!("wasm target .{} works on strings only", key));
+                            }
+                        }
+                        Ty::Arr => {
+                            if key != "contains" || self.infer(&args[0])? != Ty::Int {
+                                return Err("wasm target int arrays support .contains(int) only"
+                                    .to_string());
+                            }
+                        }
+                        Ty::ArrStr => {
+                            if key != "contains" || self.infer(&args[0])? != Ty::Str {
+                                return Err(
+                                    "wasm target string arrays support .contains(str) only"
+                                        .to_string(),
+                                );
+                            }
+                        }
+                        _ => {
+                            return Err(format!(
+                                "wasm target .{} works on strings and arrays only",
+                                key
+                            ))
+                        }
                     }
                     return Ok(Ty::Bool);
                 }
+                if key == "index_of" && args.len() == 1 {
+                    let base = self.infer(object)?;
+                    let element = match base {
+                        Ty::Str => Ty::Str,
+                        Ty::Arr => Ty::Int,
+                        Ty::ArrStr => Ty::Str,
+                        _ => {
+                            return Err("wasm target .index_of() works on strings and arrays only"
+                                .to_string())
+                        }
+                    };
+                    if self.infer(&args[0])? != element {
+                        return Err("wasm target .index_of() value has the wrong type".to_string());
+                    }
+                    return Ok(Ty::Int);
+                }
                 if key == "len" && args.is_empty() {
                     let ty = self.infer(object)?;
-                    if matches!(ty, Ty::Str | Ty::Arr | Ty::ArrStr) {
+                    if matches!(
+                        ty,
+                        Ty::Str | Ty::Arr | Ty::ArrStr | Ty::ArrObj(_) | Ty::ArrArr | Ty::Map
+                    ) {
                         return Ok(Ty::Int);
                     }
                     return Err(format!(
@@ -768,12 +812,34 @@ impl Checker {
                         return Ok(Ty::Str);
                     }
                     if name == "index_of" && args.len() == 2 {
-                        for arg in args {
-                            if self.infer(arg)? != Ty::Str {
-                                return Err("wasm target index_of() takes two strings".to_string());
+                        let base = self.infer(&args[0])?;
+                        let element = match base {
+                            Ty::Str => Ty::Str,
+                            Ty::Arr => Ty::Int,
+                            Ty::ArrStr => Ty::Str,
+                            _ => {
+                                return Err(
+                                    "wasm target index_of() takes a string or array".to_string()
+                                )
                             }
+                        };
+                        if self.infer(&args[1])? != element {
+                            return Err(format!(
+                                "wasm target index_of() takes a {} value",
+                                ty_name(element)
+                            ));
                         }
                         return Ok(Ty::Int);
+                    }
+                    if matches!(name.as_str(), "min" | "max") && args.len() == 1 {
+                        return match self.infer(&args[0])? {
+                            Ty::Arr => Ok(Ty::Int),
+                            Ty::ArrStr => Ok(Ty::Str),
+                            _ => {
+                                Err("wasm target min()/max() takes an int or string array"
+                                    .to_string())
+                            }
+                        };
                     }
                     if name == "repeat" && args.len() == 2 {
                         if self.infer(&args[0])? != Ty::Str || self.infer(&args[1])? != Ty::Int {
@@ -1657,7 +1723,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 60;
+const IMPORT_COUNT: u32 = 64;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -1708,6 +1774,10 @@ const PRINT_RECORD: u32 = 56;
 const PRINT_ARR_OBJ: u32 = 57;
 const PRINT_ARR_ARR: u32 = 58;
 const PRINT_MAP: u32 = 59;
+const ARR_INDEX_OF: u32 = 60;
+const ARR_INDEX_OF_STR: u32 = 61;
+const ARR_MINMAX: u32 = 62;
+const ARR_MINMAX_STR: u32 = 63;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -3267,12 +3337,19 @@ impl<'a> Emitter<'a> {
                 ))
             }
             Expr::MethodCall(object, key, args, _) => {
+                let base = self.type_of(object)?;
+                if key == "index_of" && args.len() == 1 {
+                    let _ = base;
+                    return Ok(Ty::Int);
+                }
                 if matches!(key.as_str(), "contains" | "starts_with" | "ends_with") {
                     return Ok(Ty::Bool);
                 }
                 if key == "len" && args.is_empty() {
-                    return match self.type_of(object)? {
-                        Ty::Str | Ty::Arr | Ty::ArrStr => Ok(Ty::Int),
+                    return match base {
+                        Ty::Str | Ty::Arr | Ty::ArrStr | Ty::ArrObj(_) | Ty::ArrArr | Ty::Map => {
+                            Ok(Ty::Int)
+                        }
                         other => Err(format!("wasm target cannot take len of {}", ty_name(other))),
                     };
                 }
@@ -3294,6 +3371,12 @@ impl<'a> Emitter<'a> {
                             .ok_or_else(|| {
                                 "wasm target function literal returns no value".to_string()
                             });
+                    }
+                    if matches!(name.as_str(), "min" | "max") && args.len() == 1 {
+                        return match self.type_of(&args[0])? {
+                            Ty::ArrStr => Ok(Ty::Str),
+                            _ => Ok(Ty::Int),
+                        };
                     }
                     if name == "abs" && args.len() == 1 {
                         return self.type_of(&args[0]);
@@ -4310,9 +4393,52 @@ impl<'a> Emitter<'a> {
                 Ok(Ty::Obj(shape))
             }
             Expr::MethodCall(object, key, args, _) => {
+                if key == "index_of" && args.len() == 1 {
+                    match self.type_of(object)? {
+                        Ty::Arr => {
+                            self.emit_expr(object)?;
+                            self.emit_expr(&args[0])?;
+                            self.builder.push(Instr::Call(ARR_INDEX_OF));
+                            return Ok(Ty::Int);
+                        }
+                        Ty::ArrStr => {
+                            self.emit_expr(object)?;
+                            self.emit_str(&args[0])?;
+                            self.builder.push(Instr::Call(ARR_INDEX_OF_STR));
+                            return Ok(Ty::Int);
+                        }
+                        _ => {
+                            self.emit_str(object)?;
+                            self.emit_str(&args[0])?;
+                            self.builder.push(Instr::Call(STR_INDEX_OF));
+                            return Ok(Ty::Int);
+                        }
+                    }
+                }
                 if matches!(key.as_str(), "contains" | "starts_with" | "ends_with") {
                     if args.len() != 1 {
                         return Err(format!("wasm target .{} takes one string", key));
+                    }
+                    if key == "contains" {
+                        match self.type_of(object)? {
+                            Ty::Arr => {
+                                self.emit_expr(object)?;
+                                self.emit_expr(&args[0])?;
+                                self.builder.push(Instr::Call(ARR_INDEX_OF));
+                                self.builder.push(Instr::Const(0x42, WVal::I64(-1)));
+                                self.builder.push(Instr::Op(0x52));
+                                return Ok(Ty::Bool);
+                            }
+                            Ty::ArrStr => {
+                                self.emit_expr(object)?;
+                                self.emit_str(&args[0])?;
+                                self.builder.push(Instr::Call(ARR_INDEX_OF_STR));
+                                self.builder.push(Instr::Const(0x42, WVal::I64(-1)));
+                                self.builder.push(Instr::Op(0x52));
+                                return Ok(Ty::Bool);
+                            }
+                            _ => {}
+                        }
                     }
                     if self.type_of(object)? != Ty::Str || self.type_of(&args[0])? != Ty::Str {
                         return Err(format!("wasm target .{} works on strings only", key));
@@ -4636,10 +4762,70 @@ impl<'a> Emitter<'a> {
                         return Ok(Ty::Str);
                     }
                     if name == "index_of" && args.len() == 2 {
-                        self.emit_str(&args[0])?;
-                        self.emit_str(&args[1])?;
-                        self.builder.push(Instr::Call(STR_INDEX_OF));
-                        return Ok(Ty::Int);
+                        match self.type_of(&args[0])? {
+                            Ty::Arr => {
+                                self.emit_expr(&args[0])?;
+                                self.emit_expr(&args[1])?;
+                                self.builder.push(Instr::Call(ARR_INDEX_OF));
+                                return Ok(Ty::Int);
+                            }
+                            Ty::ArrStr => {
+                                self.emit_expr(&args[0])?;
+                                self.emit_str(&args[1])?;
+                                self.builder.push(Instr::Call(ARR_INDEX_OF_STR));
+                                return Ok(Ty::Int);
+                            }
+                            _ => {
+                                self.emit_str(&args[0])?;
+                                self.emit_str(&args[1])?;
+                                self.builder.push(Instr::Call(STR_INDEX_OF));
+                                return Ok(Ty::Int);
+                            }
+                        }
+                    }
+                    if matches!(name.as_str(), "min" | "max") && args.len() == 1 {
+                        let want_min = name == "min";
+                        return match self.type_of(&args[0])? {
+                            Ty::Arr => {
+                                self.emit_expr(&args[0])?;
+                                self.builder.push(Instr::Const(
+                                    0x41,
+                                    WVal::I32(if want_min { 1 } else { 0 }),
+                                ));
+                                self.builder.push(Instr::Call(ARR_MINMAX));
+                                Ok(Ty::Int)
+                            }
+                            Ty::ArrStr => {
+                                let arr_tmp = self.builder.add_local(ValType::I32);
+                                self.emit_expr(&args[0])?;
+                                self.builder.push(Instr::Local(0x21, arr_tmp));
+                                self.builder.push(Instr::Local(0x20, arr_tmp));
+                                self.builder.push(Instr::Mem(0x28, 2, 0));
+                                self.builder.push(Instr::Op(0x45));
+                                self.builder.push(Instr::Block {
+                                    opcode: 0x04,
+                                    end: 0,
+                                    else_at: 0,
+                                    start: 0,
+                                });
+                                self.labels.push(0x04);
+                                self.emit_panic("min()/max() of an empty array");
+                                self.labels.pop();
+                                self.builder.push(Instr::Op(0x0b));
+                                self.builder.push(Instr::Local(0x20, arr_tmp));
+                                self.builder.push(Instr::Const(
+                                    0x41,
+                                    WVal::I32(if want_min { 1 } else { 0 }),
+                                ));
+                                self.builder.push(Instr::Call(ARR_MINMAX_STR));
+                                self.push_block_as_pair();
+                                Ok(Ty::Str)
+                            }
+                            _ => {
+                                Err("wasm target min()/max() takes an int or string array"
+                                    .to_string())
+                            }
+                        };
                     }
                     if name == "repeat" && args.len() == 2 {
                         self.emit_str(&args[0])?;
@@ -8219,6 +8405,13 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let print_arr_obj_ty = builder.add_type(vec![ValType::I32, ValType::I32, ValType::I32], vec![]);
     let print_arr_arr_ty = builder.add_type(vec![ValType::I32], vec![]);
     let print_map_ty = builder.add_type(vec![ValType::I32], vec![]);
+    let arr_index_of_ty = builder.add_type(vec![ValType::I32, ValType::I64], vec![ValType::I64]);
+    let arr_index_of_str_ty = builder.add_type(
+        vec![ValType::I32, ValType::I32, ValType::I32],
+        vec![ValType::I64],
+    );
+    let arr_minmax_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I64]);
+    let arr_minmax_str_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
     let str_test_ty = builder.add_type(
         vec![
             ValType::I32,
@@ -8321,6 +8514,10 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "print_arr_obj", print_arr_obj_ty);
     builder.import_func("env", "print_arr_arr", print_arr_arr_ty);
     builder.import_func("env", "print_map", print_map_ty);
+    builder.import_func("env", "arr_index_of", arr_index_of_ty);
+    builder.import_func("env", "arr_index_of_str", arr_index_of_str_ty);
+    builder.import_func("env", "arr_minmax", arr_minmax_ty);
+    builder.import_func("env", "arr_minmax_str", arr_minmax_str_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -9098,6 +9295,25 @@ mod tests {
         assert_eq!(
             strings,
             vec!["a".to_string(), "b".to_string(), "object".to_string()]
+        );
+    }
+
+    #[test]
+    fn array_search_and_minmax_builtins() {
+        let (numbers, strings) = run_with_argv(
+            "print(index_of([1, 2, 3], 2))\nprint(index_of([1, 2], 9))\nprint(index_of([\"a\", \"b\"], \"b\"))\nprint([\"a\", \"b\"].contains(\"b\"))\nprint([1, 2, 3].contains(4))\nprint([1, 2].index_of(2))\nprint(min([3, 1, 2]))\nprint(max([3, 1, 2]))\nprint(min([\"b\", \"a\", \"c\"]))\nprint(max([\"b\", \"a\"]))\nprint(index_of([], 1))\nprint(\"abc\".index_of(\"b\"))\nprint(\"abc\".contains(\"bc\"))",
+            &[],
+        );
+        assert_eq!(numbers, vec![1, -1, 1, 1, 1, 3, -1, 1]);
+        assert_eq!(
+            strings,
+            vec![
+                "true".to_string(),
+                "false".to_string(),
+                "a".to_string(),
+                "b".to_string(),
+                "true".to_string(),
+            ]
         );
     }
 
