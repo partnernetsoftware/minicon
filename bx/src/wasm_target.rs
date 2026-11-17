@@ -478,6 +478,7 @@ impl Checker {
             Expr::Int(_) => Ok(Ty::Int),
             Expr::Float(_) => Ok(Ty::Float),
             Expr::Str(_) => Ok(Ty::Str),
+            Expr::Ident(name) if name == "argv" => Ok(Ty::ArrStr),
             Expr::Ident(name) => self.lookup(name),
             Expr::Neg(inner) => {
                 let ty = self.infer(inner)?;
@@ -1007,12 +1008,18 @@ impl Checker {
                     if name == "cwd" && args.is_empty() {
                         return Ok(Ty::Str);
                     }
-                    if name == "env" && args.len() == 1 {
-                        if self.infer(&args[0])? != Ty::Str {
-                            return Err("wasm target env(name) needs a string".to_string());
+                    if (name == "env" && args.len() == 1) || (name == "env" && args.len() == 2) {
+                        for arg in args {
+                            if self.infer(arg)? != Ty::Str {
+                                return Err(format!(
+                                    "wasm target env(name{}) needs strings",
+                                    if args.len() == 2 { ", default" } else { "" }
+                                ));
+                            }
                         }
                         return Ok(Ty::Str);
                     }
+
                     if name == "exists" && args.len() == 1 {
                         if self.infer(&args[0])? != Ty::Str {
                             return Err("wasm target exists(path) needs a string".to_string());
@@ -2328,7 +2335,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 88;
+const IMPORT_COUNT: u32 = 89;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -2404,6 +2411,7 @@ const MKDIR_SOFT: u32 = 84;
 const BASENAME: u32 = 85;
 const DIRNAME: u32 = 86;
 const EPRINT: u32 = 87;
+const ENV_GET_DEFAULT: u32 = 88;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -4674,6 +4682,82 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Call(sig.index));
     }
 
+    /// Materialise the VM's `argv` array: `argc()` entries from `arg(i)`, each
+    /// a `(ptr, len)` slot in a fresh `Ty::ArrStr` block.
+    fn emit_argv_array(&mut self) -> Result<Ty, String> {
+        let count = self.builder.add_local(ValType::I32);
+        let base = self.builder.add_local(ValType::I32);
+        let index = self.builder.add_local(ValType::I32);
+        let block = self.builder.add_local(ValType::I32);
+        self.builder.push(Instr::Call(2));
+        self.builder.push(Instr::Local(0x21, count));
+        self.builder.push(Instr::Local(0x20, count));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.emit_alloc_dynamic();
+        self.builder.push(Instr::Local(0x21, base));
+        self.builder.push(Instr::Local(0x20, base));
+        self.builder.push(Instr::Local(0x20, count));
+        self.builder.push(Instr::Mem(0x36, 2, 0));
+        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+        self.builder.push(Instr::Local(0x21, index));
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x02);
+        self.builder.push(Instr::Block {
+            opcode: 0x03,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x03);
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Local(0x20, count));
+        self.builder.push(Instr::Op(0x4f));
+        self.builder.push(Instr::BrIf(1));
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Call(3));
+        self.builder.push(Instr::Local(0x21, block));
+        // slot = base + 4 + index*8: ptr = block + 4, len = load(block)
+        self.builder.push(Instr::Local(0x20, base));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, block));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Mem(0x36, 2, 0));
+        self.builder.push(Instr::Local(0x20, base));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, block));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Mem(0x36, 2, 4));
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, index));
+        self.builder.push(Instr::Br(0));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.builder.push(Instr::Local(0x20, base));
+        Ok(Ty::ArrStr)
+    }
     /// `attempt(fn() { ... })`: run the literal body inline, turning the subset's
     /// guest-detected failures (bounds, division by zero, explicit `error()`,
     /// min/max/reduce/get/pop guards) into the VM's `{error, ok, value}` record.
@@ -5129,6 +5213,7 @@ impl<'a> Emitter<'a> {
 
     fn type_of(&self, expr: &Expr) -> Result<Ty, String> {
         match expr {
+            Expr::Ident(name) if name == "argv" => Ok(Ty::ArrStr),
             Expr::Ident(name) => match self.local_of(name) {
                 Some(slot) => Ok(slot.ty),
                 None => self.checker.infer(expr),
@@ -6293,6 +6378,7 @@ impl<'a> Emitter<'a> {
                     .push(Instr::Const(0x41, WVal::I32(*value as i32)));
                 Ok(Ty::Bool)
             }
+            Expr::Ident(name) if name == "argv" => self.emit_argv_array(),
             Expr::Ident(name) => {
                 if let Some(slot) = self.local_of(name) {
                     self.push_local(slot);
@@ -7342,6 +7428,22 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Const(0x41, WVal::I32(4)));
                         self.builder.push(Instr::Op(0x6a));
                         self.builder.push(Instr::Local(0x20, ARG_TMP));
+                        self.builder.push(Instr::Mem(0x28, 2, 0));
+                        return Ok(Ty::Str);
+                    }
+                    if name == "env" && args.len() == 2 {
+                        if self.type_of(&args[0])? != Ty::Str || self.type_of(&args[1])? != Ty::Str
+                        {
+                            return Err("wasm target env(name, default) needs strings".to_string());
+                        }
+                        self.emit_str(&args[0])?;
+                        self.emit_str(&args[1])?;
+                        self.builder.push(Instr::Call(ENV_GET_DEFAULT));
+                        self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
+                        self.builder.push(Instr::Local(0x20, self.temp(ARG_TMP)));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x20, self.temp(ARG_TMP)));
                         self.builder.push(Instr::Mem(0x28, 2, 0));
                         return Ok(Ty::Str);
                     }
@@ -9953,6 +10055,7 @@ impl<'a> InferState<'a> {
             Expr::Int(_) => Some(Ty::Int),
             Expr::Float(_) => Some(Ty::Float),
             Expr::Str(_) => Some(Ty::Str),
+            Expr::Ident(name) if name == "argv" => Some(Ty::ArrStr),
             Expr::Ident(name) => locals
                 .get(name)
                 .copied()
@@ -10591,6 +10694,7 @@ impl<'a> CaptureWalker<'a> {
             Expr::Int(_) => Ty::Int,
             Expr::Float(_) => Ty::Float,
             Expr::Str(_) => Ty::Str,
+            Expr::Ident(name) if name == "argv" => Ty::ArrStr,
             Expr::Ident(name) => self.lookup_ty(name).unwrap_or(Ty::Int),
             Expr::Array(items) => {
                 if items.iter().any(|item| matches!(item, Expr::Str(_))) {
@@ -11522,6 +11626,10 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let sleep_ms_ty = builder.add_type(vec![ValType::I64], vec![]);
     let cwd_ty = builder.add_type(vec![], vec![ValType::I32]);
     let env_get_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
+    let env_get_default_ty = builder.add_type(
+        vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+        vec![ValType::I32],
+    );
     let mkdir_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
     let start_ty = builder.add_type(vec![], vec![]);
     let mut fn_types: Vec<u32> = Vec::new();
@@ -11639,6 +11747,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "basename", which_ty);
     builder.import_func("env", "dirname", which_ty);
     builder.import_func("env", "eprint", print_utf8_ty);
+    builder.import_func("env", "env_get_default", env_get_default_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -12841,6 +12950,25 @@ mod tests {
         assert_eq!(
             *err.lock().expect("lock"),
             vec!["first\n".to_string(), "second\n".to_string()]
+        );
+    }
+
+    #[test]
+    fn argv_and_env_default_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "print(len(argv))\nif (len(argv) > 0) { print(argv[0]) }\nfor a in argv { print(a) }\nlet cap = fn() { return len(argv) }\nprint(cap())\nprint(map(argv, fn(a) { return len(a) }))\nprint(env(\"BX_DEFINITELY_UNSET_VAR\", \"fallback\"))",
+            &["ab".to_string(), "cde".to_string()],
+        );
+        assert_eq!(numbers, vec![2, 2]);
+        assert_eq!(
+            strings,
+            vec![
+                "ab".to_string(),
+                "ab".to_string(),
+                "cde".to_string(),
+                "[2,3]".to_string(),
+                "fallback".to_string(),
+            ]
         );
     }
 

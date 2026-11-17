@@ -228,7 +228,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 115 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 116 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -307,6 +307,12 @@ bx wasm target
   captures see the field's real type. `for k, v in record` stays int-only
   (mixed value types would need a dynamic tag); nested records are still
   rejected explicitly.
+- **`argv` and `env(name, default)`**: the VM's `argv` global works as a
+  materialised `Ty::ArrStr` (built on each access from `argc()`/`arg(i)`), so
+  `len(argv)`, `argv[i]`, `for` loops, `join(argv, ...)`, captures and `map`
+  callbacks all work; `env(name, default)` returns the default when the variable
+  is unset (the one-argument form still returns `""` where the VM returns
+  `null`).
 - **stderr**: `eprint(text)` writes `text` plus a newline to the process stderr
   through a third host sink (`env.eprint`); `print(eprint(...))` yields `0` where
   the VM yields `null`. The browser/node demo glue routes it to `console.error`.

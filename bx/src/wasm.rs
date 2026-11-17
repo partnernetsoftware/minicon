@@ -2305,6 +2305,36 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 self.next_file = (start + size + 7) as u32 & !7;
                 Ok(vec![WVal::I32(start as i32)])
             }
+            ("env", "env_get_default") => {
+                let read = |value: Option<&WVal>| match value {
+                    Some(WVal::I32(ptr)) => Some(*ptr as usize),
+                    _ => None,
+                };
+                let (np, nl, dp, dl) = match (
+                    read(args.first()),
+                    read(args.get(1)),
+                    read(args.get(2)),
+                    read(args.get(3)),
+                ) {
+                    (Some(np), Some(nl), Some(dp), Some(dl)) => (np, nl, dp, dl),
+                    _ => return Err("env.env_get_default argument mismatch".to_string()),
+                };
+                let name = memory
+                    .get(np..np.saturating_add(nl))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .ok_or_else(|| "env.env_get_default name is outside memory".to_string())?;
+                let default = memory
+                    .get(dp..dp.saturating_add(dl))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .ok_or_else(|| "env.env_get_default default is outside memory".to_string())?;
+                let value = std::env::var(&name).unwrap_or(default);
+                match store_text_block(memory, &mut self.next_file, value.as_bytes()) {
+                    Some(start) => Ok(vec![WVal::I32(start as i32)]),
+                    None => {
+                        Err("env.env_get_default result does not fit the file region".to_string())
+                    }
+                }
+            }
             ("env", "mkdir_soft") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {
                     (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),

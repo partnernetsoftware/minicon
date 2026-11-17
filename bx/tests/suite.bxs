@@ -577,6 +577,16 @@ if (wasmAttempt.code == 0 && wasmAttemptRun.out == wasmAttemptVm.out && wasmAtte
   casesFail += 1
   failures.push("wasm attempt()\n    wasm=" + json(wasmAttemptRun.out) + " vm=" + json(wasmAttemptVm.out) + " err=" + json(wasmAttemptRun.err))
 }
+write(artDir + "/wasm-argv.bxs", 'print(len(argv))\nif (len(argv) > 0) { print(argv[0]) }\nfor a in argv { print(a) }\nlet cap = fn() { return len(argv) }\nprint(cap())\nprint(map(argv, fn(a) { return len(a) }))\nprint(env("BX_DEFINITELY_UNSET_VAR", "fallback"))\n')
+let wasmArgv = exec([BX, "build", "--wasm", artDir + "/wasm-argv.bxs", "-o", artDir + "/wasm-argv.wasm"])
+let wasmArgvRun = exec([BX, "run", artDir + "/wasm-argv.wasm", "ab", "cde"])
+let wasmArgvVm = exec([BX, "run", artDir + "/wasm-argv.bxs", "ab", "cde"])
+if (wasmArgv.code == 0 && wasmArgvRun.out == wasmArgvVm.out && wasmArgvRun.out.trim() == "2\nab\nab\ncde\n2\n[2,3]\nfallback") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm argv/env default\n    wasm=" + json(wasmArgvRun.out) + " vm=" + json(wasmArgvVm.out) + " err=" + json(wasmArgvRun.err))
+}
 write(artDir + "/wasm-eprint.bxs", 'eprint("first")\neprint("second")\nprint("out")\n')
 let wasmEprint = exec([BX, "build", "--wasm", artDir + "/wasm-eprint.bxs", "-o", artDir + "/wasm-eprint.wasm"])
 let wasmEprintRun = exec([BX, "run", artDir + "/wasm-eprint.wasm"])
@@ -1118,6 +1128,16 @@ if (wasmAttempt.code == 0 && wasmAttemptRun.out == wasmAttemptVm.out && wasmAtte
 } else {
   casesFail += 1
   failures.push("wasm attempt()\n    wasm=" + json(wasmAttemptRun.out) + " vm=" + json(wasmAttemptVm.out) + " err=" + json(wasmAttemptRun.err))
+}
+write(artDir + "/wasm-argv.bxs", 'print(len(argv))\nif (len(argv) > 0) { print(argv[0]) }\nfor a in argv { print(a) }\nlet cap = fn() { return len(argv) }\nprint(cap())\nprint(map(argv, fn(a) { return len(a) }))\nprint(env("BX_DEFINITELY_UNSET_VAR", "fallback"))\n')
+let wasmArgv = exec([BX, "build", "--wasm", artDir + "/wasm-argv.bxs", "-o", artDir + "/wasm-argv.wasm"])
+let wasmArgvRun = exec([BX, "run", artDir + "/wasm-argv.wasm", "ab", "cde"])
+let wasmArgvVm = exec([BX, "run", artDir + "/wasm-argv.bxs", "ab", "cde"])
+if (wasmArgv.code == 0 && wasmArgvRun.out == wasmArgvVm.out && wasmArgvRun.out.trim() == "2\nab\nab\ncde\n2\n[2,3]\nfallback") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm argv/env default\n    wasm=" + json(wasmArgvRun.out) + " vm=" + json(wasmArgvVm.out) + " err=" + json(wasmArgvRun.err))
 }
 write(artDir + "/wasm-eprint.bxs", 'eprint("first")\neprint("second")\nprint("out")\n')
 let wasmEprint = exec([BX, "build", "--wasm", artDir + "/wasm-eprint.bxs", "-o", artDir + "/wasm-eprint.wasm"])

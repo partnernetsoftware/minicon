@@ -375,6 +375,7 @@ const imports = {
       while (Date.now() < until) { /* busy wait: demos are short */ }
     },
     cwd: () => writeStringBlock(typeof process !== "undefined" ? process.cwd() : "/"),
+    env_get_default: () => writeStringBlock(""),
     env_get: () => writeStringBlock(typeof process !== "undefined" ? (process.env.PATH || "") : ""),
     mkdir: () => -1,
     mkdir_soft: () => 0,
