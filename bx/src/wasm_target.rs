@@ -978,16 +978,53 @@ impl Checker {
                 }
                 if key == "join" && (args.is_empty() || args.len() == 1) {
                     let base = self.infer(object)?;
-                    if !matches!(base, Ty::Arr | Ty::ArrF | Ty::ArrStr | Ty::ArrBool) {
-                        return Err(
-                            "wasm target .join works on int, float, string and bool arrays only"
-                                .to_string(),
-                        );
+                    if !matches!(
+                        base,
+                        Ty::Arr
+                            | Ty::ArrF
+                            | Ty::ArrStr
+                            | Ty::ArrBool
+                            | Ty::ArrObj(_)
+                            | Ty::ArrArr
+                            | Ty::ArrStrArr
+                    ) {
+                        return Err("wasm target .join works on arrays only".to_string());
                     }
                     if args.len() == 1 && self.infer(&args[0])? != Ty::Str {
                         return Err("wasm target .join separator is a string".to_string());
                     }
                     return Ok(Ty::Str);
+                }
+                if key == "sort" && args.len() == 1 {
+                    let base = self.infer(object)?;
+                    let element = match base {
+                        Ty::Arr => Ty::Int,
+                        Ty::ArrF => Ty::Float,
+                        Ty::ArrStr => Ty::Str,
+                        Ty::ArrBool => Ty::Bool,
+                        Ty::ArrObj(shape) => Ty::Obj(shape),
+                        Ty::ArrArr => Ty::Arr,
+                        Ty::ArrStrArr => Ty::ArrStr,
+                        _ => return Err(
+                            "wasm target .sort(cmp) takes a numeric, string, bool or record array"
+                                .to_string(),
+                        ),
+                    };
+                    let Ty::Func(id) = self.infer(&args[0])? else {
+                        return Err("wasm target .sort(cmp) needs a function literal comparator"
+                            .to_string());
+                    };
+                    let sig = self
+                        .lit_sigs
+                        .get(id as usize)
+                        .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+                    if sig.params != vec![element, element] || sig.result != Some(Ty::Int) {
+                        return Err(format!(
+                            "wasm target .sort(cmp) comparators take two {} values and return an int",
+                            ty_name(element)
+                        ));
+                    }
+                    return Ok(base);
                 }
                 if matches!(key.as_str(), "sort" | "reverse") && args.is_empty() {
                     let base = self.infer(object)?;
@@ -1552,10 +1589,17 @@ impl Checker {
                     }
                     if name == "join" && (args.len() == 1 || args.len() == 2) {
                         let base = self.infer(&args[0])?;
-                        if !matches!(base, Ty::Arr | Ty::ArrF | Ty::ArrStr | Ty::ArrBool) {
-                            return Err(
-                                "wasm target join() takes a numeric or string array".to_string()
-                            );
+                        if !matches!(
+                            base,
+                            Ty::Arr
+                                | Ty::ArrF
+                                | Ty::ArrStr
+                                | Ty::ArrBool
+                                | Ty::ArrObj(_)
+                                | Ty::ArrArr
+                                | Ty::ArrStrArr
+                        ) {
+                            return Err("wasm target join() takes an array".to_string());
                         }
                         if args.len() == 2 && self.infer(&args[1])? != Ty::Str {
                             return Err("wasm target join() separator is a string".to_string());
@@ -3300,6 +3344,119 @@ impl<'a> Emitter<'a> {
         Ok(self.builder.add_data(&bytes))
     }
 
+    /// Join a record array: stringify each record into a fresh string array and
+    /// run the string-array join, matching `join(records, sep)` and
+    /// `records.join(sep)` in the VM.
+    fn emit_join_records(&mut self, array: &Expr, sep: Option<&Expr>) -> Result<(), String> {
+        let (kind, aux) = match self.type_of(array)? {
+            Ty::ArrObj(shape) => (10, self.record_descriptor(shape)?),
+            Ty::ArrArr => (4, 0),
+            Ty::ArrStrArr => (5, 0),
+            other => {
+                return Err(format!(
+                    "wasm target record join needs a record or nested array, got {}",
+                    ty_name(other)
+                ))
+            }
+        };
+        let arr = self.builder.add_local(ValType::I32);
+        let count = self.builder.add_local(ValType::I32);
+        let out = self.builder.add_local(ValType::I32);
+        let index = self.builder.add_local(ValType::I64);
+        let record = self.builder.add_local(ValType::I32);
+        let slot = self.builder.add_local(ValType::I32);
+        let ptr = self.builder.add_local(ValType::I32);
+        let len = self.builder.add_local(ValType::I32);
+        self.emit_expr(array)?;
+        self.builder.push(Instr::Local(0x21, arr));
+        self.builder.push(Instr::Local(0x20, arr));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Local(0x21, count));
+        self.builder.push(Instr::Local(0x20, count));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.emit_alloc_dynamic();
+        self.builder.push(Instr::Local(0x21, out));
+        self.builder.push(Instr::Local(0x20, out));
+        self.builder.push(Instr::Local(0x20, count));
+        self.builder.push(Instr::Mem(0x36, 2, 0));
+        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+        self.builder.push(Instr::Local(0x21, index));
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x02);
+        self.builder.push(Instr::Block {
+            opcode: 0x03,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x03);
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Local(0x20, count));
+        self.builder.push(Instr::Op(0xad));
+        self.builder.push(Instr::Op(0x59));
+        self.builder.push(Instr::BrIf(1));
+        self.builder.push(Instr::Local(0x20, arr));
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Op(0xa7));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Local(0x21, record));
+        self.builder.push(Instr::Local(0x20, out));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Op(0xa7));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, slot));
+        self.builder.push(Instr::Const(0x41, WVal::I32(kind)));
+        self.builder.push(Instr::Local(0x20, record));
+        self.builder.push(Instr::Const(0x41, WVal::I32(aux as i32)));
+        self.builder.push(Instr::Call(FORMAT_CONTAINER));
+        self.push_block_as_pair();
+        self.builder.push(Instr::Local(0x21, len));
+        self.builder.push(Instr::Local(0x21, ptr));
+        self.builder.push(Instr::Local(0x20, slot));
+        self.builder.push(Instr::Local(0x20, ptr));
+        self.builder.push(Instr::Mem(0x36, 2, 0));
+        self.builder.push(Instr::Local(0x20, slot));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, len));
+        self.builder.push(Instr::Mem(0x36, 2, 0));
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+        self.builder.push(Instr::Op(0x7c));
+        self.builder.push(Instr::Local(0x21, index));
+        self.builder.push(Instr::Br(0));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.builder.push(Instr::Local(0x20, out));
+        if let Some(sep) = sep {
+            self.emit_str(sep)?;
+        } else {
+            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+        }
+        self.builder.push(Instr::Call(STR_JOIN));
+        self.push_block_as_pair();
+        Ok(())
+    }
     /// Stringify a container expression through `env.format_container`, leaving
     /// a `(ptr, len)` pair on the stack.
     fn emit_container_string(&mut self, expr: &Expr) -> Result<(), String> {
@@ -8233,15 +8390,24 @@ impl<'a> Emitter<'a> {
                     return self.emit_pop_value(array);
                 }
                 if key == "join" && (args.is_empty() || args.len() == 1) {
+                    if matches!(
+                        self.type_of(object)?,
+                        Ty::ArrObj(_) | Ty::ArrArr | Ty::ArrStrArr
+                    ) {
+                        self.emit_join_records(object, args.first())?;
+                        return Ok(Ty::Str);
+                    }
                     let import = match self.type_of(object)? {
                         Ty::Arr => ARR_JOIN_INT,
                         Ty::ArrF => ARR_JOIN_F,
                         Ty::ArrStr => STR_JOIN,
                         Ty::ArrBool => JOIN_BOOL,
-                        other => return Err(format!(
+                        other => {
+                            return Err(format!(
                             "wasm target .join takes an int, float, string or bool array, got {}",
                             ty_name(other)
-                        )),
+                        ))
+                        }
                     };
                     self.emit_expr(object)?;
                     if args.len() == 1 {
@@ -8253,6 +8419,28 @@ impl<'a> Emitter<'a> {
                     self.builder.push(Instr::Call(import));
                     self.push_block_as_pair();
                     return Ok(Ty::Str);
+                }
+                if key == "sort" && args.len() == 1 {
+                    let input_ty = self.type_of(object)?;
+                    let mode = match input_ty {
+                        Ty::ArrF => SortMode::Float,
+                        Ty::ArrBool => SortMode::Bool,
+                        Ty::ArrStr => SortMode::Str,
+                        Ty::ArrObj(_) | Ty::ArrArr | Ty::ArrStrArr => SortMode::Ptr,
+                        _ => SortMode::Int,
+                    };
+                    let Ty::Func(id) = self.type_of(&args[0])? else {
+                        return Err("wasm target .sort(cmp) needs a function literal comparator"
+                            .to_string());
+                    };
+                    let sig = self
+                        .checker
+                        .lit_sigs
+                        .get(id as usize)
+                        .cloned()
+                        .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+                    self.emit_merge_sort(object, &args[0], input_ty, mode, &sig)?;
+                    return Ok(input_ty);
                 }
                 if key == "sort" && args.is_empty() {
                     let ty = self.type_of(object)?;
@@ -9372,6 +9560,10 @@ impl<'a> Emitter<'a> {
                     }
                     if name == "join" && (args.len() == 1 || args.len() == 2) {
                         let base = self.type_of(&args[0])?;
+                        if matches!(base, Ty::ArrObj(_) | Ty::ArrArr | Ty::ArrStrArr) {
+                            self.emit_join_records(&args[0], args.get(1))?;
+                            return Ok(Ty::Str);
+                        }
                         let import = match base {
                             Ty::Arr => ARR_JOIN_INT,
                             Ty::ArrF => ARR_JOIN_F,
@@ -11983,6 +12175,24 @@ impl<'a> InferState<'a> {
                     "split" => Some(Ty::ArrStr),
                     "index_of" => Some(Ty::Int),
                     "repeat" => Some(Ty::Str),
+                    "sort" | "reverse" => self.soft(object, locals),
+                    "join" => Some(Ty::Str),
+                    "sum" => Some(Ty::Int),
+                    "min" | "max" => match self.soft(object, locals) {
+                        Some(Ty::ArrStr) => Some(Ty::Str),
+                        Some(Ty::ArrBool) => Some(Ty::Bool),
+                        Some(Ty::ArrF) => Some(Ty::Float),
+                        _ => Some(Ty::Int),
+                    },
+                    "pop" => match self.soft(object, locals) {
+                        Some(Ty::ArrStr) => Some(Ty::Str),
+                        Some(Ty::ArrBool) => Some(Ty::Bool),
+                        Some(Ty::ArrF) => Some(Ty::Float),
+                        Some(Ty::ArrObj(shape)) => Some(Ty::Obj(shape)),
+                        Some(Ty::ArrArr) => Some(Ty::Arr),
+                        Some(Ty::ArrStrArr) => Some(Ty::ArrStr),
+                        _ => Some(Ty::Int),
+                    },
                     _ => None,
                 }
             }
@@ -12267,6 +12477,31 @@ impl<'a> InferState<'a> {
             Expr::Member(object, _, _) => self.walk_expr(object, locals),
             Expr::And(left, right) | Expr::Or(left, right) => {
                 Ok(self.walk_expr(left, locals)? | self.walk_expr(right, locals)?)
+            }
+            Expr::MethodCall(object, key, args, _) => {
+                let mut changed = self.walk_expr(object, locals)?;
+                if key == "sort" && args.len() == 1 {
+                    if let Some(Ty::Func(id)) = args.first().and_then(|arg| self.soft(arg, locals))
+                    {
+                        let index = self.decl_count + id as usize;
+                        let elem = match self.soft(object, locals) {
+                            Some(Ty::ArrStr) => Ty::Str,
+                            Some(Ty::ArrBool) => Ty::Bool,
+                            Some(Ty::ArrF) => Ty::Float,
+                            Some(Ty::ArrObj(shape)) => Ty::Obj(shape),
+                            Some(Ty::ArrArr) => Ty::Arr,
+                            Some(Ty::ArrStrArr) => Ty::ArrStr,
+                            _ => Ty::Int,
+                        };
+                        changed |= self.unify_param(index, 0, elem)?;
+                        changed |= self.unify_param(index, 1, elem)?;
+                        changed |= self.unify_result(index, Ty::Int)?;
+                    }
+                }
+                for arg in args {
+                    changed |= self.walk_expr(arg, locals)?;
+                }
+                Ok(changed)
             }
             _ => Ok(false),
         }
@@ -15033,6 +15268,29 @@ mod tests {
             "[\"b\",\"a\"]",
             "1.5|2.5",
             "[2.5,1.5]",
+        ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn method_sort_comparator_and_record_join_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let xs = [3, 1, 2]\nprint(xs.sort(fn(a, b) { return a - b }))\nprint(xs)\nlet rs = [{a: 2}, {a: 1}]\nprint(rs.sort(fn(x, y) { return x.a - y.a }))\nprint(rs)\nprint(join(rs, \"|\"))\nprint(rs.join(\"-\"))\nlet rows = [[1, 2], [3]]\nprint(join(rows, \";\"))\nlet trs = [[\"a\"], [\"b\", \"c\"]]\nprint(trs.join(\"+\"))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = [
+            "[1,2,3]",
+            "[1,2,3]",
+            "[{\"a\":1},{\"a\":2}]",
+            "[{\"a\":1},{\"a\":2}]",
+            "{\"a\":1}|{\"a\":2}",
+            "{\"a\":1}-{\"a\":2}",
+            "[1,2];[3]",
+            "[\"a\"]+[\"b\",\"c\"]",
         ];
         assert_eq!(
             strings,

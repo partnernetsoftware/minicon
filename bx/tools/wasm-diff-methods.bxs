@@ -91,7 +91,7 @@ fn bools() {
   return text + "]"
 }
 fn int_methods(lines, name) {
-  let choice = pick(12)
+  let choice = pick(14)
   if (choice == 0) {
     lines.push("print(" + name + ".join(\"-\"))")
     lines.push("print(" + name + ".join())")
@@ -151,6 +151,7 @@ fn str_methods(lines, name) {
   } else if (choice == 7) {
     lines.push("print(join(split(join(" + name + ", \",\"), \",\"), \"-\"))")
   } else {
+    lines.push("print(" + name + ".sort(fn(x, y) { return len(x) - len(y) }))")
     lines.push("print(" + name + ")")
     lines.push("print(str(" + name + "))")
     lines.push("print(json(" + name + "))")
@@ -212,9 +213,65 @@ fn bool_methods(lines, name) {
     lines.push("print(json(" + name + "))")
     lines.push("print(\"v=$" + "{" + name + "}\")")
     lines.push("for v in " + name + " { print(v) }")
+    lines.push("print(" + name + ".sort(fn(a, b) { return a == b ? 0 : (a ? 1 : -1) }))")
   }
 }
-fn null_program() {
+fn records() {
+  let count = 1 + pick(3)
+  let text = "["
+  for (let i = 0; i < count; i += 1) {
+    if (i > 0) {
+      text = text + ", "
+    }
+    text = text + "{a: " + num() + "}"
+  }
+  return text + "]"
+}
+fn int_rows() {
+  let count = 1 + pick(3)
+  let text = "["
+  for (let i = 0; i < count; i += 1) {
+    if (i > 0) {
+      text = text + ", "
+    }
+    text = text + ints()
+  }
+  return text + "]"
+}
+fn text_rows() {
+  let count = 1 + pick(3)
+  let text = "["
+  for (let i = 0; i < count; i += 1) {
+    if (i > 0) {
+      text = text + ", "
+    }
+    text = text + strings()
+  }
+  return text + "]"
+}
+fn record_methods(lines, name) {
+  let choice = pick(6)
+  if (choice == 0) {
+    lines.push("print(join(" + name + ", \"|\"))")
+  } else if (choice == 1) {
+    lines.push("print(" + name + ".join(\"-\"))")
+    lines.push("print(" + name + ".join())")
+  } else if (choice == 2) {
+    lines.push("print(" + name + ".sort(fn(x, y) { return x.a - y.a }))")
+    lines.push("print(" + name + ")")
+  } else if (choice == 3) {
+    lines.push("print(" + name + ")")
+    lines.push("print(len(" + name + "))")
+    lines.push("print(" + name + "[0].a)")
+  } else if (choice == 4) {
+    lines.push("print(" + name + ".pop())")
+    lines.push("print(" + name + ")")
+  } else {
+    lines.push("print(map(" + name + ", fn(x) { return x.a }))")
+    lines.push("print(filter(" + name + ", fn(x) { return x.a > " + num() + " }))")
+    lines.push("each(" + name + ", fn(x) { print(x.a) })")
+  }
+}fn null_program() {
   let lines = []
   lines.push("print(null)")
   lines.push("print(str(null))")
@@ -269,6 +326,19 @@ fn gen() {
   if (pick(2) == 0) {
     lines.push("let f0 = " + floats())
     float_methods(lines, "f0")
+  }
+  if (pick(2) == 0) {
+    lines.push("let r0 = " + records())
+    record_methods(lines, "r0")
+  }
+  if (pick(3) == 0) {
+    lines.push("let rows0 = " + int_rows())
+    lines.push("print(join(rows0, \";\"))")
+    lines.push("print(rows0.join(\"+\"))")
+  }
+  if (pick(3) == 0) {
+    lines.push("let trs0 = " + text_rows())
+    lines.push("print(join(trs0, \"|\"))")
   }
   if (pick(2) == 0) {
     let extra = null_program()

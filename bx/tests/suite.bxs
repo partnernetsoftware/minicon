@@ -587,6 +587,16 @@ if (wasmExecAll.code == 0 && wasmExecAllRun.out == wasmExecAllVm.out && wasmExec
   casesFail += 1
   failures.push("wasm exec_all\n    wasm=" + json(wasmExecAllRun.out) + " vm=" + json(wasmExecAllVm.out) + " err=" + json(wasmExecAllRun.err))
 }
+write(artDir + "/wasm-sortjoin.bxs", 'let xs = [3, 1, 2]\nprint(xs.sort(fn(a, b) { return a - b }))\nprint(xs)\nlet rs = [{a: 2}, {a: 1}]\nprint(rs.sort(fn(x, y) { return x.a - y.a }))\nprint(rs)\nprint(join(rs, "|"))\nprint(rs.join("-"))\nlet rows = [[1, 2], [3]]\nprint(join(rows, ";"))\nlet trs = [["a"], ["b", "c"]]\nprint(trs.join("+"))\n')
+let wasmSortJoin = exec([BX, "build", "--wasm", artDir + "/wasm-sortjoin.bxs", "-o", artDir + "/wasm-sortjoin.wasm"])
+let wasmSortJoinRun = exec([BX, "run", artDir + "/wasm-sortjoin.wasm"])
+let wasmSortJoinVm = exec([BX, "run", artDir + "/wasm-sortjoin.bxs"])
+if (wasmSortJoin.code == 0 && wasmSortJoinRun.out == wasmSortJoinVm.out && wasmSortJoinRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm method sort(cmp)/record join\n    wasm=" + json(wasmSortJoinRun.out) + " vm=" + json(wasmSortJoinVm.out) + " err=" + json(wasmSortJoinRun.err))
+}
 write(artDir + "/wasm-methods.bxs", 'let xs = [1, 2]\nprint(xs.join("-"))\nprint(xs.join())\nprint(xs.reverse())\nprint(xs.sort())\nlet b = [true, false, true]\nprint(slice(b, 1))\nprint(b.join(","))\nlet s = ["a", "b"]\nprint(s.join("|"))\nprint(s.reverse())\nlet f = [1.5, 2.5]\nprint(f.join("|"))\nprint(f.reverse())\n')
 let wasmMethods = exec([BX, "build", "--wasm", artDir + "/wasm-methods.bxs", "-o", artDir + "/wasm-methods.wasm"])
 let wasmMethodsRun = exec([BX, "run", artDir + "/wasm-methods.wasm"])
@@ -1268,6 +1278,16 @@ if (wasmExecAll.code == 0 && wasmExecAllRun.out == wasmExecAllVm.out && wasmExec
 } else {
   casesFail += 1
   failures.push("wasm exec_all\n    wasm=" + json(wasmExecAllRun.out) + " vm=" + json(wasmExecAllVm.out) + " err=" + json(wasmExecAllRun.err))
+}
+write(artDir + "/wasm-sortjoin.bxs", 'let xs = [3, 1, 2]\nprint(xs.sort(fn(a, b) { return a - b }))\nprint(xs)\nlet rs = [{a: 2}, {a: 1}]\nprint(rs.sort(fn(x, y) { return x.a - y.a }))\nprint(rs)\nprint(join(rs, "|"))\nprint(rs.join("-"))\nlet rows = [[1, 2], [3]]\nprint(join(rows, ";"))\nlet trs = [["a"], ["b", "c"]]\nprint(trs.join("+"))\n')
+let wasmSortJoin = exec([BX, "build", "--wasm", artDir + "/wasm-sortjoin.bxs", "-o", artDir + "/wasm-sortjoin.wasm"])
+let wasmSortJoinRun = exec([BX, "run", artDir + "/wasm-sortjoin.wasm"])
+let wasmSortJoinVm = exec([BX, "run", artDir + "/wasm-sortjoin.bxs"])
+if (wasmSortJoin.code == 0 && wasmSortJoinRun.out == wasmSortJoinVm.out && wasmSortJoinRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm method sort(cmp)/record join\n    wasm=" + json(wasmSortJoinRun.out) + " vm=" + json(wasmSortJoinVm.out) + " err=" + json(wasmSortJoinRun.err))
 }
 write(artDir + "/wasm-methods.bxs", 'let xs = [1, 2]\nprint(xs.join("-"))\nprint(xs.join())\nprint(xs.reverse())\nprint(xs.sort())\nlet b = [true, false, true]\nprint(slice(b, 1))\nprint(b.join(","))\nlet s = ["a", "b"]\nprint(s.join("|"))\nprint(s.reverse())\nlet f = [1.5, 2.5]\nprint(f.join("|"))\nprint(f.reverse())\n')
 let wasmMethods = exec([BX, "build", "--wasm", artDir + "/wasm-methods.bxs", "-o", artDir + "/wasm-methods.wasm"])
