@@ -577,6 +577,16 @@ if (wasmAttempt.code == 0 && wasmAttemptRun.out == wasmAttemptVm.out && wasmAtte
   casesFail += 1
   failures.push("wasm attempt()\n    wasm=" + json(wasmAttemptRun.out) + " vm=" + json(wasmAttemptVm.out) + " err=" + json(wasmAttemptRun.err))
 }
+write(artDir + "/wasm-grow.bxs", 'let failures = []\nfailures.push("one")\nfailures.push("two")\nprint(len(failures))\nprint(failures[0])\nprint(failures)\nlet nums = []\npush(nums, 1)\npush(nums, 2)\nprint(nums)\n')
+let wasmGrow = exec([BX, "build", "--wasm", artDir + "/wasm-grow.bxs", "-o", artDir + "/wasm-grow.wasm"])
+let wasmGrowRun = exec([BX, "run", artDir + "/wasm-grow.wasm"])
+let wasmGrowVm = exec([BX, "run", artDir + "/wasm-grow.bxs"])
+if (wasmGrow.code == 0 && wasmGrowRun.out == wasmGrowVm.out && wasmGrowRun.out.trim() == "2\none\n[\"one\",\"two\"]\n[1,2]") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm growable empty array\n    wasm=" + json(wasmGrowRun.out) + " vm=" + json(wasmGrowVm.out) + " err=" + json(wasmGrowRun.err))
+}
 write(artDir + "/wasm-json.bxs", 'print(json([1, 2]))\nprint(json([{a: 1}]))\nprint(json({a: "x"}))\nprint(str([1]))\nprint(str({a: 1}))\nprint(str("a"))\nprint("arr=${[1, 2]}")\n')
 let wasmJson = exec([BX, "build", "--wasm", artDir + "/wasm-json.bxs", "-o", artDir + "/wasm-json.wasm"])
 let wasmJsonRun = exec([BX, "run", artDir + "/wasm-json.wasm"])
@@ -1158,6 +1168,16 @@ if (wasmAttempt.code == 0 && wasmAttemptRun.out == wasmAttemptVm.out && wasmAtte
 } else {
   casesFail += 1
   failures.push("wasm attempt()\n    wasm=" + json(wasmAttemptRun.out) + " vm=" + json(wasmAttemptVm.out) + " err=" + json(wasmAttemptRun.err))
+}
+write(artDir + "/wasm-grow.bxs", 'let failures = []\nfailures.push("one")\nfailures.push("two")\nprint(len(failures))\nprint(failures[0])\nprint(failures)\nlet nums = []\npush(nums, 1)\npush(nums, 2)\nprint(nums)\n')
+let wasmGrow = exec([BX, "build", "--wasm", artDir + "/wasm-grow.bxs", "-o", artDir + "/wasm-grow.wasm"])
+let wasmGrowRun = exec([BX, "run", artDir + "/wasm-grow.wasm"])
+let wasmGrowVm = exec([BX, "run", artDir + "/wasm-grow.bxs"])
+if (wasmGrow.code == 0 && wasmGrowRun.out == wasmGrowVm.out && wasmGrowRun.out.trim() == "2\none\n[\"one\",\"two\"]\n[1,2]") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm growable empty array\n    wasm=" + json(wasmGrowRun.out) + " vm=" + json(wasmGrowVm.out) + " err=" + json(wasmGrowRun.err))
 }
 write(artDir + "/wasm-json.bxs", 'print(json([1, 2]))\nprint(json([{a: 1}]))\nprint(json({a: "x"}))\nprint(str([1]))\nprint(str({a: 1}))\nprint(str("a"))\nprint("arr=${[1, 2]}")\n')
 let wasmJson = exec([BX, "build", "--wasm", artDir + "/wasm-json.bxs", "-o", artDir + "/wasm-json.wasm"])

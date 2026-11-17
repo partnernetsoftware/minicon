@@ -228,7 +228,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 119 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 120 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -453,6 +453,12 @@ bx wasm target
   (`env.format_container(kind, ptr, aux)`) serves every kind, with a 12-byte
   emitter-written descriptor `(kinds_ptr, keys_table_ptr, field_count)` for
   records and record arrays; `env.json_str` escapes strings.
+- **Growable empty arrays**: `let xs = []` takes its element kind from the first
+  syntactic `push` (`push(xs, "s")` or `xs.push("s")`) of a string, float, array
+  or string array, so the VM's accumulator pattern works
+  (`let failures = []` then `failures.push("...")`); int stays the default. The
+  hint pass is purely syntactic (nested calls and unknown expressions fall back
+  to int), and local (function-scope) empty arrays keep the old int default.
 - **Array concatenation**: `a + b` (and `a += b`) concatenates arrays of the same
   element kind — int, string, float, record, nested and text-row arrays — into a
   new array, matching the VM for same-kind inputs. Mixed-kind concatenation

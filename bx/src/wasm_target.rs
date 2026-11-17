@@ -65,6 +65,203 @@ fn is_array_ty(ty: Ty) -> bool {
         Ty::Arr | Ty::ArrF | Ty::ArrStr | Ty::ArrObj(_) | Ty::ArrArr | Ty::ArrStrArr
     )
 }
+/// Syntactic element kind of a `push` argument, used only to type
+/// `let xs = []` declarations. Unknown expressions fall back to int.
+fn literal_element_ty(expr: &Expr) -> Option<Ty> {
+    match expr {
+        Expr::Str(_) => Some(Ty::Str),
+        Expr::Int(_) => Some(Ty::Int),
+        Expr::Float(_) => Some(Ty::Float),
+        Expr::Bool(_) => Some(Ty::Bool),
+        Expr::Array(items) => {
+            if items.is_empty() {
+                return Some(Ty::Arr);
+            }
+            match items
+                .iter()
+                .map(literal_element_ty)
+                .collect::<Option<Vec<_>>>()
+            {
+                Some(kinds) if kinds.iter().all(|kind| *kind == Ty::Str) => Some(Ty::ArrStr),
+                Some(kinds) if kinds.iter().all(|kind| *kind == Ty::Arr) => Some(Ty::ArrArr),
+                Some(_) => Some(Ty::Arr),
+                None => None,
+            }
+        }
+        Expr::Bin(BinOp::Add, left, right) => {
+            let lt = literal_element_ty(left)?;
+            let rt = literal_element_ty(right)?;
+            if lt == Ty::Str || rt == Ty::Str {
+                Some(Ty::Str)
+            } else if lt == Ty::Float || rt == Ty::Float {
+                Some(Ty::Float)
+            } else {
+                Some(Ty::Int)
+            }
+        }
+        Expr::Call(callee, _, _) => match &**callee {
+            Expr::Ident(name)
+                if matches!(
+                    name.as_str(),
+                    "str"
+                        | "json"
+                        | "read"
+                        | "read_file"
+                        | "which"
+                        | "cwd"
+                        | "env"
+                        | "arg"
+                        | "join"
+                        | "slice"
+                        | "trim"
+                        | "upper"
+                        | "lower"
+                        | "replace"
+                        | "repeat"
+                        | "type"
+                        | "capture"
+                        | "basename"
+                        | "dirname"
+                ) =>
+            {
+                Some(Ty::Str)
+            }
+            Expr::Ident(name) if matches!(name.as_str(), "len" | "int" | "argc" | "sum") => {
+                Some(Ty::Int)
+            }
+            Expr::Ident(name) if matches!(name.as_str(), "float" | "sqrt") => Some(Ty::Float),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn empty_array_push_hints(stmts: &[Stmt]) -> HashMap<String, Ty> {
+    fn walk_stmts(stmts: &[Stmt], names: &mut HashMap<String, Ty>, pushes: &mut Vec<(String, Ty)>) {
+        for stmt in stmts {
+            match stmt {
+                Stmt::Let(name, Some(Expr::Array(items)), _) if items.is_empty() => {
+                    names.entry(name.clone()).or_insert(Ty::Arr);
+                }
+                Stmt::Let(_, Some(expr), _) => walk_expr(expr, pushes),
+                Stmt::Expr(expr, _) | Stmt::Return(Some(expr), _) => walk_expr(expr, pushes),
+                Stmt::Block(body) => walk_stmts(body, names, pushes),
+                Stmt::If(cond, then, other, _) => {
+                    walk_expr(cond, pushes);
+                    walk_stmts(then, names, pushes);
+                    if let Some(other) = other {
+                        walk_stmts(other, names, pushes);
+                    }
+                }
+                Stmt::While(cond, body, _) => {
+                    walk_expr(cond, pushes);
+                    walk_stmts(body, names, pushes);
+                }
+                Stmt::ForIn(_, _, iter, body, _) => {
+                    walk_expr(iter, pushes);
+                    walk_stmts(body, names, pushes);
+                }
+                Stmt::ForC(init, cond, step, body, _) => {
+                    if let Some(init) = init {
+                        walk_stmts(std::slice::from_ref(init.as_ref()), names, pushes);
+                    }
+                    if let Some(cond) = cond {
+                        walk_expr(cond, pushes);
+                    }
+                    if let Some(step) = step {
+                        walk_expr(step, pushes);
+                    }
+                    walk_stmts(body, names, pushes);
+                }
+                Stmt::Fn(..) => {}
+                _ => {}
+            }
+        }
+    }
+    fn walk_expr(expr: &Expr, pushes: &mut Vec<(String, Ty)>) {
+        match expr {
+            Expr::Call(callee, args, _) => {
+                if let Expr::Ident(name) = &**callee {
+                    if name == "push" && args.len() == 2 {
+                        if let Expr::Ident(target) = &args[0] {
+                            if let Some(ty) = literal_element_ty(&args[1]) {
+                                pushes.push((target.clone(), ty));
+                            }
+                        }
+                    }
+                }
+                for arg in args {
+                    walk_expr(arg, pushes);
+                }
+            }
+            Expr::MethodCall(object, key, args, _) => {
+                if key == "push" && args.len() == 1 {
+                    if let Expr::Ident(target) = &**object {
+                        if let Some(ty) = literal_element_ty(&args[0]) {
+                            pushes.push((target.clone(), ty));
+                        }
+                    }
+                }
+                walk_expr(object, pushes);
+                for arg in args {
+                    walk_expr(arg, pushes);
+                }
+            }
+            Expr::Bin(_, left, right) => {
+                walk_expr(left, pushes);
+                walk_expr(right, pushes);
+            }
+            Expr::Neg(inner) | Expr::Not(inner) => walk_expr(inner, pushes),
+            Expr::Assign(target, value, _) | Expr::Compound(target, _, value, _) => {
+                walk_expr(target, pushes);
+                walk_expr(value, pushes);
+            }
+            Expr::Array(items) => {
+                for item in items {
+                    walk_expr(item, pushes);
+                }
+            }
+            Expr::Object(fields) => {
+                for (_, value) in fields {
+                    walk_expr(value, pushes);
+                }
+            }
+            Expr::Index(array, index, _) => {
+                walk_expr(array, pushes);
+                walk_expr(index, pushes);
+            }
+            Expr::Member(object, _, _) => walk_expr(object, pushes),
+            Expr::Ternary(cond, then, other, _) => {
+                walk_expr(cond, pushes);
+                walk_expr(then, pushes);
+                walk_expr(other, pushes);
+            }
+            Expr::And(left, right) | Expr::Or(left, right) => {
+                walk_expr(left, pushes);
+                walk_expr(right, pushes);
+            }
+            Expr::Func(_, body, _) => walk_stmts(body, &mut HashMap::new(), pushes),
+            _ => {}
+        }
+    }
+    let mut names: HashMap<String, Ty> = HashMap::new();
+    let mut pushes: Vec<(String, Ty)> = Vec::new();
+    walk_stmts(stmts, &mut names, &mut pushes);
+    for (name, ty) in pushes {
+        if names.get(&name).copied() != Some(Ty::Arr) {
+            continue;
+        }
+        let widened = match ty {
+            Ty::Str => Ty::ArrStr,
+            Ty::Float => Ty::ArrF,
+            Ty::ArrStr => Ty::ArrStrArr,
+            Ty::Arr => Ty::ArrArr,
+            _ => continue,
+        };
+        names.insert(name, widened);
+    }
+    names
+}
 fn element_ty(ty: Ty) -> Option<Ty> {
     match ty {
         Ty::Arr => Some(Ty::Int),
@@ -234,6 +431,9 @@ struct Checker {
     /// Loop-scoped bindings (for-in variables) visible in the current block.
     scopes: Vec<HashMap<String, Ty>>,
     fn_depth: usize,
+    /// Element kinds for `let xs = []` declarations, taken from the first
+    /// `push` (the VM lets an empty array grow any type).
+    empty_hints: HashMap<String, Ty>,
 }
 
 impl Checker {
@@ -249,6 +449,7 @@ impl Checker {
             local_scope: HashMap::new(),
             scopes: Vec::new(),
             fn_depth: 0,
+            empty_hints: HashMap::new(),
         }
     }
 
@@ -1802,9 +2003,18 @@ impl Checker {
     fn check_stmt(&mut self, stmt: &Stmt) -> Result<(), String> {
         match stmt {
             Stmt::Let(name, init, _) => {
-                let ty = match init {
-                    Some(expr) => self.infer(expr)?,
-                    None => Ty::Int,
+                let hinted = match init {
+                    Some(Expr::Array(items)) if items.is_empty() => {
+                        self.empty_hints.get(name).copied()
+                    }
+                    _ => None,
+                };
+                let ty = match hinted {
+                    Some(ty) => ty,
+                    None => match init {
+                        Some(expr) => self.infer(expr)?,
+                        None => Ty::Int,
+                    },
                 };
                 self.declare_let(name, ty)?;
             }
@@ -11506,6 +11716,7 @@ impl<'a> CaptureWalker<'a> {
 pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let stmts = crate::parser::parse(source)?;
     let mut checker = Checker::new();
+    checker.empty_hints = empty_array_push_hints(&stmts);
     let mut declarations: Vec<FnDecl> = Vec::new();
     for stmt in &stmts {
         if let Stmt::Fn(name, params, body, _) = stmt {
@@ -13340,6 +13551,24 @@ mod tests {
                 "arr=[1,2]".to_string(),
                 "rec={\"a\":1}".to_string(),
                 "row=[[1,2],[3]]".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn empty_arrays_grow_to_the_first_pushed_kind() {
+        let (numbers, strings) = run_with_argv(
+            "let failures = []\nfailures.push(\"one\")\nfailures.push(\"two\")\nprint(len(failures))\nprint(failures[0])\nprint(failures)\nlet nums = []\npush(nums, 1)\npush(nums, 2)\nprint(nums)\nlet floats = []\npush(floats, 1.5)\nprint(floats)",
+            &[],
+        );
+        assert_eq!(numbers, vec![2]);
+        assert_eq!(
+            strings,
+            vec![
+                "one".to_string(),
+                "[\"one\",\"two\"]".to_string(),
+                "[1,2]".to_string(),
+                "[1.5]".to_string(),
             ]
         );
     }
