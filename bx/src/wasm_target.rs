@@ -151,6 +151,29 @@ struct Binding {
 #[derive(Clone, Debug)]
 struct Shape {
     keys: Vec<String>,
+    /// Per-field storage kind: 0 = int, 1 = string (`ptr, len` in one slot),
+    /// 2 = float, 3 = bool. Every field still occupies one 8-byte slot.
+    kinds: Vec<u8>,
+}
+
+/// Storage kind of a record field type.
+fn field_kind(ty: Ty) -> Option<u8> {
+    match ty {
+        Ty::Int => Some(0),
+        Ty::Str => Some(1),
+        Ty::Float => Some(2),
+        Ty::Bool => Some(3),
+        _ => None,
+    }
+}
+
+fn kind_ty(kind: u8) -> Ty {
+    match kind {
+        1 => Ty::Str,
+        2 => Ty::Float,
+        3 => Ty::Bool,
+        _ => Ty::Int,
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -282,15 +305,40 @@ impl Checker {
         self.declare(name, ty)
     }
 
-    fn shape_id(&self, keys: &[String]) -> u32 {
+    fn shape_id(&self, keys: &[String], kinds: &[u8]) -> u32 {
         let mut shapes = self.shapes.borrow_mut();
-        if let Some(index) = shapes.iter().position(|shape| shape.keys == keys) {
+        if let Some(index) = shapes
+            .iter()
+            .position(|shape| shape.keys == keys && shape.kinds == kinds)
+        {
             return index as u32;
         }
         shapes.push(Shape {
             keys: keys.to_vec(),
+            kinds: kinds.to_vec(),
         });
         (shapes.len() - 1) as u32
+    }
+
+    fn shape_kinds(&self, shape: u32) -> Result<Vec<u8>, String> {
+        let shapes = self.shapes.borrow();
+        shapes
+            .get(shape as usize)
+            .map(|shape| shape.kinds.clone())
+            .ok_or_else(|| "unknown object shape".to_string())
+    }
+
+    fn field_ty(&self, shape: u32, key: &str) -> Result<Ty, String> {
+        let shapes = self.shapes.borrow();
+        let shape = shapes
+            .get(shape as usize)
+            .ok_or_else(|| "unknown object shape".to_string())?;
+        let index = shape
+            .keys
+            .iter()
+            .position(|known| known == key)
+            .ok_or_else(|| format!("object has no field '{}'", key))?;
+        Ok(kind_ty(shape.kinds[index]))
     }
 
     fn shape_keys(&self, shape: u32) -> Result<Vec<String>, String> {
@@ -304,17 +352,23 @@ impl Checker {
     fn shape_union(&self, left: u32, right: u32) -> Result<u32, String> {
         let left_keys = self.shape_keys(left)?;
         let right_keys = self.shape_keys(right)?;
-        let mut keys = left_keys;
-        for key in right_keys {
-            if !keys.contains(&key) {
-                keys.push(key);
+        let mut entries: Vec<(String, u8)> =
+            left_keys.into_iter().zip(self.shape_kinds(left)?).collect();
+        for (key, kind) in right_keys.into_iter().zip(self.shape_kinds(right)?) {
+            if !entries.iter().any(|(known, _)| *known == key) {
+                entries.push((key, kind));
             }
         }
+        let keys: Vec<String> = entries.iter().map(|(key, _)| key.clone()).collect();
+        let kinds: Vec<u8> = entries.iter().map(|(_, kind)| *kind).collect();
         let mut shapes = self.shapes.borrow_mut();
-        if let Some(index) = shapes.iter().position(|shape| shape.keys == keys) {
+        if let Some(index) = shapes
+            .iter()
+            .position(|shape| shape.keys == keys && shape.kinds == kinds)
+        {
             return Ok(index as u32);
         }
-        shapes.push(Shape { keys });
+        shapes.push(Shape { keys, kinds });
         Ok((shapes.len() - 1) as u32)
     }
 
@@ -501,20 +555,22 @@ impl Checker {
 
             Expr::Object(fields) => {
                 let mut keys: Vec<String> = Vec::new();
+                let mut kinds: Vec<u8> = Vec::new();
                 for (key, value) in fields {
                     if keys.iter().any(|seen| seen == key) {
                         return Err(format!("duplicate object key '{}'", key));
                     }
                     let ty = self.infer(value)?;
-                    if ty != Ty::Int {
-                        return Err(format!(
-                            "wasm target supports int object fields only, got {}",
+                    let kind = field_kind(ty).ok_or_else(|| {
+                        format!(
+                            "wasm target record fields hold int, string, float or bool values, got {}",
                             ty_name(ty)
-                        ));
-                    }
+                        )
+                    })?;
                     keys.push(key.clone());
+                    kinds.push(kind);
                 }
-                Ok(Ty::Obj(self.shape_id(&keys)))
+                Ok(Ty::Obj(self.shape_id(&keys, &kinds)))
             }
             Expr::MethodCall(object, key, args, _) => {
                 if matches!(key.as_str(), "contains" | "starts_with" | "ends_with") {
@@ -1432,11 +1488,17 @@ impl Checker {
                                 "wasm target writes record fields only".to_string()
                             );
                         };
-                        self.field_index(shape, key)?;
-                        if self.infer(value)? != Ty::Int {
-                            return Err(
-                                "wasm target records hold ints only".to_string()
-                            );
+                        let expected = self.field_ty(shape, key)?;
+                        let actual = self.infer(value)?;
+                        let ok = expected == actual
+                            || (expected == Ty::Float && actual == Ty::Int);
+                        if !ok {
+                            return Err(format!(
+                                "wasm target record field '{}' holds {}, assigned {}",
+                                key,
+                                ty_name(expected),
+                                ty_name(actual)
+                            ));
                         }
                     }
                     Expr::Index(array, index, _) => {
@@ -2010,7 +2072,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 78;
+const IMPORT_COUNT: u32 = 80;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -2057,8 +2119,6 @@ const ARR_REVERSE: u32 = 52;
 const ARR_SORT: u32 = 53;
 const PRINT_ARR_I64: u32 = 54;
 const PRINT_ARR_STR: u32 = 55;
-const PRINT_RECORD: u32 = 56;
-const PRINT_ARR_OBJ: u32 = 57;
 const PRINT_ARR_ARR: u32 = 58;
 const PRINT_MAP: u32 = 59;
 const ARR_INDEX_OF: u32 = 60;
@@ -2079,6 +2139,8 @@ const EXIT: u32 = 74;
 const ERROR: u32 = 75;
 const STR_TO_FLOAT: u32 = 76;
 const WHICH: u32 = 77;
+const PRINT_RECORD_TYPED: u32 = 78;
+const PRINT_ARR_OBJ_TYPED: u32 = 79;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -2112,6 +2174,8 @@ struct Emitter<'a> {
     literal_ids: HashMap<usize, u32>,
     /// shape id -> (data-segment base of its key table, key count).
     record_tables: HashMap<u32, (u32, u32)>,
+    /// shape id -> data-segment base of its field-kind bytes.
+    record_kind_tables: HashMap<u32, u32>,
     /// Labels index that `continue` must branch to (innermost last).
     continue_targets: Vec<usize>,
     /// Captures of the literal currently being emitted (empty for functions).
@@ -2500,6 +2564,17 @@ impl<'a> Emitter<'a> {
         let base = self.builder.add_data(&data);
         self.record_tables.insert(shape, (base, count));
         Ok((base, count))
+    }
+
+    /// Lazily store one kind byte per record field for the typed print hosts.
+    fn record_kinds_table(&mut self, shape: u32) -> Result<u32, String> {
+        if let Some(base) = self.record_kind_tables.get(&shape) {
+            return Ok(*base);
+        }
+        let kinds = self.checker.shape_kinds(shape)?;
+        let base = self.builder.add_data(&kinds);
+        self.record_kind_tables.insert(shape, base);
+        Ok(base)
     }
 
     /// `for k, v in record { .. }`: declaration-order key (string) / value (int).
@@ -5032,25 +5107,53 @@ impl<'a> Emitter<'a> {
             }
             Expr::Object(fields) => {
                 let mut keys: Vec<String> = Vec::new();
+                let mut kinds: Vec<u8> = Vec::new();
                 for (key, value) in fields {
                     let field_ty = self.type_of(value)?;
-                    if field_ty != Ty::Int {
-                        return Err(format!(
-                            "wasm target supports int object fields only, got {}",
+                    let kind = field_kind(field_ty).ok_or_else(|| {
+                        format!(
+                            "wasm target record fields hold int, string, float or bool values, got {}",
                             ty_name(field_ty)
-                        ));
-                    }
+                        )
+                    })?;
                     keys.push(key.clone());
+                    kinds.push(kind);
                 }
-                let shape = self.checker.shape_id(&keys);
-                let shape = Ty::Obj(shape);
+                let shape = Ty::Obj(self.checker.shape_id(&keys, &kinds));
                 let size = 8 * fields.len() as u32;
                 self.emit_alloc_const(size);
                 self.builder.push(Instr::Local(0x21, self.temp(ARR_TMP)));
-                for (index, (_, value)) in fields.iter().enumerate() {
-                    self.builder.push(Instr::Local(0x20, self.temp(ARR_TMP)));
-                    self.emit_expr(value)?;
-                    self.builder.push(Instr::Mem(0x37, 3, (8 * index) as u32));
+                for (index, ((_, value), kind)) in fields.iter().zip(kinds.iter()).enumerate() {
+                    let offset = (8 * index) as u32;
+                    match kind {
+                        1 => {
+                            self.emit_str(value)?;
+                            self.builder.push(Instr::Local(0x21, self.temp(LEN_A)));
+                            self.builder.push(Instr::Local(0x21, self.temp(PTR_A)));
+                            self.builder.push(Instr::Local(0x20, self.temp(ARR_TMP)));
+                            self.builder.push(Instr::Local(0x20, self.temp(PTR_A)));
+                            self.builder.push(Instr::Mem(0x36, 2, offset));
+                            self.builder.push(Instr::Local(0x20, self.temp(ARR_TMP)));
+                            self.builder.push(Instr::Local(0x20, self.temp(LEN_A)));
+                            self.builder.push(Instr::Mem(0x36, 2, offset + 4));
+                        }
+                        2 => {
+                            self.builder.push(Instr::Local(0x20, self.temp(ARR_TMP)));
+                            self.emit_f64(value)?;
+                            self.builder.push(Instr::Mem(0x39, 3, offset));
+                        }
+                        3 => {
+                            self.builder.push(Instr::Local(0x20, self.temp(ARR_TMP)));
+                            self.emit_expr(value)?;
+                            self.builder.push(Instr::Op(0xad));
+                            self.builder.push(Instr::Mem(0x37, 3, offset));
+                        }
+                        _ => {
+                            self.builder.push(Instr::Local(0x20, self.temp(ARR_TMP)));
+                            self.emit_expr(value)?;
+                            self.builder.push(Instr::Mem(0x37, 3, offset));
+                        }
+                    }
                 }
                 self.builder.push(Instr::Local(0x20, self.temp(ARR_TMP)));
                 Ok(shape)
@@ -5065,9 +5168,36 @@ impl<'a> Emitter<'a> {
                     ));
                 };
                 let index = self.checker.field_index(shape, key)?;
+                let kind = self.checker.shape_kinds(shape)?[index];
                 self.emit_expr(object)?;
-                self.builder.push(Instr::Mem(0x29, 3, (8 * index) as u32));
-                Ok(Ty::Int)
+                let offset = (8 * index) as u32;
+                match kind {
+                    1 => {
+                        let rec_tmp = self.builder.add_local(ValType::I32);
+                        self.builder.push(Instr::Local(0x21, rec_tmp));
+                        self.builder.push(Instr::Local(0x20, rec_tmp));
+                        self.builder.push(Instr::Mem(0x28, 2, offset));
+                        self.builder.push(Instr::Local(0x21, self.temp(PTR_A)));
+                        self.builder.push(Instr::Local(0x20, rec_tmp));
+                        self.builder.push(Instr::Mem(0x28, 2, offset + 4));
+                        self.builder.push(Instr::Local(0x21, self.temp(LEN_A)));
+                        self.builder.push(Instr::Local(0x20, self.temp(PTR_A)));
+                        self.builder.push(Instr::Local(0x20, self.temp(LEN_A)));
+                        Ok(Ty::Str)
+                    }
+                    2 => {
+                        self.builder.push(Instr::Mem(0x2b, 3, offset));
+                        Ok(Ty::Float)
+                    }
+                    3 => {
+                        self.builder.push(Instr::Mem(0x28, 2, offset));
+                        Ok(Ty::Bool)
+                    }
+                    _ => {
+                        self.builder.push(Instr::Mem(0x29, 3, offset));
+                        Ok(Ty::Int)
+                    }
+                }
             }
             Expr::Array(items) => {
                 let count = items.len() as u32;
@@ -7708,6 +7838,49 @@ impl<'a> Emitter<'a> {
                 Ok(())
             }
             Stmt::Expr(Expr::Assign(target, value, _), _) => {
+                if let Expr::Member(object, key, _) = &**target {
+                    let Ty::Obj(shape) = self.type_of(object)? else {
+                        return Err("wasm target writes record fields only".to_string());
+                    };
+                    let index = self.checker.field_index(shape, key)?;
+                    let kind = self.checker.shape_kinds(shape)?[index];
+                    let offset = (8 * index) as u32;
+                    let rec_tmp = self.builder.add_local(ValType::I32);
+                    self.emit_expr(object)?;
+                    self.builder.push(Instr::Local(0x21, rec_tmp));
+                    match kind {
+                        1 => {
+                            let ptr_tmp = self.builder.add_local(ValType::I32);
+                            let len_tmp = self.builder.add_local(ValType::I32);
+                            self.emit_str(value)?;
+                            self.builder.push(Instr::Local(0x21, len_tmp));
+                            self.builder.push(Instr::Local(0x21, ptr_tmp));
+                            self.builder.push(Instr::Local(0x20, rec_tmp));
+                            self.builder.push(Instr::Local(0x20, ptr_tmp));
+                            self.builder.push(Instr::Mem(0x36, 2, offset));
+                            self.builder.push(Instr::Local(0x20, rec_tmp));
+                            self.builder.push(Instr::Local(0x20, len_tmp));
+                            self.builder.push(Instr::Mem(0x36, 2, offset + 4));
+                        }
+                        2 => {
+                            self.builder.push(Instr::Local(0x20, rec_tmp));
+                            self.emit_f64(value)?;
+                            self.builder.push(Instr::Mem(0x39, 3, offset));
+                        }
+                        3 => {
+                            self.builder.push(Instr::Local(0x20, rec_tmp));
+                            self.emit_expr(value)?;
+                            self.builder.push(Instr::Op(0xad));
+                            self.builder.push(Instr::Mem(0x37, 3, offset));
+                        }
+                        _ => {
+                            self.builder.push(Instr::Local(0x20, rec_tmp));
+                            self.emit_expr(value)?;
+                            self.builder.push(Instr::Mem(0x37, 3, offset));
+                        }
+                    }
+                    return Ok(());
+                }
                 if !matches!(**target, Expr::Ident(_)) {
                     if matches!(**target, Expr::Index(..)) {
                         if let Expr::Index(array, _, _) = &**target {
@@ -8079,12 +8252,15 @@ impl<'a> Emitter<'a> {
                         let value = self.builder.add_local(ValType::I32);
                         self.builder.push(Instr::Local(0x21, value));
                         let (table, count) = self.record_table(shape)?;
+                        let kinds = self.record_kinds_table(shape)?;
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(kinds as i32)));
                         self.builder
                             .push(Instr::Const(0x41, WVal::I32(table as i32)));
                         self.builder
                             .push(Instr::Const(0x41, WVal::I32(count as i32)));
                         self.builder.push(Instr::Local(0x20, value));
-                        self.builder.push(Instr::Call(PRINT_RECORD));
+                        self.builder.push(Instr::Call(PRINT_RECORD_TYPED));
                     }
                     Ty::ArrStrArr => {
                         if web {
@@ -8117,12 +8293,15 @@ impl<'a> Emitter<'a> {
                         let value = self.builder.add_local(ValType::I32);
                         self.builder.push(Instr::Local(0x21, value));
                         let (table, count) = self.record_table(shape)?;
+                        let kinds = self.record_kinds_table(shape)?;
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(kinds as i32)));
                         self.builder
                             .push(Instr::Const(0x41, WVal::I32(table as i32)));
                         self.builder
                             .push(Instr::Const(0x41, WVal::I32(count as i32)));
                         self.builder.push(Instr::Local(0x20, value));
-                        self.builder.push(Instr::Call(PRINT_ARR_OBJ));
+                        self.builder.push(Instr::Call(PRINT_ARR_OBJ_TYPED));
                     }
                     Ty::Bool => {
                         self.builder.push(Instr::Call(BOOL_TO_STR));
@@ -8451,15 +8630,33 @@ struct InferState<'a> {
 }
 
 impl InferState<'_> {
-    fn shape_id(&self, keys: &[String]) -> u32 {
+    fn shape_id(&self, keys: &[String], kinds: &[u8]) -> u32 {
         let mut shapes = self.shapes.borrow_mut();
-        if let Some(index) = shapes.iter().position(|shape| shape.keys == keys) {
+        if let Some(index) = shapes
+            .iter()
+            .position(|shape| shape.keys == keys && shape.kinds == kinds)
+        {
             return index as u32;
         }
         shapes.push(Shape {
             keys: keys.to_vec(),
+            kinds: kinds.to_vec(),
         });
         (shapes.len() - 1) as u32
+    }
+
+
+    fn field_ty(&self, shape: u32, key: &str) -> Result<Ty, String> {
+        let shapes = self.shapes.borrow();
+        let shape = shapes
+            .get(shape as usize)
+            .ok_or_else(|| "unknown object shape".to_string())?;
+        let index = shape
+            .keys
+            .iter()
+            .position(|known| known == key)
+            .ok_or_else(|| format!("object has no field '{}'", key))?;
+        Ok(kind_ty(shape.kinds[index]))
     }
 }
 
@@ -8559,14 +8756,20 @@ impl<'a> InferState<'a> {
             }
             Expr::Object(fields) => {
                 let mut keys = Vec::new();
+                let mut kinds = Vec::new();
                 for (key, value) in fields {
-                    self.soft(value, locals)?;
+                    let ty = self.soft(value, locals);
                     keys.push(key.clone());
+                    kinds.push(ty.and_then(field_kind).unwrap_or(0));
                 }
-                Some(Ty::Obj(self.shape_id(&keys)))
+                Some(Ty::Obj(self.shape_id(&keys, &kinds)))
             }
-            Expr::Member(object, _, _) => {
-                self.soft(object, locals)?;
+            Expr::Member(object, key, _) => {
+                if let Some(Ty::Obj(shape)) = self.soft(object, locals) {
+                    if let Ok(ty) = self.field_ty(shape, key) {
+                        return Some(ty);
+                    }
+                }
                 Some(Ty::Int)
             }
             Expr::Index(array, index, _) => {
@@ -9047,13 +9250,17 @@ impl<'a> CaptureWalker<'a> {
         None
     }
 
-    fn shape_id(&self, keys: &[String]) -> u32 {
+    fn shape_id(&self, keys: &[String], kinds: &[u8]) -> u32 {
         let mut shapes = self.checker.shapes.borrow_mut();
-        if let Some(index) = shapes.iter().position(|shape| shape.keys == keys) {
+        if let Some(index) = shapes
+            .iter()
+            .position(|shape| shape.keys == keys && shape.kinds == kinds)
+        {
             return index as u32;
         }
         shapes.push(Shape {
             keys: keys.to_vec(),
+            kinds: kinds.to_vec(),
         });
         (shapes.len() - 1) as u32
     }
@@ -9090,7 +9297,11 @@ impl<'a> CaptureWalker<'a> {
             }
             Expr::Object(fields) => {
                 let keys: Vec<String> = fields.iter().map(|(key, _)| key.clone()).collect();
-                Ty::Obj(self.shape_id(&keys))
+                let kinds: Vec<u8> = fields
+                    .iter()
+                    .map(|(_, value)| field_kind(self.ty_of(value)).unwrap_or(0))
+                    .collect();
+                Ty::Obj(self.shape_id(&keys, &kinds))
             }
             Expr::Neg(inner) => match self.ty_of(inner) {
                 Ty::Float => Ty::Float,
@@ -9152,10 +9363,10 @@ impl<'a> CaptureWalker<'a> {
                 Ty::ArrF => Ty::Float,
                 _ => Ty::Int,
             },
-            Expr::Member(object, _, _) => {
-                let _ = self.ty_of(object);
-                Ty::Int
-            }
+            Expr::Member(object, key, _) => match self.ty_of(object) {
+                Ty::Obj(shape) => self.checker.field_ty(shape, key).unwrap_or(Ty::Int),
+                _ => Ty::Int,
+            },
             Expr::Assign(target, _, _) => self.ty_of(target),
             Expr::Compound(target, _, _, _) => self.ty_of(target),
             Expr::Func(_, _, _) => self
@@ -9911,6 +10122,14 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let str_len_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I64]);
     let str_to_float_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::F64]);
     let which_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
+    let print_record_typed_ty = builder.add_type(
+        vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+        vec![],
+    );
+    let print_arr_obj_typed_ty = builder.add_type(
+        vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+        vec![],
+    );
     let exit_ty = builder.add_type(vec![ValType::I32], vec![]);
     let error_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![]);
     let arr_sum_f_ty = builder.add_type(vec![ValType::I32], vec![ValType::F64]);
@@ -10041,6 +10260,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "error", error_ty);
     builder.import_func("env", "str_to_float", str_to_float_ty);
     builder.import_func("bx", "which", which_ty);
+    builder.import_func("env", "print_record_typed", print_record_typed_ty);
+    builder.import_func("env", "print_arr_obj_typed", print_arr_obj_typed_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -10079,6 +10300,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             scoped: Vec::new(),
             literal_ids: literal_ids.clone(),
             record_tables: HashMap::new(),
+            record_kind_tables: HashMap::new(),
             continue_targets: Vec::new(),
             captures: Vec::new(),
             env_slot: None,
@@ -10116,6 +10338,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                 scoped: Vec::new(),
                 literal_ids: literal_ids.clone(),
                 record_tables: HashMap::new(),
+                record_kind_tables: HashMap::new(),
                 continue_targets: Vec::new(),
                 captures: Vec::new(),
                 env_slot: None,
@@ -10197,6 +10420,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                 scoped: Vec::new(),
                 literal_ids: literal_ids.clone(),
                 record_tables: HashMap::new(),
+                record_kind_tables: HashMap::new(),
                 continue_targets: Vec::new(),
                 captures: analysis.lit_captures.get(id).cloned().unwrap_or_default(),
                 env_slot: Some(0),
@@ -10967,6 +11191,28 @@ mod tests {
                 "9.5".to_string(),
                 "array".to_string(),
                 "19.25".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn typed_record_fields_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let o = {a: 1, b: \"x\", c: 1.5, d: true}\nprint(o)\nprint(o.a)\nprint(o.b)\nprint(o.c)\nprint(o.d)\no.a = 2\no.b = \"yy\"\no.c = 2.5\no.d = false\nprint(o)\nlet arr = [{a: 1, b: \"q\"}, {a: 2, b: \"r\"}]\nprint(arr)\nprint(map(arr, fn(r) { return r.b }))\nprint(sort(arr, fn(x, y) { return x.a - y.a }))",
+            &[],
+        );
+        assert_eq!(numbers, vec![1]);
+        assert_eq!(
+            strings,
+            vec![
+                "{\"a\":1,\"b\":\"x\",\"c\":1.5,\"d\":true}".to_string(),
+                "x".to_string(),
+                "1.5".to_string(),
+                "true".to_string(),
+                "{\"a\":2,\"b\":\"yy\",\"c\":2.5,\"d\":false}".to_string(),
+                "[{\"a\":1,\"b\":\"q\"},{\"a\":2,\"b\":\"r\"}]".to_string(),
+                "[\"q\",\"r\"]".to_string(),
+                "[{\"a\":1,\"b\":\"q\"},{\"a\":2,\"b\":\"r\"}]".to_string(),
             ]
         );
     }

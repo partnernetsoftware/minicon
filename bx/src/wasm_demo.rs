@@ -142,6 +142,63 @@ const imports = {
     },    str_len: (ptr, len) => {
       const text = new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, ptr, len));
       return BigInt(Array.from(text).length);
+    },    print_record_typed: (kinds, table, count, rec) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const bytes = new Uint8Array(instance.exports.memory.buffer);
+      const decode = (p, l) => new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, p, l));
+      const pieces = [];
+      for (let i = 0; i < count; i++) {
+        const block = table + view.getUint32(table + i * 4, true);
+        const key = decode(block + 4, view.getUint32(block, true));
+        const kind = bytes[kinds + i];
+        const field = rec + i * 8;
+        let rendered;
+        if (kind === 1) {
+          const ptr = view.getUint32(field, true);
+          const len = view.getUint32(field + 4, true);
+          rendered = JSON.stringify(decode(ptr, len));
+        } else if (kind === 2) {
+          rendered = formatFloat(view.getFloat64(field, true));
+        } else if (kind === 3) {
+          rendered = view.getBigInt64(field, true) !== 0n ? "true" : "false";
+        } else {
+          rendered = view.getBigInt64(field, true).toString();
+        }
+        pieces.push(JSON.stringify(key) + ":" + rendered);
+      }
+      emit("{" + pieces.join(",") + "}");
+    },
+    print_arr_obj_typed: (kinds, table, count, arr) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const bytes = new Uint8Array(instance.exports.memory.buffer);
+      const decode = (p, l) => new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, p, l));
+      const formatOne = (rec) => {
+        const pieces = [];
+        for (let i = 0; i < count; i++) {
+          const block = table + view.getUint32(table + i * 4, true);
+          const key = decode(block + 4, view.getUint32(block, true));
+          const kind = bytes[kinds + i];
+          const field = rec + i * 8;
+          let rendered;
+          if (kind === 1) {
+            const ptr = view.getUint32(field, true);
+            const len = view.getUint32(field + 4, true);
+            rendered = JSON.stringify(decode(ptr, len));
+          } else if (kind === 2) {
+            rendered = formatFloat(view.getFloat64(field, true));
+          } else if (kind === 3) {
+            rendered = view.getBigInt64(field, true) !== 0n ? "true" : "false";
+          } else {
+            rendered = view.getBigInt64(field, true).toString();
+          }
+          pieces.push(JSON.stringify(key) + ":" + rendered);
+        }
+        return "{" + pieces.join(",") + "}";
+      };
+      const len = view.getUint32(arr, true);
+      const rows = [];
+      for (let i = 0; i < len; i++) rows.push(formatOne(view.getUint32(arr + 4 + i * 8, true)));
+      emit("[" + rows.join(",") + "]");
     },    print_arr_strarr: (ptr) => {
       const view = new DataView(instance.exports.memory.buffer);
       const decode = (p, l) => new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, p, l));

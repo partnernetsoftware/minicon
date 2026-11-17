@@ -187,7 +187,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 99 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 100 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -211,6 +211,16 @@ bx wasm target
 - **Record/array writes**: `r.a = v`, `r.a += v`, `xs[i] = v`, `xs[-1] = v` and
   `xs[i] += v` are supported with the same negative-index normalisation and
   bounds checks as reads (`+ - * %` for compound).
+- **Typed record fields**: record fields may hold int, string, float or bool
+  values. Each field still occupies one 8-byte slot (a string is `ptr, len`);
+  `print`/record-array printing use the typed hosts
+  `env.print_record_typed(kinds, table, count, rec)` and
+  `env.print_arr_obj_typed(kinds, table, count, arr)`, where `kinds` is one byte
+  per field (0 int, 1 string, 2 float, 3 bool). Field reads, writes, record
+  arrays, `map`/`filter`/`each`/comparator `sort` over record arrays and closure
+  captures see the field's real type. `for k, v in record` stays int-only
+  (mixed value types would need a dynamic tag); nested records are still
+  rejected explicitly.
 - **File and lookup aliases**: `read(path)` and `write(path, data)` mirror the VM
   names for `read_file`/`write_file`, and `read("-")` drains stdin to EOF;
   `which(name)` resolves a command and returns its path (an empty string when

@@ -90,6 +90,17 @@ fn records() {
   }
   return text + "]"
 }
+fn typed_records() {
+  let count = 1 + pick(2)
+  let text = "["
+  for (let i = 0; i < count; i += 1) {
+    if (i > 0) {
+      text = text + ", "
+    }
+    text = text + "{a: " + num() + ", b: \"s" + str(pick(4)) + "\"}"
+  }
+  return text + "]"
+}
 fn int_rows() {
   let count = 1 + pick(3)
   let text = "["
@@ -311,6 +322,15 @@ fn gen() {
   if (pick(3) == 0) {
     lines.push("let v" + str(used) + " = " + records())
     record_ops(lines, "v" + str(used))
+    used += 1
+  }
+  if (pick(2) == 0) {
+    let typed = "v" + str(used)
+    lines.push("let " + typed + " = " + typed_records())
+    lines.push("print(" + typed + ")")
+    lines.push("print(map(" + typed + ", fn(r) { return r.b }))")
+    lines.push("print(map(" + typed + ", fn(r) { return r.a }))")
+    lines.push("print(sort(" + typed + ", fn(x, y) { return x.a - y.a }))")
     used += 1
   }
   if (pick(3) == 0) {

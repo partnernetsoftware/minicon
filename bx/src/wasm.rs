@@ -573,6 +573,64 @@ fn format_record(memory: &[u8], table: usize, count: usize, rec: usize) -> Strin
     }
     format!("{{{}}}", pieces.join(","))
 }
+/// Typed variant of [`format_record`]: `kinds` is one byte per field
+/// (0 int, 1 string, 2 float, 3 bool) and every field occupies an 8-byte slot.
+fn format_record_typed(
+    memory: &[u8],
+    kinds: usize,
+    table: usize,
+    count: usize,
+    rec: usize,
+) -> String {
+    let mut pieces: Vec<String> = Vec::new();
+    for index in 0..count {
+        let offset_at = table + index * 4;
+        if offset_at + 4 > memory.len() {
+            break;
+        }
+        let block = table
+            + u32::from_le_bytes(memory[offset_at..offset_at + 4].try_into().unwrap()) as usize;
+        if block + 4 > memory.len() {
+            break;
+        }
+        let size = u32::from_le_bytes(memory[block..block + 4].try_into().unwrap()) as usize;
+        let key = memory_text(memory, block + 4, size);
+        let field = rec + index * 8;
+        if field + 8 > memory.len() {
+            break;
+        }
+        let kind = memory.get(kinds + index).copied().unwrap_or(0);
+        let rendered = match kind {
+            1 => {
+                let ptr = u32::from_le_bytes(memory[field..field + 4].try_into().unwrap()) as usize;
+                let len =
+                    u32::from_le_bytes(memory[field + 4..field + 8].try_into().unwrap()) as usize;
+                let mut text = String::new();
+                crate::value::write_json_str(&mut text, &memory_text(memory, ptr, len));
+                text
+            }
+            2 => {
+                let value = f64::from_le_bytes(memory[field..field + 8].try_into().unwrap());
+                if value.is_finite() {
+                    crate::value::fmt_float(value)
+                } else {
+                    "null".to_string()
+                }
+            }
+            3 => {
+                let value = i64::from_le_bytes(memory[field..field + 8].try_into().unwrap());
+                if value != 0 {
+                    "true".to_string()
+                } else {
+                    "false".to_string()
+                }
+            }
+            _ => i64::from_le_bytes(memory[field..field + 8].try_into().unwrap()).to_string(),
+        };
+        pieces.push(format!("\"{}\":{}", key, rendered));
+    }
+    format!("{{{}}}", pieces.join(","))
+}
 /// Owned sink types for the core host adapter (PRD_02_44 P1).
 pub(crate) type BoxedI64Sink = Box<dyn FnMut(i64)>;
 pub(crate) type BoxedStrSink = Box<dyn FnMut(&str)>;
@@ -1097,6 +1155,65 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     .parse::<f64>()
                     .map_err(|_| "cannot convert str to float".to_string())?;
                 Ok(vec![WVal::F64(value)])
+            }
+            ("env", "print_record_typed") => {
+                let read = |value: Option<&WVal>| match value {
+                    Some(WVal::I32(v)) => Some(*v as usize),
+                    _ => None,
+                };
+                let (kinds, table, count, rec) = match (
+                    read(args.first()),
+                    read(args.get(1)),
+                    read(args.get(2)),
+                    read(args.get(3)),
+                ) {
+                    (Some(kinds), Some(table), Some(count), Some(rec)) => {
+                        (kinds, table, count, rec)
+                    }
+                    _ => {
+                        return Err(
+                            "env.print_record_typed expects (kinds, table, count, rec)".to_string()
+                        )
+                    }
+                };
+                let text = format_record_typed(memory, kinds, table, count, rec);
+                (self.on_str)(&text);
+                Ok(Vec::new())
+            }
+            ("env", "print_arr_obj_typed") => {
+                let read = |value: Option<&WVal>| match value {
+                    Some(WVal::I32(v)) => Some(*v as usize),
+                    _ => None,
+                };
+                let (kinds, table, count_arr, arr) = match (
+                    read(args.first()),
+                    read(args.get(1)),
+                    read(args.get(2)),
+                    read(args.get(3)),
+                ) {
+                    (Some(kinds), Some(table), Some(count_arr), Some(arr)) => {
+                        (kinds, table, count_arr, arr)
+                    }
+                    _ => {
+                        return Err("env.print_arr_obj_typed expects (kinds, table, count, arr)"
+                            .to_string())
+                    }
+                };
+                let mut pieces: Vec<String> = Vec::new();
+                if arr + 4 <= memory.len() {
+                    let len = u32::from_le_bytes(memory[arr..arr + 4].try_into().unwrap()) as usize;
+                    for index in 0..len {
+                        let slot = arr + 4 + index * 8;
+                        if slot + 4 > memory.len() {
+                            break;
+                        }
+                        let rec =
+                            u32::from_le_bytes(memory[slot..slot + 4].try_into().unwrap()) as usize;
+                        pieces.push(format_record_typed(memory, kinds, table, count_arr, rec));
+                    }
+                }
+                (self.on_str)(&format!("[{}]", pieces.join(",")));
+                Ok(Vec::new())
             }
             ("env", "str_len") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {
