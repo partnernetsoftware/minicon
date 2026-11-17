@@ -212,6 +212,14 @@ test("wasm source runs reuse a module cache", fn() {
   let cache = dir + "/.bxcache"
   assert(exists(cache), "no wasm cache directory at " + cache)
 })
+write(dir + "/wasm-words.bxs", 'let words = [["a"], ["b", "c"]]\nprint(words)\nprint(len(words[1]))\n')
+test("wasm string array rows", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-words.bxs", "-o", dir + "/wasm-words.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-words.wasm"])
+  let vm = exec([bin, "run", dir + "/wasm-words.bxs"])
+  assert(ran.code == 0 && ran.out == vm.out && ran.out.trim() == "[[\"a\"],[\"b\",\"c\"]]\n2", "wasm=" + json(ran.out) + " vm=" + json(vm.out))
+})
 test("wasm array-of-arrays and reduce", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-rows.bxs", "-o", dir + "/wasm-rows.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

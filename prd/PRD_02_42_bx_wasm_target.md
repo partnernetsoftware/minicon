@@ -174,7 +174,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 91 in-tree unit tests (plus the self-hosted differential tool) cover the encoder and the core host; the interpreter tests retired with the engine
+- 94 in-tree unit tests (plus the self-hosted differential tool) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -198,6 +198,11 @@ bx wasm target
 - **Record/array writes**: `r.a = v`, `r.a += v`, `xs[i] = v`, `xs[-1] = v` and
   `xs[i] += v` are supported with the same negative-index normalisation and
   bounds checks as reads (`+ - * %` for compound).
+- **Text rows**: arrays of string arrays (`[["a","b"],["c"]]`, `Ty::ArrStrArr`)
+  type, index (including `rows[1][0]`), iterate, `len`, `push`, element writes,
+  `map`/`filter`/`each`, comparator `sort`, `reverse`/`slice`, closure capture
+  and VM-style printing (`print_arr_strarr`). This is the text-table shape agent
+  scripts reach for (CSV/rows) without a uniform-value rewrite.
 - **Nested rows and generic `reduce`**: arrays of int arrays participate in
   `map`/`filter`/`each`/comparator `sort`/`reverse`/`slice` (a row is a value
   slot, so `map(rows, fn(r) { return sum(r) })` returns an int array and a

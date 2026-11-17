@@ -989,6 +989,16 @@ if (wasmSortCmp.code == 0 && wasmSortCmpRun.out == wasmSortCmpVm.out && wasmSort
   casesFail += 1
   failures.push("wasm sort comparator\n    wasm=" + json(wasmSortCmpRun.out) + " vm=" + json(wasmSortCmpVm.out) + " err=" + json(wasmSortCmpRun.err))
 }
+write(artDir + "/wasm-words.bxs", 'let words = [["a", "b"], ["c"]]\nprint(words)\nprint(words[1][0])\nfor wrow in words { print(wrow) }\nprint(map(words, fn(r) { return len(r) }))\npush(words, ["z"])\nprint(words)\nprint(sort([["a"], ["b", "c"]], fn(x, y) { return len(x) - len(y) }))\n')
+let wasmWords = exec([BX, "build", "--wasm", artDir + "/wasm-words.bxs", "-o", artDir + "/wasm-words.wasm"])
+let wasmWordsRun = exec([BX, "run", artDir + "/wasm-words.wasm"])
+let wasmWordsVm = exec([BX, "run", artDir + "/wasm-words.bxs"])
+if (wasmWords.code == 0 && wasmWordsRun.out == wasmWordsVm.out && wasmWordsRun.out.trim() == "[[\"a\",\"b\"],[\"c\"]]\nc\n[\"a\",\"b\"]\n[\"c\"]\n[2,1]\n[[\"a\",\"b\"],[\"c\"],[\"z\"]]\n[[\"a\"],[\"b\",\"c\"]]") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm string array rows\n    wasm=" + json(wasmWordsRun.out) + " vm=" + json(wasmWordsVm.out) + " err=" + json(wasmWordsRun.err))
+}
 write(artDir + "/wasm-rows.bxs", 'let rows = [[1, 2], [3], []]\nprint(map(rows, fn(r) { return sum(r) }))\nprint(filter(rows, fn(r) { return len(r) > 0 }))\neach(rows, fn(r) { print(len(r)) })\nprint(reduce(rows, fn(acc, r) { return acc + len(r) }, 0))\nprint(reduce([1.5, 2.5], fn(a, x) { return a + x }, 0.0))\nprint(reduce(["a", "b"], fn(a, x) { return a + x }))\n')
 let wasmRows = exec([BX, "build", "--wasm", artDir + "/wasm-rows.bxs", "-o", artDir + "/wasm-rows.wasm"])
 let wasmRowsRun = exec([BX, "run", artDir + "/wasm-rows.wasm"])

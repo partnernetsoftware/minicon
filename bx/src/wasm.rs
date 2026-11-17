@@ -1043,6 +1043,28 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 self.next_file = ((at + 4 + text.len() + 7) & !7) as u32;
                 Ok(vec![WVal::I32(at as i32)])
             }
+            ("env", "print_arr_strarr") => {
+                let ptr = match args.first() {
+                    Some(WVal::I32(ptr)) => *ptr as usize,
+                    _ => return Err("env.print_arr_strarr expects one i32".to_string()),
+                };
+                if ptr + 4 > memory.len() {
+                    return Err("env.print_arr_strarr array is outside memory".to_string());
+                }
+                let count = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+                let mut rows: Vec<String> = Vec::new();
+                for index in 0..count {
+                    let offset = ptr + 4 + index * 8;
+                    if offset + 4 > memory.len() {
+                        break;
+                    }
+                    let inner =
+                        u32::from_le_bytes(memory[offset..offset + 4].try_into().unwrap()) as usize;
+                    rows.push(format_str_array(memory, inner));
+                }
+                (self.on_str)(&format!("[{}]", rows.join(",")));
+                Ok(Vec::new())
+            }
             ("env", "print_arr_f64") => {
                 let ptr = match args.first() {
                     Some(WVal::I32(ptr)) => *ptr as usize,

@@ -128,7 +128,24 @@ const imports = {
       }
       emit("{" + pieces.join(",") + "}");
     },
-    print_arr_f64: (ptr) => {
+    print_arr_strarr: (ptr) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const decode = (p, l) => new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, p, l));
+      const formatRow = (inner) => {
+        const count = view.getUint32(inner, true);
+        const pieces = [];
+        for (let i = 0; i < count; i++) {
+          const data = view.getUint32(inner + 4 + i * 8, true);
+          const size = view.getUint32(inner + 8 + i * 8, true);
+          pieces.push(JSON.stringify(decode(data, size)));
+        }
+        return "[" + pieces.join(",") + "]";
+      };
+      const count = view.getUint32(ptr, true);
+      const rows = [];
+      for (let i = 0; i < count; i++) rows.push(formatRow(view.getUint32(ptr + 4 + i * 8, true)));
+      emit("[" + rows.join(",") + "]");
+    },    print_arr_f64: (ptr) => {
       const view = new DataView(instance.exports.memory.buffer);
       const count = view.getUint32(ptr, true);
       const pieces = [];
