@@ -108,6 +108,13 @@ const imports = {
       else emit(line);
     },
     print_f64: (value) => { emit(formatFloat(value)); },
+    print_arr_bool: (ptr) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const count = view.getUint32(ptr, true);
+      const pieces = [];
+      for (let i = 0; i < count; i++) pieces.push(view.getBigInt64(ptr + 4 + i * 8, true) ? "true" : "false");
+      emit("[" + pieces.join(",") + "]");
+    },
     print_arr_i64: (ptr) => {
       const view = new DataView(instance.exports.memory.buffer);
       const count = view.getUint32(ptr, true);

@@ -228,7 +228,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 125 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 126 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -486,6 +486,13 @@ bx wasm target
   (`let failures = []` then `failures.push("...")`); int stays the default. The
   hint pass is purely syntactic (nested calls and unknown expressions fall back
   to int), and local (function-scope) empty arrays keep the old int default.
+- **Bool arrays**: `[true, false]` types as `Ty::ArrBool` and supports the whole
+  surface: printing (`[true,false]` via `env.print_arr_bool`), `len`, indexed
+  read/write, `push`/`pop`, `contains`/`index_of`, default and comparator
+  `sort`, `reverse`, concatenation, structural equality, `for` loops,
+  `map`/`filter`/`reduce` (including bool results and bool accumulators),
+  `min`/`max`/`sum` (`sum` counts trues like the VM), `str`/`json`/
+  interpolation. Nested bool arrays (`[[true]]`) are still rejected.
 - **Array concatenation**: `a + b` (and `a += b`) concatenates arrays of the same
   element kind — int, string, float, record, nested and text-row arrays — into a
   new array, matching the VM for same-kind inputs. Mixed-kind concatenation

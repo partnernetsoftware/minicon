@@ -573,6 +573,22 @@ fn format_record(memory: &[u8], table: usize, count: usize, rec: usize) -> Strin
     }
     format!("{{{}}}", pieces.join(","))
 }
+/// Array of bools rendered as `[true,false]`.
+fn format_bool_array(memory: &[u8], ptr: usize) -> String {
+    let mut pieces: Vec<String> = Vec::new();
+    if ptr + 4 <= memory.len() {
+        let count = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+        for index in 0..count {
+            let offset = ptr + 4 + index * 8;
+            if offset + 8 > memory.len() {
+                break;
+            }
+            let value = i64::from_le_bytes(memory[offset..offset + 8].try_into().unwrap());
+            pieces.push(if value != 0 { "true" } else { "false" }.to_string());
+        }
+    }
+    format!("[{}]", pieces.join(","))
+}
 /// Array of string arrays (`[[ "a" ], [ "b", "c" ]]`).
 fn format_arr_strarr(memory: &[u8], ptr: usize) -> String {
     let mut pieces: Vec<String> = Vec::new();
@@ -628,6 +644,7 @@ fn format_container(memory: &[u8], kind: i32, ptr: usize, aux: usize) -> String 
             format!("[{}]", pieces.join(","))
         }
         8 => format_arr_arr(memory, ptr),
+        11 => format_bool_array(memory, ptr),
         9 => format_arr_strarr(memory, ptr),
         10 => {
             let (kinds, table, fields) = read_record_descriptor(memory, aux);
@@ -1402,6 +1419,15 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     _ => return Err("env.print_arr_f64 expects one i32".to_string()),
                 };
                 let text = format_f64_array(memory, ptr);
+                (self.on_str)(&text);
+                Ok(Vec::new())
+            }
+            ("env", "print_arr_bool") => {
+                let ptr = match args.first() {
+                    Some(WVal::I32(ptr)) => *ptr as usize,
+                    _ => return Err("env.print_arr_bool expects one i32".to_string()),
+                };
+                let text = format_bool_array(memory, ptr);
                 (self.on_str)(&text);
                 Ok(Vec::new())
             }
