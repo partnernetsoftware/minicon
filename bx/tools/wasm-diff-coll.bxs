@@ -142,8 +142,14 @@ fn int_ops(lines, name) {
     lines.push("print(filter(" + name + ", fn(x) { return x > " + num() + " }))")
   } else if (choice == 12) {
     lines.push("print(reduce(" + name + ", fn(acc, x) { return acc + x }, 0))")
+    lines.push("print(float(\"" + num() + "." + str(pick(9)) + "\"))")
+    lines.push("print(int(\"" + num() + "\"))")
   } else if (choice == 13) {
     lines.push("print(index_of(" + name + ", " + num() + "))")
+    lines.push("print(contains(" + name + ", " + name + "[0]))")
+    lines.push("print(contains(" + name + ", " + num() + " + 100))")
+    lines.push("print(float(" + num() + "))")
+    lines.push("print(int(true))")
   } else if (choice == 14) {
     lines.push("push(" + name + ", " + num() + ")")
     lines.push("print(" + name + ")")
@@ -195,6 +201,7 @@ fn string_ops(lines, name) {
     lines.push("print(join(" + name + ", \"-\"))")
   } else if (choice == 4) {
     lines.push("print(sort(" + name + "))")
+    lines.push("print(contains(" + name + ", " + name + "[0]))")
   } else if (choice == 5) {
     lines.push("print(reverse(" + name + "))")
   } else if (choice == 6) {

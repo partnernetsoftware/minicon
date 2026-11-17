@@ -134,6 +134,11 @@ const imports = {
     error: (ptr, len) => {
       const text = new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, ptr, len));
       throw new Error(text);
+    },    str_to_float: (ptr, len) => {
+      const text = new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, ptr, len)).trim();
+      const value = Number(text);
+      if (Number.isNaN(value)) throw new Error("cannot convert str to float");
+      return value;
     },    str_len: (ptr, len) => {
       const text = new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, ptr, len));
       return BigInt(Array.from(text).length);

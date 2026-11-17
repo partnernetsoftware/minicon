@@ -58,6 +58,19 @@ fn ty_name(ty: Ty) -> &'static str {
     }
 }
 
+/// Element type of a supported array, or `None` for non-arrays.
+fn element_ty(ty: Ty) -> Option<Ty> {
+    match ty {
+        Ty::Arr => Some(Ty::Int),
+        Ty::ArrStr => Some(Ty::Str),
+        Ty::ArrObj(shape) => Some(Ty::Obj(shape)),
+        Ty::ArrArr => Some(Ty::Arr),
+        Ty::ArrF => Some(Ty::Float),
+        Ty::ArrStrArr => Some(Ty::ArrStr),
+        _ => None,
+    }
+}
+
 fn is_number(ty: Ty) -> bool {
     matches!(ty, Ty::Int | Ty::Float)
 }
@@ -841,8 +854,10 @@ impl Checker {
                         return Ok(Ty::Int);
                     }
                     if name == "float" && args.len() == 1 {
-                        if !is_number(self.infer(&args[0])?) {
-                            return Err("wasm target float() takes a number".to_string());
+                        if !matches!(self.infer(&args[0])?, Ty::Int | Ty::Float | Ty::Str) {
+                            return Err(
+                                "wasm target float() takes a number or a string".to_string()
+                            );
                         }
                         return Ok(Ty::Float);
                     }
@@ -1181,10 +1196,71 @@ impl Checker {
                     }
                     if name == "int" && args.len() == 1 {
                         let ty = self.infer(&args[0])?;
-                        if !is_number(ty) && ty != Ty::Str {
-                            return Err("wasm target int() takes a number or string".to_string());
+                        if !is_number(ty) && ty != Ty::Str && ty != Ty::Bool {
+                            return Err(
+                                "wasm target int() takes a number, string or bool".to_string()
+                            );
                         }
                         return Ok(Ty::Int);
+                    }
+                    if name == "push" && args.len() == 2 {
+                        if !matches!(args[0], Expr::Ident(_)) {
+                            return Err(
+                                "wasm target pushes into a named array variable only".to_string()
+                            );
+                        }
+                        let arr_ty = self.infer(&args[0])?;
+                        let element = element_ty(arr_ty).ok_or_else(|| {
+                            format!(
+                                "wasm target pushes into arrays only, got {}",
+                                ty_name(arr_ty)
+                            )
+                        })?;
+                        let pushed = self.infer(&args[1])?;
+                        if pushed != element && !(element == Ty::Float && pushed == Ty::Int) {
+                            return Err(format!(
+                                "wasm target array elements hold {}",
+                                ty_name(element)
+                            ));
+                        }
+                        return Ok(arr_ty);
+                    }
+                    if name == "pop" && args.len() == 1 {
+                        let arr_ty = self.infer(&args[0])?;
+                        return element_ty(arr_ty).ok_or_else(|| {
+                            format!("wasm target pops arrays only, got {}", ty_name(arr_ty))
+                        });
+                    }
+                    if name == "contains" && args.len() == 2 {
+                        let arr_ty = self.infer(&args[0])?;
+                        match arr_ty {
+                            Ty::Arr => {
+                                self.infer(&args[1])?;
+                            }
+                            Ty::ArrStr => {
+                                if self.infer(&args[1])? != Ty::Str {
+                                    return Err(
+                                        "wasm target contains() on string arrays takes a string"
+                                            .to_string(),
+                                    );
+                                }
+                            }
+                            Ty::ArrF => {
+                                if !is_number(self.infer(&args[1])?) {
+                                    return Err(
+                                        "wasm target contains() on float arrays takes a number"
+                                            .to_string(),
+                                    );
+                                }
+                            }
+                            other => {
+                                return Err(format!(
+                                    "wasm target contains() supports int, string and float arrays, got {}",
+                                    ty_name(other)
+                                ))
+                            }
+                        }
+                        return Ok(Ty::Bool);
                     }
                     if name == "argc" && args.is_empty() {
                         return Ok(Ty::Int);
@@ -1916,7 +1992,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 76;
+const IMPORT_COUNT: u32 = 77;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -1983,6 +2059,7 @@ const PRINT_ARR_STRARR: u32 = 72;
 const STR_LEN: u32 = 73;
 const EXIT: u32 = 74;
 const ERROR: u32 = 75;
+const STR_TO_FLOAT: u32 = 76;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -3738,6 +3815,76 @@ impl<'a> Emitter<'a> {
         self.labels.pop();
         self.builder.push(Instr::Op(0x0b));
         Ok(())
+    }
+
+    /// Expression-form `pop(arr)`: read the last element, shrink the array and
+    /// return the removed value (the empty case aborts; the VM returns null).
+    fn emit_pop_value(&mut self, name: &str) -> Result<Ty, String> {
+        let arr_ty = match self.local_of(name) {
+            Some(slot) => slot.ty,
+            None => self.checker.binding(name)?.ty,
+        };
+        let element = element_ty(arr_ty)
+            .ok_or_else(|| format!("wasm target pops arrays only, got {}", ty_name(arr_ty)))?;
+        let arr_tmp = self.builder.add_local(ValType::I32);
+        let len_tmp = self.builder.add_local(ValType::I32);
+        self.emit_load(name)?;
+        self.builder.push(Instr::Local(0x21, arr_tmp));
+        self.builder.push(Instr::Local(0x20, arr_tmp));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Local(0x21, len_tmp));
+        self.builder.push(Instr::Local(0x20, len_tmp));
+        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+        self.builder.push(Instr::Op(0x46));
+        self.builder.push(Instr::Block {
+            opcode: 0x04,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x04);
+        self.emit_panic("pop from empty array");
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        // Element address = array + 4 + 8 * (len - 1).
+        let addr_tmp = self.builder.add_local(ValType::I32);
+        self.builder.push(Instr::Local(0x20, arr_tmp));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, len_tmp));
+        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+        self.builder.push(Instr::Op(0x6b));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, addr_tmp));
+        match element {
+            Ty::Int => {
+                self.builder.push(Instr::Local(0x20, addr_tmp));
+                self.builder.push(Instr::Mem(0x29, 3, 0));
+            }
+            Ty::Float => {
+                self.builder.push(Instr::Local(0x20, addr_tmp));
+                self.builder.push(Instr::Mem(0x2b, 3, 0));
+            }
+            Ty::Str => {
+                self.builder.push(Instr::Local(0x20, addr_tmp));
+                self.builder.push(Instr::Mem(0x28, 2, 0));
+                self.builder.push(Instr::Local(0x20, addr_tmp));
+                self.builder.push(Instr::Mem(0x28, 2, 4));
+            }
+            _ => {
+                self.builder.push(Instr::Local(0x20, addr_tmp));
+                self.builder.push(Instr::Mem(0x28, 2, 0));
+            }
+        }
+        // Shrink: store len - 1 back into the array header.
+        self.builder.push(Instr::Local(0x20, arr_tmp));
+        self.builder.push(Instr::Local(0x20, len_tmp));
+        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+        self.builder.push(Instr::Op(0x6b));
+        self.builder.push(Instr::Mem(0x36, 2, 0));
+        Ok(element)
     }
 
     /// `arr.push(value)`: allocate a larger block, copy the old one, append and
@@ -5546,8 +5693,63 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Op(0xad));
                         return Ok(Ty::Int);
                     }
+                    if name == "push" && args.len() == 2 {
+                        let Expr::Ident(array) = &args[0] else {
+                            return Err(
+                                "wasm target pushes into a named array variable only".to_string()
+                            );
+                        };
+                        self.emit_push(array, &args[1])?;
+                        let ty = self.checker.binding(array)?.ty;
+                        self.emit_load(array)?;
+                        return Ok(ty);
+                    }
+                    if name == "pop" && args.len() == 1 {
+                        let Expr::Ident(array) = &args[0] else {
+                            return Err("wasm target pops a named array variable only".to_string());
+                        };
+                        return self.emit_pop_value(array);
+                    }
+                    if name == "contains" && args.len() == 2 {
+                        match self.type_of(&args[0])? {
+                            Ty::Arr => {
+                                self.emit_expr(&args[0])?;
+                                self.emit_expr(&args[1])?;
+                                self.builder.push(Instr::Call(ARR_INDEX_OF));
+                            }
+                            Ty::ArrStr => {
+                                self.emit_expr(&args[0])?;
+                                self.emit_str(&args[1])?;
+                                self.builder.push(Instr::Call(ARR_INDEX_OF_STR));
+                            }
+                            Ty::ArrF => {
+                                self.emit_expr(&args[0])?;
+                                self.emit_f64(&args[1])?;
+                                self.builder.push(Instr::Call(ARR_INDEX_OF_F));
+                            }
+                            other => {
+                                return Err(format!(
+                                    "wasm target contains() supports int, string and float arrays, got {}",
+                                    ty_name(other)
+                                ))
+                            }
+                        }
+                        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                        self.builder.push(Instr::Op(0x59));
+                        return Ok(Ty::Bool);
+                    }
                     if name == "float" && args.len() == 1 {
-                        self.emit_f64(&args[0])?;
+                        match self.type_of(&args[0])? {
+                            Ty::Str => {
+                                self.emit_str(&args[0])?;
+                                self.builder.push(Instr::Call(STR_TO_FLOAT));
+                            }
+                            Ty::Int => {
+                                self.emit_expr(&args[0])?;
+                                self.builder.push(Instr::Op(0xb9));
+                            }
+                            _ => self.emit_f64(&args[0])?,
+                        }
                         return Ok(Ty::Float);
                     }
                     if name == "abs" && args.len() == 1 {
@@ -7332,6 +7534,10 @@ impl<'a> Emitter<'a> {
                             Ty::Float => {
                                 self.emit_f64(&args[0])?;
                                 self.builder.push(Instr::Op(0xb0));
+                            }
+                            Ty::Bool => {
+                                self.emit_expr(&args[0])?;
+                                self.builder.push(Instr::Op(0xad));
                             }
                             _ => {
                                 self.emit_expr(&args[0])?;
@@ -9655,6 +9861,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let print_arr_f64_ty = builder.add_type(vec![ValType::I32], vec![]);
     let print_arr_strarr_ty = builder.add_type(vec![ValType::I32], vec![]);
     let str_len_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I64]);
+    let str_to_float_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::F64]);
     let exit_ty = builder.add_type(vec![ValType::I32], vec![]);
     let error_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![]);
     let arr_sum_f_ty = builder.add_type(vec![ValType::I32], vec![ValType::F64]);
@@ -9783,6 +9990,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "str_len", str_len_ty);
     builder.import_func("env", "exit", exit_ty);
     builder.import_func("env", "error", error_ty);
+    builder.import_func("env", "str_to_float", str_to_float_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -10710,6 +10918,49 @@ mod tests {
                 "array".to_string(),
                 "19.25".to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn collection_builtins_and_numeric_conversions_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "print(float(2))\nprint(float(\"1.5\"))\nprint(int(true))\nlet a = [1, 2]\nprint(push(a, 3))\nprint(a)\nprint(pop(a))\nprint(a)\nprint(contains([1, 2], 2))\nprint(contains([1, 2], 9))\nprint(contains([\"a\", \"b\"], \"b\"))\nprint(contains([1.5, 2.5], 2.5))\nlet s = [\"x\", \"y\"]\nprint(pop(s))\nprint(s)\nlet f = [1.5, 2.5]\nprint(pop(f))\nprint(f)\nlet rows = [[1], [2, 3]]\nprint(pop(rows))\nprint(rows)",
+            &[],
+        );
+        assert_eq!(numbers, vec![1, 3]);
+        assert_eq!(
+            strings,
+            vec![
+                "2".to_string(),
+                "1.5".to_string(),
+                "[1,2,3]".to_string(),
+                "[1,2,3]".to_string(),
+                "[1,2]".to_string(),
+                "true".to_string(),
+                "false".to_string(),
+                "true".to_string(),
+                "true".to_string(),
+                "y".to_string(),
+                "[\"x\"]".to_string(),
+                "2.5".to_string(),
+                "[1.5]".to_string(),
+                "[2,3]".to_string(),
+                "[[1]]".to_string(),
+            ]
+        );
+
+        let bytes = compile_to_wasm("let a = []\nprint(pop(a))").unwrap();
+        let error =
+            execute(&bytes, &[], 0, 0, |_value| {}, |_text| {}).expect_err("empty pop must abort");
+        assert!(error.contains("pop from empty array"), "got {}", error);
+
+        let bytes = compile_to_wasm("print(float(\"abc\"))").unwrap();
+        let error =
+            execute(&bytes, &[], 0, 0, |_value| {}, |_text| {}).expect_err("bad float must abort");
+        assert!(
+            error.contains("cannot convert str to float"),
+            "got {}",
+            error
         );
     }
 

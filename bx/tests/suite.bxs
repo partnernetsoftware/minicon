@@ -536,6 +536,16 @@ if (wasmRec.code == 0 && wasmRecRun.code == 0 && wasmRecRun.out.trim() == "30\n2
   casesFail += 1
   failures.push("wasm records + in-module heap\n    build=" + wasmRec.code + " out=" + json(wasmRecRun.out) + " err=" + json(wasmRecRun.err))
 }
+write(artDir + "/wasm-builtins.bxs", 'let a = [1, 2]\nprint(push(a, 3))\nprint(pop(a))\nprint(contains(a, 2))\nprint(contains(a, 9))\nprint(float(2))\nprint(float("1.5"))\nprint(int(true))\nlet s = ["x", "y"]\nprint(pop(s))\nprint(len(s))\n')
+let wasmBuiltins = exec([BX, "build", "--wasm", artDir + "/wasm-builtins.bxs", "-o", artDir + "/wasm-builtins.wasm"])
+let wasmBuiltinsRun = exec([BX, "run", artDir + "/wasm-builtins.wasm"])
+let wasmBuiltinsVm = exec([BX, "run", artDir + "/wasm-builtins.bxs"])
+if (wasmBuiltins.code == 0 && wasmBuiltinsRun.out == wasmBuiltinsVm.out && wasmBuiltinsRun.out.trim() == "[1,2,3]\n3\ntrue\nfalse\n2\n1.5\n1\ny\n1") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm collection builtins\n    wasm=" + json(wasmBuiltinsRun.out) + " vm=" + json(wasmBuiltinsVm.out) + " err=" + json(wasmBuiltinsRun.err))
+}
 write(artDir + "/wasm-exit.bxs", 'print("before")\nexit(3)\nprint("after")\n')
 let wasmExitBuild = exec([BX, "build", "--wasm", artDir + "/wasm-exit.bxs", "-o", artDir + "/wasm-exit.wasm"])
 let wasmExitRun = exec([BX, "run", artDir + "/wasm-exit.wasm"])

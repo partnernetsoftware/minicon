@@ -216,6 +216,14 @@ write(dir + "/wasm-words.bxs", 'let words = [["a"], ["b", "c"]]\nprint(words)\np
 write(dir + "/wasm-unicode.bxs", 'print(len("héllo"))\nprint(slice("héllo", 1, 4))\nfor ch in "hé" { print(ch) }\n')
 write(dir + "/wasm-flow2.bxs", 'for x in [1, 2, 3] { if (x == 2) { break }\n  print(x) }\nprint(1 < 2 ? "yes" : "no")\n')
 write(dir + "/wasm-exit.bxs", 'print("before")\nexit(5)\n')
+write(dir + "/wasm-builtins2.bxs", 'let a = [1, 2]\nprint(push(a, 3))\nprint(pop(a))\nprint(contains(a, 2))\nprint(float("2.5"))\n')
+test("wasm collection builtins", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-builtins2.bxs", "-o", dir + "/wasm-builtins2.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-builtins2.wasm"])
+  let vm = exec([bin, "run", dir + "/wasm-builtins2.bxs"])
+  assert(ran.code == 0 && ran.out == vm.out && ran.out.trim() == "[1,2,3]\n3\ntrue\n2.5", "wasm=" + json(ran.out) + " vm=" + json(vm.out))
+})
 test("wasm exit and assert", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-exit.bxs", "-o", dir + "/wasm-exit.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

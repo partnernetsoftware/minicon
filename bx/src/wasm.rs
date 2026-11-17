@@ -1083,6 +1083,21 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     .ok_or_else(|| "env.error message is outside memory".to_string())?;
                 Err(text)
             }
+            ("env", "str_to_float") => {
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("env.str_to_float expects (i32 ptr, i32 len)".to_string()),
+                };
+                let text = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .ok_or_else(|| "env.str_to_float string is outside memory".to_string())?;
+                let value = text
+                    .trim()
+                    .parse::<f64>()
+                    .map_err(|_| "cannot convert str to float".to_string())?;
+                Ok(vec![WVal::F64(value)])
+            }
             ("env", "str_len") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {
                     (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
@@ -1791,7 +1806,7 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 let trimmed = text.trim();
                 match trimmed.parse::<i64>() {
                     Ok(value) => Ok(vec![WVal::I64(value)]),
-                    Err(_) => Err(format!("cannot convert '{}' to int", trimmed)),
+                    Err(_) => Err("cannot convert str to int".to_string()),
                 }
             }
             ("env", "map_new") => {
