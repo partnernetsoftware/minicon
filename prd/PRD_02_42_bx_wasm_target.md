@@ -214,7 +214,12 @@ bx wasm target
   covers collections instead: int/float/string arrays, text rows, int rows,
   records, map/filter/each/sort/reverse/slice/reduce/push, nested indexes,
   negative indexes, element writes, two-variable loops and closure captures.
-  Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
+  `bx/tools/wasm-diff-methods.bxs` (same `[cases] [seed]` form) targets the
+method surface and null: `.join([sep])`, `.sort()`, `.reverse()`, `.pop()`,
+`slice`, `contains`/`index_of`, `map`/`filter`/`reduce`/`each`, `sum`/`min`/`max`
+over int/float/string/bool arrays plus the full null scalar set. Sweep on
+2026-11-18: three seeds at 40 cases each, all pass.
+Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
   collection cases and 15 numeric cases. The generator also emits random string
   expressions (trim/upper/lower/replace/repeat/slice/concat/split-join,
   comparisons, interpolation via `"${var}"`) inside array/record literals and
