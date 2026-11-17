@@ -1165,9 +1165,15 @@ impl Checker {
                     }
                     if matches!(name.as_str(), "reverse" | "sort") && args.len() == 1 {
                         let input = self.infer(&args[0])?;
-                        let supported = matches!(input, Ty::Arr | Ty::ArrF | Ty::ArrStr)
-                            || (name == "reverse"
-                                && matches!(input, Ty::ArrObj(_) | Ty::ArrArr | Ty::ArrStrArr));
+                        let supported = matches!(
+                            input,
+                            Ty::Arr
+                                | Ty::ArrF
+                                | Ty::ArrStr
+                                | Ty::ArrObj(_)
+                                | Ty::ArrArr
+                                | Ty::ArrStrArr
+                        );
                         if !supported {
                             return Err(format!(
                                 "wasm target {}() takes a numeric or string array, got {}",
@@ -7799,6 +7805,14 @@ impl<'a> Emitter<'a> {
                     }
                     if matches!(name.as_str(), "reverse" | "sort") && args.len() == 1 {
                         let ty = self.type_of(&args[0])?;
+                        if name == "sort"
+                            && matches!(ty, Ty::ArrObj(_) | Ty::ArrArr | Ty::ArrStrArr)
+                        {
+                            // The VM's default sort is a no-op for arrays it has no
+                            // ordering for; mirror that instead of rejecting them.
+                            self.emit_expr(&args[0])?;
+                            return Ok(ty);
+                        }
                         let import = match (name.as_str(), ty) {
                             (
                                 "reverse",
@@ -12674,6 +12688,26 @@ mod tests {
             panics.is_empty(),
             "compiler panicked on random inputs: {:?}",
             panics
+        );
+    }
+
+    #[test]
+    fn default_sort_is_a_noop_for_unsortable_arrays_like_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "print(sort([3, 1]))\nprint(sort([2.5, 1.5]))\nprint(sort([\"b\", \"a\"]))\nlet recs = [{a: 2}, {a: 1}]\nprint(sort(recs))\nprint(sort([[3], [1]]))\nprint(sort([[\"b\"], [\"a\"]]))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec![
+                "[1,3]".to_string(),
+                "[1.5,2.5]".to_string(),
+                "[\"a\",\"b\"]".to_string(),
+                "[{\"a\":2},{\"a\":1}]".to_string(),
+                "[[3],[1]]".to_string(),
+                "[[\"b\"],[\"a\"]]".to_string(),
+            ]
         );
     }
 

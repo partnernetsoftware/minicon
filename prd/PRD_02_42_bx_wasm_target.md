@@ -228,7 +228,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 112 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 113 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -416,9 +416,10 @@ bx wasm target
   insertion sort's O(n²), which brought the 500-record benchmark from 178 ms to
   103 ms (VM 95 ms). Equal keys keep their input order (the merge takes the
   left run on `<= 0`); the collection differential covers ties, both directions,
-  empty/single arrays and random sizes. `sort(records)` **without** a comparator
-  is rejected explicitly here, while the VM silently returns the array unchanged
-  (it only knows how to default-sort numbers and strings).
+  empty/single arrays and random sizes. Default `sort` on record, nested and
+  text-row arrays is a **no-op** returning the array unchanged, matching the VM
+  (it can only default-sort numbers and strings); `reverse` still reorders every
+  array kind.
 - **Arrays of records**: `[{a: 1}, {b: 2}]` with one consistent shape types as
   `Ty::ArrObj(shape)`; entries hold record pointers in the usual 8-byte slots, so
   `len`, element read (negative indexes included), element write, `for r in xs`
