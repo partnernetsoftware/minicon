@@ -1,0 +1,4 @@
+// Record-heavy loop: build 2000 records and sum their fields.
+let rows = map(range(2000), fn(i) { return {a: (i * 7) % 500} })
+let total = reduce(rows, fn(acc, r) { return acc + r.a }, 0)
+print(len(rows) + total)

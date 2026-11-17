@@ -31,13 +31,22 @@ glue.
 
 ## Engine performance (measured 2026-11-17)
 
-`bx/scripts/bench.sh` (`BX_BENCH_RUNS=5`, wall clock, process start included):
+`bx/scripts/bench.sh` (`BX_BENCH_RUNS=9`, wall clock, process start included,
+re-measured 2026-11-17 after the feature rounds):
 
 | benchmark | VM (`.bxb` source) | wasm target (core) |
 | --- | --- | --- |
-| fib | 134 ms | 223 ms |
-| loop | 332 ms | 243 ms |
-| calls | 166 ms | 260 ms |
+| fib | 134 ms | 232 ms |
+| loop | 337 ms | 256 ms |
+| calls | 199 ms | 318 ms |
+| coll (`map`/`filter`/`reduce`/`sort` over 2000 ints) | 109 ms | 104 ms |
+| recs (`map`/`reduce` over 2000 records) | 106 ms | 101 ms |
+
+So the absorbed core is ~1.6–1.7× slower on call-heavy code, ~0.75× on tight
+numeric loops and about equal on collection/record-heavy work; the table is the
+price of validation, budgets and one engine, not a regression from the feature
+work. The machine is noisy run to run (the `calls` VM figure moved between 164
+and 199 ms across sessions), so compare within one row rather than across runs.
 
 Split for `fib(24)` on the same machine: `bx run source.bxs` (compile+VM) 56 ms,
 `bx run prebuilt.wasm` 153 ms, `bx build --wasm` 20 ms. So the wasm path's cost
@@ -223,6 +232,13 @@ bx wasm target
   other side; interpolation like `"v=${o.a}-${o.b}"` and `o.s + "!"` match the
   VM. Record fields still hold scalars only (`int`/`string`/`float`/`bool`);
   array- or record-valued fields are rejected explicitly (the VM allows them).
+- **Known inference edge**: a record array produced by `map` and then passed
+  through a `let`-bound comparator `sort` before being re-consumed
+  (`let ordered = sort(rows, cmp)` → `map(ordered, fn(r) { return r.a })`) can
+  still infer the callback parameter as int and fail with "can read fields of
+  objects only, got int". Inlining the sort (`map(sort(rows, cmp), ...)`) or
+  using literal records works; the fixpoint's provisional int needs a better
+  source of truth than `soft()` for such chains (tracked for a later round).
 - **Dynamic record keys**: `get(record, key)` accepts a non-literal key when every
   field of the record has the same type (int/string/float/bool); the key search
   runs in the guest and returns that field type, falling back to the default or
@@ -421,9 +437,8 @@ bx wasm target
   string methods.
 - **Loop-condition fast path**: `while`/`for` exit tests over a direct comparison
   emit the inverse comparison opcode, dropping the trailing `eqz` on every
-  iteration; the interpreter's timeout check short-circuits when no deadline is
-  armed. Measured (wall clock incl. process start, `BX_BENCH_RUNS=9`):
-  fib ≈0.83×, loop ≈0.58×, calls ≈0.78× of the VM's time.
+  iteration. Measured with the absorbed core (wall clock incl. process start,
+  `BX_BENCH_RUNS=9`): fib ≈1.73×, loop ≈0.72×, calls ≈1.55× of the VM's time.
 - **Explicit IO/map failures**: `read_file(missing)` aborts with a `cannot read`
   message (same shape as the VM's `read`), `write_file` returns `0`/`-1`
   (sign-extended via `i64.extend_i32_s`, now decoded as 0xac), and maps reject
@@ -496,14 +511,14 @@ bx wasm target
   `bx.argc/arg`; file/process imports are stubbed out) and prints into `<pre>`
   in a browser or stdout under node. The suite and verifier run `node demo.js`
   when node is available and compare against the native module output.
-- **Performance** (`bash bx/scripts/bench.sh --wasm`, wall clock, min of 3, this
-  machine): fib 108 ms (VM 131 ms), 1e6-iteration loop 205 ms (VM 358 ms), 200k
-  helper calls 128 ms (VM 184 ms) — the wasm interpreter is now faster than the
-  VM on all three. Two fixes made this possible: function frames keep their own
-  label base (a `return` inside a block previously discarded the caller's labels,
-  which also silently skipped code after the block — caught by the benchmarks),
-  and wasm calls now reuse a locals pool and leave results on the operand stack
-  instead of allocating a `Vec` per call and per return.
+- **Performance, historical (in-tree interpreter era, before PRD_02_44 P1)**:
+  fib 108 ms (VM 131 ms), 1e6-iteration loop 205 ms (VM 358 ms), 200k helper
+  calls 128 ms (VM 184 ms). That engine was deleted when the vendored `tinyvm`
+  core became the only engine; current numbers are in "Engine performance" at
+  the top of this module. The two fixes that got the old interpreter there
+  (a per-frame label base, and a call path that reused locals and left results
+  on the operand stack) are recorded here because the label-base bug also
+  silently skipped code after a block and is easy to reintroduce.
 
 ## Non-goals
 

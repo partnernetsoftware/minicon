@@ -1,0 +1,7 @@
+// Collection-heavy loop: map/filter/reduce/sort over 2000 ints.
+let xs = range(2000)
+let ys = map(xs, fn(x) { return x * 2 })
+let zs = filter(ys, fn(x) { return x % 3 == 0 })
+let total = reduce(zs, fn(acc, x) { return acc + x }, 0)
+let sorted = sort(reverse(ys))
+print(total + len(zs) + sorted[0])

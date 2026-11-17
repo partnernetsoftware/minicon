@@ -39,7 +39,7 @@ if [[ "$MODE" == "--wasm" ]]; then
     TMP="$ROOT/target/bench-wasm"
     mkdir -p "$TMP"
     echo "wasm backend vs VM (wall clock, process start included)"
-    for case in fib loop calls; do
+    for case in fib loop calls coll recs; do
         src="$ROOT/tests/bench-wasm/$case.bxs"
         mod="$TMP/$case.wasm"
         "$BIN" build --wasm "$src" -o "$mod" >/dev/null 2>&1

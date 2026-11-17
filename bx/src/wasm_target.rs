@@ -9758,6 +9758,18 @@ impl<'a> InferState<'a> {
                     }
                     return Ok(false);
                 }
+                // The fixpoint starts array elements at `int` before a callback's
+                // return type is known (for example `map(range(n), fn(i) { ... })`
+                // feeding `sort`); a later, more specific guess must win over that
+                // provisional int, and a provisional int must not override a
+                // specific type. Genuine conflicts still fail in the final check.
+                if *current == Ty::Int && !is_number(ty) {
+                    *current = ty;
+                    return Ok(true);
+                }
+                if ty == Ty::Int && !is_number(*current) {
+                    return Ok(false);
+                }
                 Err(format!(
                     "wasm target function parameter is called with both {} and {} values",
                     ty_name(*current),
@@ -10307,6 +10319,10 @@ impl<'a> CaptureWalker<'a> {
                             .and_then(|sig| sig.result)
                         {
                             Some(Ty::Str) => Ty::ArrStr,
+                            Some(Ty::ArrStr) => Ty::ArrStrArr,
+                            Some(Ty::Float) => Ty::ArrF,
+                            Some(Ty::Obj(shape)) => Ty::ArrObj(shape),
+                            Some(Ty::Arr) => Ty::ArrArr,
                             _ => Ty::Arr,
                         }
                     } else {
