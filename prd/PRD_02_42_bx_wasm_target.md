@@ -187,7 +187,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 103 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 104 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -211,6 +211,12 @@ bx wasm target
 - **Record/array writes**: `r.a = v`, `r.a += v`, `xs[i] = v`, `xs[-1] = v` and
   `xs[i] += v` are supported with the same negative-index normalisation and
   bounds checks as reads (`+ - * %` for compound).
+- **String concatenation safety**: each operand of a runtime `+` now lives in its
+  own local pair, so a string operand that itself reads a record field (which
+  clobbers the shared pointer/length temporaries) can no longer corrupt the
+  other side; interpolation like `"v=${o.a}-${o.b}"` and `o.s + "!"` match the
+  VM. Record fields still hold scalars only (`int`/`string`/`float`/`bool`);
+  array- or record-valued fields are rejected explicitly (the VM allows them).
 - **Dynamic record keys**: `get(record, key)` accepts a non-literal key when every
   field of the record has the same type (int/string/float/bool); the key search
   runs in the guest and returns that field type, falling back to the default or

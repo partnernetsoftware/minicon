@@ -2246,8 +2246,6 @@ fn string_value(expr: &Expr) -> Option<String> {
 const ARR_TMP: u32 = 0;
 const PTR_A: u32 = 1;
 const LEN_A: u32 = 2;
-const PTR_B: u32 = 3;
-const LEN_B: u32 = 4;
 const DST: u32 = 5;
 const ALLOC_TMP: u32 = 6;
 const ARG_TMP: u32 = 7;
@@ -5379,30 +5377,38 @@ impl<'a> Emitter<'a> {
                 Ok(())
             }
             Expr::Bin(BinOp::Add, left, right) => {
+                // Own locals: a string operand such as a record field clobbers
+                // the shared PTR_A/LEN_A temporaries, so the left side must not
+                // live there while the right side is evaluated.
+                let len_a = self.builder.add_local(ValType::I32);
+                let ptr_a = self.builder.add_local(ValType::I32);
+                let len_b = self.builder.add_local(ValType::I32);
+                let ptr_b = self.builder.add_local(ValType::I32);
                 self.emit_str_operand(left)?;
-                self.builder.push(Instr::Local(0x21, self.temp(LEN_A)));
-                self.builder.push(Instr::Local(0x21, self.temp(PTR_A)));
+                self.builder.push(Instr::Local(0x21, len_a));
+                self.builder.push(Instr::Local(0x21, ptr_a));
                 self.emit_str_operand(right)?;
-                self.builder.push(Instr::Local(0x21, self.temp(LEN_B)));
-                self.builder.push(Instr::Local(0x21, self.temp(PTR_B)));
-                self.builder.push(Instr::Local(0x20, self.temp(LEN_A)));
-                self.builder.push(Instr::Local(0x20, self.temp(LEN_B)));
+                self.builder.push(Instr::Local(0x21, len_b));
+                self.builder.push(Instr::Local(0x21, ptr_b));
+                self.builder.push(Instr::Local(0x20, len_a));
+                self.builder.push(Instr::Local(0x20, len_b));
                 self.builder.push(Instr::Op(0x6a));
                 self.emit_alloc_dynamic();
-                self.builder.push(Instr::Local(0x21, self.temp(DST)));
-                self.builder.push(Instr::Local(0x20, self.temp(DST)));
-                self.builder.push(Instr::Local(0x20, self.temp(PTR_A)));
-                self.builder.push(Instr::Local(0x20, self.temp(LEN_A)));
+                let dst = self.builder.add_local(ValType::I32);
+                self.builder.push(Instr::Local(0x21, dst));
+                self.builder.push(Instr::Local(0x20, dst));
+                self.builder.push(Instr::Local(0x20, ptr_a));
+                self.builder.push(Instr::Local(0x20, len_a));
                 self.builder.push(Instr::MemoryCopy);
-                self.builder.push(Instr::Local(0x20, self.temp(DST)));
-                self.builder.push(Instr::Local(0x20, self.temp(LEN_A)));
+                self.builder.push(Instr::Local(0x20, dst));
+                self.builder.push(Instr::Local(0x20, len_a));
                 self.builder.push(Instr::Op(0x6a));
-                self.builder.push(Instr::Local(0x20, self.temp(PTR_B)));
-                self.builder.push(Instr::Local(0x20, self.temp(LEN_B)));
+                self.builder.push(Instr::Local(0x20, ptr_b));
+                self.builder.push(Instr::Local(0x20, len_b));
                 self.builder.push(Instr::MemoryCopy);
-                self.builder.push(Instr::Local(0x20, self.temp(DST)));
-                self.builder.push(Instr::Local(0x20, self.temp(LEN_A)));
-                self.builder.push(Instr::Local(0x20, self.temp(LEN_B)));
+                self.builder.push(Instr::Local(0x20, dst));
+                self.builder.push(Instr::Local(0x20, len_a));
+                self.builder.push(Instr::Local(0x20, len_b));
                 self.builder.push(Instr::Op(0x6a));
                 Ok(())
             }
@@ -12078,6 +12084,27 @@ mod tests {
                 "9.5".to_string(),
                 "array".to_string(),
                 "19.25".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn interpolation_with_record_fields_matches_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let o = {a: 1, b: \"x\"}\nprint(\"v=${o.a}\")\nprint(\"v=${o.b}\")\nprint(\"v=${o.a}-${o.b}\")\nprint(\"${o.b}+${o.a}\")\nprint(o.b + \"!\")\nprint(\"[\" + o.b + \"]\" + o.b)\nlet t = o.b + o.b\nprint(t)\nprint(len(t))",
+            &[],
+        );
+        assert_eq!(numbers, vec![2]);
+        assert_eq!(
+            strings,
+            vec![
+                "v=1".to_string(),
+                "v=x".to_string(),
+                "v=1-x".to_string(),
+                "x+1".to_string(),
+                "x!".to_string(),
+                "[x]x".to_string(),
+                "xx".to_string(),
             ]
         );
     }

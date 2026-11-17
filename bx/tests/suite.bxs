@@ -537,6 +537,16 @@ if (wasmRec.code == 0 && wasmRecRun.code == 0 && wasmRecRun.out.trim() == "30\n2
   failures.push("wasm records + in-module heap\n    build=" + wasmRec.code + " out=" + json(wasmRecRun.out) + " err=" + json(wasmRecRun.err))
 }
 let safeArtDir = replace(artDir, "\\", "/")
+write(artDir + "/wasm-interpfield.bxs", 'let o = {a: 1, b: "x"}\nprint("v=" + str(o.a) + "-" + o.b)\nprint(o.b + "+" + str(o.a))\nprint(o.b + "!")\nlet t = o.b + o.b\nprint(t)\nprint(len(t))\n')
+let wasmInterpField = exec([BX, "build", "--wasm", artDir + "/wasm-interpfield.bxs", "-o", artDir + "/wasm-interpfield.wasm"])
+let wasmInterpFieldRun = exec([BX, "run", artDir + "/wasm-interpfield.wasm"])
+let wasmInterpFieldVm = exec([BX, "run", artDir + "/wasm-interpfield.bxs"])
+if (wasmInterpField.code == 0 && wasmInterpFieldRun.out == wasmInterpFieldVm.out && wasmInterpFieldRun.out.trim() == "v=1-x\nx+1\nx!\nxx\n2") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm interpolation with record fields\n    wasm=" + json(wasmInterpFieldRun.out) + " vm=" + json(wasmInterpFieldVm.out) + " err=" + json(wasmInterpFieldRun.err))
+}
 write(artDir + "/wasm-dynget.bxs", 'fn probe() {\n  let o = {a: 1, b: 2}\n  let k = "b"\n  print(get(o, k))\n  let missing = "z"\n  print(get(o, missing, 9))\n  let s = {x: "p", y: "q"}\n  let sk = "y"\n  print(get(s, sk))\n  let f = {m: 1.5, n: 2.5}\n  let fk = "m"\n  print(get(f, fk))\n}\nprobe()\n')
 let wasmDynGet = exec([BX, "build", "--wasm", artDir + "/wasm-dynget.bxs", "-o", artDir + "/wasm-dynget.wasm"])
 let wasmDynGetRun = exec([BX, "run", artDir + "/wasm-dynget.wasm"])
@@ -972,6 +982,16 @@ if (wasmAssign.code == 0 && wasmAssignRun.out == wasmAssignVm.out && wasmAssignR
 } else {
   casesFail += 1
   failures.push("wasm interpolation and assignments\n    wasm=" + json(wasmAssignRun.out) + " vm=" + json(wasmAssignVm.out) + " err=" + json(wasmAssignRun.err))
+}
+write(artDir + "/wasm-interpfield.bxs", 'let o = {a: 1, b: "x"}\nprint("v=" + str(o.a) + "-" + o.b)\nprint(o.b + "+" + str(o.a))\nprint(o.b + "!")\nlet t = o.b + o.b\nprint(t)\nprint(len(t))\n')
+let wasmInterpField = exec([BX, "build", "--wasm", artDir + "/wasm-interpfield.bxs", "-o", artDir + "/wasm-interpfield.wasm"])
+let wasmInterpFieldRun = exec([BX, "run", artDir + "/wasm-interpfield.wasm"])
+let wasmInterpFieldVm = exec([BX, "run", artDir + "/wasm-interpfield.bxs"])
+if (wasmInterpField.code == 0 && wasmInterpFieldRun.out == wasmInterpFieldVm.out && wasmInterpFieldRun.out.trim() == "v=1-x\nx+1\nx!\nxx\n2") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm interpolation with record fields\n    wasm=" + json(wasmInterpFieldRun.out) + " vm=" + json(wasmInterpFieldVm.out) + " err=" + json(wasmInterpFieldRun.err))
 }
 write(artDir + "/wasm-dynget.bxs", 'fn probe() {\n  let o = {a: 1, b: 2}\n  let k = "b"\n  print(get(o, k))\n  let missing = "z"\n  print(get(o, missing, 9))\n  let s = {x: "p", y: "q"}\n  let sk = "y"\n  print(get(s, sk))\n  let f = {m: 1.5, n: 2.5}\n  let fk = "m"\n  print(get(f, fk))\n}\nprobe()\n')
 let wasmDynGet = exec([BX, "build", "--wasm", artDir + "/wasm-dynget.bxs", "-o", artDir + "/wasm-dynget.wasm"])
