@@ -662,7 +662,10 @@ hint from the CLI), not silent behaviour changes:
 
 `bx/tools/wasm-diff*.bxs` deliberately avoid these boundaries so a differential
 failure always means a real divergence; `bx/tools/verify.bxs` stops at the same
-points when built for wasm.
+points when built for wasm. How these boundaries get removed is owned by
+`prd/PRD_02_44_bx_tinyvm_absorption.md` ("P2 design: uniform tagged values,
+hybrid"), which stages a 16-byte tagged cell behind static/dynamic boundary
+conversions rather than rewriting the static fast path.
 
 ## Non-goals
 

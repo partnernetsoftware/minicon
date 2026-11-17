@@ -74,8 +74,8 @@ minicon-bx owns a standard wasm core and one language skin      [-]
 │   ├── step/memory budgets owned by the core                    [v]  steps, interrupt, memory pages
 │   └── core vendored as a workspace member                      [v]  `bx/vendor/tinyvm` (no crates.io wasm crate)
 │
-├── P2 language front end simplification                        [_]  deferred: the static element-kind matrix still ships (2026-11-17 review measured the remaining gaps: nested/mixed containers, record-array map/filter/sort)
-│   ├── uniform tagged value ABI (containers hold values)        [_]
+├── P2 language front end simplification                        [-]  hybrid tagged-value design done 2026-11-18; implementation staged P2a-P2d
+│   ├── uniform tagged value ABI (containers hold values)        [-]  design: 16-byte [tag][aux][payload] cells, hybrid boundary
 │   ├── element-kind matrix and its host imports deleted         [_]
 │   ├── `.bxb` default flip and retirement (PRD_02_43)           [_]
 │   └── float/nested/mixed containers from the uniform layout    [_]
@@ -211,6 +211,102 @@ Safe failure: P0 is a decisive experiment, not a promise. If the core cannot
 host the `env.*` profile or the wasm32/`.com` shape regresses badly, the fallback
 is to absorb only the **validator + budgets + replay discipline** into the
 existing interpreter and stop the plan, with the measurements recorded here.
+
+## P2 design: uniform tagged values, hybrid (2026-11-18)
+
+The static `Ty` matrix now covers a large but finite surface (int/float/string/
+bool scalars, arrays of each scalar, record arrays, nested int/text rows, maps),
+each new kind costing emitter arms, host imports and a checker/element mapping.
+Everything the VM does dynamically still fails: `parse(exec(...).out)`, `null`,
+heterogeneous containers, record fields that hold containers, callbacks whose
+result type depends on input. P2 removes that ceiling with a **hybrid value
+model** rather than a rewrite, so the static fast path and its performance stay.
+
+### Representation
+
+One dynamic cell is 16 bytes:
+
+```
+[tag u32][aux u32][payload 8 bytes]
+```
+
+| tag | meaning | aux | payload |
+| --- | --- | --- | --- |
+| 0 | null | 0 | 0 |
+| 1 | int | 0 | i64 |
+| 2 | float | 0 | f64 bits |
+| 3 | bool | 0 | 0/1 |
+| 4 | string | byte length | ptr to UTF-8 |
+| 5 | array | element count | ptr to `[16-byte cell]*N` |
+| 6 | map | entry count | ptr to insertion-ordered `(key, cell)` pairs |
+| 7 | record | shape id | ptr to `[8-byte slot]*fields` (static layout) |
+| 8 | function | literal id | env ptr |
+
+Records keep the existing 8-byte static field slots; a field holding a container
+is kind `8` and stores a pointer to a 16-byte dynamic cell. Arrays of dynamic
+cells are contiguous, so `for`/`map`/`filter`/`sort` loops stay guest-side.
+
+### Boundary rules
+
+- Static code stays static. `Ty::Dyn` appears only at dynamic boundaries:
+  `parse` over runtime text, `exec`/`sh` record fields if widened, `get` on
+  heterogeneous records, and any value whose kind the checker cannot prove.
+- `to_dyn(static)` boxes a static value into a cell; it is a no-op for values
+  already stored as cells.
+- `from_static` helpers (`dyn_int`, `dyn_str`, `dyn_float`, `dyn_bool`,
+  `dyn_array`) abort with `cannot use <type> as <type>` unless the tag matches
+  (integers promote to floats), mirroring the VM's runtime errors; inside
+  `attempt` those aborts become the usual caught errors.
+- Static containers that receive a `Dyn` element widen to a dynamic array; the
+  reverse narrowing never happens implicitly.
+- Printing/`str`/`json` for dynamic values reuse the VM's formatter semantics
+  (null -> `null`, strings quoted in JSON, insertion order for maps).
+
+### Host ABI (additive; existing 100 imports stay)
+
+```
+env.dyn_alloc(cells) -> ptr
+env.dyn_type(cell_ptr) -> tag
+env.dyn_len(cell_ptr) -> i64
+env.dyn_index(cell_ptr, i) -> block(16-byte cell)      // arrays/strings
+env.dyn_member(cell_ptr, key_ptr, key_len) -> block    // records/maps
+env.dyn_set_index / dyn_set_member                     // writes
+env.dyn_eq(a, b) / dyn_cmp(a, b) -> i64
+env.dyn_add(a, b) -> block                             // numbers, strings, concat
+env.dyn_truthy(cell_ptr) -> i32
+env.dyn_to_str(cell_ptr, mode) -> block                // str/json
+env.dyn_to_int / dyn_to_float / dyn_to_bool
+```
+
+Cells are written/read by the emitter with plain `i32`/`i64` loads; the host is
+only needed where the VM semantics are non-local (key lookup, formatting,
+number/string coercion).
+
+### Milestones and gates
+
+| step | scope | gate |
+| --- | --- | --- |
+| P2a | `Ty::Dyn` scalars + `null`, `dyn_*` conversions, `parse(exec.out)` for 1/1.5/"a"/true | differential: null/JSON scalar programs match VM; static suite unchanged |
+| P2b | dynamic arrays/maps/records, heterogeneous containers, `dyn_index`/`dyn_member`/`dyn_set_*` | `parse` over `exec(...).out` with arrays of records matches VM; collection differential extended with mixed fixtures |
+| P2c | record field kind 8 (pointer to cell) + `get`/`merge` on heterogeneous shapes | `{a:{b:1}}`, `{xs:[1,2]}` round-trip (construct, read, print, json) match VM |
+| P2d | front-end simplification: delete element-kind matrix arms/imports that Dyn makes redundant, flip `.bxb` default (PRD_02_43) | one shared value path; import count and emitter arm count drop; suite/verify/both differentials green |
+
+Rollout: `BX_WASM_DYN=1` enables the Dyn arm first; once P2c lands it is the
+default for the affected constructs while static code keeps its current code
+paths. Each step keeps the four differential tools (`wasm-diff`,
+`wasm-diff-coll`, `wasm-diff-attempt`, `verify.bxs` as far as its static subset
+allows) green.
+
+Performance budget: static benchmarks (`fib`, `loop`, `calls`, `coll`, `recs`)
+must not regress more than 5%; dynamic-heavy workloads (parse/exec output
+pipelines) target at least 0.5x VM time. The hybrid design is what keeps that
+promise: the hot static path never touches a tagged cell.
+
+Risks and rollback: the 16-byte cell doubles container memory for dynamic data
+(acceptable: dynamic data is I/O-sized, not hot loops); shape ids must stay
+stable across the checker and host; mixing static and dynamic records needs a
+conversion audit (P2c). If P2a/P2b fail their gates the Dyn arm remains behind
+`BX_WASM_DYN`, and the static matrix stays the shipped path exactly as today.
 
 ## Open decision
 
