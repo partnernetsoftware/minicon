@@ -214,6 +214,14 @@ test("wasm source runs reuse a module cache", fn() {
 })
 write(dir + "/wasm-words.bxs", 'let words = [["a"], ["b", "c"]]\nprint(words)\nprint(len(words[1]))\n')
 write(dir + "/wasm-unicode.bxs", 'print(len("héllo"))\nprint(slice("héllo", 1, 4))\nfor ch in "hé" { print(ch) }\n')
+write(dir + "/wasm-flow2.bxs", 'for x in [1, 2, 3] { if (x == 2) { break }\n  print(x) }\nprint(1 < 2 ? "yes" : "no")\n')
+test("wasm break/continue and string ternaries", fn() {
+  let built = exec([bin, "build", "--wasm", dir + "/wasm-flow2.bxs", "-o", dir + "/wasm-flow2.wasm"])
+  assert(built.code == 0, "build failed: " + built.err)
+  let ran = exec([bin, "run", dir + "/wasm-flow2.wasm"])
+  let vm = exec([bin, "run", dir + "/wasm-flow2.bxs"])
+  assert(ran.code == 0 && ran.out == vm.out && ran.out.trim() == "1\nyes", "wasm=" + json(ran.out) + " vm=" + json(vm.out))
+})
 test("wasm unicode strings", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-unicode.bxs", "-o", dir + "/wasm-unicode.wasm"])
   assert(built.code == 0, "build failed: " + built.err)

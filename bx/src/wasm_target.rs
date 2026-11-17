@@ -2228,7 +2228,13 @@ impl<'a> Emitter<'a> {
 
     fn break_depth(&self) -> Result<u32, String> {
         for (depth, kind) in self.labels.iter().rev().enumerate() {
-            if *kind == 0x02 {
+            if *kind != 0x02 {
+                continue;
+            }
+            // A continue block is the innermost `block` of a loop; `break`
+            // must leave the loop's own exit block instead.
+            let index = self.labels.len() - 1 - depth;
+            if !self.continue_targets.contains(&index) {
                 return Ok(depth as u32);
             }
         }
@@ -4748,7 +4754,28 @@ impl<'a> Emitter<'a> {
             Expr::Ternary(cond, then, other, _) => {
                 let ty = self.checker.infer(expr)?;
                 if ty == Ty::Str {
-                    return Err("wasm target string ternaries are not supported yet".to_string());
+                    let ptr_slot = self.builder.add_local(ValType::I32);
+                    let len_slot = self.builder.add_local(ValType::I32);
+                    self.emit_cond(cond)?;
+                    self.builder.push(Instr::Block {
+                        opcode: 0x04,
+                        end: 0,
+                        else_at: 0,
+                        start: 0,
+                    });
+                    self.labels.push(0x04);
+                    self.emit_str(then)?;
+                    self.builder.push(Instr::Local(0x21, len_slot));
+                    self.builder.push(Instr::Local(0x21, ptr_slot));
+                    self.builder.push(Instr::Else { end: 0 });
+                    self.emit_str(other)?;
+                    self.builder.push(Instr::Local(0x21, len_slot));
+                    self.builder.push(Instr::Local(0x21, ptr_slot));
+                    self.labels.pop();
+                    self.builder.push(Instr::Op(0x0b));
+                    self.builder.push(Instr::Local(0x20, ptr_slot));
+                    self.builder.push(Instr::Local(0x20, len_slot));
+                    return Ok(Ty::Str);
                 }
                 let slot_ty = match ty {
                     Ty::Float => ValType::F64,
@@ -10589,6 +10616,25 @@ mod tests {
                 "9.5".to_string(),
                 "array".to_string(),
                 "19.25".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn break_continue_and_string_ternaries_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "for x in [1, 2, 3] {\n  if (x == 2) { break }\n  print(x)\n}\nfor y in [1, 2, 3] {\n  if (y == 2) { continue }\n  print(y)\n}\nfor i, z in [1, 2] {\n  print(i + z)\n}\nfor s in [\"a\", \"b\"] {\n  if (s == \"b\") { break }\n  print(s)\n}\nfor r in [[1], [2, 3]] {\n  if (len(r) > 1) { break }\n  print(len(r))\n}\nfor ch in \"abc\" {\n  if (ch == \"b\") { continue }\n  print(ch)\n}\nlet w = 0\nwhile (w < 5) {\n  w += 1\n  if (w == 2) { break }\n}\nprint(w)\nprint(1 < 2 ? \"yes\" : \"no\")\nprint(1 < 2 ? (2 < 3 ? \"a\" : \"b\") : \"c\")",
+            &[],
+        );
+        assert_eq!(numbers, vec![1, 1, 3, 1, 3, 1, 2]);
+        assert_eq!(
+            strings,
+            vec![
+                "a".to_string(),
+                "a".to_string(),
+                "c".to_string(),
+                "yes".to_string(),
+                "a".to_string(),
             ]
         );
     }

@@ -187,7 +187,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 95 in-tree unit tests (plus the self-hosted differential tool) cover the encoder and the core host; the interpreter tests retired with the engine
+- 96 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -211,6 +211,12 @@ bx wasm target
 - **Record/array writes**: `r.a = v`, `r.a += v`, `xs[i] = v`, `xs[-1] = v` and
   `xs[i] += v` are supported with the same negative-index normalisation and
   bounds checks as reads (`+ - * %` for compound).
+- **Control flow**: `break`/`continue` work inside every loop form (`while`,
+  `for` over int/float/string arrays, rows, records and strings, including
+  two-variable forms and nested `if`s); `break` leaves the loop's own exit
+  block instead of the per-iteration continue block (fixed 2026-11-17), and
+  string-branch ternaries (`cond ? "a" : "b"`, nested) emit a `(ptr, len)` pair
+  from both arms.
 - **Text rows**: arrays of string arrays (`[["a","b"],["c"]]`, `Ty::ArrStrArr`)
   type, index (including `rows[1][0]`), iterate, `len`, `push`, element writes,
   `map`/`filter`/`each`, comparator `sort`, `reverse`/`slice`, closure capture

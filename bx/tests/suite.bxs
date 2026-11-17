@@ -995,6 +995,16 @@ if (wasmSortCmp.code == 0 && wasmSortCmpRun.out == wasmSortCmpVm.out && wasmSort
   casesFail += 1
   failures.push("wasm sort comparator\n    wasm=" + json(wasmSortCmpRun.out) + " vm=" + json(wasmSortCmpVm.out) + " err=" + json(wasmSortCmpRun.err))
 }
+write(artDir + "/wasm-flow.bxs", 'for x in [1, 2, 3] {\n  if (x == 2) { break }\n  print(x)\n}\nfor y in [1, 2, 3] {\n  if (y == 2) { continue }\n  print(y)\n}\nfor r in [[1], [2, 3]] {\n  if (len(r) > 1) { break }\n  print(len(r))\n}\nprint(1 < 2 ? "yes" : "no")\nprint(1 < 2 ? (2 < 3 ? "a" : "b") : "c")\n')
+let wasmFlow = exec([BX, "build", "--wasm", artDir + "/wasm-flow.bxs", "-o", artDir + "/wasm-flow.wasm"])
+let wasmFlowRun = exec([BX, "run", artDir + "/wasm-flow.wasm"])
+let wasmFlowVm = exec([BX, "run", artDir + "/wasm-flow.bxs"])
+if (wasmFlow.code == 0 && wasmFlowRun.out == wasmFlowVm.out && wasmFlowRun.out.trim() == "1\n1\n3\n1\nyes\na") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm break/continue and string ternaries\n    wasm=" + json(wasmFlowRun.out) + " vm=" + json(wasmFlowVm.out) + " err=" + json(wasmFlowRun.err))
+}
 write(artDir + "/wasm-unicode.bxs", 'print(len("héllo"))\nprint("héllo"[1])\nprint(slice("héllo", 1, 4))\nprint(index_of("héllo", "llo"))\nfor ch in "hé" { print(ch) }\nfor i, ch in "ab" { print(str(i) + ":" + ch) }\nlet s = "日本語"\nprint(len(s))\nprint(s[0])\n')
 let wasmUnicode = exec([BX, "build", "--wasm", artDir + "/wasm-unicode.bxs", "-o", artDir + "/wasm-unicode.wasm"])
 let wasmUnicodeRun = exec([BX, "run", artDir + "/wasm-unicode.wasm"])

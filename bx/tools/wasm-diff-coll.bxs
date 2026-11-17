@@ -151,6 +151,7 @@ fn int_ops(lines, name) {
     lines.push(name + "[0] = " + num())
     lines.push("print(" + name + ")")
     lines.push("for i, x in " + name + " {")
+    lines.push("  if (x > " + num() + ") { break }")
     lines.push("  print(i)")
     lines.push("  print(x)")
     lines.push("}")
@@ -206,7 +207,11 @@ fn string_ops(lines, name) {
     lines.push("push(" + name + ", \"z\")")
     lines.push("print(" + name + ")")
   } else {
-    lines.push("each(" + name + ", fn(x) { print(x) })")
+    lines.push("print(" + name + "[0] == \"s1\" ? \"one\" : \"other\")")
+    lines.push("for s in " + name + " {")
+    lines.push("  if (s == \"s2\") { continue }")
+    lines.push("  print(s)")
+    lines.push("}")
   }
 }
 fn record_ops(lines, name) {
