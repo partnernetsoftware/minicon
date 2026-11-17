@@ -128,7 +128,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 85 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 86 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -152,6 +152,13 @@ bx wasm target
 - **Record/array writes**: `r.a = v`, `r.a += v`, `xs[i] = v`, `xs[-1] = v` and
   `xs[i] += v` are supported with the same negative-index normalisation and
   bounds checks as reads (`+ - * %` for compound).
+- **Container printing**: `print` accepts int arrays, string arrays, records and
+  record arrays and formats them exactly like the VM (compact JSON style:
+  `[1,2,3]`, `["a","b"]`, `{"a":1,"b":2}`, `[{"a":1}]`). The guest calls one of
+  four host imports (`print_arr_i64`, `print_arr_str`, `print_record`,
+  `print_arr_obj`) with the container pointer plus, for records, the shape key
+  table; the host walks memory and prints. Maps/functions still cannot print and
+  `console_log` stays scalar-only.
 - **push/pop on every array kind**: both the method form (`xs.push(v)`) and the
   call form (`push(xs, v)`) append a value for int, string and record arrays;
   `pop` shrinks the length (the removed value is still not returned in an

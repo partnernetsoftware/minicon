@@ -930,6 +930,16 @@ if (wasmHof.code == 0 && wasmHofRun.out == wasmHofVm.out && wasmHofRun.out.trim(
   casesFail += 1
   failures.push("wasm higher-order array builtins\n    wasm=" + json(wasmHofRun.out) + " vm=" + json(wasmHofVm.out) + " err=" + json(wasmHofRun.err))
 }
+write(artDir + "/wasm-printc.bxs", 'print([1, 2, 3])\nprint(["a", "b"])\nprint([])\nprint({a: 1, b: 2})\nprint({})\nprint([{a: 1}, {a: 2}])\nlet xs = [10, 20]\nprint(xs)\nprint(sort([3, 1], fn(a, b) { return a - b }))\n')
+let wasmPrintC = exec([BX, "build", "--wasm", artDir + "/wasm-printc.bxs", "-o", artDir + "/wasm-printc.wasm"])
+let wasmPrintCRun = exec([BX, "run", artDir + "/wasm-printc.wasm"])
+let wasmPrintCVm = exec([BX, "run", artDir + "/wasm-printc.bxs"])
+if (wasmPrintC.code == 0 && wasmPrintCRun.out == wasmPrintCVm.out && wasmPrintCRun.out.trim() == "[1,2,3]\n[\"a\",\"b\"]\n[]\n{\"a\":1,\"b\":2}\n{}\n[{\"a\":1},{\"a\":2}]\n[10,20]\n[1,3]") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm container printing\n    wasm=" + json(wasmPrintCRun.out) + " vm=" + json(wasmPrintCVm.out) + " err=" + json(wasmPrintCRun.err))
+}
 write(artDir + "/wasm-push2.bxs", 'let xs = ["a"]\npush(xs, "b")\nfor v in xs { print(v) }\nprint(len(xs))\npop(xs)\nprint(len(xs))\nlet rs = [{a: 1}]\npush(rs, {a: 2})\nfor r in rs { print(r.a) }\npop(rs)\nprint(len(rs))\nlet empty = {}\nprint(len(keys(empty)))\nlet m = merge(empty, {x: 5})\nprint(m.x)\nprint(type(empty))\n')
 let wasmPush2 = exec([BX, "build", "--wasm", artDir + "/wasm-push2.bxs", "-o", artDir + "/wasm-push2.wasm"])
 let wasmPush2Run = exec([BX, "run", artDir + "/wasm-push2.wasm"])

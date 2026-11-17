@@ -1318,8 +1318,8 @@ impl Checker {
                     return Err("wasm target supports print(<value>) with one argument".to_string());
                 }
                 let ty = self.infer(&args[0])?;
-                if matches!(ty, Ty::Arr | Ty::ArrStr | Ty::Obj(_) | Ty::Map | Ty::Func(_)) {
-                    return Err("wasm target cannot log arrays or objects yet".to_string());
+                if matches!(ty, Ty::Map | Ty::Func(_)) {
+                    return Err("wasm target cannot log maps or functions yet".to_string());
                 }
             }
 
@@ -1615,7 +1615,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 54;
+const IMPORT_COUNT: u32 = 58;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -1660,6 +1660,10 @@ const ARR_RANGE: u32 = 50;
 const ARR_SUM: u32 = 51;
 const ARR_REVERSE: u32 = 52;
 const ARR_SORT: u32 = 53;
+const PRINT_ARR_I64: u32 = 54;
+const PRINT_ARR_STR: u32 = 55;
+const PRINT_RECORD: u32 = 56;
+const PRINT_ARR_OBJ: u32 = 57;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -5822,6 +5826,46 @@ impl<'a> Emitter<'a> {
                 let web = name == "console_log";
                 let ty = self.emit_expr(&args[0])?;
                 match ty {
+                    Ty::Arr => {
+                        if web {
+                            return Err("wasm target console_log prints scalars only".to_string());
+                        }
+                        self.builder.push(Instr::Call(PRINT_ARR_I64));
+                    }
+                    Ty::ArrStr => {
+                        if web {
+                            return Err("wasm target console_log prints scalars only".to_string());
+                        }
+                        self.builder.push(Instr::Call(PRINT_ARR_STR));
+                    }
+                    Ty::Obj(shape) => {
+                        if web {
+                            return Err("wasm target console_log prints scalars only".to_string());
+                        }
+                        let value = self.builder.add_local(ValType::I32);
+                        self.builder.push(Instr::Local(0x21, value));
+                        let (table, count) = self.record_table(shape)?;
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(table as i32)));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(count as i32)));
+                        self.builder.push(Instr::Local(0x20, value));
+                        self.builder.push(Instr::Call(PRINT_RECORD));
+                    }
+                    Ty::ArrObj(shape) => {
+                        if web {
+                            return Err("wasm target console_log prints scalars only".to_string());
+                        }
+                        let value = self.builder.add_local(ValType::I32);
+                        self.builder.push(Instr::Local(0x21, value));
+                        let (table, count) = self.record_table(shape)?;
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(table as i32)));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(count as i32)));
+                        self.builder.push(Instr::Local(0x20, value));
+                        self.builder.push(Instr::Call(PRINT_ARR_OBJ));
+                    }
                     Ty::Bool => {
                         self.builder.push(Instr::Call(BOOL_TO_STR));
                         self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
@@ -7506,6 +7550,10 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     );
     let arr_sum_ty = builder.add_type(vec![ValType::I32], vec![ValType::I64]);
     let arr_unary_ty = builder.add_type(vec![ValType::I32], vec![ValType::I32]);
+    let print_arr_i64_ty = builder.add_type(vec![ValType::I32], vec![]);
+    let print_arr_str_ty = builder.add_type(vec![ValType::I32], vec![]);
+    let print_record_ty = builder.add_type(vec![ValType::I32, ValType::I32, ValType::I32], vec![]);
+    let print_arr_obj_ty = builder.add_type(vec![ValType::I32, ValType::I32, ValType::I32], vec![]);
     let str_test_ty = builder.add_type(
         vec![
             ValType::I32,
@@ -7602,6 +7650,10 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "arr_sum", arr_sum_ty);
     builder.import_func("env", "arr_reverse", arr_unary_ty);
     builder.import_func("env", "arr_sort", arr_unary_ty);
+    builder.import_func("env", "print_arr_i64", print_arr_i64_ty);
+    builder.import_func("env", "print_arr_str", print_arr_str_ty);
+    builder.import_func("env", "print_record", print_record_ty);
+    builder.import_func("env", "print_arr_obj", print_arr_obj_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -8326,6 +8378,26 @@ mod tests {
     }
 
     #[test]
+    fn containers_print_like_the_vm() {
+        let strings = run_strings(
+            "print([1, 2, 3])\nprint([\"a\", \"b\"])\nprint([])\nprint({a: 1, b: 2})\nprint({})\nprint([{a: 1}, {a: 2}])\nlet xs = [10, 20]\nprint(xs)\nprint(sort([3, 1], fn(a, b) { return a - b }))",
+        );
+        assert_eq!(
+            strings,
+            vec![
+                "[1,2,3]".to_string(),
+                "[\"a\",\"b\"]".to_string(),
+                "[]".to_string(),
+                "{\"a\":1,\"b\":2}".to_string(),
+                "{}".to_string(),
+                "[{\"a\":1},{\"a\":2}]".to_string(),
+                "[10,20]".to_string(),
+                "[1,3]".to_string(),
+            ]
+        );
+    }
+
+    #[test]
     fn push_pop_string_and_record_arrays_and_empty_objects() {
         let (numbers, strings) = run_with_argv(
             "let xs = [\"a\"]\npush(xs, \"b\")\nfor v in xs {\n  print(v)\n}\nprint(len(xs))\npop(xs)\nprint(len(xs))\nlet rs = [{a: 1}]\npush(rs, {a: 2})\nfor r in rs {\n  print(r.a)\n}\npop(rs)\nprint(len(rs))\nlet empty = {}\nprint(len(keys(empty)))\nlet m = merge(empty, {x: 5})\nprint(m.x)\nprint(type(empty))",
@@ -8653,7 +8725,6 @@ mod tests {
         assert!(compile_to_wasm("let f = fn() { return 1 }\nprint(f)").is_err());
         assert!(compile_to_wasm("print(unknown)").is_err());
         assert!(compile_to_wasm("let a = [1, \"x\"]").is_err());
-        assert!(compile_to_wasm("let o = {}\nprint(o)").is_err());
         assert!(compile_to_wasm("print(unknown_name)").is_err());
     }
 }

@@ -1024,6 +1024,71 @@ fn store_text_block(memory: &mut [u8], next_file: &mut u32, text: &[u8]) -> Opti
     *next_file = (start + size + 7) as u32 & !7;
     Some(start as u32)
 }
+fn memory_text(memory: &[u8], ptr: usize, len: usize) -> String {
+    if ptr + len > memory.len() {
+        return String::new();
+    }
+    String::from_utf8_lossy(&memory[ptr..ptr + len]).to_string()
+}
+
+fn format_i64_array(memory: &[u8], ptr: usize) -> String {
+    if ptr + 4 > memory.len() {
+        return "[]".to_string();
+    }
+    let len = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+    let mut pieces: Vec<String> = Vec::new();
+    for index in 0..len {
+        let offset = ptr + 4 + index * 8;
+        if offset + 8 > memory.len() {
+            break;
+        }
+        let value = i64::from_le_bytes(memory[offset..offset + 8].try_into().unwrap());
+        pieces.push(value.to_string());
+    }
+    format!("[{}]", pieces.join(","))
+}
+
+fn format_str_array(memory: &[u8], ptr: usize) -> String {
+    if ptr + 4 > memory.len() {
+        return "[]".to_string();
+    }
+    let len = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+    let mut pieces: Vec<String> = Vec::new();
+    for index in 0..len {
+        let offset = ptr + 4 + index * 8;
+        if offset + 8 > memory.len() {
+            break;
+        }
+        let data = u32::from_le_bytes(memory[offset..offset + 4].try_into().unwrap()) as usize;
+        let size = u32::from_le_bytes(memory[offset + 4..offset + 8].try_into().unwrap()) as usize;
+        pieces.push(format!("\"{}\"", memory_text(memory, data, size)));
+    }
+    format!("[{}]", pieces.join(","))
+}
+
+fn format_record(memory: &[u8], table: usize, count: usize, rec: usize) -> String {
+    let mut pieces: Vec<String> = Vec::new();
+    for index in 0..count {
+        let offset_at = table + index * 4;
+        if offset_at + 4 > memory.len() {
+            break;
+        }
+        let block = table
+            + u32::from_le_bytes(memory[offset_at..offset_at + 4].try_into().unwrap()) as usize;
+        if block + 4 > memory.len() {
+            break;
+        }
+        let size = u32::from_le_bytes(memory[block..block + 4].try_into().unwrap()) as usize;
+        let key = memory_text(memory, block + 4, size);
+        let field = rec + index * 8;
+        if field + 8 > memory.len() {
+            break;
+        }
+        let value = i64::from_le_bytes(memory[field..field + 8].try_into().unwrap());
+        pieces.push(format!("\"{}\":{}", key, value));
+    }
+    format!("{{{}}}", pieces.join(","))
+}
 impl<'m, H: Host> Exec<'m, H> {
     fn new(module: &'m Module, host: H) -> Exec<'m, H> {
         let globals = module.globals.iter().map(|global| global.init).collect();
@@ -2048,6 +2113,58 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     memory[right..right + 8].copy_from_slice(&a);
                 }
                 Ok(vec![WVal::I32(ptr as i32)])
+            }
+            ("env", "print_arr_i64") => {
+                let ptr = match args.first() {
+                    Some(WVal::I32(ptr)) => *ptr as usize,
+                    _ => return Err("env.print_arr_i64 expects one i32".to_string()),
+                };
+                let text = format_i64_array(memory, ptr);
+                (self.on_str)(&text);
+                Ok(Vec::new())
+            }
+            ("env", "print_arr_str") => {
+                let ptr = match args.first() {
+                    Some(WVal::I32(ptr)) => *ptr as usize,
+                    _ => return Err("env.print_arr_str expects one i32".to_string()),
+                };
+                let text = format_str_array(memory, ptr);
+                (self.on_str)(&text);
+                Ok(Vec::new())
+            }
+            ("env", "print_record") => {
+                let (table, count, rec) = match (args.first(), args.get(1), args.get(2)) {
+                    (Some(WVal::I32(t)), Some(WVal::I32(c)), Some(WVal::I32(r))) => {
+                        (*t as usize, *c as usize, *r as usize)
+                    }
+                    _ => return Err("env.print_record expects three i32".to_string()),
+                };
+                let text = format_record(memory, table, count, rec);
+                (self.on_str)(&text);
+                Ok(Vec::new())
+            }
+            ("env", "print_arr_obj") => {
+                let (table, count, arr) = match (args.first(), args.get(1), args.get(2)) {
+                    (Some(WVal::I32(t)), Some(WVal::I32(c)), Some(WVal::I32(a))) => {
+                        (*t as usize, *c as usize, *a as usize)
+                    }
+                    _ => return Err("env.print_arr_obj expects three i32".to_string()),
+                };
+                let mut pieces: Vec<String> = Vec::new();
+                if arr + 4 <= memory.len() {
+                    let len = u32::from_le_bytes(memory[arr..arr + 4].try_into().unwrap()) as usize;
+                    for index in 0..len {
+                        let offset = arr + 4 + index * 8;
+                        if offset + 4 > memory.len() {
+                            break;
+                        }
+                        let rec = u32::from_le_bytes(memory[offset..offset + 4].try_into().unwrap())
+                            as usize;
+                        pieces.push(format_record(memory, table, count, rec));
+                    }
+                }
+                (self.on_str)(&format!("[{}]", pieces.join(",")));
+                Ok(Vec::new())
             }
             ("env", "arr_sort") => {
                 let ptr = match args.first() {

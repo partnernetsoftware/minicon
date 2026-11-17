@@ -97,6 +97,55 @@ const imports = {
       emit(new TextDecoder("utf-8").decode(bytes));
     },
     print_f64: (value) => { emit(formatFloat(value)); },
+    print_arr_i64: (ptr) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const count = view.getUint32(ptr, true);
+      const pieces = [];
+      for (let i = 0; i < count; i++) pieces.push(view.getBigInt64(ptr + 4 + i * 8, true).toString());
+      emit("[" + pieces.join(",") + "]");
+    },
+    print_arr_str: (ptr) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const decode = (p, l) => new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, p, l));
+      const count = view.getUint32(ptr, true);
+      const pieces = [];
+      for (let i = 0; i < count; i++) {
+        const data = view.getUint32(ptr + 4 + i * 8, true);
+        const size = view.getUint32(ptr + 8 + i * 8, true);
+        pieces.push('"' + decode(data, size) + '"');
+      }
+      emit("[" + pieces.join(",") + "]");
+    },
+    print_record: (table, count, rec) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const decode = (p, l) => new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, p, l));
+      const pieces = [];
+      for (let i = 0; i < count; i++) {
+        const block = table + view.getUint32(table + i * 4, true);
+        const size = view.getUint32(block, true);
+        const key = decode(block + 4, size);
+        pieces.push(JSON.stringify(key) + ":" + view.getBigInt64(rec + i * 8, true).toString());
+      }
+      emit("{" + pieces.join(",") + "}");
+    },
+    print_arr_obj: (table, count, arr) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const decode = (p, l) => new TextDecoder("utf-8").decode(new Uint8Array(instance.exports.memory.buffer, p, l));
+      const record = (rec) => {
+        const pieces = [];
+        for (let i = 0; i < count; i++) {
+          const block = table + view.getUint32(table + i * 4, true);
+          const size = view.getUint32(block, true);
+          const key = decode(block + 4, size);
+          pieces.push(JSON.stringify(key) + ":" + view.getBigInt64(rec + i * 8, true).toString());
+        }
+        return "{" + pieces.join(",") + "}";
+      };
+      const len = view.getUint32(arr, true);
+      const pieces = [];
+      for (let i = 0; i < len; i++) pieces.push(record(view.getUint32(arr + 4 + i * 8, true)));
+      emit("[" + pieces.join(",") + "]");
+    },
     fmod: (a, b) => a % b,
     int_to_str: (value) => writeStringBlock(value.toString()),
     bool_to_str: (value) => writeStringBlock(value ? "true" : "false"),
