@@ -624,6 +624,9 @@ const imports = {
     run: () => -1,
     capture: () => 0,
     which: () => 0,
+    exec_record: () => {
+      throw new Error("exec() is not available in the browser demo");
+    },
   },
   webgl: {
     create: (width, height) => { gl.width = Math.max(1, width); gl.height = Math.max(1, height); gl.pixels = new Uint8Array(gl.width * gl.height * 4); return 1; },

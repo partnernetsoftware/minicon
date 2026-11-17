@@ -187,7 +187,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 100 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 101 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -211,6 +211,22 @@ bx wasm target
 - **Record/array writes**: `r.a = v`, `r.a += v`, `xs[i] = v`, `xs[-1] = v` and
   `xs[i] += v` are supported with the same negative-index normalisation and
   bounds checks as reads (`+ - * %` for compound).
+- **`exec` / `sh` (VM shape)**: both return the VM's record
+  `{code, err, ms, ok, out, timeout}` in that key order (so printing it matches
+  the VM). `exec` runs the command without a shell by default (a string command
+  is split on whitespace, the VM's quoting rules are not reproduced yet) and
+  `sh` always goes through the platform shell. Supported options:
+  `cwd`, `stdin`, `timeout`, `shell`; other VM options (`max`, `stdout`,
+  `stderr`) are rejected explicitly. A missing program aborts with
+  `cannot run '<name>': program not found` (the VM adds its `file(line):`
+  prefix; documented divergence). `ms` is wall-clock time, so two runs of the
+  same program may print different values. The host import is
+  `bx.exec_record(mode, cmd_ptr, cmd_len, cwd_ptr, cwd_len, stdin_ptr, stdin_len,
+  timeout_ms, shell, 0) -> block`, where the block is
+  `[code i32][out_ptr][out_len][err_ptr][err_len][ms][flags]` and `flags & 1`
+  marks a timeout.
+- **String methods**: `trim`, `upper`, `lower`, `split`, `slice`, `replace`,
+  `repeat` and `index_of` work as methods as well as functions (VM parity).
 - **Typed record fields**: record fields may hold int, string, float or bool
   values. Each field still occupies one 8-byte slot (a string is `ptr, len`);
   `print`/record-array printing use the typed hosts

@@ -224,6 +224,12 @@ fn string_ops(lines, name) {
   } else if (choice == 9) {
     lines.push("push(" + name + ", \"z\")")
     lines.push("print(" + name + ")")
+  } else if (choice == 10) {
+    lines.push("print(" + name + "[0].upper())")
+    lines.push("print(" + name + "[0].repeat(2))")
+    lines.push("print(split(join(" + name + ", \",\"), \",\"))")
+    lines.push("print((" + name + "[0] + \"  \").trim())")
+    lines.push("print((\"xy\" + " + name + "[0]).slice(0, 3))")
   } else {
     lines.push("print(" + name + "[0] == \"s1\" ? \"one\" : \"other\")")
     lines.push("for s in " + name + " {")

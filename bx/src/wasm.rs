@@ -2380,6 +2380,142 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 let millis = self.started.elapsed().as_secs_f64() * 1000.0;
                 Ok(vec![WVal::F64(millis)])
             }
+            ("bx", "exec_record") => {
+                let read = |value: Option<&WVal>| match value {
+                    Some(WVal::I32(v)) => Some(*v as usize),
+                    _ => None,
+                };
+                let params: Vec<usize> = (0..10)
+                    .map(|index| read(args.get(index)).unwrap_or(0))
+                    .collect();
+                let (mode, cmd_ptr, cmd_len) = (params[0], params[1], params[2]);
+                let (cwd_ptr, cwd_len) = (params[3], params[4]);
+                let (stdin_ptr, stdin_len) = (params[5], params[6]);
+                let timeout_ms = params[7];
+                let shell = params[8] != 0;
+                let text_at = |ptr: usize, len: usize| -> String {
+                    memory
+                        .get(ptr..ptr.saturating_add(len))
+                        .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                        .unwrap_or_default()
+                };
+                let mut command = if mode == 1 {
+                    let mut argv: Vec<String> = Vec::new();
+                    if cmd_ptr + 4 <= memory.len() {
+                        let count =
+                            u32::from_le_bytes(memory[cmd_ptr..cmd_ptr + 4].try_into().unwrap())
+                                as usize;
+                        for index in 0..count {
+                            let slot = cmd_ptr + 4 + index * 8;
+                            if slot + 8 > memory.len() {
+                                break;
+                            }
+                            let ptr = u32::from_le_bytes(memory[slot..slot + 4].try_into().unwrap())
+                                as usize;
+                            let len =
+                                u32::from_le_bytes(memory[slot + 4..slot + 8].try_into().unwrap())
+                                    as usize;
+                            argv.push(text_at(ptr, len));
+                        }
+                    }
+                    let Some(program) = argv.first() else {
+                        return Err("exec() needs at least one argument".to_string());
+                    };
+                    let mut command = std::process::Command::new(program);
+                    command.args(&argv[1..]);
+                    command
+                } else {
+                    let line = text_at(cmd_ptr, cmd_len);
+                    if shell {
+                        shell_command(&line)
+                    } else {
+                        let mut words = line.split_whitespace();
+                        let Some(program) = words.next() else {
+                            return Err("exec() needs a command".to_string());
+                        };
+                        let mut command = std::process::Command::new(program);
+                        command.args(words);
+                        command
+                    }
+                };
+                if cwd_len > 0 {
+                    command.current_dir(text_at(cwd_ptr, cwd_len));
+                }
+                let wants_stdin = stdin_len > 0;
+                if wants_stdin {
+                    command.stdin(std::process::Stdio::piped());
+                }
+                command.stdout(std::process::Stdio::piped());
+                command.stderr(std::process::Stdio::piped());
+                let started = std::time::Instant::now();
+                let mut child = match command.spawn() {
+                    Ok(child) => child,
+                    Err(_) => {
+                        let program = match command.get_program().to_str() {
+                            Some(name) => name.to_string(),
+                            None => String::new(),
+                        };
+                        return Err(format!("cannot run '{}': program not found", program));
+                    }
+                };
+                if wants_stdin {
+                    if let Some(mut sink) = child.stdin.take() {
+                        let input = text_at(stdin_ptr, stdin_len);
+                        let _ = std::io::Write::write_all(&mut sink, input.as_bytes());
+                    }
+                }
+                let mut timed_out = false;
+                if timeout_ms > 0 {
+                    let deadline = std::time::Instant::now()
+                        + std::time::Duration::from_millis(timeout_ms as u64);
+                    loop {
+                        match child.try_wait() {
+                            Ok(Some(_)) => break,
+                            Ok(None) => {
+                                if std::time::Instant::now() >= deadline {
+                                    let _ = child.kill();
+                                    timed_out = true;
+                                    break;
+                                }
+                                std::thread::sleep(std::time::Duration::from_millis(5));
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                }
+                let output = child.wait_with_output().ok();
+                let elapsed = started.elapsed().as_millis() as u32;
+                let (code, out, err) = match output {
+                    Some(output) => (
+                        output.status.code().unwrap_or(-1),
+                        output.stdout,
+                        output.stderr,
+                    ),
+                    None => (-1, Vec::new(), Vec::new()),
+                };
+                let size = 28 + out.len() + err.len();
+                let start = self.next_proc as usize;
+                if start + size > memory.len() {
+                    return Err(format!(
+                        "exec output of {} bytes does not fit the result region",
+                        out.len() + err.len()
+                    ));
+                }
+                let out_ptr = start + 28;
+                let err_ptr = out_ptr + out.len();
+                memory[start..start + 4].copy_from_slice(&code.to_le_bytes());
+                memory[start + 4..start + 8].copy_from_slice(&(out_ptr as u32).to_le_bytes());
+                memory[start + 8..start + 12].copy_from_slice(&(out.len() as u32).to_le_bytes());
+                memory[start + 12..start + 16].copy_from_slice(&(err_ptr as u32).to_le_bytes());
+                memory[start + 16..start + 20].copy_from_slice(&(err.len() as u32).to_le_bytes());
+                memory[start + 20..start + 24].copy_from_slice(&elapsed.to_le_bytes());
+                memory[start + 24..start + 28]
+                    .copy_from_slice(&(u32::from(timed_out)).to_le_bytes());
+                memory[out_ptr..out_ptr + out.len()].copy_from_slice(&out);
+                memory[err_ptr..err_ptr + err.len()].copy_from_slice(&err);
+                self.next_proc = (start + size + 7) as u32 & !7;
+                Ok(vec![WVal::I32(start as i32)])
+            }
             ("bx", "run") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {
                     (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),

@@ -537,6 +537,15 @@ if (wasmRec.code == 0 && wasmRecRun.code == 0 && wasmRecRun.out.trim() == "30\n2
   failures.push("wasm records + in-module heap\n    build=" + wasmRec.code + " out=" + json(wasmRecRun.out) + " err=" + json(wasmRecRun.err))
 }
 let safeArtDir = replace(artDir, "\\", "/")
+write(artDir + "/wasm-exec.bxs", 'let r = sh("echo hi")\nprint(r.code)\nprint(r.ok)\nprint(r.timeout)\nprint(r.out.trim())\nprint(len(r.err))\nlet m = exec(["definitely-not-a-cmd-xyz"])\nprint(m.code)\n')
+let wasmExec = exec([BX, "build", "--wasm", artDir + "/wasm-exec.bxs", "-o", artDir + "/wasm-exec.wasm"])
+let wasmExecRun = exec([BX, "run", artDir + "/wasm-exec.wasm"])
+if (wasmExec.code == 0 && wasmExecRun.code == 1 && wasmExecRun.out.trim() == "0\ntrue\nfalse\nhi\n0" && wasmExecRun.err.contains("cannot run")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm exec/sh records\n    build=" + wasmExec.code + " run=" + wasmExecRun.code + " out=" + json(wasmExecRun.out) + " err=" + json(wasmExecRun.err))
+}
 write(artDir + "/wasm-typed-rec.bxs", 'let o = {a: 1, b: "x", c: 1.5, d: true}\nprint(o)\nprint(o.b)\no.b = "yy"\no.a = 2\nprint(o)\nlet arr = [{a: 1, b: "q"}, {a: 2, b: "r"}]\nprint(arr)\nprint(map(arr, fn(r) { return r.b }))\nprint(sort(arr, fn(x, y) { return x.a - y.a }))\n')
 let wasmTypedRec = exec([BX, "build", "--wasm", artDir + "/wasm-typed-rec.bxs", "-o", artDir + "/wasm-typed-rec.wasm"])
 let wasmTypedRecRun = exec([BX, "run", artDir + "/wasm-typed-rec.wasm"])
@@ -943,6 +952,15 @@ if (wasmAssign.code == 0 && wasmAssignRun.out == wasmAssignVm.out && wasmAssignR
 } else {
   casesFail += 1
   failures.push("wasm interpolation and assignments\n    wasm=" + json(wasmAssignRun.out) + " vm=" + json(wasmAssignVm.out) + " err=" + json(wasmAssignRun.err))
+}
+write(artDir + "/wasm-exec.bxs", 'let r = sh("echo hi")\nprint(r.code)\nprint(r.ok)\nprint(r.timeout)\nprint(r.out.trim())\nprint(len(r.err))\nlet m = exec(["definitely-not-a-cmd-xyz"])\nprint(m.code)\n')
+let wasmExec = exec([BX, "build", "--wasm", artDir + "/wasm-exec.bxs", "-o", artDir + "/wasm-exec.wasm"])
+let wasmExecRun = exec([BX, "run", artDir + "/wasm-exec.wasm"])
+if (wasmExec.code == 0 && wasmExecRun.code == 1 && wasmExecRun.out.trim() == "0\ntrue\nfalse\nhi\n0" && wasmExecRun.err.contains("cannot run")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm exec/sh records\n    build=" + wasmExec.code + " run=" + wasmExecRun.code + " out=" + json(wasmExecRun.out) + " err=" + json(wasmExecRun.err))
 }
 write(artDir + "/wasm-typed-rec.bxs", 'let o = {a: 1, b: "x", c: 1.5, d: true}\nprint(o)\nprint(o.b)\no.b = "yy"\no.a = 2\nprint(o)\nlet arr = [{a: 1, b: "q"}, {a: 2, b: "r"}]\nprint(arr)\nprint(map(arr, fn(r) { return r.b }))\nprint(sort(arr, fn(x, y) { return x.a - y.a }))\n')
 let wasmTypedRec = exec([BX, "build", "--wasm", artDir + "/wasm-typed-rec.bxs", "-o", artDir + "/wasm-typed-rec.wasm"])

@@ -167,6 +167,21 @@ fn field_kind(ty: Ty) -> Option<u8> {
     }
 }
 
+/// Keys and field kinds of the record `exec()`/`sh()` return.
+fn exec_result_keys() -> (Vec<String>, Vec<u8>) {
+    (
+        vec![
+            "code".to_string(),
+            "err".to_string(),
+            "ms".to_string(),
+            "ok".to_string(),
+            "out".to_string(),
+            "timeout".to_string(),
+        ],
+        vec![0, 1, 0, 3, 1, 3],
+    )
+}
+
 fn kind_ty(kind: u8) -> Ty {
     match kind {
         1 => Ty::Str,
@@ -347,6 +362,11 @@ impl Checker {
             .get(shape as usize)
             .map(|shape| shape.keys.clone())
             .ok_or_else(|| "unknown object shape".to_string())
+    }
+
+    fn exec_result_shape(&self) -> u32 {
+        let (keys, kinds) = exec_result_keys();
+        self.shape_id(&keys, &kinds)
     }
 
     fn shape_union(&self, left: u32, right: u32) -> Result<u32, String> {
@@ -573,6 +593,39 @@ impl Checker {
                 Ok(Ty::Obj(self.shape_id(&keys, &kinds)))
             }
             Expr::MethodCall(object, key, args, _) => {
+                let str_method = match key.as_str() {
+                    "trim" | "upper" | "lower" => Some((0usize, Ty::Str)),
+                    "repeat" => Some((1usize, Ty::Str)),
+                    "index_of" => Some((1usize, Ty::Int)),
+                    "split" => Some((1usize, Ty::ArrStr)),
+                    "slice" => Some((2usize, Ty::Str)),
+                    "replace" => Some((2usize, Ty::Str)),
+                    _ => None,
+                };
+                if let Some((argc, result)) = str_method {
+                    let base = self.infer(object)?;
+                    if base != Ty::Str && !(key == "index_of" && base == Ty::Arr) {
+                        return Err(format!("wasm target .{} works on strings only", key));
+                    }
+                    if base == Ty::Str && args.len() != argc {
+                        return Err(format!("wasm target .{} takes {} value(s)", key, argc));
+                    }
+                    if base == Ty::Str {
+                        for arg in args {
+                            let expected = match key.as_str() {
+                                "repeat" | "slice" => Ty::Int,
+                                _ => Ty::Str,
+                            };
+                            if self.infer(arg)? != expected {
+                                return Err(format!(
+                                    "wasm target .{} got the wrong argument type",
+                                    key
+                                ));
+                            }
+                        }
+                        return Ok(result);
+                    }
+                }
                 if matches!(key.as_str(), "contains" | "starts_with" | "ends_with") {
                     if args.len() != 1 {
                         return Err(format!("wasm target .{} takes one value", key));
@@ -654,8 +707,9 @@ impl Checker {
                 let ty = self.infer(object)?;
                 match ty {
                     Ty::Obj(shape) => {
-                        self.field_index(shape, key)?;
-                        Ok(Ty::Int)
+                        let index = self.field_index(shape, key)?;
+                        let kinds = self.shape_kinds(shape)?;
+                        Ok(kind_ty(kinds[index]))
                     }
                     other => Err(format!(
                         "wasm target can read fields of objects only, got {}",
@@ -1276,6 +1330,52 @@ impl Checker {
                             );
                         }
                         return Ok(Ty::Int);
+                    }
+                    if name == "exec" && (args.len() == 1 || args.len() == 2) {
+                        match self.infer(&args[0])? {
+                            Ty::Str | Ty::ArrStr => {}
+                            other => {
+                                return Err(format!(
+                                    "wasm target exec() takes a string or a string array, got {}",
+                                    ty_name(other)
+                                ))
+                            }
+                        }
+                        if let Some(opts) = args.get(1) {
+                            let Ty::Obj(shape) = self.infer(opts)? else {
+                                return Err(
+                                    "wasm target exec() options need an object literal".to_string()
+                                );
+                            };
+                            let keys = self.shape_keys(shape)?;
+                            let kinds = self.shape_kinds(shape)?;
+                            for (key, kind) in keys.iter().zip(kinds.iter()) {
+                                let ok = match key.as_str() {
+                                    "cwd" | "stdin" => *kind == 1,
+                                    "timeout" => *kind == 0,
+                                    "shell" => *kind == 3,
+                                    _ => {
+                                        return Err(format!(
+                                            "wasm target exec() does not support the '{}' option",
+                                            key
+                                        ))
+                                    }
+                                };
+                                if !ok {
+                                    return Err(format!(
+                                        "wasm target exec() option '{}' has the wrong type",
+                                        key
+                                    ));
+                                }
+                            }
+                        }
+                        return Ok(Ty::Obj(self.exec_result_shape()));
+                    }
+                    if name == "sh" && args.len() == 1 {
+                        if self.infer(&args[0])? != Ty::Str {
+                            return Err("wasm target sh(command) needs a string".to_string());
+                        }
+                        return Ok(Ty::Obj(self.exec_result_shape()));
                     }
                     if name == "push" && args.len() == 2 {
                         if !matches!(args[0], Expr::Ident(_)) {
@@ -2072,7 +2172,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 80;
+const IMPORT_COUNT: u32 = 81;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -2141,6 +2241,7 @@ const STR_TO_FLOAT: u32 = 76;
 const WHICH: u32 = 77;
 const PRINT_RECORD_TYPED: u32 = 78;
 const PRINT_ARR_OBJ_TYPED: u32 = 79;
+const EXEC_RECORD: u32 = 80;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -3802,6 +3903,154 @@ impl<'a> Emitter<'a> {
         Ok(())
     }
 
+    /// `exec(cmd[, opts])` / `sh(cmd)`: run through the host and build the
+    /// `{code, err, ms, ok, out, timeout}` record the VM returns.
+    fn emit_exec_record(&mut self, args: &[Expr], shell: bool) -> Result<Ty, String> {
+        let mode = match self.type_of(&args[0])? {
+            Ty::ArrStr => 1,
+            _ => 0,
+        };
+        let cmd_ptr = self.builder.add_local(ValType::I32);
+        let cmd_len = self.builder.add_local(ValType::I32);
+        match mode {
+            1 => {
+                self.emit_expr(&args[0])?;
+                self.builder.push(Instr::Local(0x21, cmd_ptr));
+                self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                self.builder.push(Instr::Local(0x21, cmd_len));
+            }
+            _ => {
+                self.emit_str(&args[0])?;
+                self.builder.push(Instr::Local(0x21, cmd_len));
+                self.builder.push(Instr::Local(0x21, cmd_ptr));
+            }
+        }
+        let cwd_ptr = self.builder.add_local(ValType::I32);
+        let cwd_len = self.builder.add_local(ValType::I32);
+        let stdin_ptr = self.builder.add_local(ValType::I32);
+        let stdin_len = self.builder.add_local(ValType::I32);
+        let timeout = self.builder.add_local(ValType::I64);
+        let shell_flag = self.builder.add_local(ValType::I32);
+        for slot in [cwd_ptr, cwd_len, stdin_ptr, stdin_len] {
+            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+            self.builder.push(Instr::Local(0x21, slot));
+        }
+        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+        self.builder.push(Instr::Local(0x21, timeout));
+        self.builder
+            .push(Instr::Const(0x41, WVal::I32(if shell { 1 } else { 0 })));
+        self.builder.push(Instr::Local(0x21, shell_flag));
+        if let Some(Expr::Object(fields)) = args.get(1) {
+            for (key, value) in fields {
+                match key.as_str() {
+                    "cwd" => {
+                        self.emit_str(value)?;
+                        self.builder.push(Instr::Local(0x21, cwd_len));
+                        self.builder.push(Instr::Local(0x21, cwd_ptr));
+                    }
+                    "stdin" => {
+                        self.emit_str(value)?;
+                        self.builder.push(Instr::Local(0x21, stdin_len));
+                        self.builder.push(Instr::Local(0x21, stdin_ptr));
+                    }
+                    "timeout" => {
+                        self.emit_expr(value)?;
+                        self.builder.push(Instr::Local(0x21, timeout));
+                    }
+                    "shell" => {
+                        self.emit_expr(value)?;
+                        self.builder.push(Instr::Local(0x21, shell_flag));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        self.builder.push(Instr::Const(0x41, WVal::I32(mode)));
+        self.builder.push(Instr::Local(0x20, cmd_ptr));
+        self.builder.push(Instr::Local(0x20, cmd_len));
+        self.builder.push(Instr::Local(0x20, cwd_ptr));
+        self.builder.push(Instr::Local(0x20, cwd_len));
+        self.builder.push(Instr::Local(0x20, stdin_ptr));
+        self.builder.push(Instr::Local(0x20, stdin_len));
+        self.builder.push(Instr::Local(0x20, timeout));
+        self.builder.push(Instr::Op(0xa7));
+        self.builder.push(Instr::Local(0x20, shell_flag));
+        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+        self.builder.push(Instr::Call(EXEC_RECORD));
+        let block = self.builder.add_local(ValType::I32);
+        self.builder.push(Instr::Local(0x21, block));
+        let _shape = self.checker.exec_result_shape();
+        self.emit_alloc_const(48);
+        let record = self.builder.add_local(ValType::I32);
+        self.builder.push(Instr::Local(0x21, record));
+        let err_ptr = self.builder.add_local(ValType::I32);
+        let err_len = self.builder.add_local(ValType::I32);
+        let out_ptr = self.builder.add_local(ValType::I32);
+        let out_len = self.builder.add_local(ValType::I32);
+        let ms = self.builder.add_local(ValType::I32);
+        let flags = self.builder.add_local(ValType::I32);
+        for (slot, offset) in [
+            (err_ptr, 12u32),
+            (err_len, 16),
+            (out_ptr, 4),
+            (out_len, 8),
+            (ms, 20),
+            (flags, 24),
+        ] {
+            self.builder.push(Instr::Local(0x20, block));
+            self.builder.push(Instr::Mem(0x28, 2, offset));
+            self.builder.push(Instr::Local(0x21, slot));
+        }
+        // code (int at 0)
+        self.builder.push(Instr::Local(0x20, record));
+        self.builder.push(Instr::Local(0x20, block));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Op(0xad));
+        self.builder.push(Instr::Mem(0x37, 3, 0));
+        // err (string at 8/12)
+        self.builder.push(Instr::Local(0x20, record));
+        self.builder.push(Instr::Local(0x20, err_ptr));
+        self.builder.push(Instr::Mem(0x36, 2, 8));
+        self.builder.push(Instr::Local(0x20, record));
+        self.builder.push(Instr::Local(0x20, err_len));
+        self.builder.push(Instr::Mem(0x36, 2, 12));
+        // ms (int at 16)
+        self.builder.push(Instr::Local(0x20, record));
+        self.builder.push(Instr::Local(0x20, ms));
+        self.builder.push(Instr::Op(0xad));
+        self.builder.push(Instr::Mem(0x37, 3, 16));
+        // ok = code == 0 && flags & 1 == 0 (bool at 24)
+        self.builder.push(Instr::Local(0x20, record));
+        self.builder.push(Instr::Local(0x20, block));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Op(0x45));
+        self.builder.push(Instr::Local(0x20, flags));
+        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+        self.builder.push(Instr::Op(0x71));
+        self.builder.push(Instr::Op(0x45));
+        self.builder.push(Instr::Op(0x71));
+        self.builder.push(Instr::Op(0xad));
+        self.builder.push(Instr::Mem(0x37, 3, 24));
+        // out (string at 32/36)
+        self.builder.push(Instr::Local(0x20, record));
+        self.builder.push(Instr::Local(0x20, out_ptr));
+        self.builder.push(Instr::Mem(0x36, 2, 32));
+        self.builder.push(Instr::Local(0x20, record));
+        self.builder.push(Instr::Local(0x20, out_len));
+        self.builder.push(Instr::Mem(0x36, 2, 36));
+        // timeout = flags & 1 != 0 (bool at 40)
+        self.builder.push(Instr::Local(0x20, record));
+        self.builder.push(Instr::Local(0x20, flags));
+        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+        self.builder.push(Instr::Op(0x71));
+        self.builder.push(Instr::Op(0x45));
+        self.builder.push(Instr::Op(0x45));
+        self.builder.push(Instr::Op(0xad));
+        self.builder.push(Instr::Mem(0x37, 3, 40));
+        self.builder.push(Instr::Local(0x20, record));
+        Ok(Ty::Obj(self.checker.exec_result_shape()))
+    }
+
     /// Emit the address of an assignable record field / array element.
     fn emit_target_address(&mut self, target: &Expr) -> Result<Ty, String> {
         match target {
@@ -4308,8 +4557,8 @@ impl<'a> Emitter<'a> {
                 let Ty::Obj(shape) = self.type_of(object)? else {
                     return Err("wasm target reads record fields only".to_string());
                 };
-                self.checker.field_index(shape, key)?;
-                Ok(Ty::Int)
+                let index = self.checker.field_index(shape, key)?;
+                Ok(kind_ty(self.checker.shape_kinds(shape)?[index]))
             }
             _ => self.checker.infer(expr),
         }
@@ -5533,6 +5782,55 @@ impl<'a> Emitter<'a> {
                 Ok(Ty::Obj(shape))
             }
             Expr::MethodCall(object, key, args, _) => {
+                match key.as_str() {
+                    "trim" | "upper" | "lower" if args.is_empty() => {
+                        self.emit_str(object)?;
+                        let import = match key.as_str() {
+                            "trim" => STR_TRIM,
+                            "upper" => STR_UPPER,
+                            _ => STR_LOWER,
+                        };
+                        self.builder.push(Instr::Call(import));
+                        self.push_block_as_pair();
+                        return Ok(Ty::Str);
+                    }
+                    "repeat" if args.len() == 1 => {
+                        self.emit_str(object)?;
+                        self.emit_expr(&args[0])?;
+                        self.builder.push(Instr::Call(STR_REPEAT));
+                        self.push_block_as_pair();
+                        return Ok(Ty::Str);
+                    }
+                    "split" if args.len() == 1 => {
+                        self.emit_str(object)?;
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Call(STR_SPLIT));
+                        return Ok(Ty::ArrStr);
+                    }
+                    "slice" if args.len() == 2 => {
+                        self.emit_str(object)?;
+                        self.emit_expr(&args[0])?;
+                        self.emit_expr(&args[1])?;
+                        self.builder.push(Instr::Call(STR_SLICE));
+                        self.push_block_as_pair();
+                        return Ok(Ty::Str);
+                    }
+                    "replace" if args.len() == 2 => {
+                        self.emit_str(object)?;
+                        self.emit_str(&args[0])?;
+                        self.emit_str(&args[1])?;
+                        self.builder.push(Instr::Call(STR_REPLACE));
+                        self.push_block_as_pair();
+                        return Ok(Ty::Str);
+                    }
+                    "index_of" if args.len() == 1 && self.type_of(object)? == Ty::Str => {
+                        self.emit_str(object)?;
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Call(STR_INDEX_OF));
+                        return Ok(Ty::Int);
+                    }
+                    _ => {}
+                }
                 if key == "index_of" && args.len() == 1 {
                     match self.type_of(object)? {
                         Ty::Arr => {
@@ -5870,6 +6168,12 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Call(FILE_EXISTS));
                         self.builder.push(Instr::Op(0xad));
                         return Ok(Ty::Int);
+                    }
+                    if name == "exec" && (args.len() == 1 || args.len() == 2) {
+                        return self.emit_exec_record(args, false);
+                    }
+                    if name == "sh" && args.len() == 1 {
+                        return self.emit_exec_record(args, true);
                     }
                     if name == "push" && args.len() == 2 {
                         let Expr::Ident(array) = &args[0] else {
@@ -8018,6 +8322,12 @@ impl<'a> Emitter<'a> {
                     return Ok(());
                 }
                 match name.as_str() {
+                    "exec" | "sh" => {
+                        let shell = name == "sh";
+                        self.emit_exec_record(args, shell)?;
+                        self.builder.push(Instr::Op(0x1a));
+                        return Ok(());
+                    }
                     "push" => {
                         let Expr::Ident(array) = &args[0] else {
                             return Err(
@@ -8645,7 +8955,6 @@ impl InferState<'_> {
         (shapes.len() - 1) as u32
     }
 
-
     fn field_ty(&self, shape: u32, key: &str) -> Result<Ty, String> {
         let shapes = self.shapes.borrow();
         let shape = shapes
@@ -8785,6 +9094,13 @@ impl<'a> InferState<'a> {
                 })
             }
             Expr::Call(callee, args, _) => {
+                if let Expr::Ident(name) = &**callee {
+                    if matches!(name.as_str(), "exec" | "sh") {
+                        self.soft(&args[0], locals)?;
+                        let (keys, kinds) = exec_result_keys();
+                        return Some(Ty::Obj(self.shape_id(&keys, &kinds)));
+                    }
+                }
                 if let Some(Ty::Func(id)) = self.soft(callee, locals) {
                     for arg in args {
                         self.soft(arg, locals)?;
@@ -8862,6 +9178,10 @@ impl<'a> InferState<'a> {
                 match key.as_str() {
                     "len" => Some(Ty::Int),
                     "contains" | "starts_with" | "ends_with" => Some(Ty::Bool),
+                    "trim" | "upper" | "lower" | "slice" | "replace" => Some(Ty::Str),
+                    "split" => Some(Ty::ArrStr),
+                    "index_of" => Some(Ty::Int),
+                    "repeat" => Some(Ty::Str),
                     _ => None,
                 }
             }
@@ -9374,7 +9694,16 @@ impl<'a> CaptureWalker<'a> {
                 .get(&(expr as *const Expr as usize))
                 .map(|id| Ty::Func(*id))
                 .unwrap_or(Ty::Int),
-            Expr::Call(callee, args, _) => self.call_result_ty(callee, args),
+            Expr::Call(callee, args, _) => {
+                if let Expr::Ident(name) = &**callee {
+                    if matches!(name.as_str(), "exec" | "sh") {
+                        let _ = args;
+                        let (keys, kinds) = exec_result_keys();
+                        return Ty::Obj(self.shape_id(&keys, &kinds));
+                    }
+                }
+                self.call_result_ty(callee, args)
+            }
         }
     }
 
@@ -10130,6 +10459,21 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
         vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
         vec![],
     );
+    let exec_record_ty = builder.add_type(
+        vec![
+            ValType::I32,
+            ValType::I32,
+            ValType::I32,
+            ValType::I32,
+            ValType::I32,
+            ValType::I32,
+            ValType::I32,
+            ValType::I32,
+            ValType::I32,
+            ValType::I32,
+        ],
+        vec![ValType::I32],
+    );
     let exit_ty = builder.add_type(vec![ValType::I32], vec![]);
     let error_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![]);
     let arr_sum_f_ty = builder.add_type(vec![ValType::I32], vec![ValType::F64]);
@@ -10262,6 +10606,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("bx", "which", which_ty);
     builder.import_func("env", "print_record_typed", print_record_typed_ty);
     builder.import_func("env", "print_arr_obj_typed", print_arr_obj_typed_ty);
+    builder.import_func("bx", "exec_record", exec_record_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -11192,6 +11537,41 @@ mod tests {
                 "array".to_string(),
                 "19.25".to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn exec_and_sh_return_vm_shaped_records() {
+        let bytes = compile_to_wasm(
+            "let r = sh(\"echo hi\")\nprint(r.code)\nprint(r.ok)\nprint(r.timeout)\nprint(r.out.trim())\nprint(len(r.err))",
+        )
+        .unwrap();
+        let printed = Arc::new(Mutex::new(Vec::new()));
+        let numbers = Arc::new(Mutex::new(Vec::new()));
+        let text_sink = printed.clone();
+        let number_sink = numbers.clone();
+        execute(
+            &bytes,
+            &[],
+            0,
+            0,
+            move |value| number_sink.lock().expect("lock").push(value),
+            move |text| text_sink.lock().expect("lock").push(text.to_string()),
+        )
+        .expect("execute");
+        assert_eq!(*numbers.lock().expect("lock"), vec![0, 0]);
+        assert_eq!(
+            *printed.lock().expect("lock"),
+            vec!["true".to_string(), "false".to_string(), "hi".to_string()]
+        );
+
+        let bytes = compile_to_wasm("exec([\"definitely-not-a-cmd-xyz\"])").unwrap();
+        let error = execute(&bytes, &[], 0, 0, |_value| {}, |_text| {})
+            .expect_err("missing program must abort");
+        assert!(
+            error.contains("cannot run 'definitely-not-a-cmd-xyz'"),
+            "got {}",
+            error
         );
     }
 
