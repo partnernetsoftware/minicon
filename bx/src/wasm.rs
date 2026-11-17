@@ -672,6 +672,26 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> PrintHost<'a, F, G> {
     }
 }
 /// Run one command line through the platform shell, mirroring bx `sh`.
+/// Store a `[status][len][data]` block for the soft file imports: status 0 is
+/// success, 1 carries an error message in `data`.
+fn store_soft_block(
+    memory: &mut [u8],
+    next_file: &mut u32,
+    status: u32,
+    data: &[u8],
+) -> Result<i32, String> {
+    let size = 8 + data.len();
+    let start = *next_file as usize;
+    if start + size > memory.len() {
+        return Err("soft file result does not fit the file region".to_string());
+    }
+    memory[start..start + 4].copy_from_slice(&status.to_le_bytes());
+    memory[start + 4..start + 8].copy_from_slice(&(data.len() as u32).to_le_bytes());
+    memory[start + 8..start + size].copy_from_slice(data);
+    *next_file = (start + size + 7) as u32 & !7;
+    Ok(start as i32)
+}
+
 /// Soft (`attempt`-visible) exec failure: return a result block whose `flags`
 /// bit 1 marks a spawn error, with the message in the `err` fields.
 fn exec_error_block(
@@ -2637,6 +2657,65 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 memory[start + 4..start + size].copy_from_slice(&bytes);
                 self.next_file = (start + size + 7) as u32 & !7;
                 Ok(vec![WVal::I32(start as i32)])
+            }
+            ("bx", "read_file_soft") => {
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("bx.read_file_soft expects (i32 ptr, i32 len)".to_string()),
+                };
+                let path = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .ok_or_else(|| "bx.read_file_soft path is outside memory".to_string())?;
+                let result = if path == "-" {
+                    let mut buffer = Vec::new();
+                    match std::io::Read::read_to_end(&mut std::io::stdin(), &mut buffer) {
+                        Ok(_) => Ok(buffer),
+                        Err(error) => Err(format!("cannot read stdin: {}", error)),
+                    }
+                } else {
+                    std::fs::read(&path)
+                        .map_err(|error| format!("cannot read '{}': {}", path, error))
+                };
+                let start = match result {
+                    Ok(bytes) => store_soft_block(memory, &mut self.next_file, 0, &bytes)?,
+                    Err(message) => {
+                        store_soft_block(memory, &mut self.next_file, 1, message.as_bytes())?
+                    }
+                };
+                Ok(vec![WVal::I32(start)])
+            }
+            ("bx", "write_file_soft") => {
+                let read = |value: Option<&WVal>| match value {
+                    Some(WVal::I32(ptr)) => Some(*ptr as usize),
+                    _ => None,
+                };
+                let (pp, pl, dp, dl) = match (
+                    read(args.first()),
+                    read(args.get(1)),
+                    read(args.get(2)),
+                    read(args.get(3)),
+                ) {
+                    (Some(pp), Some(pl), Some(dp), Some(dl)) => (pp, pl, dp, dl),
+                    _ => return Err("bx.write_file_soft argument mismatch".to_string()),
+                };
+                let path = memory
+                    .get(pp..pp.saturating_add(pl))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .ok_or_else(|| "bx.write_file_soft path is outside memory".to_string())?;
+                let data = memory
+                    .get(dp..dp.saturating_add(dl))
+                    .ok_or_else(|| "bx.write_file_soft data is outside memory".to_string())?;
+                let start = match std::fs::write(&path, data) {
+                    Ok(()) => store_soft_block(memory, &mut self.next_file, 0, &[])?,
+                    Err(error) => store_soft_block(
+                        memory,
+                        &mut self.next_file,
+                        1,
+                        format!("cannot write '{}': {}", path, error).as_bytes(),
+                    )?,
+                };
+                Ok(vec![WVal::I32(start)])
             }
             ("bx", "write_file") => {
                 let read = |value: Option<&WVal>| match value {

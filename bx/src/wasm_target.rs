@@ -2297,7 +2297,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 82;
+const IMPORT_COUNT: u32 = 84;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -2368,6 +2368,8 @@ const PRINT_RECORD_TYPED: u32 = 78;
 const PRINT_ARR_OBJ_TYPED: u32 = 79;
 const EXEC_RECORD: u32 = 80;
 const EXEC_RECORD_SOFT: u32 = 81;
+const READ_FILE_SOFT: u32 = 82;
+const WRITE_FILE_SOFT: u32 = 83;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -4729,6 +4731,30 @@ impl<'a> Emitter<'a> {
         Ok(Ty::Obj(shape))
     }
 
+    /// `[status][len][data]` block from the soft file imports: branch to the
+    /// active attempt with the message when status is non-zero.
+    fn emit_soft_io_check(&mut self, block: u32) {
+        self.builder.push(Instr::Local(0x20, block));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Block {
+            opcode: 0x04,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x04);
+        self.builder.push(Instr::Local(0x20, block));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, block));
+        self.builder.push(Instr::Mem(0x28, 2, 4));
+        if let Some(ctx) = self.attempts.last().copied() {
+            self.emit_attempt_error_pair(ctx.record);
+        }
+        self.emit_attempt_jump();
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+    }
     /// Emit the address of an assignable record field / array element.
     fn emit_target_address(&mut self, target: &Expr) -> Result<Ty, String> {
         match target {
@@ -7055,6 +7081,18 @@ impl<'a> Emitter<'a> {
                         return Ok(Ty::Str);
                     }
                     if name == "read_file" && args.len() == 1 {
+                        if !self.attempts.is_empty() {
+                            self.emit_str(&args[0])?;
+                            self.builder.push(Instr::Call(READ_FILE_SOFT));
+                            self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
+                            self.emit_soft_io_check(self.temp(ARG_TMP));
+                            self.builder.push(Instr::Local(0x20, self.temp(ARG_TMP)));
+                            self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                            self.builder.push(Instr::Op(0x6a));
+                            self.builder.push(Instr::Local(0x20, self.temp(ARG_TMP)));
+                            self.builder.push(Instr::Mem(0x28, 2, 4));
+                            return Ok(Ty::Str);
+                        }
                         self.emit_str(&args[0])?;
                         self.builder.push(Instr::Call(4));
                         self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
@@ -7066,6 +7104,18 @@ impl<'a> Emitter<'a> {
                         return Ok(Ty::Str);
                     }
                     if name == "read" && args.len() == 1 {
+                        if !self.attempts.is_empty() {
+                            self.emit_str(&args[0])?;
+                            self.builder.push(Instr::Call(READ_FILE_SOFT));
+                            self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
+                            self.emit_soft_io_check(self.temp(ARG_TMP));
+                            self.builder.push(Instr::Local(0x20, self.temp(ARG_TMP)));
+                            self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                            self.builder.push(Instr::Op(0x6a));
+                            self.builder.push(Instr::Local(0x20, self.temp(ARG_TMP)));
+                            self.builder.push(Instr::Mem(0x28, 2, 4));
+                            return Ok(Ty::Str);
+                        }
                         self.emit_str(&args[0])?;
                         self.builder.push(Instr::Call(4));
                         self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
@@ -7077,6 +7127,16 @@ impl<'a> Emitter<'a> {
                         return Ok(Ty::Str);
                     }
                     if name == "write" && args.len() == 2 {
+                        if !self.attempts.is_empty() {
+                            self.emit_str(&args[0])?;
+                            self.emit_str(&args[1])?;
+                            self.builder.push(Instr::Call(WRITE_FILE_SOFT));
+                            self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
+                            self.emit_soft_io_check(self.temp(ARG_TMP));
+                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                            self.builder.push(Instr::Op(0xac));
+                            return Ok(Ty::Int);
+                        }
                         self.emit_str(&args[0])?;
                         self.emit_str(&args[1])?;
                         self.builder.push(Instr::Call(5));
@@ -7095,6 +7155,16 @@ impl<'a> Emitter<'a> {
                         return Ok(Ty::Str);
                     }
                     if name == "write_file" && args.len() == 2 {
+                        if !self.attempts.is_empty() {
+                            self.emit_str(&args[0])?;
+                            self.emit_str(&args[1])?;
+                            self.builder.push(Instr::Call(WRITE_FILE_SOFT));
+                            self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
+                            self.emit_soft_io_check(self.temp(ARG_TMP));
+                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                            self.builder.push(Instr::Op(0xac));
+                            return Ok(Ty::Int);
+                        }
                         self.emit_str(&args[0])?;
                         self.emit_str(&args[1])?;
                         self.builder.push(Instr::Call(5));
@@ -11421,6 +11491,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "print_arr_obj_typed", print_arr_obj_typed_ty);
     builder.import_func("bx", "exec_record", exec_record_ty);
     builder.import_func("bx", "exec_record_soft", exec_record_ty);
+    builder.import_func("bx", "read_file_soft", read_file_ty);
+    builder.import_func("bx", "write_file_soft", write_file_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -12408,6 +12480,24 @@ mod tests {
         assert_eq!(
             strings,
             vec!["false".to_string(), "true".to_string(), "true".to_string()]
+        );
+    }
+
+    #[test]
+    fn attempt_catches_file_io_failures_and_matches_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let r = attempt(fn() { return read(\"definitely-missing-file-xyz.txt\") })\nprint(r.ok)\nprint(len(r.error) > 0)\nlet w = attempt(fn() { return write(\"Z:/definitely/missing/dir/x.txt\", \"x\") })\nprint(w.ok)\nprint(len(w.error) > 0)",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec![
+                "false".to_string(),
+                "true".to_string(),
+                "false".to_string(),
+                "true".to_string()
+            ]
         );
     }
 

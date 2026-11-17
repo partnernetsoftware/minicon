@@ -176,8 +176,11 @@ bx wasm target
   the `{error, ok, value}` record and branch to the block end instead of
   trapping. Inside `attempt`, `exec`/`sh` use a soft host import
   (`bx.exec_record_soft`) that reports spawn failures ("cannot run ...") in the
-  result block instead of trapping, so those become `ok: false` like the VM;
-  file IO and other host-side traps still abort.
+  result block instead of trapping, so those become `ok: false` like the VM.
+  `read`/`write` do the same through `bx.read_file_soft`/`bx.write_file_soft`
+  (`[status][len][data]` blocks): missing files and write failures become
+  attempt errors, while the direct (non-attempt) paths keep their existing
+  behaviour (fatal read error, `-1` write). Other host-side traps still abort.
   Divergences from the VM: `error` is `""` on success where the VM has `null`;
   `value` is `0` for callbacks without a return value where the VM has `null`;
   messages omit the VM's `file(line) in <lambda>()` prefix; out-of-range reads
@@ -217,7 +220,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 108 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 109 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of

@@ -621,6 +621,8 @@ const imports = {
     },
     read_file: () => 0,
     write_file: () => -1,
+    read_file_soft: () => 0,
+    write_file_soft: () => 0,
     run: () => -1,
     capture: () => 0,
     which: () => 0,
