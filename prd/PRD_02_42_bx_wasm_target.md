@@ -228,7 +228,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 120 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 121 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -445,6 +445,10 @@ bx wasm target
   passed to functions. Object lists nested inside other array literals keep the
   array pointer in a dedicated local because each record literal allocates
   storage.
+- **String predicates**: `starts_with(text, prefix)`, `ends_with(text, suffix)`
+  and `contains(text, needle)` work in function form as well as method form
+  (`"abc".starts_with("ab")`), all through the `env.str_test` host import;
+  `contains` keeps its array meanings as well.
 - **Container stringification**: `str(value)` and `json(value)` produce the VM's
   compact JSON for int/string/float/record/nested/text-row arrays and records,
   and `json("a")` quotes/escapes strings like the VM (`json(1)` is `"1"`).

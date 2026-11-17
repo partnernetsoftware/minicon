@@ -577,6 +577,16 @@ if (wasmAttempt.code == 0 && wasmAttemptRun.out == wasmAttemptVm.out && wasmAtte
   casesFail += 1
   failures.push("wasm attempt()\n    wasm=" + json(wasmAttemptRun.out) + " vm=" + json(wasmAttemptVm.out) + " err=" + json(wasmAttemptRun.err))
 }
+write(artDir + "/wasm-strpred.bxs", 'print(starts_with("hello", "he"))\nprint(ends_with("hello", "lo"))\nprint(contains("hello", "ell"))\nprint(contains("hello", "z"))\nprint("hello".starts_with("he"))\n')
+let wasmStrPred = exec([BX, "build", "--wasm", artDir + "/wasm-strpred.bxs", "-o", artDir + "/wasm-strpred.wasm"])
+let wasmStrPredRun = exec([BX, "run", artDir + "/wasm-strpred.wasm"])
+let wasmStrPredVm = exec([BX, "run", artDir + "/wasm-strpred.bxs"])
+if (wasmStrPred.code == 0 && wasmStrPredRun.out == wasmStrPredVm.out && wasmStrPredRun.out.trim() == "true\ntrue\ntrue\nfalse\ntrue") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm string predicates\n    wasm=" + json(wasmStrPredRun.out) + " vm=" + json(wasmStrPredVm.out) + " err=" + json(wasmStrPredRun.err))
+}
 write(artDir + "/wasm-grow.bxs", 'let failures = []\nfailures.push("one")\nfailures.push("two")\nprint(len(failures))\nprint(failures[0])\nprint(failures)\nlet nums = []\npush(nums, 1)\npush(nums, 2)\nprint(nums)\n')
 let wasmGrow = exec([BX, "build", "--wasm", artDir + "/wasm-grow.bxs", "-o", artDir + "/wasm-grow.wasm"])
 let wasmGrowRun = exec([BX, "run", artDir + "/wasm-grow.wasm"])
@@ -1168,6 +1178,16 @@ if (wasmAttempt.code == 0 && wasmAttemptRun.out == wasmAttemptVm.out && wasmAtte
 } else {
   casesFail += 1
   failures.push("wasm attempt()\n    wasm=" + json(wasmAttemptRun.out) + " vm=" + json(wasmAttemptVm.out) + " err=" + json(wasmAttemptRun.err))
+}
+write(artDir + "/wasm-strpred.bxs", 'print(starts_with("hello", "he"))\nprint(ends_with("hello", "lo"))\nprint(contains("hello", "ell"))\nprint(contains("hello", "z"))\nprint("hello".starts_with("he"))\n')
+let wasmStrPred = exec([BX, "build", "--wasm", artDir + "/wasm-strpred.bxs", "-o", artDir + "/wasm-strpred.wasm"])
+let wasmStrPredRun = exec([BX, "run", artDir + "/wasm-strpred.wasm"])
+let wasmStrPredVm = exec([BX, "run", artDir + "/wasm-strpred.bxs"])
+if (wasmStrPred.code == 0 && wasmStrPredRun.out == wasmStrPredVm.out && wasmStrPredRun.out.trim() == "true\ntrue\ntrue\nfalse\ntrue") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm string predicates\n    wasm=" + json(wasmStrPredRun.out) + " vm=" + json(wasmStrPredVm.out) + " err=" + json(wasmStrPredRun.err))
 }
 write(artDir + "/wasm-grow.bxs", 'let failures = []\nfailures.push("one")\nfailures.push("two")\nprint(len(failures))\nprint(failures[0])\nprint(failures)\nlet nums = []\npush(nums, 1)\npush(nums, 2)\nprint(nums)\n')
 let wasmGrow = exec([BX, "build", "--wasm", artDir + "/wasm-grow.bxs", "-o", artDir + "/wasm-grow.wasm"])

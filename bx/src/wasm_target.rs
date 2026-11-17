@@ -1285,6 +1285,7 @@ impl Checker {
                         }
                         return Ok(Ty::Int);
                     }
+
                     if name == "float" && args.len() == 1 {
                         if !matches!(self.infer(&args[0])?, Ty::Int | Ty::Float | Ty::Str) {
                             return Err(
@@ -1805,6 +1806,14 @@ impl Checker {
                     if name == "contains" && args.len() == 2 {
                         let arr_ty = self.infer(&args[0])?;
                         match arr_ty {
+                            Ty::Str => {
+                                if self.infer(&args[1])? != Ty::Str {
+                                    return Err(
+                                        "wasm target contains(string, ...) takes a string"
+                                            .to_string(),
+                                    );
+                                }
+                            }
                             Ty::Arr => {
                                 self.infer(&args[1])?;
                             }
@@ -1869,6 +1878,17 @@ impl Checker {
                             return Err("wasm target mkdir(path) takes a string".to_string());
                         }
                         return Ok(Ty::Int);
+                    }
+                    if matches!(name.as_str(), "starts_with" | "ends_with") && args.len() == 2 {
+                        for arg in args {
+                            if self.infer(arg)? != Ty::Str {
+                                return Err(format!(
+                                    "wasm target {}(text, ...) needs strings",
+                                    name
+                                ));
+                            }
+                        }
+                        return Ok(Ty::Bool);
                     }
                     if name == "argc" && args.is_empty() {
                         return Ok(Ty::Int);
@@ -5789,7 +5809,7 @@ impl<'a> Emitter<'a> {
                         "arg" | "read_file" | "basename" | "dirname" => Some(Ty::Str),
                         "map_new" => Some(Ty::Map),
                         "map_get" | "map_has" | "map_len" | "file_exists" => Some(Ty::Int),
-                        "exists" => Some(Ty::Bool),
+                        "exists" | "starts_with" | "ends_with" | "contains" => Some(Ty::Bool),
                         "now" | "mkdir" | "eprint" => Some(Ty::Int),
                         "cwd" | "env" => Some(Ty::Str),
                         "performance_now" => Some(Ty::Float),
@@ -7927,6 +7947,13 @@ impl<'a> Emitter<'a> {
                     }
                     if name == "contains" && args.len() == 2 {
                         match self.type_of(&args[0])? {
+                            Ty::Str => {
+                                self.emit_str(&args[0])?;
+                                self.emit_str(&args[1])?;
+                                self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                                self.builder.push(Instr::Call(STR_TEST));
+                                return Ok(Ty::Bool);
+                            }
                             Ty::Arr => {
                                 self.emit_expr(&args[0])?;
                                 self.emit_expr(&args[1])?;
@@ -7963,6 +7990,19 @@ impl<'a> Emitter<'a> {
                         }
                         self.builder.push(Instr::Const(0x42, WVal::I64(0)));
                         self.builder.push(Instr::Op(0x59));
+                        return Ok(Ty::Bool);
+                    }
+
+                    if matches!(name.as_str(), "starts_with" | "ends_with") && args.len() == 2 {
+                        if self.type_of(&args[0])? != Ty::Str || self.type_of(&args[1])? != Ty::Str
+                        {
+                            return Err(format!("wasm target {}(text, ...) needs strings", name));
+                        }
+                        let mode = if name == "starts_with" { 1 } else { 2 };
+                        self.emit_str(&args[0])?;
+                        self.emit_str(&args[1])?;
+                        self.builder.push(Instr::Const(0x41, WVal::I32(mode)));
+                        self.builder.push(Instr::Call(STR_TEST));
                         return Ok(Ty::Bool);
                     }
                     if name == "float" && args.len() == 1 {
@@ -10701,7 +10741,9 @@ impl<'a> InferState<'a> {
                     | "env" | "join" | "slice" | "trim" | "upper" | "lower" | "replace"
                     | "basename" | "dirname" | "repeat" => Some(Ty::Str),
                     "float" | "sqrt" => Some(Ty::Float),
-                    "exists" | "file_exists" | "has" => Some(Ty::Bool),
+                    "exists" | "file_exists" | "has" | "contains" | "starts_with" | "ends_with" => {
+                        Some(Ty::Bool)
+                    }
                     "split" | "keys" => Some(Ty::ArrStr),
                     "range" | "values" => Some(Ty::Arr),
                     "reverse" | "sort" => args.first().and_then(|arg| self.soft(arg, locals)),
@@ -11338,7 +11380,9 @@ impl<'a> CaptureWalker<'a> {
                 "sqrt" => Ty::Float,
                 "type" | "arg" | "read_file" | "capture" | "cwd" | "env" | "join" | "basename"
                 | "dirname" => Ty::Str,
-                "exists" | "file_exists" | "has" => Ty::Bool,
+                "exists" | "file_exists" | "has" | "contains" | "starts_with" | "ends_with" => {
+                    Ty::Bool
+                }
                 "split" | "keys" => Ty::ArrStr,
                 "range" | "values" => Ty::Arr,
                 "reverse" | "sort" | "slice" => {
@@ -13569,6 +13613,31 @@ mod tests {
                 "[\"one\",\"two\"]".to_string(),
                 "[1,2]".to_string(),
                 "[1.5]".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn string_predicates_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "print(starts_with(\"hello\", \"he\"))\nprint(starts_with(\"hello\", \"lo\"))\nprint(ends_with(\"hello\", \"lo\"))\nprint(ends_with(\"hello\", \"he\"))\nprint(contains(\"hello\", \"ell\"))\nprint(contains(\"hello\", \"z\"))\nprint(\"hello\".starts_with(\"he\"))\nprint(\"hello\".ends_with(\"lo\"))\nprint(\"hello\".contains(\"ell\"))\nprint(contains([1, 2], 2))\nprint(starts_with(\"\", \"\"))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec![
+                "true".to_string(),
+                "false".to_string(),
+                "true".to_string(),
+                "false".to_string(),
+                "true".to_string(),
+                "false".to_string(),
+                "true".to_string(),
+                "true".to_string(),
+                "true".to_string(),
+                "true".to_string(),
+                "true".to_string(),
             ]
         );
     }
