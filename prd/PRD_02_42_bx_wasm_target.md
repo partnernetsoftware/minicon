@@ -228,7 +228,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 110 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 112 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -481,6 +481,12 @@ bx wasm target
   emit the inverse comparison opcode, dropping the trailing `eqz` on every
   iteration. Measured with the absorbed core (wall clock incl. process start,
   `BX_BENCH_RUNS=9`): fib ≈1.73×, loop ≈0.72×, calls ≈1.55× of the VM's time.
+- **Robust rejection**: malformed programs are rejected with a message, never a
+  compiler panic. Two unit tests cover 30 hand-written wrong-type/unknown-call
+  templates and 300 seeded random expression programs with `catch_unwind`;
+  unknown or wrong-arity calls report
+  `wasm target does not support <name>() with <n> argument(s)` instead of a
+  generic "call" message.
 - **Explicit IO/map failures**: `read_file(missing)` aborts with a `cannot read`
   message (same shape as the VM's `read`), `write_file` returns `0`/`-1`
   (sign-extended via `i64.extend_i32_s`, now decoded as 0xac), and maps reject

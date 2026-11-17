@@ -1603,10 +1603,17 @@ impl Checker {
                         "wasm target function literal returns no value".to_string()
                     });
                 }
-                Err(format!(
-                    "wasm target does not support this call yet: {}",
-                    expr_kind(expr)
-                ))
+                match &**callee {
+                    Expr::Ident(name) => Err(format!(
+                        "wasm target does not support {}() with {} argument(s)",
+                        name,
+                        args.len()
+                    )),
+                    _ => Err(format!(
+                        "wasm target does not support this call yet: {}",
+                        expr_kind(expr)
+                    )),
+                }
             }
             other => Err(format!(
                 "wasm target does not support this expression yet: {}",
@@ -8928,7 +8935,14 @@ impl<'a> Emitter<'a> {
                         }
                     }
                 }
-                Err("wasm target does not support this call yet".to_string())
+                match &**callee {
+                    Expr::Ident(name) => Err(format!(
+                        "wasm target does not support {}() with {} argument(s)",
+                        name,
+                        args.len()
+                    )),
+                    _ => Err("wasm target does not support this call yet".to_string()),
+                }
             }
             other => Err(format!(
                 "wasm target does not support this expression yet: {}",
@@ -12574,6 +12588,92 @@ mod tests {
         assert_eq!(
             strings,
             vec!["true".to_string(), "false".to_string(), "true".to_string()]
+        );
+    }
+
+    #[test]
+    fn malformed_programs_fail_without_panicking() {
+        let templates = [
+            "print(1 + \"x\")",
+            "print(\"x\" - 1)",
+            "print(true * false)",
+            "print([1, \"x\"])",
+            "print({a: 1, b: \"x\"}.a + 1)",
+            "print(1 .a)",
+            "print([1][true])",
+            "print(len(1))",
+            "print(unknown())",
+            "print(map([1], fn(x) { return x.a }))",
+            "print(sort([1], fn(x, y) { return \"a\" }))",
+            "print(sort({a: 1}, fn(x, y) { return 0 }))",
+            "print(attempt(1))",
+            "print(attempt(fn(x) { return x }))",
+            "let f = 1 { f() }",
+            "if (1) { print(1) }",
+            "while (\"x\") { }",
+            "print(exec(1))",
+            "print(read(1))",
+            "print({a: 1} + 1)",
+            "print([1] == 1)",
+            "for k in 1 { print(k) }",
+            "print(1[0])",
+            "print(true && 1)",
+            "print(1 ? 2 : 3)",
+            "fn f(a, b) { return a } print(f(1))",
+            "print(str())",
+            "print(int([]))",
+            "print({}.a)",
+            "print(mkdir(1))",
+        ];
+        let mut panics: Vec<String> = Vec::new();
+        for template in templates {
+            let outcome = std::panic::catch_unwind(|| compile_to_wasm(template));
+            if outcome.is_err() {
+                panics.push(template.to_string());
+            }
+        }
+        assert!(panics.is_empty(), "compiler panicked on: {:?}", panics);
+    }
+
+    #[test]
+    fn random_malformed_expressions_do_not_panic() {
+        let atoms = [
+            "0", "1", "-3", "2.5", "true", "false", "\"s\"", "\"\"", "[1, 2]", "[\"a\"]", "[]",
+            "{a: 1}", "{}", "null", "x", "len", "print", "[]", "[[1]]",
+        ];
+        let ops = ["+", "-", "*", "/", "%", "==", "!=", "<", "&&", "||"];
+        let calls = [
+            "len", "str", "int", "float", "type", "abs", "sqrt", "sum", "sort", "map", "reduce",
+            "get", "has", "keys", "values", "attempt", "exec", "read", "mkdir", "unknown",
+        ];
+        let mut state: u64 = 0x1234_5678_9abc_def0;
+        let mut next = |limit: usize| {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((state >> 33) as usize) % limit
+        };
+        let mut panics: Vec<String> = Vec::new();
+        for _ in 0..300 {
+            let left = atoms[next(atoms.len())];
+            let right = atoms[next(atoms.len())];
+            let op = ops[next(ops.len())];
+            let call = calls[next(calls.len())];
+            let depth = next(3);
+            let program = match depth {
+                0 => format!("print({} {} {})", left, op, right),
+                1 => format!("print({}({}))", call, left),
+                _ => format!("let v = {} {}\nprint({}(v, {}))", left, op, right, call),
+            };
+            let outcome = std::panic::catch_unwind(|| compile_to_wasm(&program));
+            if outcome.is_err() {
+                panics.push(program);
+            }
+        }
+        assert!(
+            panics.is_empty(),
+            "compiler panicked on random inputs: {:?}",
+            panics
         );
     }
 
