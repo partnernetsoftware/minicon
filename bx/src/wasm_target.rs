@@ -1798,6 +1798,24 @@ impl Checker {
                         let result_ty = sig.result.unwrap_or(Ty::Int);
                         return Ok(Ty::Obj(self.attempt_shape(result_ty)?));
                     }
+                    if name == "exec_all" && (args.len() == 1 || args.len() == 2) {
+                        if args.len() == 2 {
+                            return Err(
+                                "wasm target exec_all() options are not supported yet; use exec() or BX_TARGET=bxb"
+                                    .to_string(),
+                            );
+                        }
+                        match self.infer(&args[0])? {
+                            Ty::ArrStr | Ty::ArrStrArr => {}
+                            other => {
+                                return Err(format!(
+                                    "wasm target exec_all() takes string arrays, got {}",
+                                    ty_name(other)
+                                ))
+                            }
+                        }
+                        return Ok(Ty::ArrObj(self.exec_result_shape()));
+                    }
                     if name == "exec" && (args.len() == 1 || args.len() == 2) {
                         match self.infer(&args[0])? {
                             Ty::Str | Ty::ArrStr => {}
@@ -4808,7 +4826,13 @@ impl<'a> Emitter<'a> {
             self.labels.pop();
             self.builder.push(Instr::Op(0x0b));
         }
-        let _shape = self.checker.exec_result_shape();
+        self.emit_exec_record_from_block(block)?;
+        Ok(Ty::Obj(self.checker.exec_result_shape()))
+    }
+
+    /// Build the `{code, err, ms, ok, out, timeout}` record from a host
+    /// exec block and leave the record pointer on the stack.
+    fn emit_exec_record_from_block(&mut self, block: u32) -> Result<(), String> {
         self.emit_alloc_const(48);
         let record = self.builder.add_local(ValType::I32);
         self.builder.push(Instr::Local(0x21, record));
@@ -4877,9 +4901,124 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Op(0xad));
         self.builder.push(Instr::Mem(0x37, 3, 40));
         self.builder.push(Instr::Local(0x20, record));
-        Ok(Ty::Obj(self.checker.exec_result_shape()))
+        Ok(())
     }
 
+    /// `exec_all([...])`: run each command string/argv array and collect the VM
+    /// `{code, err, ms, ok, out, timeout}` records into an array (options are not
+    /// supported yet; call `exec` when per-command options are needed).
+    fn emit_exec_all(&mut self, commands: &Expr) -> Result<Ty, String> {
+        let input_ty = self.type_of(commands)?;
+        let (mode, rows) = match input_ty {
+            Ty::ArrStrArr => (1u32, true),
+            Ty::ArrStr => (0u32, false),
+            other => {
+                return Err(format!(
+                    "wasm target exec_all() takes string arrays, got {}",
+                    ty_name(other)
+                ))
+            }
+        };
+        let base = self.builder.add_local(ValType::I32);
+        let count = self.builder.add_local(ValType::I32);
+        let result = self.builder.add_local(ValType::I32);
+        let index = self.builder.add_local(ValType::I32);
+        let addr = self.builder.add_local(ValType::I32);
+        let cmd_ptr = self.builder.add_local(ValType::I32);
+        let cmd_len = self.builder.add_local(ValType::I32);
+        let block = self.builder.add_local(ValType::I32);
+        self.emit_expr(commands)?;
+        self.builder.push(Instr::Local(0x21, base));
+        self.builder.push(Instr::Local(0x20, base));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Local(0x21, count));
+        // result array: header + one 8-byte record pointer per command
+        self.builder.push(Instr::Local(0x20, count));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.emit_alloc_dynamic();
+        self.builder.push(Instr::Local(0x21, result));
+        self.builder.push(Instr::Local(0x20, result));
+        self.builder.push(Instr::Local(0x20, count));
+        self.builder.push(Instr::Mem(0x36, 2, 0));
+        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+        self.builder.push(Instr::Local(0x21, index));
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x02);
+        self.builder.push(Instr::Block {
+            opcode: 0x03,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x03);
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Local(0x20, count));
+        self.builder.push(Instr::Op(0x4f));
+        self.builder.push(Instr::BrIf(1));
+        self.builder.push(Instr::Local(0x20, base));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, addr));
+        self.builder.push(Instr::Local(0x20, addr));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Local(0x21, cmd_ptr));
+        if rows {
+            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+            self.builder.push(Instr::Local(0x21, cmd_len));
+        } else {
+            self.builder.push(Instr::Local(0x20, addr));
+            self.builder.push(Instr::Mem(0x28, 2, 4));
+            self.builder.push(Instr::Local(0x21, cmd_len));
+        }
+        self.builder
+            .push(Instr::Const(0x41, WVal::I32(mode as i32)));
+        self.builder.push(Instr::Local(0x20, cmd_ptr));
+        self.builder.push(Instr::Local(0x20, cmd_len));
+        for _ in 0..4 {
+            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+        }
+        for _ in 0..3 {
+            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+        }
+        self.builder.push(Instr::Call(EXEC_RECORD));
+        self.builder.push(Instr::Local(0x21, block));
+        self.emit_exec_record_from_block(block)?;
+        // store the record pointer into the result slot
+        let record = self.builder.add_local(ValType::I32);
+        self.builder.push(Instr::Local(0x21, record));
+        self.builder.push(Instr::Local(0x20, result));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, record));
+        self.builder.push(Instr::Mem(0x36, 2, 0));
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, index));
+        self.builder.push(Instr::Br(0));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.builder.push(Instr::Local(0x20, result));
+        Ok(Ty::ArrObj(self.checker.exec_result_shape()))
+    }
     /// Element storage mode for a comparator sort; every element occupies one
     /// 8-byte slot, so runs can be copied raw and only the callback arguments
     /// need per-kind conversion.
@@ -8240,6 +8379,9 @@ impl<'a> Emitter<'a> {
                     if name == "attempt" && args.len() == 1 {
                         return self.emit_attempt(&args[0]);
                     }
+                    if name == "exec_all" && args.len() == 1 {
+                        return self.emit_exec_all(&args[0]);
+                    }
                     if name == "exec" && (args.len() == 1 || args.len() == 2) {
                         return self.emit_exec_record(args, false);
                     }
@@ -11033,6 +11175,10 @@ impl<'a> InferState<'a> {
                         let (keys, kinds) = exec_result_keys();
                         return Some(Ty::Obj(self.shape_id(&keys, &kinds)));
                     }
+                    if name == "exec_all" {
+                        let (keys, kinds) = exec_result_keys();
+                        return Some(Ty::ArrObj(self.shape_id(&keys, &kinds)));
+                    }
                 }
                 if let Some(Ty::Func(id)) = self.soft(callee, locals) {
                     for arg in args {
@@ -11650,6 +11796,10 @@ impl<'a> CaptureWalker<'a> {
                         let _ = args;
                         let (keys, kinds) = exec_result_keys();
                         return Ty::Obj(self.shape_id(&keys, &kinds));
+                    }
+                    if name == "exec_all" {
+                        let (keys, kinds) = exec_result_keys();
+                        return Ty::ArrObj(self.shape_id(&keys, &kinds));
                     }
                 }
                 self.call_result_ty(callee, args)
@@ -14031,6 +14181,22 @@ mod tests {
                 "false".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn exec_all_collects_records_like_the_vm() {
+        let rows = if cfg!(windows) {
+            "[\"cmd\", \"/c\", \"exit 0\"], [\"cmd\", \"/c\", \"exit 3\"]"
+        } else {
+            "[\"sh\", \"-c\", \"exit 0\"], [\"sh\", \"-c\", \"exit 3\"]"
+        };
+        let source = format!(
+            "let rs = exec_all([{}])\nprint(map(rs, fn(r) {{ return r.code }}))\nprint(filter(rs, fn(r) {{ return r.code != 0 }})[0].code)\nprint(len(rs))",
+            rows
+        );
+        let (numbers, strings) = run_with_argv(&source, &[]);
+        assert_eq!(numbers, vec![3, 2]);
+        assert_eq!(strings, vec!["[0,3]".to_string()]);
     }
 
     #[test]

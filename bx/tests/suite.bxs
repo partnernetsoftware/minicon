@@ -577,6 +577,16 @@ if (wasmAttempt.code == 0 && wasmAttemptRun.out == wasmAttemptVm.out && wasmAtte
   casesFail += 1
   failures.push("wasm attempt()\n    wasm=" + json(wasmAttemptRun.out) + " vm=" + json(wasmAttemptVm.out) + " err=" + json(wasmAttemptRun.err))
 }
+write(artDir + "/wasm-execall.bxs", 'let win = env("OS") == "Windows_NT"\nlet rs = win ? exec_all([["cmd", "/c", "exit 0"], ["cmd", "/c", "exit 3"]]) : exec_all([["sh", "-c", "exit 0"], ["sh", "-c", "exit 3"]])\nprint(len(rs))\nprint(map(rs, fn(r) { return r.code }))\n')
+let wasmExecAll = exec([BX, "build", "--wasm", artDir + "/wasm-execall.bxs", "-o", artDir + "/wasm-execall.wasm"])
+let wasmExecAllRun = exec([BX, "run", artDir + "/wasm-execall.wasm"])
+let wasmExecAllVm = exec([BX, "run", artDir + "/wasm-execall.bxs"])
+if (wasmExecAll.code == 0 && wasmExecAllRun.out == wasmExecAllVm.out && wasmExecAllRun.out.trim() == "2\n[0,3]") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm exec_all\n    wasm=" + json(wasmExecAllRun.out) + " vm=" + json(wasmExecAllVm.out) + " err=" + json(wasmExecAllRun.err))
+}
 write(artDir + "/wasm-files.bxs", 'let d = "target/bx-files-" + str(now())\nmkdir(d)\nwrite(d + "/b.txt", "x")\nwrite(d + "/a.txt", "y")\nprint(list(d))\nlet f = d + "/log.txt"\nwrite(f, "a")\nappend(f, "b")\nprint(read(f))\nremove(f)\nprint(exists(f))\n')
 let wasmFiles = exec([BX, "build", "--wasm", artDir + "/wasm-files.bxs", "-o", artDir + "/wasm-files.wasm"])
 let wasmFilesRun = exec([BX, "run", artDir + "/wasm-files.wasm"])
@@ -1208,6 +1218,16 @@ if (wasmAttempt.code == 0 && wasmAttemptRun.out == wasmAttemptVm.out && wasmAtte
 } else {
   casesFail += 1
   failures.push("wasm attempt()\n    wasm=" + json(wasmAttemptRun.out) + " vm=" + json(wasmAttemptVm.out) + " err=" + json(wasmAttemptRun.err))
+}
+write(artDir + "/wasm-execall.bxs", 'let win = env("OS") == "Windows_NT"\nlet rs = win ? exec_all([["cmd", "/c", "exit 0"], ["cmd", "/c", "exit 3"]]) : exec_all([["sh", "-c", "exit 0"], ["sh", "-c", "exit 3"]])\nprint(len(rs))\nprint(map(rs, fn(r) { return r.code }))\n')
+let wasmExecAll = exec([BX, "build", "--wasm", artDir + "/wasm-execall.bxs", "-o", artDir + "/wasm-execall.wasm"])
+let wasmExecAllRun = exec([BX, "run", artDir + "/wasm-execall.wasm"])
+let wasmExecAllVm = exec([BX, "run", artDir + "/wasm-execall.bxs"])
+if (wasmExecAll.code == 0 && wasmExecAllRun.out == wasmExecAllVm.out && wasmExecAllRun.out.trim() == "2\n[0,3]") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm exec_all\n    wasm=" + json(wasmExecAllRun.out) + " vm=" + json(wasmExecAllVm.out) + " err=" + json(wasmExecAllRun.err))
 }
 write(artDir + "/wasm-files.bxs", 'let d = "target/bx-files-" + str(now())\nmkdir(d)\nwrite(d + "/b.txt", "x")\nwrite(d + "/a.txt", "y")\nprint(list(d))\nlet f = d + "/log.txt"\nwrite(f, "a")\nappend(f, "b")\nprint(read(f))\nremove(f)\nprint(exists(f))\n')
 let wasmFiles = exec([BX, "build", "--wasm", artDir + "/wasm-files.bxs", "-o", artDir + "/wasm-files.wasm"])

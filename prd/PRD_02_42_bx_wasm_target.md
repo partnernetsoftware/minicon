@@ -228,7 +228,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 124 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 125 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -297,6 +297,13 @@ bx wasm target
   timeout_ms, shell, 0) -> block`, where the block is
   `[code i32][out_ptr][out_len][err_ptr][err_len][ms][flags]` and `flags & 1`
   marks a timeout.
+- **`exec_all(commands)`**: runs each command spec (a string array per command
+  or a plain command string, matching the VM's two accepted forms) and collects
+  the records into a `Ty::ArrObj(exec shape)` array, so `map`/`filter` over the
+  results and closures work. Options are rejected for now (the VM accepts
+  `{cwd, ...}` per batch); call `exec` when per-command options are needed.
+  Because the array holds record pointers, `map` callbacks returning bools still
+  hit the missing bool-array kind (a separate limitation).
 - **String methods**: `trim`, `upper`, `lower`, `split`, `slice`, `replace`,
   `repeat` and `index_of` work as methods as well as functions (VM parity).
 - **Typed record fields**: record fields may hold int, string, float or bool
