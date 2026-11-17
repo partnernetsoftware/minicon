@@ -930,6 +930,16 @@ if (wasmHof.code == 0 && wasmHofRun.out == wasmHofVm.out && wasmHofRun.out.trim(
   casesFail += 1
   failures.push("wasm higher-order array builtins\n    wasm=" + json(wasmHofRun.out) + " vm=" + json(wasmHofVm.out) + " err=" + json(wasmHofRun.err))
 }
+write(artDir + "/wasm-arrobj.bxs", 'let xs = [{a: 1}, {a: 2}]\nprint(xs[0].a)\nprint(len(xs))\nfor r in xs { print(r.a) }\nxs[1] = {a: 9}\nprint(xs[-1].a)\nfor i, r in xs { print(i + r.a) }\nfn total(rows) {\n  let s = 0\n  for r in rows { s = s + r.a }\n  return s\n}\nprint(total([{a: 1}, {a: 2}, {a: 3}]))\n')
+let wasmArrObj = exec([BX, "build", "--wasm", artDir + "/wasm-arrobj.bxs", "-o", artDir + "/wasm-arrobj.wasm"])
+let wasmArrObjRun = exec([BX, "run", artDir + "/wasm-arrobj.wasm"])
+let wasmArrObjVm = exec([BX, "run", artDir + "/wasm-arrobj.bxs"])
+if (wasmArrObj.code == 0 && wasmArrObjRun.out == wasmArrObjVm.out && wasmArrObjRun.out.trim() == "1\n2\n1\n2\n9\n1\n10\n6") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm record arrays\n    wasm=" + json(wasmArrObjRun.out) + " vm=" + json(wasmArrObjVm.out) + " err=" + json(wasmArrObjRun.err))
+}
 write(artDir + "/wasm-loopcap.bxs", 'for s in ["a", "bb"] { print(fn() { return s + "!" }()) }\nlet o = {x: 1, y: 2}\nfor k in o { print(fn() { return k }()) }\nfor k, v in o { print(fn() { return k + str(v) }()) }\nfor i in range(2) { print(fn() { return i * 5 }()) }\n')
 let wasmLoopCap = exec([BX, "build", "--wasm", artDir + "/wasm-loopcap.bxs", "-o", artDir + "/wasm-loopcap.wasm"])
 let wasmLoopCapRun = exec([BX, "run", artDir + "/wasm-loopcap.wasm"])

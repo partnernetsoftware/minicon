@@ -43,7 +43,7 @@ bx .wasm migration (M6)
 │   ├── [v] budgets: --max-steps / --timeout parity with the VM
 │   ├── [v] evidence: suite (152 checks), verifier (49 tests), differential
 │   │   generator, node/independent-engine cross-checks
-│   └── [-] remaining core gaps: arrays of records, `attempt`, function-value site polymorphism,
+│   └── [-] remaining core gaps: `attempt`, function-value site polymorphism,
 │       `attempt`, method surface beyond push/pop/len, dynamic-object syntax
 ├── G1 opt-in default
 │   └── [-] --target flag + BX_TARGET env accepted by build/run (soak pending)

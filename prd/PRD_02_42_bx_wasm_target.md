@@ -128,7 +128,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 81 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 83 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -152,6 +152,13 @@ bx wasm target
 - **Record/array writes**: `r.a = v`, `r.a += v`, `xs[i] = v`, `xs[-1] = v` and
   `xs[i] += v` are supported with the same negative-index normalisation and
   bounds checks as reads (`+ - * %` for compound).
+- **Arrays of records**: `[{a: 1}, {b: 2}]` with one consistent shape types as
+  `Ty::ArrObj(shape)`; entries hold record pointers in the usual 8-byte slots, so
+  `len`, element read (negative indexes included), element write, `for r in xs`
+  (single variable = record) and `for i, r in xs` all work, as do record arrays
+  passed to functions. Object lists nested inside other array literals keep the
+  array pointer in a dedicated local because each record literal allocates
+  storage.
 - **Record merge**: `merge(a, b)` on records with statically known shapes builds
   the union shape at compile time (keys of `a` in order, then new keys of `b`);
   overlapping keys take `b`'s value, matching the VM. Chained merges work.
