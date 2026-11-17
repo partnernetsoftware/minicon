@@ -587,6 +587,16 @@ if (wasmExecAll.code == 0 && wasmExecAllRun.out == wasmExecAllVm.out && wasmExec
   casesFail += 1
   failures.push("wasm exec_all\n    wasm=" + json(wasmExecAllRun.out) + " vm=" + json(wasmExecAllVm.out) + " err=" + json(wasmExecAllRun.err))
 }
+write(artDir + "/wasm-methods.bxs", 'let xs = [1, 2]\nprint(xs.join("-"))\nprint(xs.join())\nprint(xs.reverse())\nprint(xs.sort())\nlet b = [true, false, true]\nprint(slice(b, 1))\nprint(b.join(","))\nlet s = ["a", "b"]\nprint(s.join("|"))\nprint(s.reverse())\nlet f = [1.5, 2.5]\nprint(f.join("|"))\nprint(f.reverse())\n')
+let wasmMethods = exec([BX, "build", "--wasm", artDir + "/wasm-methods.bxs", "-o", artDir + "/wasm-methods.wasm"])
+let wasmMethodsRun = exec([BX, "run", artDir + "/wasm-methods.wasm"])
+let wasmMethodsVm = exec([BX, "run", artDir + "/wasm-methods.bxs"])
+if (wasmMethods.code == 0 && wasmMethodsRun.out == wasmMethodsVm.out && wasmMethodsRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm array methods\n    wasm=" + json(wasmMethodsRun.out) + " vm=" + json(wasmMethodsVm.out) + " err=" + json(wasmMethodsRun.err))
+}
 write(artDir + "/wasm-null.bxs", 'print(null)\nprint(str(null))\nprint(json(null))\nprint(type(null))\nprint(str(null == null))\nprint(str(null == 0))\nprint(str(null == false))\nprint(str(null == ""))\nprint(!null)\nprint(null ? "t" : "f")\nprint("v=${null}")\nprint(str(null || true))\nprint(str(null && true))\nprint(str(int(null)))\nprint(str(float(null)))\nprint(str(null + 1))\nprint(str(-null))\nprint(str(null - 1))\nprint(str(null * 3))\nprint(str(null / 2))\nprint(str(null % 2))\nprint(str(null < 1))\nprint(str(null >= 0))\nprint(str(1 > null))\nprint(str(null < 1.5))\n')
 let wasmNull = exec([BX, "build", "--wasm", artDir + "/wasm-null.bxs", "-o", artDir + "/wasm-null.wasm"])
 let wasmNullRun = exec([BX, "run", artDir + "/wasm-null.wasm"])
@@ -1258,6 +1268,16 @@ if (wasmExecAll.code == 0 && wasmExecAllRun.out == wasmExecAllVm.out && wasmExec
 } else {
   casesFail += 1
   failures.push("wasm exec_all\n    wasm=" + json(wasmExecAllRun.out) + " vm=" + json(wasmExecAllVm.out) + " err=" + json(wasmExecAllRun.err))
+}
+write(artDir + "/wasm-methods.bxs", 'let xs = [1, 2]\nprint(xs.join("-"))\nprint(xs.join())\nprint(xs.reverse())\nprint(xs.sort())\nlet b = [true, false, true]\nprint(slice(b, 1))\nprint(b.join(","))\nlet s = ["a", "b"]\nprint(s.join("|"))\nprint(s.reverse())\nlet f = [1.5, 2.5]\nprint(f.join("|"))\nprint(f.reverse())\n')
+let wasmMethods = exec([BX, "build", "--wasm", artDir + "/wasm-methods.bxs", "-o", artDir + "/wasm-methods.wasm"])
+let wasmMethodsRun = exec([BX, "run", artDir + "/wasm-methods.wasm"])
+let wasmMethodsVm = exec([BX, "run", artDir + "/wasm-methods.bxs"])
+if (wasmMethods.code == 0 && wasmMethodsRun.out == wasmMethodsVm.out && wasmMethodsRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm array methods\n    wasm=" + json(wasmMethodsRun.out) + " vm=" + json(wasmMethodsVm.out) + " err=" + json(wasmMethodsRun.err))
 }
 write(artDir + "/wasm-null.bxs", 'print(null)\nprint(str(null))\nprint(json(null))\nprint(type(null))\nprint(str(null == null))\nprint(str(null == 0))\nprint(str(null == false))\nprint(str(null == ""))\nprint(!null)\nprint(null ? "t" : "f")\nprint("v=${null}")\nprint(str(null || true))\nprint(str(null && true))\nprint(str(int(null)))\nprint(str(float(null)))\nprint(str(null + 1))\nprint(str(-null))\nprint(str(null - 1))\nprint(str(null * 3))\nprint(str(null / 2))\nprint(str(null % 2))\nprint(str(null < 1))\nprint(str(null >= 0))\nprint(str(1 > null))\nprint(str(null < 1.5))\n')
 let wasmNull = exec([BX, "build", "--wasm", artDir + "/wasm-null.bxs", "-o", artDir + "/wasm-null.wasm"])

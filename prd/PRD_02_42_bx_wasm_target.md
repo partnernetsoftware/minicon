@@ -228,7 +228,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 128 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 129 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -490,6 +490,10 @@ bx wasm target
   expression position (the removed element is the value, the array shrinks),
   matching the VM; `join` also accepts bool arrays (`join([true, false], ",")`
   via `env.join_bool`, default separator empty).
+- **Array method forms**: `.join([sep])`, `.sort()` and `.reverse()` work in
+  expression position for int/float/string/bool arrays (bool arrays also gained
+  `slice`). Record-array `join` (the VM stringifies each record) and the method
+  form `.sort(cmp)` are still rejected with explicit errors.
 - **`null` (static marker)**: `null` is typed `Ty::Null` and covers the VM's
   scalar semantics: printing/`str`/`json`/`type`/interpolation give `null`,
   `null == null`, `null == 0`, `null == 0.0`, `null == false` are true while

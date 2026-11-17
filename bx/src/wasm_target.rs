@@ -976,6 +976,35 @@ impl Checker {
                     return element_ty(base)
                         .ok_or_else(|| "wasm target .pop works on arrays only".to_string());
                 }
+                if key == "join" && (args.is_empty() || args.len() == 1) {
+                    let base = self.infer(object)?;
+                    if !matches!(base, Ty::Arr | Ty::ArrF | Ty::ArrStr | Ty::ArrBool) {
+                        return Err(
+                            "wasm target .join works on int, float, string and bool arrays only"
+                                .to_string(),
+                        );
+                    }
+                    if args.len() == 1 && self.infer(&args[0])? != Ty::Str {
+                        return Err("wasm target .join separator is a string".to_string());
+                    }
+                    return Ok(Ty::Str);
+                }
+                if matches!(key.as_str(), "sort" | "reverse") && args.is_empty() {
+                    let base = self.infer(object)?;
+                    if !matches!(
+                        base,
+                        Ty::Arr
+                            | Ty::ArrF
+                            | Ty::ArrStr
+                            | Ty::ArrBool
+                            | Ty::ArrObj(_)
+                            | Ty::ArrArr
+                            | Ty::ArrStrArr
+                    ) {
+                        return Err(format!("wasm target .{} works on arrays only", key));
+                    }
+                    return Ok(base);
+                }
                 let str_method = match key.as_str() {
                     "trim" | "upper" | "lower" => Some((0usize, Ty::Str)),
                     "repeat" => Some((1usize, Ty::Str)),
@@ -1545,6 +1574,7 @@ impl Checker {
                             Ty::Arr
                             | Ty::ArrF
                             | Ty::ArrStr
+                            | Ty::ArrBool
                             | Ty::ArrObj(_)
                             | Ty::ArrArr
                             | Ty::ArrStrArr => Ok(base),
@@ -8202,6 +8232,67 @@ impl<'a> Emitter<'a> {
                     };
                     return self.emit_pop_value(array);
                 }
+                if key == "join" && (args.is_empty() || args.len() == 1) {
+                    let import = match self.type_of(object)? {
+                        Ty::Arr => ARR_JOIN_INT,
+                        Ty::ArrF => ARR_JOIN_F,
+                        Ty::ArrStr => STR_JOIN,
+                        Ty::ArrBool => JOIN_BOOL,
+                        other => return Err(format!(
+                            "wasm target .join takes an int, float, string or bool array, got {}",
+                            ty_name(other)
+                        )),
+                    };
+                    self.emit_expr(object)?;
+                    if args.len() == 1 {
+                        self.emit_str(&args[0])?;
+                    } else {
+                        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                    }
+                    self.builder.push(Instr::Call(import));
+                    self.push_block_as_pair();
+                    return Ok(Ty::Str);
+                }
+                if key == "sort" && args.is_empty() {
+                    let ty = self.type_of(object)?;
+                    let import = match ty {
+                        Ty::Arr => ARR_SORT,
+                        Ty::ArrF => ARR_SORT_F,
+                        Ty::ArrStr => ARR_SORT_STR,
+                        Ty::ArrBool => ARR_SORT,
+                        _ => {
+                            return Err(format!(
+                                "wasm target .sort() works on int, float, string and bool arrays, got {}",
+                                ty_name(ty)
+                            ))
+                        }
+                    };
+                    self.emit_expr(object)?;
+                    self.builder.push(Instr::Call(import));
+                    return Ok(ty);
+                }
+                if key == "reverse" && args.is_empty() {
+                    let ty = self.type_of(object)?;
+                    if !matches!(
+                        ty,
+                        Ty::Arr
+                            | Ty::ArrF
+                            | Ty::ArrStr
+                            | Ty::ArrBool
+                            | Ty::ArrObj(_)
+                            | Ty::ArrArr
+                            | Ty::ArrStrArr
+                    ) {
+                        return Err(format!(
+                            "wasm target .reverse() works on arrays, got {}",
+                            ty_name(ty)
+                        ));
+                    }
+                    self.emit_expr(object)?;
+                    self.builder.push(Instr::Call(ARR_REVERSE));
+                    return Ok(ty);
+                }
                 match key.as_str() {
                     "trim" | "upper" | "lower" if args.is_empty() => {
                         self.emit_str(object)?;
@@ -9329,6 +9420,7 @@ impl<'a> Emitter<'a> {
                             Ty::Arr
                             | Ty::ArrF
                             | Ty::ArrStr
+                            | Ty::ArrBool
                             | Ty::ArrObj(_)
                             | Ty::ArrArr
                             | Ty::ArrStrArr => {
@@ -14916,6 +15008,31 @@ mod tests {
         let expected = [
             "null", "null", "null", "null", "true", "true", "true", "false", "true", "f", "v=null",
             "true", "null", "0", "0", "1", "0", "-1", "0", "0", "true", "true", "true",
+        ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn array_method_forms_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let xs = [1, 2]\nprint(xs.join(\"-\"))\nprint(xs.join())\nprint(xs.reverse())\nprint(xs.sort())\nlet b = [true, false, true]\nprint(slice(b, 1))\nprint(b.join(\",\"))\nlet s = [\"a\", \"b\"]\nprint(s.join(\"|\"))\nprint(s.reverse())\nlet f = [1.5, 2.5]\nprint(f.join(\"|\"))\nprint(f.reverse())",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = [
+            "1-2",
+            "12",
+            "[2,1]",
+            "[1,2]",
+            "[false,true]",
+            "true,false,true",
+            "a|b",
+            "[\"b\",\"a\"]",
+            "1.5|2.5",
+            "[2.5,1.5]",
         ];
         assert_eq!(
             strings,
