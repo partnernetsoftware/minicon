@@ -637,6 +637,8 @@ const imports = {
     run: () => -1,
     capture: () => 0,
     which: () => 0,
+    exec_env_clear: () => {},
+    exec_env_add: () => {},
     script_dir: () => 0,
     exec_record: () => {
       throw new Error("exec() is not available in the browser demo");

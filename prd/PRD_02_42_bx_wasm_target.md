@@ -228,7 +228,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 122 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 123 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -286,8 +286,10 @@ bx wasm target
   the VM). `exec` runs the command without a shell by default (a string command
   is split on whitespace, the VM's quoting rules are not reproduced yet) and
   `sh` always goes through the platform shell. Supported options:
-  `cwd`, `stdin`, `timeout`, `shell`; other VM options (`max`, `stdout`,
-  `stderr`) are rejected explicitly. A missing program aborts with
+  `cwd`, `stdin`, `timeout`, `shell` and `env` (an object literal; the emitter
+  sends each pair through `bx.exec_env_clear`/`bx.exec_env_add` and the host
+  applies them additively, coercing scalar values to text like the VM); other
+  VM options (`max`, `stdout`, `stderr`) are rejected explicitly. A missing program aborts with
   `cannot run '<name>': program not found` (the VM adds its `file(line):`
   prefix; documented divergence). `ms` is wall-clock time, so two runs of the
   same program may print different values. The host import is

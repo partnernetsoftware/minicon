@@ -717,6 +717,7 @@ pub(crate) fn core_print_host(
         on_str,
         on_err,
         script_dir,
+        exec_env: Vec::new(),
         next_alloc: 8192,
         argv: argv.to_vec(),
         next_argv: 65_536,
@@ -886,6 +887,8 @@ pub(crate) struct PrintHost<'a, F: FnMut(i64), G: FnMut(&str)> {
     on_err: BoxedStrSink,
     /// Directory of the executed module, exposed as `bx.script_dir` (`__dir__`).
     script_dir: Option<String>,
+    /// Extra environment variables applied to the next `exec`/`sh` launch.
+    exec_env: Vec<(String, String)>,
     /// Bump allocator for the prototype `env.alloc` import, 8-byte aligned.
     next_alloc: u32,
     /// Command-line arguments exposed through `bx.argc` / `bx.arg`.
@@ -1479,6 +1482,29 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     }
                 }
                 Ok(vec![WVal::I64(found)])
+            }
+            ("bx", "exec_env_clear") => {
+                self.exec_env.clear();
+                Ok(Vec::new())
+            }
+            ("bx", "exec_env_add") => {
+                let read = |value: Option<&WVal>| match value {
+                    Some(WVal::I32(v)) => Some(*v as usize),
+                    _ => None,
+                };
+                let (kp, kl, vp, vl) = match (
+                    read(args.first()),
+                    read(args.get(1)),
+                    read(args.get(2)),
+                    read(args.get(3)),
+                ) {
+                    (Some(kp), Some(kl), Some(vp), Some(vl)) => (kp, kl, vp, vl),
+                    _ => return Err("bx.exec_env_add expects four i32s".to_string()),
+                };
+                let key = memory_text(memory, kp, kl);
+                let value = memory_text(memory, vp, vl);
+                self.exec_env.push((key, value));
+                Ok(Vec::new())
             }
             ("env", "format_container") => {
                 let read = |value: Option<&WVal>| match value {
@@ -2702,6 +2728,9 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                         command
                     }
                 };
+                for (key, value) in self.exec_env.drain(..) {
+                    command.env(key, value);
+                }
                 if cwd_len > 0 {
                     command.current_dir(text_at(cwd_ptr, cwd_len));
                 }

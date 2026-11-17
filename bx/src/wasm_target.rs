@@ -1786,30 +1786,60 @@ impl Checker {
                             }
                         }
                         if let Some(opts) = args.get(1) {
-                            let Ty::Obj(shape) = self.infer(opts)? else {
+                            let Expr::Object(fields) = opts else {
                                 return Err(
                                     "wasm target exec() options need an object literal".to_string()
                                 );
                             };
-                            let keys = self.shape_keys(shape)?;
-                            let kinds = self.shape_kinds(shape)?;
-                            for (key, kind) in keys.iter().zip(kinds.iter()) {
-                                let ok = match key.as_str() {
-                                    "cwd" | "stdin" => *kind == 1,
-                                    "timeout" => *kind == 0,
-                                    "shell" => *kind == 3,
-                                    _ => {
+                            for (key, value) in fields {
+                                match key.as_str() {
+                                    "cwd" | "stdin" => {
+                                        if self.infer(value)? != Ty::Str {
+                                            return Err(format!(
+                                                "wasm target exec() option '{}' has the wrong type",
+                                                key
+                                            ));
+                                        }
+                                    }
+                                    "timeout" => {
+                                        if self.infer(value)? != Ty::Int {
+                                            return Err(format!(
+                                                "wasm target exec() option '{}' has the wrong type",
+                                                key
+                                            ));
+                                        }
+                                    }
+                                    "shell" => {
+                                        if self.infer(value)? != Ty::Bool {
+                                            return Err(format!(
+                                                "wasm target exec() option '{}' has the wrong type",
+                                                key
+                                            ));
+                                        }
+                                    }
+                                    "env" => {
+                                        let Expr::Object(pairs) = value else {
+                                            return Err(
+                                                "wasm target exec() env must be an object literal"
+                                                    .to_string(),
+                                            );
+                                        };
+                                        for (_, item) in pairs {
+                                            let ty = self.infer(item)?;
+                                            if !is_number(ty) && ty != Ty::Str && ty != Ty::Bool {
+                                                return Err(
+                                                    "wasm target exec() env values are scalars"
+                                                        .to_string(),
+                                                );
+                                            }
+                                        }
+                                    }
+                                    other => {
                                         return Err(format!(
                                             "wasm target exec() does not support the '{}' option",
-                                            key
+                                            other
                                         ))
                                     }
-                                };
-                                if !ok {
-                                    return Err(format!(
-                                        "wasm target exec() option '{}' has the wrong type",
-                                        key
-                                    ));
                                 }
                             }
                         }
@@ -2690,7 +2720,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 92;
+const IMPORT_COUNT: u32 = 94;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -2770,6 +2800,8 @@ const ENV_GET_DEFAULT: u32 = 88;
 const SCRIPT_DIR: u32 = 89;
 const FORMAT_CONTAINER: u32 = 90;
 const JSON_STR: u32 = 91;
+const EXEC_ENV_CLEAR: u32 = 92;
+const EXEC_ENV_ADD: u32 = 93;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -4666,6 +4698,9 @@ impl<'a> Emitter<'a> {
             .push(Instr::Const(0x41, WVal::I32(if shell { 1 } else { 0 })));
         self.builder.push(Instr::Local(0x21, shell_flag));
         if let Some(Expr::Object(fields)) = args.get(1) {
+            if fields.iter().any(|(key, _)| key == "env") {
+                self.builder.push(Instr::Call(EXEC_ENV_CLEAR));
+            }
             for (key, value) in fields {
                 match key.as_str() {
                     "cwd" => {
@@ -4685,6 +4720,18 @@ impl<'a> Emitter<'a> {
                     "shell" => {
                         self.emit_expr(value)?;
                         self.builder.push(Instr::Local(0x21, shell_flag));
+                    }
+                    "env" => {
+                        let Expr::Object(pairs) = value else {
+                            return Err(
+                                "wasm target exec() env must be an object literal".to_string()
+                            );
+                        };
+                        for (name, item) in pairs {
+                            self.emit_str(&Expr::Str(name.clone()))?;
+                            self.emit_str_operand(item)?;
+                            self.builder.push(Instr::Call(EXEC_ENV_ADD));
+                        }
                     }
                     _ => {}
                 }
@@ -12164,6 +12211,11 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
         vec![ValType::I32, ValType::I32, ValType::I32],
         vec![ValType::I32],
     );
+    let empty_ty = builder.add_type(vec![], vec![]);
+    let env_add_ty = builder.add_type(
+        vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+        vec![],
+    );
     let print_record_typed_ty = builder.add_type(
         vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
         vec![],
@@ -12335,6 +12387,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("bx", "script_dir", argc_ty);
     builder.import_func("env", "format_container", format_container_ty);
     builder.import_func("env", "json_str", which_ty);
+    builder.import_func("bx", "exec_env_clear", empty_ty);
+    builder.import_func("bx", "exec_env_add", env_add_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -13716,6 +13770,19 @@ mod tests {
                 "[1,2]".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn exec_env_option_matches_the_vm() {
+        let echo = if cfg!(windows) {
+            "let r = exec([\"cmd\", \"/c\", \"echo %BX_WASM_TEST%\"], {env: {\"BX_WASM_TEST\": \"hello-env\"}})"
+        } else {
+            "let r = exec([\"sh\", \"-c\", \"echo $BX_WASM_TEST\"], {env: {\"BX_WASM_TEST\": \"hello-env\"}})"
+        };
+        let source = format!("{}\nprint(r.code)\nprint(r.out.trim())", echo);
+        let (numbers, strings) = run_with_argv(&source, &[]);
+        assert_eq!(numbers, vec![0]);
+        assert_eq!(strings, vec!["hello-env".to_string()]);
     }
 
     #[test]
