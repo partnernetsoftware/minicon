@@ -537,6 +537,16 @@ if (wasmRec.code == 0 && wasmRecRun.code == 0 && wasmRecRun.out.trim() == "30\n2
   failures.push("wasm records + in-module heap\n    build=" + wasmRec.code + " out=" + json(wasmRecRun.out) + " err=" + json(wasmRecRun.err))
 }
 let safeArtDir = replace(artDir, "\\", "/")
+write(artDir + "/wasm-mergesort.bxs", 'print(sort([3, 1, 2], fn(x, y) { return x - y }))\nprint(sort([2.5, 1.5], fn(x, y) { return x < y ? -1 : 1 }))\nprint(sort(["bb", "a", "ccc"], fn(x, y) { return len(x) - len(y) }))\nlet rows = [[3], [1, 2], [2]]\nprint(sort(rows, fn(x, y) { return len(x) - len(y) }))\nlet rs = [{a: 3}, {a: 1}, {a: 2}]\nprint(sort(rs, fn(x, y) { return x.a - y.a }))\n')
+let wasmMergeSort = exec([BX, "build", "--wasm", artDir + "/wasm-mergesort.bxs", "-o", artDir + "/wasm-mergesort.wasm"])
+let wasmMergeSortRun = exec([BX, "run", artDir + "/wasm-mergesort.wasm"])
+let wasmMergeSortVm = exec([BX, "run", artDir + "/wasm-mergesort.bxs"])
+if (wasmMergeSort.code == 0 && wasmMergeSortRun.out == wasmMergeSortVm.out && wasmMergeSortRun.out.trim() == "[1,2,3]\n[1.5,2.5]\n[\"a\",\"bb\",\"ccc\"]\n[[3],[2],[1,2]]\n[{\"a\":1},{\"a\":2},{\"a\":3}]") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm merge comparator sort\n    wasm=" + json(wasmMergeSortRun.out) + " vm=" + json(wasmMergeSortVm.out) + " err=" + json(wasmMergeSortRun.err))
+}
 write(artDir + "/wasm-sortchain.bxs", 'let rows = map(range(5), fn(i) { return {a: i} })\nlet ordered = sort(rows, fn(x, y) { return x.a - y.a })\nprint(reduce(ordered, fn(acc, r) { return acc + r.a }, 0))\nprint(map(ordered, fn(r) { return r.a }))\n')
 let wasmSortChain = exec([BX, "build", "--wasm", artDir + "/wasm-sortchain.bxs", "-o", artDir + "/wasm-sortchain.wasm"])
 let wasmSortChainRun = exec([BX, "run", artDir + "/wasm-sortchain.wasm"])
@@ -992,6 +1002,16 @@ if (wasmAssign.code == 0 && wasmAssignRun.out == wasmAssignVm.out && wasmAssignR
 } else {
   casesFail += 1
   failures.push("wasm interpolation and assignments\n    wasm=" + json(wasmAssignRun.out) + " vm=" + json(wasmAssignVm.out) + " err=" + json(wasmAssignRun.err))
+}
+write(artDir + "/wasm-mergesort.bxs", 'print(sort([3, 1, 2], fn(x, y) { return x - y }))\nprint(sort([2.5, 1.5], fn(x, y) { return x < y ? -1 : 1 }))\nprint(sort(["bb", "a", "ccc"], fn(x, y) { return len(x) - len(y) }))\nlet rows = [[3], [1, 2], [2]]\nprint(sort(rows, fn(x, y) { return len(x) - len(y) }))\nlet rs = [{a: 3}, {a: 1}, {a: 2}]\nprint(sort(rs, fn(x, y) { return x.a - y.a }))\n')
+let wasmMergeSort = exec([BX, "build", "--wasm", artDir + "/wasm-mergesort.bxs", "-o", artDir + "/wasm-mergesort.wasm"])
+let wasmMergeSortRun = exec([BX, "run", artDir + "/wasm-mergesort.wasm"])
+let wasmMergeSortVm = exec([BX, "run", artDir + "/wasm-mergesort.bxs"])
+if (wasmMergeSort.code == 0 && wasmMergeSortRun.out == wasmMergeSortVm.out && wasmMergeSortRun.out.trim() == "[1,2,3]\n[1.5,2.5]\n[\"a\",\"bb\",\"ccc\"]\n[[3],[2],[1,2]]\n[{\"a\":1},{\"a\":2},{\"a\":3}]") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm merge comparator sort\n    wasm=" + json(wasmMergeSortRun.out) + " vm=" + json(wasmMergeSortVm.out) + " err=" + json(wasmMergeSortRun.err))
 }
 write(artDir + "/wasm-sortchain.bxs", 'let rows = map(range(5), fn(i) { return {a: i} })\nlet ordered = sort(rows, fn(x, y) { return x.a - y.a })\nprint(reduce(ordered, fn(acc, r) { return acc + r.a }, 0))\nprint(map(ordered, fn(r) { return r.a }))\n')
 let wasmSortChain = exec([BX, "build", "--wasm", artDir + "/wasm-sortchain.bxs", "-o", artDir + "/wasm-sortchain.wasm"])

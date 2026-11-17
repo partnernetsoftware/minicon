@@ -191,6 +191,13 @@ fn kind_ty(kind: u8) -> Ty {
     }
 }
 
+#[derive(Clone, Copy)]
+enum SortMode {
+    Int,
+    Str,
+    Float,
+    Ptr,
+}
 #[derive(Clone, Debug)]
 struct FnSig {
     params: Vec<Ty>,
@@ -4132,6 +4139,347 @@ impl<'a> Emitter<'a> {
         Ok(Ty::Obj(self.checker.exec_result_shape()))
     }
 
+    /// Element storage mode for a comparator sort; every element occupies one
+    /// 8-byte slot, so runs can be copied raw and only the callback arguments
+    /// need per-kind conversion.
+    fn emit_merge_sort(
+        &mut self,
+        array: &Expr,
+        comparator: &Expr,
+        input_ty: Ty,
+        mode: SortMode,
+        sig: &FnSig,
+    ) -> Result<(), String> {
+        let arr = self.builder.add_local(ValType::I32);
+        let count = self.builder.add_local(ValType::I32);
+        let temp = self.builder.add_local(ValType::I32);
+        let cb_env = self.builder.add_local(ValType::I32);
+        self.emit_expr(array)?;
+        self.builder.push(Instr::Local(0x21, arr));
+        self.emit_expr(comparator)?;
+        self.builder.push(Instr::Local(0x21, cb_env));
+        self.builder.push(Instr::Local(0x20, arr));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Local(0x21, count));
+        // temp = alloc(count * 8 + 8); slot 0 lives at temp + 4 so the shared
+        // slot-address helper works for both the array and the scratch buffer.
+        self.builder.push(Instr::Local(0x20, count));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6a));
+        self.emit_alloc_dynamic();
+        self.builder.push(Instr::Local(0x21, temp));
+        let width = self.builder.add_local(ValType::I32);
+        let index = self.builder.add_local(ValType::I32);
+        let mid = self.builder.add_local(ValType::I32);
+        let hi = self.builder.add_local(ValType::I32);
+        let left = self.builder.add_local(ValType::I32);
+        let right = self.builder.add_local(ValType::I32);
+        let out = self.builder.add_local(ValType::I32);
+        let addr_a = self.builder.add_local(ValType::I32);
+        let addr_b = self.builder.add_local(ValType::I32);
+        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+        self.builder.push(Instr::Local(0x21, width));
+        // while width < count
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x02);
+        self.builder.push(Instr::Block {
+            opcode: 0x03,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x03);
+        self.builder.push(Instr::Local(0x20, width));
+        self.builder.push(Instr::Local(0x20, count));
+        self.builder.push(Instr::Op(0x48));
+        self.builder.push(Instr::Op(0x45));
+        self.builder.push(Instr::BrIf(1));
+        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+        self.builder.push(Instr::Local(0x21, index));
+        // for each pair of runs
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x02);
+        self.builder.push(Instr::Block {
+            opcode: 0x03,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x03);
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Local(0x20, count));
+        self.builder.push(Instr::Op(0x48));
+        self.builder.push(Instr::Op(0x45));
+        self.builder.push(Instr::BrIf(1));
+        // mid = min(index + width, count); hi = min(index + 2*width, count)
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Local(0x20, width));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, mid));
+        self.emit_clamp_i32(mid, count);
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Local(0x20, width));
+        self.builder.push(Instr::Const(0x41, WVal::I32(2)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, hi));
+        self.emit_clamp_i32(hi, count);
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Local(0x21, left));
+        self.builder.push(Instr::Local(0x20, mid));
+        self.builder.push(Instr::Local(0x21, right));
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Local(0x21, out));
+        // merge the two runs
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x02);
+        self.builder.push(Instr::Block {
+            opcode: 0x03,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x03);
+        self.builder.push(Instr::Local(0x20, left));
+        self.builder.push(Instr::Local(0x20, mid));
+        self.builder.push(Instr::Op(0x48));
+        self.builder.push(Instr::Local(0x20, right));
+        self.builder.push(Instr::Local(0x20, hi));
+        self.builder.push(Instr::Op(0x48));
+        self.builder.push(Instr::Op(0x71));
+        self.builder.push(Instr::Op(0x45));
+        self.builder.push(Instr::BrIf(1));
+        self.emit_slot_addr(arr, left, addr_a);
+        self.emit_slot_addr(arr, right, addr_b);
+        self.emit_sort_compare(mode, sig, cb_env, addr_a, addr_b);
+        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+        self.builder.push(Instr::Op(0x57));
+        self.builder.push(Instr::Block {
+            opcode: 0x04,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x04);
+        self.emit_slot_copy(temp, out, arr, left);
+        self.builder.push(Instr::Local(0x20, left));
+        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, left));
+        self.builder.push(Instr::Else { end: 0 });
+        self.emit_slot_copy(temp, out, arr, right);
+        self.builder.push(Instr::Local(0x20, right));
+        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, right));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.builder.push(Instr::Local(0x20, out));
+        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, out));
+        self.builder.push(Instr::Br(0));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        // copy the left tail
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x02);
+        self.builder.push(Instr::Block {
+            opcode: 0x03,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x03);
+        self.builder.push(Instr::Local(0x20, left));
+        self.builder.push(Instr::Local(0x20, mid));
+        self.builder.push(Instr::Op(0x4f));
+        self.builder.push(Instr::BrIf(1));
+        self.emit_slot_copy(temp, out, arr, left);
+        self.builder.push(Instr::Local(0x20, left));
+        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, left));
+        self.builder.push(Instr::Local(0x20, out));
+        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, out));
+        self.builder.push(Instr::Br(0));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        // copy the right tail
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x02);
+        self.builder.push(Instr::Block {
+            opcode: 0x03,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x03);
+        self.builder.push(Instr::Local(0x20, right));
+        self.builder.push(Instr::Local(0x20, hi));
+        self.builder.push(Instr::Op(0x4f));
+        self.builder.push(Instr::BrIf(1));
+        self.emit_slot_copy(temp, out, arr, right);
+        self.builder.push(Instr::Local(0x20, right));
+        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, right));
+        self.builder.push(Instr::Local(0x20, out));
+        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, out));
+        self.builder.push(Instr::Br(0));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        // index += 2*width
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Local(0x20, width));
+        self.builder.push(Instr::Const(0x41, WVal::I32(2)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, index));
+        self.builder.push(Instr::Br(0));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        // arr slots <- temp
+        self.builder.push(Instr::Local(0x20, arr));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, temp));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, count));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::MemoryCopy);
+        // width *= 2
+        self.builder.push(Instr::Local(0x20, width));
+        self.builder.push(Instr::Const(0x41, WVal::I32(2)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Local(0x21, width));
+        self.builder.push(Instr::Br(0));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.builder.push(Instr::Local(0x20, arr));
+        let _ = input_ty;
+        Ok(())
+    }
+
+    /// `if target > bound { target = bound }`
+    fn emit_clamp_i32(&mut self, target: u32, bound: u32) {
+        self.builder.push(Instr::Local(0x20, target));
+        self.builder.push(Instr::Local(0x20, bound));
+        self.builder.push(Instr::Op(0x4a));
+        self.builder.push(Instr::Block {
+            opcode: 0x04,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x04);
+        self.builder.push(Instr::Local(0x20, bound));
+        self.builder.push(Instr::Local(0x21, target));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+    }
+
+    /// Push the address of `array[slot]` into the `out` local.
+    fn emit_slot_addr(&mut self, base: u32, slot: u32, out: u32) {
+        self.builder.push(Instr::Local(0x20, base));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, slot));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, out));
+    }
+
+    /// Copy one 8-byte element slot (raw copy: valid for every sort mode).
+    fn emit_slot_copy(&mut self, dst_base: u32, dst_slot: u32, src_base: u32, src_slot: u32) {
+        let dst = self.builder.add_local(ValType::I32);
+        let src = self.builder.add_local(ValType::I32);
+        self.emit_slot_addr(dst_base, dst_slot, dst);
+        self.emit_slot_addr(src_base, src_slot, src);
+        self.builder.push(Instr::Local(0x20, dst));
+        self.builder.push(Instr::Local(0x20, src));
+        self.builder.push(Instr::Mem(0x29, 3, 0));
+        self.builder.push(Instr::Mem(0x37, 3, 0));
+    }
+
+    /// Call the comparator on the two slots, leaving its i64 result.
+    fn emit_sort_compare(&mut self, mode: SortMode, sig: &FnSig, cb_env: u32, a: u32, b: u32) {
+        self.builder.push(Instr::Local(0x20, cb_env));
+        match mode {
+            SortMode::Int => {
+                self.builder.push(Instr::Local(0x20, a));
+                self.builder.push(Instr::Mem(0x29, 3, 0));
+                self.builder.push(Instr::Local(0x20, b));
+                self.builder.push(Instr::Mem(0x29, 3, 0));
+            }
+            SortMode::Str => {
+                for (slot, offset) in [(a, 0u32), (a, 4), (b, 0), (b, 4)] {
+                    self.builder.push(Instr::Local(0x20, slot));
+                    self.builder.push(Instr::Mem(0x28, 2, offset));
+                }
+            }
+            SortMode::Float => {
+                self.builder.push(Instr::Local(0x20, a));
+                self.builder.push(Instr::Mem(0x29, 3, 0));
+                self.builder.push(Instr::Op(0xbf));
+                self.builder.push(Instr::Local(0x20, b));
+                self.builder.push(Instr::Mem(0x29, 3, 0));
+                self.builder.push(Instr::Op(0xbf));
+            }
+            SortMode::Ptr => {
+                self.builder.push(Instr::Local(0x20, a));
+                self.builder.push(Instr::Mem(0x28, 2, 0));
+                self.builder.push(Instr::Local(0x20, b));
+                self.builder.push(Instr::Mem(0x28, 2, 0));
+            }
+        }
+        self.builder.push(Instr::Call(sig.index));
+    }
+
     /// Emit the address of an assignable record field / array element.
     fn emit_target_address(&mut self, target: &Expr) -> Result<Ty, String> {
         match target {
@@ -4464,6 +4812,7 @@ impl<'a> Emitter<'a> {
                     ty_name(other)
                 )),
             },
+
             Expr::Bin(op, left, right) => {
                 let lt = self.type_of(left)?;
                 let rt = self.type_of(right)?;
@@ -5686,7 +6035,7 @@ impl<'a> Emitter<'a> {
                 Ok(Ty::Bool)
             }
             Expr::Ternary(cond, then, other, _) => {
-                let ty = self.checker.infer(expr)?;
+                let ty = self.type_of(expr)?;
                 if ty == Ty::Str {
                     let ptr_slot = self.builder.add_local(ValType::I32);
                     let len_slot = self.builder.add_local(ValType::I32);
@@ -7021,10 +7370,9 @@ impl<'a> Emitter<'a> {
                         )
                     {
                         let input_ty = self.type_of(&args[0])?;
-                        let conv = if input_ty == Ty::ArrF {
-                            0xbf // f64.reinterpret_i64: slots hold f64
-                        } else {
-                            0xa7 // i32.wrap_i64: slots hold record pointers
+                        let mode = match input_ty {
+                            Ty::ArrF => SortMode::Float,
+                            _ => SortMode::Ptr,
                         };
                         let Ty::Func(id) = self.type_of(&args[1])? else {
                             return Err("wasm target sort() needs a function literal comparator"
@@ -7036,146 +7384,7 @@ impl<'a> Emitter<'a> {
                             .get(id as usize)
                             .cloned()
                             .ok_or_else(|| "wasm target lost a function literal".to_string())?;
-                        let arr = self.builder.add_local(ValType::I32);
-                        let count = self.builder.add_local(ValType::I64);
-                        let outer = self.builder.add_local(ValType::I64);
-                        let inner = self.builder.add_local(ValType::I64);
-                        let a_val = self.builder.add_local(ValType::I64);
-                        let b_val = self.builder.add_local(ValType::I64);
-                        let addr = self.builder.add_local(ValType::I32);
-                        let cb_env = self.builder.add_local(ValType::I32);
-                        self.emit_expr(&args[0])?;
-                        self.builder.push(Instr::Local(0x21, arr));
-                        self.emit_expr(&args[1])?;
-                        self.builder.push(Instr::Local(0x21, cb_env));
-                        self.builder.push(Instr::Local(0x20, arr));
-                        self.builder.push(Instr::Mem(0x28, 2, 0));
-                        self.builder.push(Instr::Op(0xad));
-                        self.builder.push(Instr::Local(0x21, count));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
-                        self.builder.push(Instr::Local(0x21, outer));
-                        self.builder.push(Instr::Block {
-                            opcode: 0x02,
-                            end: 0,
-                            else_at: 0,
-                            start: 0,
-                        });
-                        self.labels.push(0x02);
-                        self.builder.push(Instr::Block {
-                            opcode: 0x03,
-                            end: 0,
-                            else_at: 0,
-                            start: 0,
-                        });
-                        self.labels.push(0x03);
-                        self.builder.push(Instr::Local(0x20, outer));
-                        self.builder.push(Instr::Local(0x20, count));
-                        self.builder.push(Instr::Op(0x53));
-                        self.builder.push(Instr::Op(0x45));
-                        self.builder.push(Instr::BrIf(1));
-                        self.builder.push(Instr::Local(0x20, outer));
-                        self.builder.push(Instr::Local(0x21, inner));
-                        self.builder.push(Instr::Block {
-                            opcode: 0x02,
-                            end: 0,
-                            else_at: 0,
-                            start: 0,
-                        });
-                        self.labels.push(0x02);
-                        self.builder.push(Instr::Block {
-                            opcode: 0x03,
-                            end: 0,
-                            else_at: 0,
-                            start: 0,
-                        });
-                        self.labels.push(0x03);
-                        self.builder.push(Instr::Local(0x20, inner));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
-                        self.builder.push(Instr::Op(0x55));
-                        self.builder.push(Instr::Op(0x45));
-                        self.builder.push(Instr::BrIf(1));
-                        // a = slot[inner - 1], b = slot[inner]
-                        self.builder.push(Instr::Local(0x20, arr));
-                        self.builder.push(Instr::Local(0x20, inner));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
-                        self.builder.push(Instr::Op(0x7d));
-                        self.builder.push(Instr::Op(0xa7));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
-                        self.builder.push(Instr::Op(0x6c));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Local(0x21, addr));
-                        self.builder.push(Instr::Local(0x20, addr));
-                        self.builder.push(Instr::Mem(0x29, 3, 0));
-                        self.builder.push(Instr::Local(0x21, a_val));
-                        self.builder.push(Instr::Local(0x20, arr));
-                        self.builder.push(Instr::Local(0x20, inner));
-                        self.builder.push(Instr::Op(0xa7));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
-                        self.builder.push(Instr::Op(0x6c));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Local(0x21, addr));
-                        self.builder.push(Instr::Local(0x20, addr));
-                        self.builder.push(Instr::Mem(0x29, 3, 0));
-                        self.builder.push(Instr::Local(0x21, b_val));
-                        self.builder.push(Instr::Local(0x20, cb_env));
-                        self.builder.push(Instr::Local(0x20, a_val));
-                        self.builder.push(Instr::Op(conv));
-                        self.builder.push(Instr::Local(0x20, b_val));
-                        self.builder.push(Instr::Op(conv));
-                        self.builder.push(Instr::Call(sig.index));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
-                        self.builder.push(Instr::Op(0x57));
-                        self.builder.push(Instr::BrIf(1));
-                        // swap the two 8-byte slots
-                        self.builder.push(Instr::Local(0x20, arr));
-                        self.builder.push(Instr::Local(0x20, inner));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
-                        self.builder.push(Instr::Op(0x7d));
-                        self.builder.push(Instr::Op(0xa7));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
-                        self.builder.push(Instr::Op(0x6c));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Local(0x21, addr));
-                        self.builder.push(Instr::Local(0x20, addr));
-                        self.builder.push(Instr::Local(0x20, b_val));
-                        self.builder.push(Instr::Mem(0x37, 3, 0));
-                        self.builder.push(Instr::Local(0x20, arr));
-                        self.builder.push(Instr::Local(0x20, inner));
-                        self.builder.push(Instr::Op(0xa7));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
-                        self.builder.push(Instr::Op(0x6c));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Local(0x21, addr));
-                        self.builder.push(Instr::Local(0x20, addr));
-                        self.builder.push(Instr::Local(0x20, a_val));
-                        self.builder.push(Instr::Mem(0x37, 3, 0));
-                        self.builder.push(Instr::Local(0x20, inner));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
-                        self.builder.push(Instr::Op(0x7d));
-                        self.builder.push(Instr::Local(0x21, inner));
-                        self.builder.push(Instr::Br(0));
-                        self.labels.pop();
-                        self.builder.push(Instr::Op(0x0b));
-                        self.labels.pop();
-                        self.builder.push(Instr::Op(0x0b));
-                        self.builder.push(Instr::Local(0x20, outer));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
-                        self.builder.push(Instr::Op(0x7c));
-                        self.builder.push(Instr::Local(0x21, outer));
-                        self.builder.push(Instr::Br(0));
-                        self.labels.pop();
-                        self.builder.push(Instr::Op(0x0b));
-                        self.labels.pop();
-                        self.builder.push(Instr::Op(0x0b));
-                        self.builder.push(Instr::Local(0x20, arr));
+                        self.emit_merge_sort(&args[0], &args[1], input_ty, mode, &sig)?;
                         return Ok(input_ty);
                     }
                     if name == "sort" && args.len() == 2 && self.type_of(&args[0])? == Ty::ArrStr {
@@ -7189,164 +7398,7 @@ impl<'a> Emitter<'a> {
                             .get(id as usize)
                             .cloned()
                             .ok_or_else(|| "wasm target lost a function literal".to_string())?;
-                        let arr = self.builder.add_local(ValType::I32);
-                        let count = self.builder.add_local(ValType::I64);
-                        let outer = self.builder.add_local(ValType::I64);
-                        let inner = self.builder.add_local(ValType::I64);
-                        let a_ptr = self.builder.add_local(ValType::I32);
-                        let a_len = self.builder.add_local(ValType::I32);
-                        let b_ptr = self.builder.add_local(ValType::I32);
-                        let b_len = self.builder.add_local(ValType::I32);
-                        let addr = self.builder.add_local(ValType::I32);
-                        let cb_env = self.builder.add_local(ValType::I32);
-                        self.emit_expr(&args[0])?;
-                        self.builder.push(Instr::Local(0x21, arr));
-                        self.emit_expr(&args[1])?;
-                        self.builder.push(Instr::Local(0x21, cb_env));
-                        self.builder.push(Instr::Local(0x20, arr));
-                        self.builder.push(Instr::Mem(0x28, 2, 0));
-                        self.builder.push(Instr::Op(0xad));
-                        self.builder.push(Instr::Local(0x21, count));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
-                        self.builder.push(Instr::Local(0x21, outer));
-                        self.builder.push(Instr::Block {
-                            opcode: 0x02,
-                            end: 0,
-                            else_at: 0,
-                            start: 0,
-                        });
-                        self.labels.push(0x02);
-                        self.builder.push(Instr::Block {
-                            opcode: 0x03,
-                            end: 0,
-                            else_at: 0,
-                            start: 0,
-                        });
-                        self.labels.push(0x03);
-                        self.builder.push(Instr::Local(0x20, outer));
-                        self.builder.push(Instr::Local(0x20, count));
-                        self.builder.push(Instr::Op(0x53));
-                        self.builder.push(Instr::Op(0x45));
-                        self.builder.push(Instr::BrIf(1));
-                        self.builder.push(Instr::Local(0x20, outer));
-                        self.builder.push(Instr::Local(0x21, inner));
-                        self.builder.push(Instr::Block {
-                            opcode: 0x02,
-                            end: 0,
-                            else_at: 0,
-                            start: 0,
-                        });
-                        self.labels.push(0x02);
-                        self.builder.push(Instr::Block {
-                            opcode: 0x03,
-                            end: 0,
-                            else_at: 0,
-                            start: 0,
-                        });
-                        self.labels.push(0x03);
-                        self.builder.push(Instr::Local(0x20, inner));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
-                        self.builder.push(Instr::Op(0x55));
-                        self.builder.push(Instr::Op(0x45));
-                        self.builder.push(Instr::BrIf(1));
-                        // a = arr[inner - 1]
-                        self.builder.push(Instr::Local(0x20, arr));
-                        self.builder.push(Instr::Local(0x20, inner));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
-                        self.builder.push(Instr::Op(0x7d));
-                        self.builder.push(Instr::Op(0xa7));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
-                        self.builder.push(Instr::Op(0x6c));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Local(0x21, addr));
-                        self.builder.push(Instr::Local(0x20, addr));
-                        self.builder.push(Instr::Mem(0x28, 2, 0));
-                        self.builder.push(Instr::Local(0x21, a_ptr));
-                        self.builder.push(Instr::Local(0x20, addr));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Mem(0x28, 2, 0));
-                        self.builder.push(Instr::Local(0x21, a_len));
-                        // b = arr[inner]
-                        self.builder.push(Instr::Local(0x20, arr));
-                        self.builder.push(Instr::Local(0x20, inner));
-                        self.builder.push(Instr::Op(0xa7));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
-                        self.builder.push(Instr::Op(0x6c));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Local(0x21, addr));
-                        self.builder.push(Instr::Local(0x20, addr));
-                        self.builder.push(Instr::Mem(0x28, 2, 0));
-                        self.builder.push(Instr::Local(0x21, b_ptr));
-                        self.builder.push(Instr::Local(0x20, addr));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Mem(0x28, 2, 0));
-                        self.builder.push(Instr::Local(0x21, b_len));
-                        self.builder.push(Instr::Local(0x20, cb_env));
-                        self.builder.push(Instr::Local(0x20, a_ptr));
-                        self.builder.push(Instr::Local(0x20, a_len));
-                        self.builder.push(Instr::Local(0x20, b_ptr));
-                        self.builder.push(Instr::Local(0x20, b_len));
-                        self.builder.push(Instr::Call(sig.index));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
-                        self.builder.push(Instr::Op(0x57));
-                        self.builder.push(Instr::BrIf(1));
-                        // swap the pair at inner-1 with the pair at inner
-                        self.builder.push(Instr::Local(0x20, arr));
-                        self.builder.push(Instr::Local(0x20, inner));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
-                        self.builder.push(Instr::Op(0x7d));
-                        self.builder.push(Instr::Op(0xa7));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
-                        self.builder.push(Instr::Op(0x6c));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Local(0x21, addr));
-                        self.builder.push(Instr::Local(0x20, addr));
-                        self.builder.push(Instr::Local(0x20, b_ptr));
-                        self.builder.push(Instr::Mem(0x36, 2, 0));
-                        self.builder.push(Instr::Local(0x20, addr));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Local(0x20, b_len));
-                        self.builder.push(Instr::Mem(0x36, 2, 0));
-                        self.builder.push(Instr::Local(0x20, addr));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Local(0x21, addr));
-                        self.builder.push(Instr::Local(0x20, addr));
-                        self.builder.push(Instr::Local(0x20, a_ptr));
-                        self.builder.push(Instr::Mem(0x36, 2, 0));
-                        self.builder.push(Instr::Local(0x20, addr));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Local(0x20, a_len));
-                        self.builder.push(Instr::Mem(0x36, 2, 0));
-                        self.builder.push(Instr::Local(0x20, inner));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
-                        self.builder.push(Instr::Op(0x7d));
-                        self.builder.push(Instr::Local(0x21, inner));
-                        self.builder.push(Instr::Br(0));
-                        self.labels.pop();
-                        self.builder.push(Instr::Op(0x0b));
-                        self.labels.pop();
-                        self.builder.push(Instr::Op(0x0b));
-                        self.builder.push(Instr::Local(0x20, outer));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
-                        self.builder.push(Instr::Op(0x7c));
-                        self.builder.push(Instr::Local(0x21, outer));
-                        self.builder.push(Instr::Br(0));
-                        self.labels.pop();
-                        self.builder.push(Instr::Op(0x0b));
-                        self.labels.pop();
-                        self.builder.push(Instr::Op(0x0b));
-                        self.builder.push(Instr::Local(0x20, arr));
+                        self.emit_merge_sort(&args[0], &args[1], Ty::ArrStr, SortMode::Str, &sig)?;
                         return Ok(Ty::ArrStr);
                     }
                     if name == "sort" && args.len() == 2 {
@@ -7360,131 +7412,7 @@ impl<'a> Emitter<'a> {
                             .get(id as usize)
                             .cloned()
                             .ok_or_else(|| "wasm target lost a function literal".to_string())?;
-                        let arr = self.builder.add_local(ValType::I32);
-                        let count = self.builder.add_local(ValType::I64);
-                        let outer = self.builder.add_local(ValType::I64);
-                        let inner = self.builder.add_local(ValType::I64);
-                        let a_val = self.builder.add_local(ValType::I64);
-                        let b_val = self.builder.add_local(ValType::I64);
-                        let addr = self.builder.add_local(ValType::I32);
-                        let cb_env = self.builder.add_local(ValType::I32);
-                        self.emit_expr(&args[0])?;
-                        self.builder.push(Instr::Local(0x21, arr));
-                        self.emit_expr(&args[1])?;
-                        self.builder.push(Instr::Local(0x21, cb_env));
-                        self.builder.push(Instr::Local(0x20, arr));
-                        self.builder.push(Instr::Mem(0x28, 2, 0));
-                        self.builder.push(Instr::Op(0xad));
-                        self.builder.push(Instr::Local(0x21, count));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
-                        self.builder.push(Instr::Local(0x21, outer));
-                        self.builder.push(Instr::Block {
-                            opcode: 0x02,
-                            end: 0,
-                            else_at: 0,
-                            start: 0,
-                        });
-                        self.labels.push(0x02);
-                        self.builder.push(Instr::Block {
-                            opcode: 0x03,
-                            end: 0,
-                            else_at: 0,
-                            start: 0,
-                        });
-                        self.labels.push(0x03);
-                        self.builder.push(Instr::Local(0x20, outer));
-                        self.builder.push(Instr::Local(0x20, count));
-                        self.builder.push(Instr::Op(0x53));
-                        self.builder.push(Instr::Op(0x45));
-                        self.builder.push(Instr::BrIf(1));
-                        self.builder.push(Instr::Local(0x20, outer));
-                        self.builder.push(Instr::Local(0x21, inner));
-                        self.builder.push(Instr::Block {
-                            opcode: 0x02,
-                            end: 0,
-                            else_at: 0,
-                            start: 0,
-                        });
-                        self.labels.push(0x02);
-                        self.builder.push(Instr::Block {
-                            opcode: 0x03,
-                            end: 0,
-                            else_at: 0,
-                            start: 0,
-                        });
-                        self.labels.push(0x03);
-                        self.builder.push(Instr::Local(0x20, inner));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
-                        self.builder.push(Instr::Op(0x55));
-                        self.builder.push(Instr::Op(0x45));
-                        self.builder.push(Instr::BrIf(1));
-                        self.builder.push(Instr::Local(0x20, arr));
-                        self.builder.push(Instr::Local(0x20, inner));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
-                        self.builder.push(Instr::Op(0x7d));
-                        self.builder.push(Instr::Op(0xa7));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
-                        self.builder.push(Instr::Op(0x6c));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Mem(0x29, 3, 0));
-                        self.builder.push(Instr::Local(0x21, a_val));
-                        self.builder.push(Instr::Local(0x20, arr));
-                        self.builder.push(Instr::Local(0x20, inner));
-                        self.builder.push(Instr::Op(0xa7));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
-                        self.builder.push(Instr::Op(0x6c));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Mem(0x29, 3, 0));
-                        self.builder.push(Instr::Local(0x21, b_val));
-                        self.builder.push(Instr::Local(0x20, cb_env));
-                        self.builder.push(Instr::Local(0x20, a_val));
-                        self.builder.push(Instr::Local(0x20, b_val));
-                        self.builder.push(Instr::Call(sig.index));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
-                        self.builder.push(Instr::Op(0x57));
-                        self.builder.push(Instr::BrIf(1));
-                        self.builder.push(Instr::Local(0x20, arr));
-                        self.builder.push(Instr::Local(0x20, inner));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
-                        self.builder.push(Instr::Op(0x7d));
-                        self.builder.push(Instr::Op(0xa7));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
-                        self.builder.push(Instr::Op(0x6c));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Local(0x21, addr));
-                        self.builder.push(Instr::Local(0x20, addr));
-                        self.builder.push(Instr::Local(0x20, b_val));
-                        self.builder.push(Instr::Mem(0x37, 3, 0));
-                        self.builder.push(Instr::Local(0x20, addr));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Local(0x20, a_val));
-                        self.builder.push(Instr::Mem(0x37, 3, 0));
-                        self.builder.push(Instr::Local(0x20, inner));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
-                        self.builder.push(Instr::Op(0x7d));
-                        self.builder.push(Instr::Local(0x21, inner));
-                        self.builder.push(Instr::Br(0));
-                        self.labels.pop();
-                        self.builder.push(Instr::Op(0x0b));
-                        self.labels.pop();
-                        self.builder.push(Instr::Op(0x0b));
-                        self.builder.push(Instr::Local(0x20, outer));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
-                        self.builder.push(Instr::Op(0x7c));
-                        self.builder.push(Instr::Local(0x21, outer));
-                        self.builder.push(Instr::Br(0));
-                        self.labels.pop();
-                        self.builder.push(Instr::Op(0x0b));
-                        self.labels.pop();
-                        self.builder.push(Instr::Op(0x0b));
-                        self.builder.push(Instr::Local(0x20, arr));
+                        self.emit_merge_sort(&args[0], &args[1], Ty::Arr, SortMode::Int, &sig)?;
                         return Ok(Ty::Arr);
                     }
                     if matches!(name.as_str(), "reverse" | "sort") && args.len() == 1 {
@@ -12126,6 +12054,28 @@ mod tests {
                 "x!".to_string(),
                 "[x]x".to_string(),
                 "xx".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn comparator_sort_is_stable_and_matches_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "print(sort([3, 1, 2], fn(x, y) { return x - y }))\nprint(sort([3, 1, 2], fn(x, y) { return y - x }))\nprint(sort([5], fn(x, y) { return x - y }))\nprint(sort([], fn(x, y) { return x - y }))\nprint(sort([2.5, 1.5, 3.5], fn(x, y) { if (x < y) { return -1 }\n  return 1 }))\nprint(sort([\"bb\", \"a\", \"ccc\"], fn(x, y) { return len(x) - len(y) }))\nlet rows = [[3], [1, 2], [2]]\nprint(sort(rows, fn(x, y) { return len(x) - len(y) }))\nlet rs = [{a: 3}, {a: 1}, {a: 2}, {a: 1}]\nprint(sort(rs, fn(x, y) { return x.a - y.a }))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec![
+                "[1,2,3]".to_string(),
+                "[3,2,1]".to_string(),
+                "[5]".to_string(),
+                "[]".to_string(),
+                "[1.5,2.5,3.5]".to_string(),
+                "[\"a\",\"bb\",\"ccc\"]".to_string(),
+                "[[3],[2],[1,2]]".to_string(),
+                "[{\"a\":1},{\"a\":1},{\"a\":2},{\"a\":3}]".to_string(),
             ]
         );
     }

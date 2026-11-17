@@ -377,12 +377,15 @@ bx wasm target
 - **Empty record literals**: `{}` is now a valid zero-field record, so
   `merge({}, {x: 1})`, `keys({})`, `values({})`, `type({})` and `print({})`
   work (printed as `{}`).
-- **Comparator sort**: `sort(arr, fn(a, b) { return a - b })` runs an in-place
-  insertion sort in wasm calling the literal comparator (environment included);
-  the comparator receives two ints and returns an int whose sign decides the
-  order, the array is mutated and returned like the VM. String arrays take a
-  comparator over `(str, str) -> int` the same way (insertion sort swapping
-  ptr/len pairs); int and string arrays are the supported element kinds.
+- **Comparator sort**: `sort(arr, fn(a, b) { return a - b })` runs a stable
+  bottom-up merge sort in wasm calling the literal comparator (environment
+  included); the comparator returns an int whose sign decides the order, the
+  array is mutated and returned like the VM. One shared emitter handles every
+  element kind: int arrays, string arrays, float arrays, record arrays and
+  nested arrays (raw 8-byte slot copies for the merge, per-kind argument
+  conversion for the callback). This is O(n log n) callback calls instead of
+  insertion sort's O(n²), which brought the 500-record benchmark from 178 ms to
+  103 ms (VM 95 ms).
 - **Arrays of records**: `[{a: 1}, {b: 2}]` with one consistent shape types as
   `Ty::ArrObj(shape)`; entries hold record pointers in the usual 8-byte slots, so
   `len`, element read (negative indexes included), element write, `for r in xs`
