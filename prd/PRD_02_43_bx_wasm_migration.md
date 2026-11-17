@@ -5,7 +5,11 @@ Owner of the **switchover** from the private `.bxb` container to standard
 deprecation of `.bxb`, opt-in/rollback mechanics and the evidence policy for
 each gate. The backend itself (encoder, decoder, interpreter, host ABI,
 milestones) is owned by
-[PRD_02_42_bx_wasm_target.md](PRD_02_42_bx_wasm_target.md); this module never
+[PRD_02_42_bx_wasm_target.md](PRD_02_42_bx_wasm_target.md). The engine decision
+(own interpreter vs the absorbed `tinyvm` core) is owned by
+[PRD_02_44_bx_tinyvm_absorption.md](PRD_02_44_bx_tinyvm_absorption.md); the
+parity gates and default flip below hold whichever engine executes the module.
+This module never
 restates its feature details, only the migration state derived from them.
 
 ## Product outcome
