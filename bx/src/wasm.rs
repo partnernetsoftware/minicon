@@ -573,6 +573,70 @@ fn format_record(memory: &[u8], table: usize, count: usize, rec: usize) -> Strin
     }
     format!("{{{}}}", pieces.join(","))
 }
+/// Array of string arrays (`[[ "a" ], [ "b", "c" ]]`).
+fn format_arr_strarr(memory: &[u8], ptr: usize) -> String {
+    let mut pieces: Vec<String> = Vec::new();
+    if ptr + 4 <= memory.len() {
+        let count = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+        for index in 0..count {
+            let slot = ptr + 4 + index * 8;
+            if slot + 8 > memory.len() {
+                break;
+            }
+            let inner = u32::from_le_bytes(memory[slot..slot + 4].try_into().unwrap()) as usize;
+            pieces.push(format_str_array(memory, inner));
+        }
+    }
+    format!("[{}]", pieces.join(","))
+}
+
+/// Read a `(kinds_ptr, keys_table_ptr, field_count)` descriptor written by the
+/// emitter for record and record-array stringification.
+fn read_record_descriptor(memory: &[u8], aux: usize) -> (usize, usize, usize) {
+    if aux + 12 > memory.len() {
+        return (0, 0, 0);
+    }
+    let kinds = u32::from_le_bytes(memory[aux..aux + 4].try_into().unwrap()) as usize;
+    let table = u32::from_le_bytes(memory[aux + 4..aux + 8].try_into().unwrap()) as usize;
+    let count = u32::from_le_bytes(memory[aux + 8..aux + 12].try_into().unwrap()) as usize;
+    (kinds, table, count)
+}
+
+/// Stringify any container the emitter can print: kind 4 int array, 5 string
+/// array, 6 float array, 7 record array, 8 nested array, 9 text-row array,
+/// 10 record.
+fn format_container(memory: &[u8], kind: i32, ptr: usize, aux: usize) -> String {
+    match kind {
+        4 => format_i64_array(memory, ptr),
+        5 => format_str_array(memory, ptr),
+        6 => format_f64_array(memory, ptr),
+        7 => {
+            let (kinds, table, fields) = read_record_descriptor(memory, aux);
+            let mut pieces: Vec<String> = Vec::new();
+            if ptr + 4 <= memory.len() {
+                let count = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+                for index in 0..count {
+                    let slot = ptr + 4 + index * 8;
+                    if slot + 8 > memory.len() {
+                        break;
+                    }
+                    let rec =
+                        u32::from_le_bytes(memory[slot..slot + 4].try_into().unwrap()) as usize;
+                    pieces.push(format_record_typed(memory, kinds, table, fields, rec));
+                }
+            }
+            format!("[{}]", pieces.join(","))
+        }
+        8 => format_arr_arr(memory, ptr),
+        9 => format_arr_strarr(memory, ptr),
+        10 => {
+            let (kinds, table, fields) = read_record_descriptor(memory, aux);
+            format_record_typed(memory, kinds, table, fields, ptr)
+        }
+        _ => String::new(),
+    }
+}
+
 /// Typed variant of [`format_record`]: `kinds` is one byte per field
 /// (0 int, 1 string, 2 float, 3 bool) and every field occupies an 8-byte slot.
 fn format_record_typed(
@@ -1415,6 +1479,38 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     }
                 }
                 Ok(vec![WVal::I64(found)])
+            }
+            ("env", "format_container") => {
+                let read = |value: Option<&WVal>| match value {
+                    Some(WVal::I32(v)) => Some(*v as usize),
+                    _ => None,
+                };
+                let (kind, ptr, aux) =
+                    match (read(args.first()), read(args.get(1)), read(args.get(2))) {
+                        (Some(kind), Some(ptr), Some(aux)) => (kind as i32, ptr, aux),
+                        _ => {
+                            return Err("env.format_container expects (i32 kind, i32 ptr, i32 aux)"
+                                .to_string())
+                        }
+                    };
+                let text = format_container(memory, kind, ptr, aux);
+                match store_text_block(memory, &mut self.next_file, text.as_bytes()) {
+                    Some(start) => Ok(vec![WVal::I32(start as i32)]),
+                    None => Err("format_container result does not fit the file region".to_string()),
+                }
+            }
+            ("env", "json_str") => {
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("env.json_str expects (i32 ptr, i32 len)".to_string()),
+                };
+                let text = memory_text(memory, ptr, len);
+                let mut rendered = String::new();
+                crate::value::write_json_str(&mut rendered, &text);
+                match store_text_block(memory, &mut self.next_file, rendered.as_bytes()) {
+                    Some(start) => Ok(vec![WVal::I32(start as i32)]),
+                    None => Err("json_str result does not fit the file region".to_string()),
+                }
             }
             ("env", "print_map") => {
                 let ptr = match args.first() {

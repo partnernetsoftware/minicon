@@ -95,7 +95,9 @@ const imports = {
     print_utf8: (ptr, len) => {
       const bytes = new Uint8Array(instance.exports.memory.buffer, ptr, len);
       emit(new TextDecoder("utf-8").decode(bytes));
-    },    eprint: (ptr, len) => {
+    },    format_container: () => 0,
+    json_str: () => 0,
+    eprint: (ptr, len) => {
       const bytes = new Uint8Array(instance.exports.memory.buffer, ptr, len);
       const line = new TextDecoder("utf-8").decode(bytes);
       if (typeof console !== "undefined" && console.error) console.error(line);

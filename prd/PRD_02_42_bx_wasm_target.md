@@ -228,7 +228,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 118 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 119 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -445,6 +445,14 @@ bx wasm target
   passed to functions. Object lists nested inside other array literals keep the
   array pointer in a dedicated local because each record literal allocates
   storage.
+- **Container stringification**: `str(value)` and `json(value)` produce the VM's
+  compact JSON for int/string/float/record/nested/text-row arrays and records,
+  and `json("a")` quotes/escapes strings like the VM (`json(1)` is `"1"`).
+  Interpolation and string `+` stringify containers the same way
+  (`"arr=${[1, 2]}"` -> `arr=[1,2]`). One host import
+  (`env.format_container(kind, ptr, aux)`) serves every kind, with a 12-byte
+  emitter-written descriptor `(kinds_ptr, keys_table_ptr, field_count)` for
+  records and record arrays; `env.json_str` escapes strings.
 - **Array concatenation**: `a + b` (and `a += b`) concatenates arrays of the same
   element kind — int, string, float, record, nested and text-row arrays — into a
   new array, matching the VM for same-kind inputs. Mixed-kind concatenation

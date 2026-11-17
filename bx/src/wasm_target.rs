@@ -551,7 +551,10 @@ impl Checker {
                 }
                 if op == &BinOp::Add && (lt == Ty::Str || rt == Ty::Str) {
                     let other = if lt == Ty::Str { rt } else { lt };
-                    if matches!(other, Ty::Str | Ty::Int | Ty::Float | Ty::Bool) {
+                    if matches!(other, Ty::Str | Ty::Int | Ty::Float | Ty::Bool)
+                        || is_array_ty(other)
+                        || matches!(other, Ty::Obj(_))
+                    {
                         return Ok(Ty::Str);
                     }
                 }
@@ -588,7 +591,7 @@ impl Checker {
                 if op == &BinOp::Add {
                     let lt = self.infer(left)?;
                     let rt = self.infer(right)?;
-                    if is_array_ty(lt) || is_array_ty(rt) {
+                    if is_array_ty(lt) && is_array_ty(rt) {
                         if lt != rt {
                             return Err(format!(
                                 "wasm target concatenates arrays of one element kind, got {} and {}",
@@ -597,6 +600,14 @@ impl Checker {
                             ));
                         }
                         return Ok(lt);
+                    }
+                    let stringifies = |ty: Ty| {
+                        matches!(ty, Ty::Int | Ty::Float | Ty::Bool | Ty::Str)
+                            || is_array_ty(ty)
+                            || matches!(ty, Ty::Obj(_))
+                    };
+                    if lt == Ty::Str && stringifies(rt) || rt == Ty::Str && stringifies(lt) {
+                        return Ok(Ty::Str);
                     }
                 }
                 let lt = self.infer(left)?;
@@ -1460,8 +1471,31 @@ impl Checker {
                     }
                     if name == "str" && args.len() == 1 {
                         let ty = self.infer(&args[0])?;
-                        if !is_number(ty) && ty != Ty::Bool {
-                            return Err("wasm target str() takes a number or bool".to_string());
+                        if !is_number(ty)
+                            && ty != Ty::Bool
+                            && ty != Ty::Str
+                            && !is_array_ty(ty)
+                            && !matches!(ty, Ty::Obj(_))
+                        {
+                            return Err(
+                                "wasm target str() takes a number, bool, string or container"
+                                    .to_string(),
+                            );
+                        }
+                        return Ok(Ty::Str);
+                    }
+                    if name == "json" && args.len() == 1 {
+                        let ty = self.infer(&args[0])?;
+                        if !is_number(ty)
+                            && ty != Ty::Bool
+                            && ty != Ty::Str
+                            && !is_array_ty(ty)
+                            && !matches!(ty, Ty::Obj(_))
+                        {
+                            return Err(
+                                "wasm target json() takes a number, string, bool or container"
+                                    .to_string(),
+                            );
                         }
                         return Ok(Ty::Str);
                     }
@@ -2379,7 +2413,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 90;
+const IMPORT_COUNT: u32 = 92;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -2457,6 +2491,8 @@ const DIRNAME: u32 = 86;
 const EPRINT: u32 = 87;
 const ENV_GET_DEFAULT: u32 = 88;
 const SCRIPT_DIR: u32 = 89;
+const FORMAT_CONTAINER: u32 = 90;
+const JSON_STR: u32 = 91;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -2746,6 +2782,39 @@ impl<'a> Emitter<'a> {
         Err("wasm target has no loop to break out of".to_string())
     }
 
+    /// 12-byte descriptor `(kinds_ptr, keys_table_ptr, field_count)` for the
+    /// host stringifier; emitted once per call site.
+    fn record_descriptor(&mut self, shape: u32) -> Result<u32, String> {
+        let kinds = self.record_kinds_table(shape)?;
+        let (table, count) = self.record_table(shape)?;
+        let mut bytes = Vec::with_capacity(12);
+        bytes.extend_from_slice(&kinds.to_le_bytes());
+        bytes.extend_from_slice(&table.to_le_bytes());
+        bytes.extend_from_slice(&count.to_le_bytes());
+        Ok(self.builder.add_data(&bytes))
+    }
+
+    /// Stringify a container expression through `env.format_container`, leaving
+    /// a `(ptr, len)` pair on the stack.
+    fn emit_container_string(&mut self, expr: &Expr) -> Result<(), String> {
+        let ty = self.type_of(expr)?;
+        let (kind, aux) = match ty {
+            Ty::Arr => (4, 0),
+            Ty::ArrStr => (5, 0),
+            Ty::ArrF => (6, 0),
+            Ty::ArrObj(shape) => (7, self.record_descriptor(shape)?),
+            Ty::ArrArr => (8, 0),
+            Ty::ArrStrArr => (9, 0),
+            Ty::Obj(shape) => (10, self.record_descriptor(shape)?),
+            other => return Err(format!("wasm target cannot stringify {}", ty_name(other))),
+        };
+        self.builder.push(Instr::Const(0x41, WVal::I32(kind)));
+        self.emit_expr(expr)?;
+        self.builder.push(Instr::Const(0x41, WVal::I32(aux as i32)));
+        self.builder.push(Instr::Call(FORMAT_CONTAINER));
+        self.push_block_as_pair();
+        Ok(())
+    }
     /// Concatenate two arrays of the same kind: allocate `len1 + len2` slots and
     /// copy both bodies. Mixed element kinds are rejected (the VM produces a
     /// dynamic array, which the static value model cannot type).
@@ -5503,7 +5572,7 @@ impl<'a> Emitter<'a> {
                         "trim" | "upper" | "lower" | "replace" | "repeat" => Some(Ty::Str),
                         "index_of" => Some(Ty::Int),
                         "type" => Some(Ty::Str),
-                        "str" => Some(Ty::Str),
+                        "str" | "json" => Some(Ty::Str),
                         "int" => Some(Ty::Int),
                         "len" => Some(Ty::Int),
                         "argc" | "run" | "capture" | "write_file" => Some(Ty::Int),
@@ -6240,6 +6309,7 @@ impl<'a> Emitter<'a> {
                 self.push_block_as_pair();
                 Ok(())
             }
+            ty if is_array_ty(ty) || matches!(ty, Ty::Obj(_)) => self.emit_container_string(expr),
             other => Err(format!(
                 "wasm target cannot use {} in a string concatenation",
                 ty_name(other)
@@ -9152,6 +9222,14 @@ impl<'a> Emitter<'a> {
                     }
                     if name == "str" && args.len() == 1 {
                         let ty = self.type_of(&args[0])?;
+                        if is_array_ty(ty) || matches!(ty, Ty::Obj(_)) {
+                            self.emit_container_string(&args[0])?;
+                            return Ok(Ty::Str);
+                        }
+                        if ty == Ty::Str {
+                            self.emit_str(&args[0])?;
+                            return Ok(Ty::Str);
+                        }
                         if ty == Ty::Bool {
                             self.emit_expr(&args[0])?;
                             self.builder.push(Instr::Call(BOOL_TO_STR));
@@ -9176,6 +9254,39 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Op(0x6a));
                         self.builder.push(Instr::Local(0x20, ARG_TMP));
                         self.builder.push(Instr::Mem(0x28, 2, 0));
+                        return Ok(Ty::Str);
+                    }
+                    if name == "json" && args.len() == 1 {
+                        let ty = self.type_of(&args[0])?;
+                        if is_array_ty(ty) || matches!(ty, Ty::Obj(_)) {
+                            self.emit_container_string(&args[0])?;
+                            return Ok(Ty::Str);
+                        }
+                        match ty {
+                            Ty::Str => {
+                                self.emit_str(&args[0])?;
+                                self.builder.push(Instr::Call(JSON_STR));
+                            }
+                            Ty::Bool => {
+                                self.emit_expr(&args[0])?;
+                                self.builder.push(Instr::Call(BOOL_TO_STR));
+                            }
+                            Ty::Float => {
+                                self.emit_f64(&args[0])?;
+                                self.builder.push(Instr::Call(F64_TO_STR));
+                            }
+                            Ty::Int => {
+                                self.emit_expr(&args[0])?;
+                                self.builder.push(Instr::Call(INT_TO_STR));
+                            }
+                            other => {
+                                return Err(format!(
+                                    "wasm target cannot json-encode {}",
+                                    ty_name(other)
+                                ))
+                            }
+                        }
+                        self.push_block_as_pair();
                         return Ok(Ty::Str);
                     }
                     if name == "int" && args.len() == 1 {
@@ -11736,6 +11847,10 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let str_len_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I64]);
     let str_to_float_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::F64]);
     let which_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
+    let format_container_ty = builder.add_type(
+        vec![ValType::I32, ValType::I32, ValType::I32],
+        vec![ValType::I32],
+    );
     let print_record_typed_ty = builder.add_type(
         vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
         vec![],
@@ -11905,6 +12020,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "eprint", print_utf8_ty);
     builder.import_func("env", "env_get_default", env_get_default_ty);
     builder.import_func("bx", "script_dir", argc_ty);
+    builder.import_func("env", "format_container", format_container_ty);
+    builder.import_func("env", "json_str", which_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -13196,6 +13313,33 @@ mod tests {
                 "[{\"a\":1},{\"a\":2}]".to_string(),
                 "[[1],[2,3]]".to_string(),
                 "[1.5,2.5]".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn json_and_container_stringification_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "print(json(1))\nprint(json(1.5))\nprint(json(\"a\"))\nprint(json(true))\nprint(json([1, 2]))\nprint(json([{a: 1}]))\nprint(json({a: \"x\"}))\nprint(str([1]))\nprint(str({a: 1}))\nprint(str(\"a\"))\nprint(\"arr=${[1, 2]}\")\nprint(\"rec=${{a: 1}}\")\nprint(\"row=${[[1, 2], [3]]}\")",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec![
+                "1".to_string(),
+                "1.5".to_string(),
+                "\"a\"".to_string(),
+                "true".to_string(),
+                "[1,2]".to_string(),
+                "[{\"a\":1}]".to_string(),
+                "{\"a\":\"x\"}".to_string(),
+                "[1]".to_string(),
+                "{\"a\":1}".to_string(),
+                "a".to_string(),
+                "arr=[1,2]".to_string(),
+                "rec={\"a\":1}".to_string(),
+                "row=[[1,2],[3]]".to_string(),
             ]
         );
     }
