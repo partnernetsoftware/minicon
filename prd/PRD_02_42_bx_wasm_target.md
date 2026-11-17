@@ -619,6 +619,26 @@ bx wasm target
   on the operand stack) are recorded here because the label-base bug also
   silently skipped code after a block and is easy to reintroduce.
 
+## Compatibility boundary
+
+The wasm target models values statically; the VM is dynamically typed. These
+boundaries are intentional and produce explicit errors (with a `BX_TARGET=bxb`
+hint from the CLI), not silent behaviour changes:
+
+| Boundary | Example | Workaround |
+| --- | --- | --- |
+| no `null` value | `env("UNSET") == null`, `null` literals | use `""`/`0` sentinels, or run with `BX_TARGET=bxb` |
+| runtime JSON | `parse(exec(...).out)` | `parse("literal")` is folded at compile time; runtime JSON needs the VM |
+| heterogeneous containers | `["a", 1]`, `let xs = []` pushed with two kinds | one element kind per array/record (failures lists etc. take the first pushed kind) |
+| functions returning different types | `fn f(x) { return x ? 1 : "" }` | split into typed functions or use the VM |
+| record fields are scalars | `{a: {b: 1}}`, `{xs: [1]}` | flatten fields, or `str()`/`json()` a nested container into a string field |
+| dynamic record shapes | `merge` of shapes known only at runtime, heterogeneous `get` | literal shapes / `get` on homogeneous records |
+| host traps | uncaught `read`/`exec` failures outside `attempt` | wrap in `attempt`, or use the VM |
+
+`bx/tools/wasm-diff*.bxs` deliberately avoid these boundaries so a differential
+failure always means a real divergence; `bx/tools/verify.bxs` stops at the same
+points when built for wasm.
+
 ## Non-goals
 
 - No WASI: the ABI is web-shaped on purpose.

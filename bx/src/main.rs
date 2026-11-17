@@ -544,6 +544,9 @@ fn cmd_build(args: Vec<String>) -> i32 {
             Ok(parts) => parts,
             Err(e) => {
                 eprintln!("bx: {}", e);
+                eprintln!(
+                    "bx: the wasm target covers a static subset; run the script with BX_TARGET=bxb for the dynamic VM, or see prd/PRD_02_42_bx_wasm_target.md (\"Compatibility boundary\")"
+                );
                 return 1;
             }
         };
@@ -578,6 +581,9 @@ fn cmd_build(args: Vec<String>) -> i32 {
             Ok(bytes) => bytes,
             Err(e) => {
                 eprintln!("bx: {}", e);
+                eprintln!(
+                    "bx: the wasm target covers a static subset; run the script with BX_TARGET=bxb for the dynamic VM, or see prd/PRD_02_42_bx_wasm_target.md (\"Compatibility boundary\")"
+                );
                 return 1;
             }
         };

@@ -717,6 +717,10 @@ impl Checker {
                 .map(|id| Ty::Func(*id))
                 .ok_or_else(|| "wasm target lost a function literal".to_string()),
             Expr::Bool(_) => Ok(Ty::Bool),
+            Expr::Null => Err(
+                "wasm target has no null value; nullable data needs the dynamic VM (BX_TARGET=bxb) or a sentinel such as 0 or an empty string"
+                    .to_string(),
+            ),
             Expr::Int(_) => Ok(Ty::Int),
             Expr::Float(_) => Ok(Ty::Float),
             Expr::Str(_) => Ok(Ty::Str),
@@ -6907,6 +6911,10 @@ impl<'a> Emitter<'a> {
                 self.builder.push(Instr::Local(0x20, env_tmp));
                 Ok(Ty::Func(id))
             }
+            Expr::Null => Err(
+                "wasm target has no null value; nullable data needs the dynamic VM (BX_TARGET=bxb) or a sentinel such as 0 or an empty string"
+                    .to_string(),
+            ),
             Expr::Int(value) => {
                 self.builder.push(Instr::Const(0x42, WVal::I64(*value)));
                 Ok(Ty::Int)
