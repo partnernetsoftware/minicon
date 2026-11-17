@@ -1,14 +1,11 @@
 //! The absorbed `tinyvm` core as bx's wasm engine (PRD_02_44 P1).
 //!
 //! bx emits standard `.wasm`; this module decodes, validates and interprets it
-//! with the vendored core instead of bx's own interpreter. The host functions
-//! are the existing `PrintHost` arms, reached through one adapter, so the ABI
-//! keeps a single implementation while both engines are still in the binary.
-//!
-//! `BX_WASM_OWN=1` forces the in-tree interpreter for one release so a
-//! differential can compare the engines; the interpreter is scheduled for
-//! deletion at the end of P1 (the core validates modules the interpreter
-//! silently accepted).
+//! with the vendored core. It is the only wasm engine in the binary: P1 deleted
+//! the in-tree interpreter after the core passed the differential (the
+//! interpreter silently accepted modules the core rejects). The host functions
+//! stay in [`crate::wasm`] as the existing `PrintHost` arms, reached through
+//! one adapter, so the ABI keeps a single implementation.
 
 use crate::wasm::{BoxedI64Sink, BoxedStrSink, WVal};
 use std::cell::RefCell;

@@ -9057,44 +9057,131 @@ pub fn inspect(bytes: &[u8]) -> Result<WasmInfo, String> {
     // Validate with the absorbed core first: it catches the local/stack type
     // errors the in-tree decoder never checked.
     crate::wasm_core::validate(bytes)?;
-    let module = crate::wasm::validate(bytes)?;
+    scan_module(bytes)
+}
+
+/// Minimal section reader for the tooling summary (no instruction decoding).
+struct SectionReader<'a> {
+    data: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> SectionReader<'a> {
+    fn new(data: &'a [u8]) -> Self {
+        SectionReader { data, pos: 0 }
+    }
+
+    fn take(&mut self, count: usize) -> Result<&'a [u8], String> {
+        let end = self.pos.checked_add(count).ok_or("wasm section overflow")?;
+        if end > self.data.len() {
+            return Err("wasm section is truncated".to_string());
+        }
+        let slice = &self.data[self.pos..end];
+        self.pos = end;
+        Ok(slice)
+    }
+
+    fn byte(&mut self) -> Result<u8, String> {
+        Ok(self.take(1)?[0])
+    }
+
+    fn uleb(&mut self) -> Result<u32, String> {
+        let mut value: u32 = 0;
+        let mut shift = 0;
+        loop {
+            let byte = self.byte()?;
+            value |= ((byte & 0x7f) as u32) << shift;
+            if byte & 0x80 == 0 {
+                return Ok(value);
+            }
+            shift += 7;
+            if shift >= 32 {
+                return Err("wasm LEB128 is too long".to_string());
+            }
+        }
+    }
+
+    fn name(&mut self) -> Result<String, String> {
+        let len = self.uleb()? as usize;
+        let bytes = self.take(len)?;
+        Ok(String::from_utf8_lossy(bytes).into_owned())
+    }
+
+    fn limits(&mut self) -> Result<(), String> {
+        let flags = self.uleb()?;
+        self.uleb()?;
+        if flags & 0x01 != 0 {
+            self.uleb()?;
+        }
+        Ok(())
+    }
+}
+
+fn scan_module(bytes: &[u8]) -> Result<WasmInfo, String> {
+    if bytes.len() < 8 || &bytes[0..4] != b"\0asm" {
+        return Err("not a wasm module".to_string());
+    }
+    let mut reader = SectionReader::new(&bytes[8..]);
+    let mut imports = Vec::new();
+    let mut exports = Vec::new();
+    let mut defined_functions = 0;
+    while reader.pos < reader.data.len() {
+        let id = reader.byte()?;
+        let size = reader.uleb()? as usize;
+        let body = reader.take(size)?;
+        let mut section = SectionReader::new(body);
+        match id {
+            2 => {
+                let count = section.uleb()?;
+                for _ in 0..count {
+                    let module = section.name()?;
+                    let field = section.name()?;
+                    let kind = section.byte()?;
+                    match kind {
+                        0 => {
+                            section.uleb()?;
+                        }
+                        1 => {
+                            section.byte()?;
+                            section.limits()?;
+                        }
+                        2 => section.limits()?,
+                        3 => {
+                            section.byte()?;
+                            section.byte()?;
+                        }
+                        other => return Err(format!("unknown wasm import kind {}", other)),
+                    }
+                    imports.push(format!("{}.{}", module, field));
+                }
+            }
+            3 => defined_functions = section.uleb()? as usize,
+            7 => {
+                let count = section.uleb()?;
+                for _ in 0..count {
+                    let name = section.name()?;
+                    let kind = section.byte()?;
+                    section.uleb()?;
+                    // Match the earlier decoder: only function exports are listed.
+                    if kind == 0 {
+                        exports.push(name);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
     Ok(WasmInfo {
-        imports: module
-            .imports
-            .iter()
-            .map(|import| format!("{}.{}", import.module, import.name))
-            .collect(),
-        exports: module
-            .exports
-            .iter()
-            .map(|(name, _)| name.clone())
-            .collect(),
-        defined_functions: module.funcs.len(),
+        imports,
+        exports,
+        defined_functions,
     })
 }
 
 /// Parse and validate a module without running it (used by the module tests).
 #[cfg(test)]
 pub fn validate(bytes: &[u8]) -> Result<(), String> {
-    crate::wasm::validate(bytes).map(|_| ())
-}
-
-/// Instantiate and run `_start`, forwarding `env.print_i64` / `env.print_utf8`
-/// and exposing `argv` through `bx.argc` / `bx.arg`.
-#[allow(dead_code)] // Retained for the engine differential until P1 removes it.
-pub fn execute<F, G>(
-    bytes: &[u8],
-    argv: &[String],
-    max_steps: u64,
-    timeout_ms: u64,
-    on_i64: F,
-    on_str: G,
-) -> Result<(), String>
-where
-    F: FnMut(i64),
-    G: FnMut(&str),
-{
-    crate::wasm::run_start(bytes, argv, max_steps, timeout_ms, on_i64, on_str)
+    crate::wasm_core::validate(bytes)
 }
 
 /// Execute through the absorbed `tinyvm` core (PRD_02_44 P1).
@@ -9102,7 +9189,7 @@ where
 /// Sinks are owned because the core stores its callback table for the module's
 /// lifetime. The CLI uses this entry; the in-tree interpreter stays reachable
 /// through [`execute`] until P1 deletes it.
-pub fn execute_core<F, G>(
+pub fn execute<F, G>(
     bytes: &[u8],
     argv: &[String],
     max_steps: u64,
@@ -9254,17 +9341,21 @@ mod tests {
         let source =
             "let i = 0\nwhile (i < argc()) {\n  print(arg(i))\n  i = i + 1\n}\nprint(arg(99))";
         let bytes = compile_to_wasm(source).unwrap();
-        let mut text = Vec::new();
-        let mut numbers = Vec::new();
+        let text = Arc::new(Mutex::new(Vec::new()));
+        let numbers = Arc::new(Mutex::new(Vec::new()));
+        let text_sink = text.clone();
+        let number_sink = numbers.clone();
         execute(
             &bytes,
             &["hello world".to_string(), "héllo".to_string()],
             0,
             0,
-            |value| numbers.push(value),
-            |line| text.push(line.to_string()),
+            move |value| number_sink.lock().expect("lock").push(value),
+            move |line| text_sink.lock().expect("lock").push(line.to_string()),
         )
         .unwrap();
+        let text = text.lock().expect("lock").clone();
+        let numbers = numbers.lock().expect("lock").clone();
         assert_eq!(numbers, Vec::<i64>::new());
         assert_eq!(
             text,
@@ -9276,17 +9367,18 @@ mod tests {
         );
 
         let capture = compile_to_wasm("print(capture(\"printf abc\"))").unwrap();
-        let mut text = Vec::new();
+        let text = Arc::new(Mutex::new(Vec::new()));
+        let text_sink = text.clone();
         execute(
             &capture,
             &[],
             0,
             0,
             |_| {},
-            |line| text.push(line.to_string()),
+            move |line| text_sink.lock().expect("lock").push(line.to_string()),
         )
         .unwrap();
-        assert_eq!(text, vec!["abc".to_string()]);
+        assert_eq!(*text.lock().expect("lock"), vec!["abc".to_string()]);
 
         let looping = compile_to_wasm("let n = 0\nwhile (true) { n = n + 1 }").unwrap();
         let error = execute(&looping, &[], 500, 0, |_| {}, |_| {}).unwrap_err();

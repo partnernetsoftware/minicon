@@ -7,7 +7,6 @@ mod parser;
 mod png;
 mod value;
 mod vm;
-#[allow(dead_code)] // Retained only until P1 deletes the in-tree interpreter (PRD_02_44).
 mod wasm;
 mod wasm_core;
 mod wasm_demo;
@@ -225,7 +224,7 @@ fn cmd_run(args: Vec<String>) -> i32 {
             }
         };
         let wasm_argv: Vec<String> = args[1..].to_vec();
-        return match wasm_target::execute_core(
+        return match wasm_target::execute(
             &bytes,
             &wasm_argv,
             budget.max_steps.unwrap_or(0),
@@ -258,7 +257,7 @@ fn cmd_run(args: Vec<String>) -> i32 {
         };
         let wasm_argv: Vec<String> = args[1..].to_vec();
         return match wasm_target::compile_to_wasm(&src) {
-            Ok(bytes) => match wasm_target::execute_core(
+            Ok(bytes) => match wasm_target::execute(
                 &bytes,
                 &wasm_argv,
                 budget.max_steps.unwrap_or(0),

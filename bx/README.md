@@ -178,7 +178,7 @@ let r = patch("src/lib.rs", read(__dir__ + "/fix.diff"))   // -> {ok, path, hunk
 全局名解析成槽位下标并按 chunk 缓存，热路径不再查哈希表；全局读写也不 clone 名字。调用路径做过四次去分配：chunk 名/来源文件走 `Rc<String>`、帧槽用复用池、`CALL` 参数直接 `drain` 进帧槽、内建回调（`map`/`filter`/`reduce`/`sort`）不再为每个元素构造 `Vec`。`fib(24)` 从 ~137 ms 降到 ~56 ms，20 万次 `map` 从 ~46 ms 降到 ~29 ms；两边 `dis` 字节码逐条一致，继续优化需要 profiler。
 ## wasm 目标（实验）
 
-`.bxb` 是自研容器；长期方向是把它换成标准 WebAssembly，由 bx 自己的编码器/解释器实现（无第三方 wasm 库，`cargo tree` 只有 bx）。当前是**数值子集**纵向切片：
+`.bxb` 是自研容器；长期方向是把它换成标准 WebAssembly，由 bx 自己的编码器发射、由内置自有 tinyvm 核校验与执行（无第三方 wasm 运行时；`cargo tree -p bx` 为 `bx → tinyvm → libm`）。当前是**数值子集**纵向切片：
 
 ```bash
 bx build --wasm script.bxs -o script.wasm   # 标准 core wasm（\0asm v1）

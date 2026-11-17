@@ -80,7 +80,7 @@ MiniCon — one-file local terminal
 │       └── product face: Tab / content panel (PRD_02_25); renderer: PRD_02_31
 │           · plan/plan-browser-tabs.md
 ├── bx: agent-authored scripts as one portable binary → prd/PRD_02_41_bx.md│   ├── [v] four cells packed through the Rust launcher lane
-│   ├── [-] wasm target (own encoder/interpreter, web-shaped ABI) → prd/PRD_02_42_bx_wasm_target.md
+│   ├── [-] wasm target (bx encoder, owned core engine, web-shaped ABI) → prd/PRD_02_42_bx_wasm_target.md
 │   ├── [-] wasm migration (parity gates, default flip, .bxb retirement) → prd/PRD_02_43_bx_wasm_migration.md
 │   └── [-] tinyvm absorption (standard-wasm engine, embeddable core, tinyvm retirement) → prd/PRD_02_44_bx_tinyvm_absorption.md
 │   ├── [v] four cells packed through the Rust launcher lane
@@ -220,7 +220,7 @@ flowchart LR
 | Install native MiniCon from a command line (deferred) | [Native installation](prd/PRD_02_27_01_install.md) | published OS-appropriate bootstrap scripts, verified native bytes and matching README/site instructions |
 | Deferred portable logic / foundry directions | [qjswasm](prd/PRD_02_29_qjswasm_horizon.md), [foundry](prd/PRD_02_30_foundry_horizon.md) | independent complete-product decisions; no current-version implementation claim |
 | Run agent-authored scripts without a Node install | [bx surface](prd/PRD_02_41_bx.md) | per-OS `minicon-bx-<cell>.com`; the 122-check suite passes through the packed win-x86_64 file; Linux/ARM execution is CI's six-runner matrix |
-| Compile to a portable execution format | [bx wasm target](prd/PRD_02_42_bx_wasm_target.md) | standard `.wasm` modules emitted and executed by bx's own encoder/interpreter; no third-party wasm crate; browser ABI designed; parity gates and `.bxb` retirement owned by [migration](prd/PRD_02_43_bx_wasm_migration.md) |
+| Compile to a portable execution format | [bx wasm target](prd/PRD_02_42_bx_wasm_target.md) | standard `.wasm` emitted by bx's encoder and validated/executed by the owned vendored core (`tinyvm`, [absorption](prd/PRD_02_44_bx_tinyvm_absorption.md)); no third-party wasm runtime crate; browser ABI designed; parity gates and `.bxb` retirement owned by [migration](prd/PRD_02_43_bx_wasm_migration.md) |
 | Replace the `tinyvm` engine | [tinyvm absorption](prd/PRD_02_44_bx_tinyvm_absorption.md) | standard wasm executed by the absorbed owned core (validation, budgets, host table, replay, C ABI); `bx` stays the language skin; embeddable core replaces `tinyvm` for iOS/`agenterm`; retirement gated on both downstream cutovers |
 
 ## Current frontier

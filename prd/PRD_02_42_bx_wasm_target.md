@@ -7,9 +7,10 @@ stays as the legacy path until parity is proven.
 ## Product outcome
 
 bx source compiles to a **standard WebAssembly core module** that any engine can
-run. bx itself executes those modules with its own decoder and interpreter, so
-the product keeps its "one native binary, no runtime install" shape. The same
-module should run in a browser once the Web ABI lands.
+run. bx itself executes those modules with the owned vendored core (vendored
+`tinyvm`, PRD_02_44 P1), so the product keeps its "one native binary, no
+runtime install" shape. The same module runs in a browser through the JS host
+glue.
 
 ## Decision
 
@@ -30,7 +31,7 @@ module should run in a browser once the Web ABI lands.
 
 ## Host ABI contract
 
-Every host (the in-tree interpreter, the browser/node demo glue, and the future
+Every host (the native `PrintHost` in `bx/src/wasm.rs`, the browser/node demo glue, and the
 `tinyvm`-based host profile) must implement these exact shapes; they are not
 documented by the module beyond its import types:
 
@@ -155,7 +156,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 93 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 88 in-tree unit tests (plus the self-hosted differential tool) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of

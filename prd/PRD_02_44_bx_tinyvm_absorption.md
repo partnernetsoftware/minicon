@@ -2,9 +2,9 @@
 
 Owner of the decision to replace the `bx` wasm runtime with the `tinyvm`
 engine, and of the migration that lets `tinyvm` be retired with `minicon-bx`
-carrying its needs. Status: `[-]` decision accepted; P0 completed 2026-11-17; P1 started the same
-day — the vendored core is now the CLI's wasm engine and the in-tree
-interpreter is retained only for one release of differential.
+carrying its needs. Status: `[-]` decision accepted; P0 completed 2026-11-17; **P1 completed
+2026-11-17** — the vendored core is the only wasm engine in the product. P2
+(uniform value ABI) is next.
 
 Related: [bx surface](PRD_02_41_bx.md) · [wasm target](PRD_02_42_bx_wasm_target.md) ·
 [wasm migration](PRD_02_43_bx_wasm_migration.md). `tinyvm` facts below are owned
@@ -67,10 +67,10 @@ minicon-bx owns a standard wasm core and one language skin      [-]
 │   ├── module accepted by an independent engine (node)          [v]  existing demo already proves the emitter
 │   └── core-inside-wasm + `.com` size/startup measurement       [_]  linked std delta measured only
 │
-├── P1 engine swap                                              [~]
+├── P1 engine swap                                              [v]
 │   ├── `bx run --wasm` executes through the core                [v]  2026-11-17
 │   ├── validation errors surface with function name/line        [v]  `bx check`/`bx run` reject with site
-│   ├── `bx/src/wasm.rs` interpreter retired                     [_]  next: delete + move unit tests to the core
+│   ├── `bx/src/wasm.rs` interpreter retired                     [v]  decoder/interpreter/tests deleted; encoder+host remain
 │   ├── step/memory budgets owned by the core                    [v]  steps, interrupt, memory pages
 │   └── core vendored as a workspace member                      [v]  `bx/vendor/tinyvm` (no crates.io wasm crate)
 │
@@ -179,6 +179,23 @@ Findings that change the plan:
 - Remaining P1 work: delete the interpreter and its decoder, move the unit tests
   that use `execute` onto the core, then remove `BX_WASM_OWN` and the
   `#[allow(dead_code)]` exceptions.
+## P1 completion (2026-11-17, same day)
+
+- The in-tree interpreter is gone: `bx/src/wasm.rs` keeps only the encoder
+  (`Builder`/`Instr`) and the native host (`PrintHost`), 2,139 lines instead of
+  3,704. The decoder, `Exec`, block/loop interpreter, compare/binop helpers and
+  their unit tests were deleted; `BX_WASM_OWN` and the `#[allow(dead_code)]`
+  exceptions went with them.
+- `bx check --json` keeps its shape through a small section scanner
+  (`imports`/`exports`/`defined_functions`) instead of the deleted decoder;
+  function exports only, matching the old output.
+- Evidence after deletion: unit 88 (the 91-unit figure included interpreter
+  tests; end-to-end coverage moved to the core), suite 180, verifier 76,
+  differential 300, corpus (floats/nested/sortstr/maps) identical to the VM,
+  `bx check --json` lists all 68 imports and `_start`, clippy clean.
+- Safe failure recorded: no second engine remains, so a semantic regression
+  now shows up as a core/bx gate failure rather than as "the interpreter
+  accepted it".
 ## Gates
 
 | Gate | Meaning | Evidence required | Status |
