@@ -939,6 +939,28 @@ impl Checker {
                         };
                         return Ok(Ty::Obj(self.shape_union(left_shape, right_shape)?));
                     }
+                    if name == "sort" && args.len() == 2 {
+                        if self.infer(&args[0])? != Ty::Arr {
+                            return Err(
+                                "wasm target comparator sort() takes an int array".to_string()
+                            );
+                        }
+                        let Ty::Func(id) = self.infer(&args[1])? else {
+                            return Err("wasm target sort() needs a function literal comparator"
+                                .to_string());
+                        };
+                        let sig = self
+                            .lit_sigs
+                            .get(id as usize)
+                            .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+                        if sig.params != vec![Ty::Int, Ty::Int] || sig.result != Some(Ty::Int) {
+                            return Err(
+                                "wasm target sort() comparators take (int, int) and return an int"
+                                    .to_string(),
+                            );
+                        }
+                        return Ok(Ty::Arr);
+                    }
                     if name == "str" && args.len() == 1 {
                         let ty = self.infer(&args[0])?;
                         if !is_number(ty) && ty != Ty::Bool {
@@ -4396,6 +4418,144 @@ impl<'a> Emitter<'a> {
                         self.emit_expr(&args[0])?;
                         self.builder.push(Instr::Call(ARR_SUM));
                         return Ok(Ty::Int);
+                    }
+                    if name == "sort" && args.len() == 2 {
+                        let Ty::Func(id) = self.type_of(&args[1])? else {
+                            return Err("wasm target sort() needs a function literal comparator"
+                                .to_string());
+                        };
+                        let sig = self
+                            .checker
+                            .lit_sigs
+                            .get(id as usize)
+                            .cloned()
+                            .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+                        let arr = self.builder.add_local(ValType::I32);
+                        let count = self.builder.add_local(ValType::I64);
+                        let outer = self.builder.add_local(ValType::I64);
+                        let inner = self.builder.add_local(ValType::I64);
+                        let a_val = self.builder.add_local(ValType::I64);
+                        let b_val = self.builder.add_local(ValType::I64);
+                        let addr = self.builder.add_local(ValType::I32);
+                        let cb_env = self.builder.add_local(ValType::I32);
+                        self.emit_expr(&args[0])?;
+                        self.builder.push(Instr::Local(0x21, arr));
+                        self.emit_expr(&args[1])?;
+                        self.builder.push(Instr::Local(0x21, cb_env));
+                        self.builder.push(Instr::Local(0x20, arr));
+                        self.builder.push(Instr::Mem(0x28, 2, 0));
+                        self.builder.push(Instr::Op(0xad));
+                        self.builder.push(Instr::Local(0x21, count));
+                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+                        self.builder.push(Instr::Local(0x21, outer));
+                        self.builder.push(Instr::Block {
+                            opcode: 0x02,
+                            end: 0,
+                            else_at: 0,
+                            start: 0,
+                        });
+                        self.labels.push(0x02);
+                        self.builder.push(Instr::Block {
+                            opcode: 0x03,
+                            end: 0,
+                            else_at: 0,
+                            start: 0,
+                        });
+                        self.labels.push(0x03);
+                        self.builder.push(Instr::Local(0x20, outer));
+                        self.builder.push(Instr::Local(0x20, count));
+                        self.builder.push(Instr::Op(0x53));
+                        self.builder.push(Instr::Op(0x45));
+                        self.builder.push(Instr::BrIf(1));
+                        self.builder.push(Instr::Local(0x20, outer));
+                        self.builder.push(Instr::Local(0x21, inner));
+                        self.builder.push(Instr::Block {
+                            opcode: 0x02,
+                            end: 0,
+                            else_at: 0,
+                            start: 0,
+                        });
+                        self.labels.push(0x02);
+                        self.builder.push(Instr::Block {
+                            opcode: 0x03,
+                            end: 0,
+                            else_at: 0,
+                            start: 0,
+                        });
+                        self.labels.push(0x03);
+                        self.builder.push(Instr::Local(0x20, inner));
+                        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                        self.builder.push(Instr::Op(0x55));
+                        self.builder.push(Instr::Op(0x45));
+                        self.builder.push(Instr::BrIf(1));
+                        self.builder.push(Instr::Local(0x20, arr));
+                        self.builder.push(Instr::Local(0x20, inner));
+                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+                        self.builder.push(Instr::Op(0x7d));
+                        self.builder.push(Instr::Op(0xa7));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                        self.builder.push(Instr::Op(0x6c));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Mem(0x29, 3, 0));
+                        self.builder.push(Instr::Local(0x21, a_val));
+                        self.builder.push(Instr::Local(0x20, arr));
+                        self.builder.push(Instr::Local(0x20, inner));
+                        self.builder.push(Instr::Op(0xa7));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                        self.builder.push(Instr::Op(0x6c));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Mem(0x29, 3, 0));
+                        self.builder.push(Instr::Local(0x21, b_val));
+                        self.builder.push(Instr::Local(0x20, cb_env));
+                        self.builder.push(Instr::Local(0x20, a_val));
+                        self.builder.push(Instr::Local(0x20, b_val));
+                        self.builder.push(Instr::Call(sig.index));
+                        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                        self.builder.push(Instr::Op(0x57));
+                        self.builder.push(Instr::BrIf(1));
+                        self.builder.push(Instr::Local(0x20, arr));
+                        self.builder.push(Instr::Local(0x20, inner));
+                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+                        self.builder.push(Instr::Op(0x7d));
+                        self.builder.push(Instr::Op(0xa7));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                        self.builder.push(Instr::Op(0x6c));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x21, addr));
+                        self.builder.push(Instr::Local(0x20, addr));
+                        self.builder.push(Instr::Local(0x20, b_val));
+                        self.builder.push(Instr::Mem(0x37, 3, 0));
+                        self.builder.push(Instr::Local(0x20, addr));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x20, a_val));
+                        self.builder.push(Instr::Mem(0x37, 3, 0));
+                        self.builder.push(Instr::Local(0x20, inner));
+                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+                        self.builder.push(Instr::Op(0x7d));
+                        self.builder.push(Instr::Local(0x21, inner));
+                        self.builder.push(Instr::Br(0));
+                        self.labels.pop();
+                        self.builder.push(Instr::Op(0x0b));
+                        self.labels.pop();
+                        self.builder.push(Instr::Op(0x0b));
+                        self.builder.push(Instr::Local(0x20, outer));
+                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+                        self.builder.push(Instr::Op(0x7c));
+                        self.builder.push(Instr::Local(0x21, outer));
+                        self.builder.push(Instr::Br(0));
+                        self.labels.pop();
+                        self.builder.push(Instr::Op(0x0b));
+                        self.labels.pop();
+                        self.builder.push(Instr::Op(0x0b));
+                        self.builder.push(Instr::Local(0x20, arr));
+                        return Ok(Ty::Arr);
                     }
                     if matches!(name.as_str(), "reverse" | "sort") && args.len() == 1 {
                         let import = if name == "reverse" {
@@ -8041,6 +8201,16 @@ mod tests {
         );
         assert_eq!(numbers, vec![42, 42]);
         assert_eq!(strings, vec!["hi there".to_string()]);
+    }
+
+    #[test]
+    fn sort_with_comparator() {
+        let (numbers, strings) = run_with_argv(
+            "let a = [3, 1, 2]\nlet b = sort(a, fn(x, y) { return x - y })\nprint(a[0])\nprint(b[0])\nfor v in sort([5, 9, 1, 4], fn(x, y) { return y - x }) {\n  print(v)\n}\nfn with_capture(offset) {\n  let limit = 0\n  return sort([3, 2, 1], fn(x, y) { return (x - y) + limit + offset })\n}\nfor v in with_capture(0) {\n  print(v)\n}\nprint(len(sort([], fn(x, y) { return x - y })))",
+            &[],
+        );
+        assert!(strings.is_empty());
+        assert_eq!(numbers, vec![1, 1, 9, 5, 4, 1, 1, 2, 3, 0]);
     }
 
     #[test]
