@@ -14,9 +14,9 @@ glue.
 
 ## Decision
 
-- Encoder and the old interpreter are **in-tree** (`bx/src/wasm.rs`,
-  `bx/src/wasm_target.rs`). Execution and validation now run on the owned
-  vendored core (`bx/vendor/tinyvm`, PRD_02_44 P1); `cargo tree -p bx` shows
+- Encoder and host live **in-tree** (`bx/src/wasm.rs`, `bx/src/wasm_target.rs`).
+  Execution and validation run on the owned vendored core (`bx/vendor/tinyvm`,
+  PRD_02_44 P1); `cargo tree -p bx` shows
   `bx → tinyvm → libm`. It is owned source in this repository, not a crates.io
   or third-party WebAssembly runtime.
 - The emitted artifact is a standard module (`\0asm`, version 1), not a
@@ -111,7 +111,7 @@ bx wasm target
 │   └── [-] closures, non-int params/locals, nested functions
 ├── runtime (standard module execution, own code)
 │   ├── [v] decode + validate (type/import/function/global/export/code)
-│   ├── [v] interpreter: consts, globals, locals, calls, control flow, numeric ops
+│   ├── [v] interpreter (retired by PRD_02_44 P1; the core owns this now)
 │   ├── [v] linear memory + active data segments + exported `memory`
 │   ├── [v] i32/i64/f32/f64 loads+stores, memory ops for arrays
 │   ├── [v] bulk `memory.copy` for runtime string concatenation
@@ -208,21 +208,21 @@ bx wasm target
   file I/O, process execution, operator spec mappings and rejection of
   unsupported constructs. `i64.div_s`/`i64.rem_s` and the six comparison opcodes
   are asserted against the wasm spec directly, after node cross-checks exposed an
-  off-by-one in the interpreter's `rem`/`le`/`ge` mappings.
+  off-by-one in the retired interpreter's `rem`/`le`/`ge` mappings.
 - CLI round-trip (`build --wasm` → `run` → `check`) is covered by the self-hosted
   suite and therefore by the packed six-cell CI lane.
 - `bx check <module> --json` reports the decoded import/export names and defined
   function count, so agents can introspect a module without a JS toolchain.
 - **Bools**: a real `bool` type (`i32` 0/1) so comparisons are expressions
   (`let ok = a < b`, `return x % 2 == 0`), plus `true`/`false`, short-circuit
-  `&&`/`||`/`!` through if/else locals, ternary with int/float/bool branches
-  (string branches still rejected) and `str(bool)`/`print(bool)` via host
-  `env.bool_to_str`.
+  `&&`/`||`/`!` through if/else locals, ternary with int/float/bool branches as
+  well as string branches (both arms produce a `(ptr, len)` pair), and
+  `str(bool)`/`print(bool)` via host `env.bool_to_str`.
 - **Interpolation and mixed concatenation**: the parser lowers `"x=${e} end"` to
   string `+`; the emitter stringifies int/float/bool operands (host
   `int_to_str`/`f64_to_str`/`bool_to_str`) so interpolation and mixed forms like
   `1 + "x"` match the VM. Float negation (`-x` for floats) maps to `f64.neg`
-  (0x9a) and the interpreter now decodes the f64 unary range 0x99–0x9f.
+  (0x9a) and the core decodes the f64 unary range 0x99–0x9f.
 - **Record/array writes**: `r.a = v`, `r.a += v`, `xs[i] = v`, `xs[-1] = v` and
   `xs[i] += v` are supported with the same negative-index normalisation and
   bounds checks as reads (`+ - * %` for compound).
@@ -282,12 +282,16 @@ bx wasm target
   names for `read_file`/`write_file`, and `read("-")` drains stdin to EOF;
   `which(name)` resolves a command and returns its path (an empty string when
   missing, where the VM returns null). `write` returns `0` on success (the VM
-  returns null). `exec`/`sh` are still absent because their result record mixes
-  int/string/bool fields, which the fixed-shape record model does not carry yet.
+  returns null). `exec`/`sh` return the VM-shaped typed record
+  `{code, err, ms, ok, out, timeout}` through the `bx.exec_record` host import
+  (see the `exec`/`sh` bullet above; `ms` is wall clock and the command-string
+  split does not reproduce the VM's quoting rules yet).
 - **Collection builtins**: `push` works in expression position (returns the
   array) and `pop(arr)` returns the removed element for int, float, string,
   text-row, int-row and record arrays (the empty case aborts; the VM returns
-  null). `contains(arr, value)` covers int, string and float arrays.
+  null). `contains(arr, value)` and `index_of(arr, value)` cover int, string,
+  float, record, int-row and text-row arrays (structural comparison for the
+  container kinds).
   `float()` accepts ints and strings (`float("1.5")`), `int()` accepts bools,
   and unparsable numeric strings abort with the VM's wording (`cannot convert
   str to int` / `cannot convert str to float`).
@@ -345,10 +349,11 @@ bx wasm target
 - **Float arrays**: mixed numeric literals promote to `Ty::ArrF` (`[1.5, 2]`);
   `print` renders VM-style (`[1.5,2,3.25]`), and read/write, `len`, `for` (one or
   two variables), `push`, `sum`, `min`/`max`, `index_of`, `.contains` work with
-  f64 slots. `map`/`filter`/`reduce` callbacks, comparator `sort` and nested
-  float containers are still rejected; each new element kind costs a matrix of
-  emitter arms plus host imports (the reason a uniform value model is the next
-  design step, see `prd/PRD_02_44_bx_tinyvm_absorption.md`).
+  f64 slots; `map`/`filter`/`reduce` callbacks and comparator `sort` also run
+  over float arrays. Nested float containers (an array of float arrays) are
+  still rejected; each new element kind costs a matrix of emitter arms plus host
+  imports (the reason a uniform value model is the next design step, see
+  `prd/PRD_02_44_bx_tinyvm_absorption.md`).
 - **Nested arrays**: `[[1,2],[3,4]]` types as `Ty::ArrArr` (entries hold inner
   array pointers); `len`, element read (including `m[1][0]`), element write,
   single/two-variable `for row in m`, `push`, negative indexes, passing rows to
@@ -357,18 +362,21 @@ bx wasm target
 - **Container printing**: `print` accepts int arrays, string arrays, records and
   record arrays and formats them exactly like the VM (compact JSON style:
   `[1,2,3]`, `["a","b"]`, `{"a":1,"b":2}`, `[{"a":1}]`). The guest calls one of
-  four host imports (`print_arr_i64`, `print_arr_str`, `print_record`,
-  `print_arr_obj`) with the container pointer plus, for records, the shape key
-  table; the host walks memory and prints. Maps/functions still cannot print and
-  `console_log` stays scalar-only.
+  host imports (`print_arr_i64`, `print_arr_str`, `print_arr_f64`,
+  `print_arr_arr`, `print_arr_strarr`, `print_map`, plus the typed
+  `print_record_typed`/`print_arr_obj_typed` that take a per-field kind byte
+  table) with the container pointer; the host walks memory and prints.
+  Functions and map keys still cannot print, and `console_log` stays
+  scalar-only.
 - **push/pop on every array kind**: both the method form (`xs.push(v)`) and the
   call form (`push(xs, v)`) append a value for int, string and record arrays;
-  `pop` shrinks the length (the removed value is still not returned in an
-  expression). Growth copies the header and all 8-byte entries, then writes the
-  element (int64 / ptr+len pair / record pointer).
+  `pop` shrinks the length and (in expression position) returns the removed
+  value for every array kind; an empty array aborts where the VM returns null.
+  Growth copies the header and all 8-byte entries, then writes the element
+  (int64 / ptr+len pair / record pointer).
 - **Empty record literals**: `{}` is now a valid zero-field record, so
-  `merge({}, {x: 1})`, `keys({})`, `values({})` and `type({})` work; printing a
-  record is still rejected.
+  `merge({}, {x: 1})`, `keys({})`, `values({})`, `type({})` and `print({})`
+  work (printed as `{}`).
 - **Comparator sort**: `sort(arr, fn(a, b) { return a - b })` runs an in-place
   insertion sort in wasm calling the literal comparator (environment included);
   the comparator receives two ints and returns an int whose sign decides the
@@ -384,13 +392,13 @@ bx wasm target
   storage.
 - **Record merge**: `merge(a, b)` on records with statically known shapes builds
   the union shape at compile time (keys of `a` in order, then new keys of `b`);
-  overlapping keys take `b`'s value, matching the VM. Chained merges work.
-  Merging with an empty-object literal (`{}`) remains unsupported.
+  overlapping keys take `b`'s value, matching the VM. Chained merges work and
+  merging with an empty-object literal (`{}`) works too.
 - **Record builtins**: `keys` -> string array, `values` -> int array, `has`, and
   `get(record, key[, default])` walk the per-shape key table at runtime with
   `str_compare`; a missing key without a default aborts (`get() missing key with
-  no default`) instead of returning the VM's null. `merge` remains unsupported
-  (it would need a dynamic object shape).
+  no default`) instead of returning the VM's null. `get` also accepts a dynamic
+  key when the record's fields share one type, and `values()` is int-only.
 - **Capturing closures**: each function literal gets a leading environment
   pointer parameter; captured outer bindings live in heap cells referenced from
   that environment. Locals/parameters captured by an inner literal are boxed
@@ -404,9 +412,8 @@ bx wasm target
   every iteration, matching the VM's single-shared-binding semantics.
   `map`/`filter`/`reduce`/`each` callbacks may capture outer locals: the callback
   value (its environment) is evaluated once and passed into every callback
-  invocation. Remaining limits: a variable cannot hold function literals from
-  two different syntactic sites (`requires stable types`), and arrays of records
-  are not supported.
+  invocation. Remaining limit: a variable cannot hold function literals from two
+  different syntactic sites (`requires stable types`).
 - **Higher-order builtins over string arrays**: `map`/`filter` accept string
   arrays; `map` returns a string array when the callback returns a string (an
   int array when it returns an int), `filter` keeps the input element kind.
@@ -500,7 +507,7 @@ bx wasm target
   errors. Slots are laid out per function (a string parameter owns two locals),
   so helpers such as `fn tag(s) { return s + "?" }` compile and match the VM.
 - **Execution budgets**: `bx run --max-steps N --timeout MS script.wasm` applies
-  the same budgets as the native VM path to the wasm interpreter (instruction
+  the same budgets as the native VM path to the wasm core (instruction
   counter plus a periodic deadline check), so untrusted modules cannot spin
   forever. The normal-path hot loop adds only a counter increment per
   instruction; the deadline is sampled every 1024 instructions.
