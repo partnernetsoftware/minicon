@@ -187,7 +187,12 @@ bx wasm target
   Divergences from the VM: `error` is `""` on success where the VM has `null`;
   `value` is `0` for callbacks without a return value where the VM has `null`;
   messages omit the VM's `file(line) in <lambda>()` prefix; out-of-range reads
-  the VM turns into `null` are fatal here, so `attempt` reports them as errors.
+  and `% 0`, which the VM turns into `null`, are fatal here, so `attempt`
+  reports them as errors. `bx/tools/wasm-diff-attempt.bxs` seeds random
+  `attempt` programs (div-by-zero, explicit `error()`, missing `read`, `exec`
+  spawn failures, `mkdir` on a file, attempt inside loops and nested attempts)
+  and compares `ok`/error-flag output with the VM; the suite runs 12 cases and a
+  local sweep of twelve seeds at 40 cases each passes.
 
 ## Evidence
 

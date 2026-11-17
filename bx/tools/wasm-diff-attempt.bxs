@@ -1,0 +1,114 @@
+// Seeded differential for attempt(): both engines must agree on ok/error flags
+// for the guest-detected failures and soft host failures. Error message text is
+// compared by length only (the VM prefixes file(line), this target does not).
+// Deliberately excluded: out-of-range reads and `% 0` (the VM returns null for
+// those, while the static target treats them as fatal errors).
+//
+// usage: bx run bx/tools/wasm-diff-attempt.bxs <bx-binary> [cases] [seed]
+// The suite runs 12 cases; locally sweep more seeds with a larger count.
+let args = argv
+if (len(args) < 1) {
+  print("usage: bx run bx/tools/wasm-diff-attempt.bxs <bx> [cases] [seed]")
+  exit(2)
+}
+let bx = args[0]
+let cases = 12
+let seed = 20261117
+if (len(args) >= 2) {
+  cases = int(args[1])
+}
+if (len(args) >= 3) {
+  seed = int(args[2])
+}
+let state = seed
+fn rnd(n) {
+  state = (state * 1103515245 + 12345) % 2147483648
+  return state % n
+}
+fn pick(n) {
+  return rnd(n)
+}
+
+let dir = replace(cwd(), "\\", "/")
+let probe = dir + "/target/attempt-diff-probe.txt"
+write(probe, "x")
+
+fn risky() {
+  let kind = pick(5)
+  if (kind == 0) {
+    return "return 1 / 0"
+  }
+  if (kind == 1) {
+    return "error(\"boom\")"
+  }
+  if (kind == 2) {
+    return "return read(\"definitely-missing-attempt-diff.txt\")"
+  }
+  if (kind == 3) {
+    return "return exec(\"definitely-not-a-command-xyz\").code"
+  }
+  return "return mkdir(\"" + probe + "\")"
+}
+
+fn gen() {
+  let lines = []
+  let total = 1 + pick(3)
+  for (let i = 0; i < total; i += 1) {
+    let body = risky()
+    if (pick(2) == 0) {
+      lines.push("let r" + str(i) + " = attempt(fn() { " + body + " })")
+      lines.push("print(r" + str(i) + ".ok)")
+      lines.push("print(len(r" + str(i) + ".error) > 0)")
+    } else {
+      lines.push("let acc" + str(i) + " = 0")
+      let rounds = 1 + pick(3)
+      lines.push("let i" + str(i) + " = 0")
+      lines.push("while (i" + str(i) + " < " + str(rounds) + ") {")
+      lines.push("  let q" + str(i) + " = attempt(fn() { " + body + " })")
+      lines.push("  if (q" + str(i) + ".ok) { acc" + str(i) + " += 1 }")
+      lines.push("  i" + str(i) + " += 1")
+      lines.push("}")
+      lines.push("print(acc" + str(i) + ")")
+    }
+  }
+  if (pick(2) == 0) {
+    lines.push("let outer = attempt(fn() { let inner = attempt(fn() { return 1 / 0 })")
+    lines.push("  return inner.ok })")
+    lines.push("print(outer.ok)")
+    lines.push("print(outer.value)")
+  }
+  let source = ""
+  for (let i = 0; i < len(lines); i += 1) {
+    source = source + lines[i] + "\n"
+  }
+  return source
+}
+
+let failures = 0
+let wasmDir = dir + "/target/attempt-diff"
+mkdir(wasmDir)
+for (let c = 0; c < cases; c += 1) {
+  let source = gen()
+  let base = wasmDir + "/case" + str(c)
+  write(base + ".bxs", source)
+  let built = exec([bx, "build", "--wasm", base + ".bxs", "-o", base + ".wasm"])
+  if (built.code != 0) {
+    print("case " + str(c) + ": build failed: " + built.err)
+    failures += 1
+    continue
+  }
+  let vm = exec([bx, "run", base + ".bxs"])
+  let wasm = exec([bx, "run", base + ".wasm"])
+  if (vm.code != wasm.code || vm.out != wasm.out) {
+    print("case " + str(c) + ": mismatch vm=" + json(vm.out) + " wasm=" + json(wasm.out))
+    print("--- source ---")
+    print(source)
+    failures += 1
+  }
+}
+if (failures == 0) {
+  print("PASS " + str(cases) + " attempt differential cases")
+  exit(0)
+}
+print("FAIL " + str(failures) + " of " + str(cases))
+exit(1)

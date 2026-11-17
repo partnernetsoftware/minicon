@@ -743,6 +743,12 @@ if (wasmDiff.code == 0 && wasmDiff.out.contains("PASS 15 differential cases")) {
 } else {
   casesFail += 1
   failures.push("wasm-vs-VM differential cases\n    out=" + json(wasmDiff.out) + " err=" + json(wasmDiff.err))
+}let wasmAttemptDiff = exec([BX, "run", __dir__ + "/../tools/wasm-diff-attempt.bxs", BX, "12"])
+if (wasmAttemptDiff.code == 0 && wasmAttemptDiff.out.contains("PASS 12 attempt differential cases")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm-vs-VM attempt differential cases\n    out=" + json(wasmAttemptDiff.out) + " err=" + json(wasmAttemptDiff.err))
 }let wasmCollDiff = exec([BX, "run", __dir__ + "/../tools/wasm-diff-coll.bxs", BX, "12"])
 if (wasmCollDiff.code == 0 && wasmCollDiff.out.contains("PASS 12 collection differential cases")) {
   casesOk += 1
