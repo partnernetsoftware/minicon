@@ -199,7 +199,7 @@ bx run script.bxb one two    # 参数进 argv
 bx dis script.bxb
 ```
 
-`bx run *.bxs` 也会把编译结果缓存到脚本旁边的 `.bxcache/`，下次直接加载字节码。键 = 主脚本 + **递归 `use` 依赖的文件内容** + 版本：改被 include 的文件会让缓存失效（这正是 v0.1 的一个真 bug，已修）。设 `BX_CACHE_DIR` 可改位置，写不进去就静默跳过缓存。
+`bx run *.bxs` 也会把编译结果缓存到脚本旁边的 `.bxcache/`，下次直接加载字节码；`bx run --wasm *.bxs` 同样把发射出的 `.wasm` 模块缓存为 `.bxcache/<hash>.wasm`（缓存键含版本、源码与递归 `use` 依赖，tag 变更时自动失效）。键 = 主脚本 + **递归 `use` 依赖的文件内容** + 版本：改被 include 的文件会让缓存失效（这正是 v0.1 的一个真 bug，已修）。设 `BX_CACHE_DIR` 可改位置，写不进去就静默跳过缓存。
 
 30 000 行生成脚本的实测：
 

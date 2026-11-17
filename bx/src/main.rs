@@ -265,24 +265,39 @@ fn cmd_run(args: Vec<String>) -> i32 {
             }
         };
         let wasm_argv: Vec<String> = args[1..].to_vec();
-        return match wasm_target::compile_to_wasm(&src) {
-            Ok(bytes) => match wasm_target::execute(
-                &bytes,
-                &wasm_argv,
-                budget.max_steps.unwrap_or(0),
-                budget.timeout_ms.unwrap_or(0),
-                |value| println!("{}", value),
-                |text| println!("{}", text),
-            ) {
-                Ok(()) => 0,
+        let cache_path = wasm_cache_path(Path::new(path), &src);
+        let bytes = match cache_path.as_ref().and_then(|p| fs::read(p).ok()) {
+            Some(bytes) if wasm_target::validate(&bytes).is_ok() => bytes,
+            _ => match wasm_target::compile_to_wasm(&src) {
+                Ok(bytes) => {
+                    if wasm_target::validate(&bytes).is_ok() {
+                        if let Some(cache_path) = &cache_path {
+                            if let Some(dir) = cache_path.parent() {
+                                let _ = fs::create_dir_all(dir);
+                            }
+                            let _ = fs::write(cache_path, &bytes);
+                        }
+                    }
+                    bytes
+                }
                 Err(e) => {
                     eprintln!("bx: {}", e);
-                    1
+                    eprintln!("bx: this script uses a feature the wasm target does not cover yet; run with BX_TARGET=bxb to use the legacy path");
+                    return 1;
                 }
             },
+        };
+        return match wasm_target::execute(
+            &bytes,
+            &wasm_argv,
+            budget.max_steps.unwrap_or(0),
+            budget.timeout_ms.unwrap_or(0),
+            |value| println!("{}", value),
+            |text| println!("{}", text),
+        ) {
+            Ok(()) => 0,
             Err(e) => {
                 eprintln!("bx: {}", e);
-                eprintln!("bx: this script uses a feature the wasm target does not cover yet; run with BX_TARGET=bxb to use the legacy path");
                 1
             }
         };
@@ -395,6 +410,17 @@ fn resolve_target(
 #[cfg(test)]
 mod target_tests {
     #[test]
+    fn wasm_module_cache_key_is_separate_and_content_addressed() {
+        let path = std::path::Path::new("script.bxs");
+        let first = wasm_cache_path(path, "print(1)").expect("cache path");
+        let second = wasm_cache_path(path, "print(2)").expect("cache path");
+        assert_eq!(first.extension().and_then(|e| e.to_str()), Some("wasm"));
+        assert_ne!(first, second);
+        let bxb = PathBuf::from(format!("{}.bxb", cache_key(path, "print(1)")));
+        assert_ne!(first.file_name(), bxb.file_name());
+    }
+
+    #[test]
     fn run_flag_selects_the_wasm_target() {
         let budget = parse_budget(vec!["--wasm".to_string(), "x.bxs".to_string()]).unwrap();
         assert!(budget.wasm);
@@ -402,8 +428,11 @@ mod target_tests {
         let plain = parse_budget(vec!["x.bxs".to_string()]).unwrap();
         assert!(!plain.wasm);
     }
+    use super::cache_key;
     use super::parse_budget;
     use super::resolve_target;
+    use super::wasm_cache_path;
+    use std::path::PathBuf;
 
     #[test]
     fn target_resolution_prefers_flags_and_validates() {
@@ -879,10 +908,23 @@ fn hash_bytes(h: &mut u64, bytes: &[u8]) {
 /// the compiler inlines them into the chunk, so the key mixes every included
 /// file's bytes, recursively.
 fn cache_key(path: &Path, src: &str) -> String {
+    cache_key_with_tag(path, src, b"\0bxb2\0")
+}
+
+/// The `.wasm` module cache beside a source script. The tag is bumped whenever
+/// the emitted module shape changes, because a stale module would otherwise be
+/// indistinguishable from a fresh one at the same `VERSION`.
+fn wasm_cache_path(path: &Path, src: &str) -> Option<PathBuf> {
+    let dir = cache_dir_for(path)?;
+    let key = cache_key_with_tag(path, src, b"\0wasm1\0");
+    Some(dir.join(format!("{}.wasm", key)))
+}
+
+fn cache_key_with_tag(path: &Path, src: &str, tag: &[u8]) -> String {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     hash_bytes(&mut h, VERSION.as_bytes());
-    // Bytecode layout changes must not be served from an older cache entry.
-    hash_bytes(&mut h, b"\0bxb2\0");
+    // Layout changes must not be served from an older cache entry.
+    hash_bytes(&mut h, tag);
     hash_bytes(&mut h, b"\0source\0");
     hash_bytes(&mut h, src.as_bytes());
     let base = path

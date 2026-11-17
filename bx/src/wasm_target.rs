@@ -9594,7 +9594,7 @@ fn scan_module(bytes: &[u8]) -> Result<WasmInfo, String> {
 }
 
 /// Parse and validate a module without running it (used by the module tests).
-#[cfg(test)]
+/// Validate a module with the absorbed core (used by `bx run` caching).
 pub fn validate(bytes: &[u8]) -> Result<(), String> {
     crate::wasm_core::validate(bytes)
 }

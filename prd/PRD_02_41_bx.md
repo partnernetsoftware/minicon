@@ -124,6 +124,12 @@ flowchart LR
 - 2026-11-16 round 10: `bx check <script>` compiles (and caches) without
   executing, so an agent can gate a run on syntax/compile errors; covered for
   good, broken and missing files. Suite: 87 checks.
+- 2026-11-17 round 106: the wasm target caches emitted modules beside the source
+  as `.bxcache/<hash>.wasm`; the key mixes `VERSION`, an emitter tag, the source
+  and recursive `use` includes, a corrupt or stale entry is recompiled, and
+  `BX_CACHE_DIR` still overrides the location. A 301-line script measured
+  52 ms cold vs 33 ms warm (median, process start included); verifier case
+  `wasm source runs reuse a module cache`.
 - 2026-11-17 round 105: `bx run --wasm script.bxs` forces the wasm target for a
   source script (the flag wins over `BX_TARGET`); unit test
   `run_flag_selects_the_wasm_target`. The engine under that target is now the

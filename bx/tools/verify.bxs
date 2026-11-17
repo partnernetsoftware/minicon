@@ -203,6 +203,15 @@ write(dir + "/wasm-arrb2.bxs", 'print(index_of([1, 2, 3], 2))\nprint([1, 2].cont
 write(dir + "/wasm-arrkind.bxs", 'print(sort(["b", "a"]))\nprint(join([1, 2], "-"))\nprint(slice([1.5, 2.5, 3.5], 0, 2))\n')
 write(dir + "/wasm-recarr.bxs", 'let xs = [{a: 2}]\nprint(map(xs, fn(r) { return {b: r.a + 1} }))\nprint(filter([{a: 1}], fn(r) { return r.a == 1 }))\n')
 write(dir + "/wasm-rows.bxs", 'let rows = [[1], [2, 3]]\nprint(map(rows, fn(r) { return sum(r) }))\nprint(reduce(rows, fn(a, r) { return a + len(r) }, 0))\n')
+write(dir + "/wasm-cache.bxs", 'print(1 + 2)\n')
+test("wasm source runs reuse a module cache", fn() {
+  let first = exec([bin, "run", "--wasm", dir + "/wasm-cache.bxs"])
+  let second = exec([bin, "run", "--wasm", dir + "/wasm-cache.bxs"])
+  assert(first.code == 0 && second.code == 0 && first.out == second.out, "outputs differ: " + json(first.out) + " vs " + json(second.out))
+  assert(first.out.trim() == "3", "out=" + json(first.out))
+  let cache = dir + "/.bxcache"
+  assert(exists(cache), "no wasm cache directory at " + cache)
+})
 test("wasm array-of-arrays and reduce", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-rows.bxs", "-o", dir + "/wasm-rows.wasm"])
   assert(built.code == 0, "build failed: " + built.err)
