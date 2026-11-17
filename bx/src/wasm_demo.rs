@@ -128,7 +128,39 @@ const imports = {
       }
       emit("{" + pieces.join(",") + "}");
     },
-    arr_index_of: (ptr, needle) => {
+    print_arr_f64: (ptr) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const count = view.getUint32(ptr, true);
+      const pieces = [];
+      for (let i = 0; i < count; i++) pieces.push(formatFloat(view.getFloat64(ptr + 4 + i * 8, true)));
+      emit("[" + pieces.join(",") + "]");
+    },
+    arr_sum_f: (ptr) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const count = view.getUint32(ptr, true);
+      let total = 0;
+      for (let i = 0; i < count; i++) total += view.getFloat64(ptr + 4 + i * 8, true);
+      return total;
+    },
+    arr_minmax_f: (ptr, wantMin) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const count = view.getUint32(ptr, true);
+      let best = null;
+      for (let i = 0; i < count; i++) {
+        const value = view.getFloat64(ptr + 4 + i * 8, true);
+        if (best === null) best = value;
+        else if (wantMin !== 0 ? value < best : value > best) best = value;
+      }
+      return best === null ? 0 : best;
+    },
+    arr_index_of_f: (ptr, needle) => {
+      const view = new DataView(instance.exports.memory.buffer);
+      const count = view.getUint32(ptr, true);
+      for (let i = 0; i < count; i++) {
+        if (view.getFloat64(ptr + 4 + i * 8, true) === needle) return BigInt(i);
+      }
+      return -1n;
+    },    arr_index_of: (ptr, needle) => {
       const view = new DataView(instance.exports.memory.buffer);
       const count = view.getUint32(ptr, true);
       for (let i = 0; i < count; i++) {

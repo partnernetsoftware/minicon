@@ -128,7 +128,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 90 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 91 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -164,6 +164,13 @@ bx wasm target
   all work; `print(map)` renders `{"k":1,"k2":2}` in insertion order via the
   `print_map` host import (browser glue reads its JS map table instead of guest
   memory). Maps still cannot be compared/sorted.
+- **Float arrays**: mixed numeric literals promote to `Ty::ArrF` (`[1.5, 2]`);
+  `print` renders VM-style (`[1.5,2,3.25]`), and read/write, `len`, `for` (one or
+  two variables), `push`, `sum`, `min`/`max`, `index_of`, `.contains` work with
+  f64 slots. `map`/`filter`/`reduce` callbacks, comparator `sort` and nested
+  float containers are still rejected; each new element kind costs a matrix of
+  emitter arms plus host imports (the reason a uniform value model is the next
+  design step, see `prd/PRD_02_44_bx_tinyvm_absorption.md`).
 - **Nested arrays**: `[[1,2],[3,4]]` types as `Ty::ArrArr` (entries hold inner
   array pointers); `len`, element read (including `m[1][0]`), element write,
   single/two-variable `for row in m`, `push`, negative indexes, passing rows to

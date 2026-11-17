@@ -1066,6 +1066,26 @@ fn format_str_array(memory: &[u8], ptr: usize) -> String {
     format!("[{}]", pieces.join(","))
 }
 
+fn format_f64_array(memory: &[u8], ptr: usize) -> String {
+    if ptr + 4 > memory.len() {
+        return "[]".to_string();
+    }
+    let len = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+    let mut pieces: Vec<String> = Vec::new();
+    for index in 0..len {
+        let offset = ptr + 4 + index * 8;
+        if offset + 8 > memory.len() {
+            break;
+        }
+        let value = f64::from_le_bytes(memory[offset..offset + 8].try_into().unwrap());
+        pieces.push(if value.is_finite() {
+            crate::value::fmt_float(value)
+        } else {
+            "null".to_string()
+        });
+    }
+    format!("[{}]", pieces.join(","))
+}
 fn format_map(memory: &[u8], ptr: usize) -> String {
     if ptr + 4 > memory.len() {
         return "{}".to_string();
@@ -2354,6 +2374,93 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 self.next_file = ((at + 4 + text.len() + 7) & !7) as u32;
                 Ok(vec![WVal::I32(at as i32)])
             }
+            ("env", "print_arr_f64") => {
+                let ptr = match args.first() {
+                    Some(WVal::I32(ptr)) => *ptr as usize,
+                    _ => return Err("env.print_arr_f64 expects one i32".to_string()),
+                };
+                let text = format_f64_array(memory, ptr);
+                (self.on_str)(&text);
+                Ok(Vec::new())
+            }
+            ("env", "arr_sum_f") => {
+                let ptr = match args.first() {
+                    Some(WVal::I32(ptr)) => *ptr as usize,
+                    _ => return Err("env.arr_sum_f expects one i32".to_string()),
+                };
+                let mut total = 0.0f64;
+                if ptr + 4 <= memory.len() {
+                    let len = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+                    for index in 0..len {
+                        let offset = ptr + 4 + index * 8;
+                        if offset + 8 > memory.len() {
+                            break;
+                        }
+                        total += f64::from_le_bytes(memory[offset..offset + 8].try_into().unwrap());
+                    }
+                }
+                Ok(vec![WVal::F64(total)])
+            }
+            ("env", "arr_minmax_f") => {
+                let ptr = match args.first() {
+                    Some(WVal::I32(ptr)) => *ptr as usize,
+                    _ => return Err("env.arr_minmax_f expects (i32 ptr, i32 want_min)".to_string()),
+                };
+                let want_min = match args.get(1) {
+                    Some(WVal::I32(value)) => *value != 0,
+                    _ => return Err("env.arr_minmax_f expects (i32 ptr, i32 want_min)".to_string()),
+                };
+                let mut best: Option<f64> = None;
+                if ptr + 4 <= memory.len() {
+                    let len = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+                    for index in 0..len {
+                        let offset = ptr + 4 + index * 8;
+                        if offset + 8 > memory.len() {
+                            break;
+                        }
+                        let value =
+                            f64::from_le_bytes(memory[offset..offset + 8].try_into().unwrap());
+                        best = Some(match best {
+                            None => value,
+                            Some(current) => {
+                                if want_min {
+                                    current.min(value)
+                                } else {
+                                    current.max(value)
+                                }
+                            }
+                        });
+                    }
+                }
+                Ok(vec![WVal::F64(best.unwrap_or(0.0))])
+            }
+            ("env", "arr_index_of_f") => {
+                let ptr = match args.first() {
+                    Some(WVal::I32(ptr)) => *ptr as usize,
+                    _ => return Err("env.arr_index_of_f expects (i32 ptr, f64 value)".to_string()),
+                };
+                let needle = match args.get(1) {
+                    Some(WVal::F64(value)) => *value,
+                    _ => return Err("env.arr_index_of_f expects (i32 ptr, f64 value)".to_string()),
+                };
+                let mut found = -1i64;
+                if ptr + 4 <= memory.len() {
+                    let len = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+                    for index in 0..len {
+                        let offset = ptr + 4 + index * 8;
+                        if offset + 8 > memory.len() {
+                            break;
+                        }
+                        let value =
+                            f64::from_le_bytes(memory[offset..offset + 8].try_into().unwrap());
+                        if value == needle {
+                            found = index as i64;
+                            break;
+                        }
+                    }
+                }
+                Ok(vec![WVal::I64(found)])
+            }
             ("env", "print_map") => {
                 let ptr = match args.first() {
                     Some(WVal::I32(ptr)) => *ptr as usize,
@@ -3454,6 +3561,14 @@ mod tests {
                     }
                     self.next_alloc = (end + 7) & !7;
                     Ok(vec![WVal::I32(start as i32)])
+                }
+                ("env", "print_f64") => {
+                    let value = match args.first() {
+                        Some(WVal::F64(value)) => *value,
+                        _ => return Err("env.print_f64 expects one f64".to_string()),
+                    };
+                    self.strings.push(crate::value::fmt_float(value));
+                    Ok(Vec::new())
                 }
                 ("env", "arr_index_of") => {
                     let ptr = match args.first() {
