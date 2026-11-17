@@ -187,7 +187,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 98 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 99 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -211,6 +211,12 @@ bx wasm target
 - **Record/array writes**: `r.a = v`, `r.a += v`, `xs[i] = v`, `xs[-1] = v` and
   `xs[i] += v` are supported with the same negative-index normalisation and
   bounds checks as reads (`+ - * %` for compound).
+- **File and lookup aliases**: `read(path)` and `write(path, data)` mirror the VM
+  names for `read_file`/`write_file`, and `read("-")` drains stdin to EOF;
+  `which(name)` resolves a command and returns its path (an empty string when
+  missing, where the VM returns null). `write` returns `0` on success (the VM
+  returns null). `exec`/`sh` are still absent because their result record mixes
+  int/string/bool fields, which the fixed-shape record model does not carry yet.
 - **Collection builtins**: `push` works in expression position (returns the
   array) and `pop(arr)` returns the removed element for int, float, string,
   text-row, int-row and record arrays (the empty case aborts; the VM returns

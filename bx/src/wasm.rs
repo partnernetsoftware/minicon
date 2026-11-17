@@ -2315,10 +2315,20 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 let path_bytes = memory
                     .get(ptr..ptr.saturating_add(len))
                     .ok_or_else(|| "bx.read_file path is outside memory".to_string())?;
-                let path = String::from_utf8_lossy(path_bytes);
-                let bytes = match std::fs::read(path.as_ref()) {
-                    Ok(bytes) => bytes,
-                    Err(error) => return Err(format!("cannot read '{}': {}", path, error)),
+                let path = String::from_utf8_lossy(path_bytes).to_string();
+                let bytes = if path == "-" {
+                    let mut buffer = Vec::new();
+                    if let Err(error) =
+                        std::io::Read::read_to_end(&mut std::io::stdin(), &mut buffer)
+                    {
+                        return Err(format!("cannot read stdin: {}", error));
+                    }
+                    buffer
+                } else {
+                    match std::fs::read(&path) {
+                        Ok(bytes) => bytes,
+                        Err(error) => return Err(format!("cannot read '{}': {}", path, error)),
+                    }
                 };
                 let size = 4 + bytes.len();
                 let start = self.next_file as usize;
@@ -2358,6 +2368,37 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     .ok_or_else(|| "bx.write_file data is outside memory".to_string())?;
                 let ok = std::fs::write(&path, data).is_ok();
                 Ok(vec![WVal::I32(if ok { 0 } else { -1 })])
+            }
+            ("bx", "which") => {
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("bx.which expects (i32 ptr, i32 len)".to_string()),
+                };
+                let name = memory
+                    .get(ptr..ptr.saturating_add(len))
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .ok_or_else(|| "bx.which name is outside memory".to_string())?;
+                let line = if cfg!(windows) {
+                    format!("where {}", name)
+                } else {
+                    format!("which {}", name)
+                };
+                let found = shell_command(&line)
+                    .output()
+                    .ok()
+                    .filter(|output| output.status.success())
+                    .map(|output| String::from_utf8_lossy(&output.stdout).to_string())
+                    .and_then(|text| {
+                        text.lines()
+                            .map(|line| line.trim())
+                            .find(|line| !line.is_empty())
+                            .map(|line| line.to_string())
+                    })
+                    .unwrap_or_default();
+                match store_text_block(memory, &mut self.next_file, found.as_bytes()) {
+                    Some(start) => Ok(vec![WVal::I32(start as i32)]),
+                    None => Err("which result does not fit the memory region".to_string()),
+                }
             }
             ("bx", "arg") => {
                 let index = match args.first() {

@@ -536,6 +536,15 @@ if (wasmRec.code == 0 && wasmRecRun.code == 0 && wasmRecRun.out.trim() == "30\n2
   casesFail += 1
   failures.push("wasm records + in-module heap\n    build=" + wasmRec.code + " out=" + json(wasmRecRun.out) + " err=" + json(wasmRecRun.err))
 }
+write(artDir + "/wasm-alias.bxs", 'let p = "' + artDir + '/wasm-alias.txt"\nprint(write(p, "payload"))\nprint(read(p))\nprint(len(which("definitely-not-a-command-xyz")))\nprint(type(which("definitely-not-a-command-xyz")))\n')
+let wasmAlias = exec([BX, "build", "--wasm", artDir + "/wasm-alias.bxs", "-o", artDir + "/wasm-alias.wasm"])
+let wasmAliasRun = exec([BX, "run", artDir + "/wasm-alias.wasm"])
+if (wasmAlias.code == 0 && wasmAliasRun.code == 0 && wasmAliasRun.out.trim() == "0\npayload\n0\nstr") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm read/write/which aliases\n    build=" + wasmAlias.code + " run=" + wasmAliasRun.code + " wasm=" + json(wasmAliasRun.out) + " err=" + json(wasmAliasRun.err))
+}
 write(artDir + "/wasm-builtins.bxs", 'let a = [1, 2]\nprint(push(a, 3))\nprint(pop(a))\nprint(contains(a, 2))\nprint(contains(a, 9))\nprint(float(2))\nprint(float("1.5"))\nprint(int(true))\nlet s = ["x", "y"]\nprint(pop(s))\nprint(len(s))\n')
 let wasmBuiltins = exec([BX, "build", "--wasm", artDir + "/wasm-builtins.bxs", "-o", artDir + "/wasm-builtins.wasm"])
 let wasmBuiltinsRun = exec([BX, "run", artDir + "/wasm-builtins.wasm"])
@@ -923,6 +932,15 @@ if (wasmAssign.code == 0 && wasmAssignRun.out == wasmAssignVm.out && wasmAssignR
 } else {
   casesFail += 1
   failures.push("wasm interpolation and assignments\n    wasm=" + json(wasmAssignRun.out) + " vm=" + json(wasmAssignVm.out) + " err=" + json(wasmAssignRun.err))
+}
+write(artDir + "/wasm-alias.bxs", 'let p = "' + artDir + '/wasm-alias.txt"\nprint(write(p, "payload"))\nprint(read(p))\nprint(len(which("definitely-not-a-command-xyz")))\nprint(type(which("definitely-not-a-command-xyz")))\n')
+let wasmAlias = exec([BX, "build", "--wasm", artDir + "/wasm-alias.bxs", "-o", artDir + "/wasm-alias.wasm"])
+let wasmAliasRun = exec([BX, "run", artDir + "/wasm-alias.wasm"])
+if (wasmAlias.code == 0 && wasmAliasRun.code == 0 && wasmAliasRun.out.trim() == "0\npayload\n0\nstr") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm read/write/which aliases\n    build=" + wasmAlias.code + " run=" + wasmAliasRun.code + " wasm=" + json(wasmAliasRun.out) + " err=" + json(wasmAliasRun.err))
 }
 write(artDir + "/wasm-builtins.bxs", 'print(abs(-4))\nprint(floor(2.7))\nprint(round(2.5))\nprint(sqrt(9))\nprint(trim("  hi  "))\nprint(upper("aBc"))\nprint(replace("a-b", "-", "+"))\nprint(index_of("hello", "ll"))\nprint(repeat("ab", 2))\nprint(type(3))\nprint(type([1, 2]))\n')
 let wasmBuiltins = exec([BX, "build", "--wasm", artDir + "/wasm-builtins.bxs", "-o", artDir + "/wasm-builtins.wasm"])

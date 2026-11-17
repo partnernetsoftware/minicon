@@ -566,6 +566,7 @@ const imports = {
     write_file: () => -1,
     run: () => -1,
     capture: () => 0,
+    which: () => 0,
   },
   webgl: {
     create: (width, height) => { gl.width = Math.max(1, width); gl.height = Math.max(1, height); gl.pixels = new Uint8Array(gl.width * gl.height * 4); return 1; },

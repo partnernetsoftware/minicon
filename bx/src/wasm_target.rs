@@ -776,6 +776,24 @@ impl Checker {
                         }
                         return Ok(Ty::Str);
                     }
+                    if name == "read" && args.len() == 1 {
+                        if self.infer(&args[0])? != Ty::Str {
+                            return Err("wasm target read(path) needs a string".to_string());
+                        }
+                        return Ok(Ty::Str);
+                    }
+                    if name == "write" && args.len() == 2 {
+                        if self.infer(&args[0])? != Ty::Str || self.infer(&args[1])? != Ty::Str {
+                            return Err("wasm target write(path, data) needs strings".to_string());
+                        }
+                        return Ok(Ty::Int);
+                    }
+                    if name == "which" && args.len() == 1 {
+                        if self.infer(&args[0])? != Ty::Str {
+                            return Err("wasm target which(name) needs a string".to_string());
+                        }
+                        return Ok(Ty::Str);
+                    }
                     if name == "write_file" && args.len() == 2 {
                         if self.infer(&args[0])? != Ty::Str || self.infer(&args[1])? != Ty::Str {
                             return Err(
@@ -1992,7 +2010,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 77;
+const IMPORT_COUNT: u32 = 78;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -2060,6 +2078,7 @@ const STR_LEN: u32 = 73;
 const EXIT: u32 = 74;
 const ERROR: u32 = 75;
 const STR_TO_FLOAT: u32 = 76;
+const WHICH: u32 = 77;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -5597,6 +5616,35 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Mem(0x28, 2, 0));
                         return Ok(Ty::Str);
                     }
+                    if name == "read" && args.len() == 1 {
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Call(4));
+                        self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
+                        self.builder.push(Instr::Local(0x20, self.temp(ARG_TMP)));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x20, self.temp(ARG_TMP)));
+                        self.builder.push(Instr::Mem(0x28, 2, 0));
+                        return Ok(Ty::Str);
+                    }
+                    if name == "write" && args.len() == 2 {
+                        self.emit_str(&args[0])?;
+                        self.emit_str(&args[1])?;
+                        self.builder.push(Instr::Call(5));
+                        self.builder.push(Instr::Op(0xac));
+                        return Ok(Ty::Int);
+                    }
+                    if name == "which" && args.len() == 1 {
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Call(WHICH));
+                        self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
+                        self.builder.push(Instr::Local(0x20, self.temp(ARG_TMP)));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x20, self.temp(ARG_TMP)));
+                        self.builder.push(Instr::Mem(0x28, 2, 0));
+                        return Ok(Ty::Str);
+                    }
                     if name == "write_file" && args.len() == 2 {
                         self.emit_str(&args[0])?;
                         self.emit_str(&args[1])?;
@@ -8551,9 +8599,9 @@ impl<'a> InferState<'a> {
                     return self.results.get(*index).copied().flatten();
                 }
                 match name.as_str() {
-                    "len" | "argc" | "write_file" | "run" | "gl_pixel" | "gl_png" | "int"
-                    | "abs" | "floor" | "ceil" | "round" | "sum" | "get" | "now" | "sleep"
-                    | "mkdir" => Some(Ty::Int),
+                    "len" | "argc" | "write_file" | "write" | "run" | "gl_pixel" | "gl_png"
+                    | "int" | "abs" | "floor" | "ceil" | "round" | "sum" | "get" | "now"
+                    | "sleep" | "mkdir" => Some(Ty::Int),
                     "reduce" => args
                         .get(2)
                         .and_then(|init| self.soft(init, locals))
@@ -8566,8 +8614,8 @@ impl<'a> InferState<'a> {
                                     _ => Ty::Int,
                                 })
                         }),
-                    "str" | "type" | "arg" | "read_file" | "capture" | "cwd" | "env" | "join"
-                    | "slice" => Some(Ty::Str),
+                    "str" | "type" | "arg" | "read_file" | "read" | "which" | "capture" | "cwd"
+                    | "env" | "join" | "slice" => Some(Ty::Str),
                     "float" | "sqrt" => Some(Ty::Float),
                     "exists" | "file_exists" | "has" => Some(Ty::Bool),
                     "split" | "keys" => Some(Ty::ArrStr),
@@ -9862,6 +9910,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let print_arr_strarr_ty = builder.add_type(vec![ValType::I32], vec![]);
     let str_len_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I64]);
     let str_to_float_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::F64]);
+    let which_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
     let exit_ty = builder.add_type(vec![ValType::I32], vec![]);
     let error_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![]);
     let arr_sum_f_ty = builder.add_type(vec![ValType::I32], vec![ValType::F64]);
@@ -9991,6 +10040,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "exit", exit_ty);
     builder.import_func("env", "error", error_ty);
     builder.import_func("env", "str_to_float", str_to_float_ty);
+    builder.import_func("bx", "which", which_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -10919,6 +10969,16 @@ mod tests {
                 "19.25".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn read_write_and_which_aliases_work() {
+        let (numbers, strings) = run_with_argv(
+            "let p = \"/tmp/bx-alias-test.txt\"\nprint(write(p, \"payload\"))\nprint(read(p))\nprint(len(which(\"definitely-not-a-command-xyz\")))\nprint(type(which(\"definitely-not-a-command-xyz\")))",
+            &[],
+        );
+        assert_eq!(numbers, vec![0, 0]);
+        assert_eq!(strings, vec!["payload".to_string(), "str".to_string()]);
     }
 
     #[test]
