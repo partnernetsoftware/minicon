@@ -577,6 +577,16 @@ if (wasmAttempt.code == 0 && wasmAttemptRun.out == wasmAttemptVm.out && wasmAtte
   casesFail += 1
   failures.push("wasm attempt()\n    wasm=" + json(wasmAttemptRun.out) + " vm=" + json(wasmAttemptVm.out) + " err=" + json(wasmAttemptRun.err))
 }
+write(artDir + "/wasm-arrcat.bxs", 'print([1, 2] + [3])\nlet a = [1]\nlet b = [2]\nprint(a + b)\nlet c = [1, 2]\nc += [3]\nprint(c)\nprint(["a"] + ["b"])\nprint([{a: 1}] + [{a: 2}])\nprint([[1]] + [[2, 3]])\nprint([1.5] + [2.5])\n')
+let wasmArrCat = exec([BX, "build", "--wasm", artDir + "/wasm-arrcat.bxs", "-o", artDir + "/wasm-arrcat.wasm"])
+let wasmArrCatRun = exec([BX, "run", artDir + "/wasm-arrcat.wasm"])
+let wasmArrCatVm = exec([BX, "run", artDir + "/wasm-arrcat.bxs"])
+if (wasmArrCat.code == 0 && wasmArrCatRun.out == wasmArrCatVm.out && wasmArrCatRun.out.trim() == "[1,2,3]\n[1,2]\n[1,2,3]\n[\"a\",\"b\"]\n[{\"a\":1},{\"a\":2}]\n[[1],[2,3]]\n[1.5,2.5]") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm array concat\n    wasm=" + json(wasmArrCatRun.out) + " vm=" + json(wasmArrCatVm.out) + " err=" + json(wasmArrCatRun.err))
+}
 write(artDir + "/wasm-dirname.bxs", 'print(__dir__)\nprint(basename(__dir__))\n')
 let wasmDirname = exec([BX, "build", "--wasm", artDir + "/wasm-dirname.bxs", "-o", artDir + "/wasm-dirname.wasm"])
 let wasmDirnameRun = exec([BX, "run", artDir + "/wasm-dirname.wasm"])
@@ -1138,6 +1148,16 @@ if (wasmAttempt.code == 0 && wasmAttemptRun.out == wasmAttemptVm.out && wasmAtte
 } else {
   casesFail += 1
   failures.push("wasm attempt()\n    wasm=" + json(wasmAttemptRun.out) + " vm=" + json(wasmAttemptVm.out) + " err=" + json(wasmAttemptRun.err))
+}
+write(artDir + "/wasm-arrcat.bxs", 'print([1, 2] + [3])\nlet a = [1]\nlet b = [2]\nprint(a + b)\nlet c = [1, 2]\nc += [3]\nprint(c)\nprint(["a"] + ["b"])\nprint([{a: 1}] + [{a: 2}])\nprint([[1]] + [[2, 3]])\nprint([1.5] + [2.5])\n')
+let wasmArrCat = exec([BX, "build", "--wasm", artDir + "/wasm-arrcat.bxs", "-o", artDir + "/wasm-arrcat.wasm"])
+let wasmArrCatRun = exec([BX, "run", artDir + "/wasm-arrcat.wasm"])
+let wasmArrCatVm = exec([BX, "run", artDir + "/wasm-arrcat.bxs"])
+if (wasmArrCat.code == 0 && wasmArrCatRun.out == wasmArrCatVm.out && wasmArrCatRun.out.trim() == "[1,2,3]\n[1,2]\n[1,2,3]\n[\"a\",\"b\"]\n[{\"a\":1},{\"a\":2}]\n[[1],[2,3]]\n[1.5,2.5]") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm array concat\n    wasm=" + json(wasmArrCatRun.out) + " vm=" + json(wasmArrCatVm.out) + " err=" + json(wasmArrCatRun.err))
 }
 write(artDir + "/wasm-dirname.bxs", 'print(__dir__)\nprint(basename(__dir__))\n')
 let wasmDirname = exec([BX, "build", "--wasm", artDir + "/wasm-dirname.bxs", "-o", artDir + "/wasm-dirname.wasm"])

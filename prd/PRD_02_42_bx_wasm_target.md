@@ -228,7 +228,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 117 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 118 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -445,6 +445,11 @@ bx wasm target
   passed to functions. Object lists nested inside other array literals keep the
   array pointer in a dedicated local because each record literal allocates
   storage.
+- **Array concatenation**: `a + b` (and `a += b`) concatenates arrays of the same
+  element kind — int, string, float, record, nested and text-row arrays — into a
+  new array, matching the VM for same-kind inputs. Mixed-kind concatenation
+  (`["a"] + [1]`, `"x" + [1]`) is rejected with a clear message because the VM
+  produces a dynamic array/stringified value the static model cannot type.
 - **Record merge**: `merge(a, b)` on records with statically known shapes builds
   the union shape at compile time (keys of `a` in order, then new keys of `b`);
   overlapping keys take `b`'s value, matching the VM. Chained merges work and

@@ -59,6 +59,12 @@ fn ty_name(ty: Ty) -> &'static str {
 }
 
 /// Element type of a supported array, or `None` for non-arrays.
+fn is_array_ty(ty: Ty) -> bool {
+    matches!(
+        ty,
+        Ty::Arr | Ty::ArrF | Ty::ArrStr | Ty::ArrObj(_) | Ty::ArrArr | Ty::ArrStrArr
+    )
+}
 fn element_ty(ty: Ty) -> Option<Ty> {
     match ty {
         Ty::Arr => Some(Ty::Int),
@@ -533,6 +539,16 @@ impl Checker {
             ) => {
                 let lt = self.infer(left)?;
                 let rt = self.infer(right)?;
+                if op == &BinOp::Add && is_array_ty(lt) && is_array_ty(rt) {
+                    if lt != rt {
+                        return Err(format!(
+                            "wasm target concatenates arrays of one element kind, got {} and {}",
+                            ty_name(lt),
+                            ty_name(rt)
+                        ));
+                    }
+                    return Ok(lt);
+                }
                 if op == &BinOp::Add && (lt == Ty::Str || rt == Ty::Str) {
                     let other = if lt == Ty::Str { rt } else { lt };
                     if matches!(other, Ty::Str | Ty::Int | Ty::Float | Ty::Bool) {
@@ -569,8 +585,32 @@ impl Checker {
                 Ok(Ty::Bool)
             }
             Expr::Bin(op @ (BinOp::Add | BinOp::Sub | BinOp::Mul), left, right) => {
+                if op == &BinOp::Add {
+                    let lt = self.infer(left)?;
+                    let rt = self.infer(right)?;
+                    if is_array_ty(lt) || is_array_ty(rt) {
+                        if lt != rt {
+                            return Err(format!(
+                                "wasm target concatenates arrays of one element kind, got {} and {}",
+                                ty_name(lt),
+                                ty_name(rt)
+                            ));
+                        }
+                        return Ok(lt);
+                    }
+                }
                 let lt = self.infer(left)?;
                 let rt = self.infer(right)?;
+                if op == &BinOp::Add && is_array_ty(lt) && is_array_ty(rt) {
+                    if lt != rt {
+                        return Err(format!(
+                            "wasm target concatenates arrays of one element kind, got {} and {}",
+                            ty_name(lt),
+                            ty_name(rt)
+                        ));
+                    }
+                    return Ok(lt);
+                }
                 if op == &BinOp::Add && (lt == Ty::Str || rt == Ty::Str) {
                     let other = if lt == Ty::Str { rt } else { lt };
                     if matches!(other, Ty::Str | Ty::Int | Ty::Float | Ty::Bool) {
@@ -2052,6 +2092,9 @@ impl Checker {
                 };
                 let target_ty = self.lookup(name)?;
                 let value_ty = self.infer(value)?;
+                if *_op == BinOp::Add && is_array_ty(target_ty) && target_ty == value_ty {
+                    return Ok(());
+                }
                 if !is_number(target_ty) || !is_number(value_ty) {
                     return Err(
                         "wasm target supports compound assignment on numbers only".to_string()
@@ -2703,11 +2746,85 @@ impl<'a> Emitter<'a> {
         Err("wasm target has no loop to break out of".to_string())
     }
 
+    /// Concatenate two arrays of the same kind: allocate `len1 + len2` slots and
+    /// copy both bodies. Mixed element kinds are rejected (the VM produces a
+    /// dynamic array, which the static value model cannot type).
+    fn emit_array_concat(&mut self, left: &Expr, right: &Expr) -> Result<Ty, String> {
+        let left_ty = self.type_of(left)?;
+        let right_ty = self.type_of(right)?;
+        if left_ty != right_ty || !is_array_ty(left_ty) {
+            return Err(format!(
+                "wasm target concatenates arrays of one element kind, got {} and {}",
+                ty_name(left_ty),
+                ty_name(right_ty)
+            ));
+        }
+        let base_a = self.builder.add_local(ValType::I32);
+        let base_b = self.builder.add_local(ValType::I32);
+        let len_a = self.builder.add_local(ValType::I32);
+        let len_b = self.builder.add_local(ValType::I32);
+        let total = self.builder.add_local(ValType::I32);
+        let base = self.builder.add_local(ValType::I32);
+        self.emit_expr(left)?;
+        self.builder.push(Instr::Local(0x21, base_a));
+        self.builder.push(Instr::Local(0x20, base_a));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Local(0x21, len_a));
+        self.emit_expr(right)?;
+        self.builder.push(Instr::Local(0x21, base_b));
+        self.builder.push(Instr::Local(0x20, base_b));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Local(0x21, len_b));
+        self.builder.push(Instr::Local(0x20, len_a));
+        self.builder.push(Instr::Local(0x20, len_b));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, total));
+        self.builder.push(Instr::Local(0x20, total));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.emit_alloc_dynamic();
+        self.builder.push(Instr::Local(0x21, base));
+        self.builder.push(Instr::Local(0x20, base));
+        self.builder.push(Instr::Local(0x20, total));
+        self.builder.push(Instr::Mem(0x36, 2, 0));
+        self.builder.push(Instr::Local(0x20, base));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, base_a));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, len_a));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::MemoryCopy);
+        self.builder.push(Instr::Local(0x20, base));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, len_a));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, base_b));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, len_b));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::MemoryCopy);
+        self.builder.push(Instr::Local(0x20, base));
+        Ok(left_ty)
+    }
     fn emit_compound(&mut self, name: &str, op: BinOp, value: &Expr) -> Result<(), String> {
         let target_ty = match self.local_of(name) {
             Some(slot) => slot.ty,
             None => self.checker.binding(name)?.ty,
         };
+        if op == BinOp::Add && is_array_ty(target_ty) {
+            self.emit_array_concat(&Expr::Ident(name.to_string()), value)?;
+            return self.emit_store(name);
+        }
         if !is_number(target_ty) {
             return Err(format!(
                 "wasm target supports compound assignment on numbers only, '{}' is {}",
@@ -5262,6 +5379,16 @@ impl<'a> Emitter<'a> {
                     }
                     return Ok(Ty::Bool);
                 }
+                if op == &BinOp::Add && is_array_ty(lt) && is_array_ty(rt) {
+                    if lt != rt {
+                        return Err(format!(
+                            "wasm target concatenates arrays of one element kind, got {} and {}",
+                            ty_name(lt),
+                            ty_name(rt)
+                        ));
+                    }
+                    return Ok(lt);
+                }
                 if op == &BinOp::Add && (lt == Ty::Str || rt == Ty::Str) {
                     let other = if lt == Ty::Str { rt } else { lt };
                     if matches!(other, Ty::Str | Ty::Int | Ty::Float | Ty::Bool) {
@@ -6543,6 +6670,11 @@ impl<'a> Emitter<'a> {
                 Ok(Ty::Int)
             }
             Expr::Bin(BinOp::Add, left, right) => {
+                let lt = self.type_of(left)?;
+                let rt = self.type_of(right)?;
+                if lt != Ty::Str && rt != Ty::Str && is_array_ty(lt) && is_array_ty(rt) {
+                    return self.emit_array_concat(left, right);
+                }
                 if self.type_of(left)? == Ty::Str || self.type_of(right)? == Ty::Str {
                     self.emit_str(expr)?;
                     return Ok(Ty::Str);
@@ -13040,6 +13172,31 @@ mod tests {
         assert_eq!(
             *out.lock().expect("lock"),
             vec!["/tmp/bx-scripts".to_string(), "bx-scripts".to_string()]
+        );
+    }
+
+    #[test]
+    fn array_concatenation_matches_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "print([1, 2] + [3])\nprint([1] + [])\nprint([] + [])\nlet a = [1]\nlet b = [2]\nprint(a + b)\nprint(a)\nprint(b)\nlet c = [1, 2]\nc += [3]\nprint(c)\nprint([\"a\"] + [\"b\", \"c\"])\nprint([{a: 1}] + [{a: 2}])\nprint([[1]] + [[2, 3]])\nprint([1.5] + [2.5])",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec![
+                "[1,2,3]".to_string(),
+                "[1]".to_string(),
+                "[]".to_string(),
+                "[1,2]".to_string(),
+                "[1]".to_string(),
+                "[2]".to_string(),
+                "[1,2,3]".to_string(),
+                "[\"a\",\"b\",\"c\"]".to_string(),
+                "[{\"a\":1},{\"a\":2}]".to_string(),
+                "[[1],[2,3]]".to_string(),
+                "[1.5,2.5]".to_string(),
+            ]
         );
     }
 
