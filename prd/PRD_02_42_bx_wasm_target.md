@@ -175,7 +175,12 @@ bx wasm target
   fixed edge cases (unicode strings, empty containers, negative indexes, text
   rows) and accepts `[cases] [seed]`; on 2026-11-17 seeds 1/7/42/1234567/999999937
   at 100 cases each all passed, which is how the byte-vs-character string bugs
-  above were found. This is what caught the VM/floats
+  above were found. `bx/tools/wasm-diff-coll.bxs` (same `[cases] [seed]` form)
+  covers collections instead: int/float/string arrays, text rows, int rows,
+  records, map/filter/each/sort/reverse/slice/reduce/push, nested indexes,
+  negative indexes, element writes, two-variable loops and closure captures.
+  Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
+  collection cases and 15 numeric cases. This is what caught the VM/floats
   divergence: bx's `/` is float division, so the wasm target now rejects `/` with a
   clear message instead of silently producing integer results.
 - `bx build --wasm` output starts with `\0asm` and is instantiated by **node v24**

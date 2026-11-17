@@ -1,6 +1,6 @@
 #!/bin/bash
 # bx's own regression: Rust unit tests for the pure pieces, then the self-hosted
-# suite (119 checks) through the freshly built binary.
+# suite (186 checks) through the freshly built binary.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
