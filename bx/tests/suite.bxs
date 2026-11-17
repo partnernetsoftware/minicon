@@ -587,6 +587,16 @@ if (wasmExecAll.code == 0 && wasmExecAllRun.out == wasmExecAllVm.out && wasmExec
   casesFail += 1
   failures.push("wasm exec_all\n    wasm=" + json(wasmExecAllRun.out) + " vm=" + json(wasmExecAllVm.out) + " err=" + json(wasmExecAllRun.err))
 }
+write(artDir + "/wasm-popjoin.bxs", 'let ints = [1, 2]\nprint(ints.pop())\nprint(ints)\nlet bools = [true, false]\nprint(bools.pop())\nprint(bools)\nprint(join([true, false], ","))\nprint(join([true, false]))\n')
+let wasmPopJoin = exec([BX, "build", "--wasm", artDir + "/wasm-popjoin.bxs", "-o", artDir + "/wasm-popjoin.wasm"])
+let wasmPopJoinRun = exec([BX, "run", artDir + "/wasm-popjoin.wasm"])
+let wasmPopJoinVm = exec([BX, "run", artDir + "/wasm-popjoin.bxs"])
+if (wasmPopJoin.code == 0 && wasmPopJoinRun.out == wasmPopJoinVm.out && wasmPopJoinRun.out.trim() == "2\n[1]\nfalse\n[true]\ntrue,false\ntruefalse") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm pop expression/join bool\n    wasm=" + json(wasmPopJoinRun.out) + " vm=" + json(wasmPopJoinVm.out) + " err=" + json(wasmPopJoinRun.err))
+}
 write(artDir + "/wasm-boolarr.bxs", 'let xs = [true, false]\nprint(xs)\nprint(len(xs))\nprint(xs[1])\nprint(xs.contains(true))\nprint(reverse(xs))\nprint(sort(xs))\nprint(map(xs, fn(v) { return v ? 1 : 0 }))\nprint(filter(xs, fn(v) { return !v }))\nprint(reduce(xs, fn(a, v) { return a || v }, false))\nprint(sum(xs))\n')
 let wasmBoolArr = exec([BX, "build", "--wasm", artDir + "/wasm-boolarr.bxs", "-o", artDir + "/wasm-boolarr.wasm"])
 let wasmBoolArrRun = exec([BX, "run", artDir + "/wasm-boolarr.wasm"])
@@ -1238,6 +1248,16 @@ if (wasmExecAll.code == 0 && wasmExecAllRun.out == wasmExecAllVm.out && wasmExec
 } else {
   casesFail += 1
   failures.push("wasm exec_all\n    wasm=" + json(wasmExecAllRun.out) + " vm=" + json(wasmExecAllVm.out) + " err=" + json(wasmExecAllRun.err))
+}
+write(artDir + "/wasm-popjoin.bxs", 'let ints = [1, 2]\nprint(ints.pop())\nprint(ints)\nlet bools = [true, false]\nprint(bools.pop())\nprint(bools)\nprint(join([true, false], ","))\nprint(join([true, false]))\n')
+let wasmPopJoin = exec([BX, "build", "--wasm", artDir + "/wasm-popjoin.bxs", "-o", artDir + "/wasm-popjoin.wasm"])
+let wasmPopJoinRun = exec([BX, "run", artDir + "/wasm-popjoin.wasm"])
+let wasmPopJoinVm = exec([BX, "run", artDir + "/wasm-popjoin.bxs"])
+if (wasmPopJoin.code == 0 && wasmPopJoinRun.out == wasmPopJoinVm.out && wasmPopJoinRun.out.trim() == "2\n[1]\nfalse\n[true]\ntrue,false\ntruefalse") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm pop expression/join bool\n    wasm=" + json(wasmPopJoinRun.out) + " vm=" + json(wasmPopJoinVm.out) + " err=" + json(wasmPopJoinRun.err))
 }
 write(artDir + "/wasm-boolarr.bxs", 'let xs = [true, false]\nprint(xs)\nprint(len(xs))\nprint(xs[1])\nprint(xs.contains(true))\nprint(reverse(xs))\nprint(sort(xs))\nprint(map(xs, fn(v) { return v ? 1 : 0 }))\nprint(filter(xs, fn(v) { return !v }))\nprint(reduce(xs, fn(a, v) { return a || v }, false))\nprint(sum(xs))\n')
 let wasmBoolArr = exec([BX, "build", "--wasm", artDir + "/wasm-boolarr.bxs", "-o", artDir + "/wasm-boolarr.wasm"])

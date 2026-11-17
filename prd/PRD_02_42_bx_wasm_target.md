@@ -228,7 +228,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 126 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 127 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -486,6 +486,10 @@ bx wasm target
   (`let failures = []` then `failures.push("...")`); int stays the default. The
   hint pass is purely syntactic (nested calls and unknown expressions fall back
   to int), and local (function-scope) empty arrays keep the old int default.
+- **Method `.pop()` in expressions**: `xs.pop()` works for every array kind in
+  expression position (the removed element is the value, the array shrinks),
+  matching the VM; `join` also accepts bool arrays (`join([true, false], ",")`
+  via `env.join_bool`, default separator empty).
 - **Bool arrays**: `[true, false]` types as `Ty::ArrBool` and supports the whole
   surface: printing (`[true,false]` via `env.print_arr_bool`), `len`, indexed
   read/write, `push`/`pop`, `contains`/`index_of`, default and comparator

@@ -932,6 +932,11 @@ impl Checker {
                 Ok(Ty::Obj(self.shape_id(&keys, &kinds)))
             }
             Expr::MethodCall(object, key, args, _) => {
+                if key == "pop" && args.is_empty() {
+                    let base = self.infer(object)?;
+                    return element_ty(base)
+                        .ok_or_else(|| "wasm target .pop works on arrays only".to_string());
+                }
                 let str_method = match key.as_str() {
                     "trim" | "upper" | "lower" => Some((0usize, Ty::Str)),
                     "repeat" => Some((1usize, Ty::Str)),
@@ -1484,7 +1489,7 @@ impl Checker {
                     }
                     if name == "join" && (args.len() == 1 || args.len() == 2) {
                         let base = self.infer(&args[0])?;
-                        if !matches!(base, Ty::Arr | Ty::ArrF | Ty::ArrStr) {
+                        if !matches!(base, Ty::Arr | Ty::ArrF | Ty::ArrStr | Ty::ArrBool) {
                             return Err(
                                 "wasm target join() takes a numeric or string array".to_string()
                             );
@@ -2836,7 +2841,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 99;
+const IMPORT_COUNT: u32 = 100;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -2923,6 +2928,7 @@ const REMOVE_FILE: u32 = 95;
 const DIR_COUNT: u32 = 96;
 const DIR_ENTRY: u32 = 97;
 const PRINT_ARR_BOOL: u32 = 98;
+const JOIN_BOOL: u32 = 99;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -7983,6 +7989,12 @@ impl<'a> Emitter<'a> {
                 Ok(Ty::Obj(shape))
             }
             Expr::MethodCall(object, key, args, _) => {
+                if key == "pop" && args.is_empty() {
+                    let Expr::Ident(array) = &**object else {
+                        return Err("wasm target pops a named array variable only".to_string());
+                    };
+                    return self.emit_pop_value(array);
+                }
                 match key.as_str() {
                     "trim" | "upper" | "lower" if args.is_empty() => {
                         self.emit_str(object)?;
@@ -9065,6 +9077,7 @@ impl<'a> Emitter<'a> {
                             Ty::Arr => ARR_JOIN_INT,
                             Ty::ArrF => ARR_JOIN_F,
                             Ty::ArrStr => STR_JOIN,
+                            Ty::ArrBool => JOIN_BOOL,
                             other => {
                                 return Err(format!(
                                     "wasm target join() takes a numeric or string array, got {}",
@@ -13146,6 +13159,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "dir_count", which_ty);
     builder.import_func("env", "dir_entry", format_container_ty);
     builder.import_func("env", "print_arr_bool", one_i32_ty);
+    builder.import_func("env", "join_bool", format_container_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -14616,6 +14630,29 @@ mod tests {
                 "[false,true]".to_string(),
                 "[false,true]".to_string(),
                 "flags=[false,true]".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn pop_expression_and_bool_join_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let ints = [1, 2]\nprint(ints.pop())\nprint(ints)\nlet strs = [\"a\", \"b\"]\nprint(strs.pop())\nprint(strs)\nlet bools = [true, false]\nprint(bools.pop())\nprint(bools)\nprint(join([true, false], \",\"))\nprint(join([true, false]))\nprint(join([], \"-\"))\nprint(\"flags: \" + join([true, false], \"|\"))",
+            &[],
+        );
+        assert_eq!(numbers, vec![2]);
+        assert_eq!(
+            strings,
+            vec![
+                "[1]".to_string(),
+                "b".to_string(),
+                "[\"a\"]".to_string(),
+                "false".to_string(),
+                "[true]".to_string(),
+                "true,false".to_string(),
+                "truefalse".to_string(),
+                "".to_string(),
+                "flags: true|false".to_string(),
             ]
         );
     }

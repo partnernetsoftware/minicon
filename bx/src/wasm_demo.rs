@@ -108,6 +108,7 @@ const imports = {
       else emit(line);
     },
     print_f64: (value) => { emit(formatFloat(value)); },
+    join_bool: () => 0,
     print_arr_bool: (ptr) => {
       const view = new DataView(instance.exports.memory.buffer);
       const count = view.getUint32(ptr, true);

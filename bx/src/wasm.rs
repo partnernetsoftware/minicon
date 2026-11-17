@@ -573,6 +573,23 @@ fn format_record(memory: &[u8], table: usize, count: usize, rec: usize) -> Strin
     }
     format!("{{{}}}", pieces.join(","))
 }
+/// Join a bool array into text: `true<sep>false`.
+fn join_bool_array(memory: &[u8], ptr: usize, sep_ptr: usize, sep_len: usize) -> String {
+    let sep = memory_text(memory, sep_ptr, sep_len);
+    let mut pieces: Vec<String> = Vec::new();
+    if ptr + 4 <= memory.len() {
+        let count = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+        for index in 0..count {
+            let offset = ptr + 4 + index * 8;
+            if offset + 8 > memory.len() {
+                break;
+            }
+            let value = i64::from_le_bytes(memory[offset..offset + 8].try_into().unwrap());
+            pieces.push(if value != 0 { "true" } else { "false" }.to_string());
+        }
+    }
+    pieces.join(&sep)
+}
 /// Array of bools rendered as `[true,false]`.
 fn format_bool_array(memory: &[u8], ptr: usize) -> String {
     let mut pieces: Vec<String> = Vec::new();
@@ -1421,6 +1438,22 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 let text = format_f64_array(memory, ptr);
                 (self.on_str)(&text);
                 Ok(Vec::new())
+            }
+            ("env", "join_bool") => {
+                let read = |value: Option<&WVal>| match value {
+                    Some(WVal::I32(v)) => Some(*v as usize),
+                    _ => None,
+                };
+                let (ptr, sep_ptr, sep_len) =
+                    match (read(args.first()), read(args.get(1)), read(args.get(2))) {
+                        (Some(ptr), Some(sep_ptr), Some(sep_len)) => (ptr, sep_ptr, sep_len),
+                        _ => return Err("env.join_bool expects three i32s".to_string()),
+                    };
+                let text = join_bool_array(memory, ptr, sep_ptr, sep_len);
+                match store_text_block(memory, &mut self.next_file, text.as_bytes()) {
+                    Some(start) => Ok(vec![WVal::I32(start as i32)]),
+                    None => Err("join_bool result does not fit the file region".to_string()),
+                }
             }
             ("env", "print_arr_bool") => {
                 let ptr = match args.first() {
