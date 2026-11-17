@@ -10973,10 +10973,14 @@ mod tests {
 
     #[test]
     fn read_write_and_which_aliases_work() {
-        let (numbers, strings) = run_with_argv(
-            "let p = \"/tmp/bx-alias-test.txt\"\nprint(write(p, \"payload\"))\nprint(read(p))\nprint(len(which(\"definitely-not-a-command-xyz\")))\nprint(type(which(\"definitely-not-a-command-xyz\")))",
-            &[],
+        let path = std::env::temp_dir().join("bx-wasm-alias-test.txt");
+        let escaped = path.to_string_lossy().replace('\\', "/");
+        let source = format!(
+            "let p = \"{}\"\nprint(write(p, \"payload\"))\nprint(read(p))\nprint(len(which(\"definitely-not-a-command-xyz\")))\nprint(type(which(\"definitely-not-a-command-xyz\")))",
+            escaped
         );
+        let (numbers, strings) = run_with_argv(&source, &[]);
+        let _ = std::fs::remove_file(&path);
         assert_eq!(numbers, vec![0, 0]);
         assert_eq!(strings, vec!["payload".to_string(), "str".to_string()]);
     }
