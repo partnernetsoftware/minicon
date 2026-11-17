@@ -13,9 +13,11 @@ module should run in a browser once the Web ABI lands.
 
 ## Decision
 
-- Encoder, decoder and interpreter are **in-tree** (`bx/src/wasm.rs`,
-  `bx/src/wasm_target.rs`). `cargo tree` shows only `bx`; no third-party wasm
-  crate is linked, so the zero-dependency claim still holds.
+- Encoder and the old interpreter are **in-tree** (`bx/src/wasm.rs`,
+  `bx/src/wasm_target.rs`). Execution and validation now run on the owned
+  vendored core (`bx/vendor/tinyvm`, PRD_02_44 P1); `cargo tree -p bx` shows
+  `bx → tinyvm → libm`. It is owned source in this repository, not a crates.io
+  or third-party WebAssembly runtime.
 - The emitted artifact is a standard module (`\0asm`, version 1), not a
   bx-private container. Provenance moves to a sidecar/metadata only if a later
   milestone needs it.
@@ -153,7 +155,7 @@ bx wasm target
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 91 in-tree unit tests (plus the self-hosted differential tool) cover encoder
+- 93 in-tree unit tests (plus the self-hosted differential tool) cover encoder
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of

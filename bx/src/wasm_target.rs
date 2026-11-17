@@ -9054,6 +9054,9 @@ pub struct WasmInfo {
 
 /// Decode a module and summarise its imports/exports for tooling.
 pub fn inspect(bytes: &[u8]) -> Result<WasmInfo, String> {
+    // Validate with the absorbed core first: it catches the local/stack type
+    // errors the in-tree decoder never checked.
+    crate::wasm_core::validate(bytes)?;
     let module = crate::wasm::validate(bytes)?;
     Ok(WasmInfo {
         imports: module
@@ -9078,6 +9081,7 @@ pub fn validate(bytes: &[u8]) -> Result<(), String> {
 
 /// Instantiate and run `_start`, forwarding `env.print_i64` / `env.print_utf8`
 /// and exposing `argv` through `bx.argc` / `bx.arg`.
+#[allow(dead_code)] // Retained for the engine differential until P1 removes it.
 pub fn execute<F, G>(
     bytes: &[u8],
     argv: &[String],
@@ -9091,6 +9095,26 @@ where
     G: FnMut(&str),
 {
     crate::wasm::run_start(bytes, argv, max_steps, timeout_ms, on_i64, on_str)
+}
+
+/// Execute through the absorbed `tinyvm` core (PRD_02_44 P1).
+///
+/// Sinks are owned because the core stores its callback table for the module's
+/// lifetime. The CLI uses this entry; the in-tree interpreter stays reachable
+/// through [`execute`] until P1 deletes it.
+pub fn execute_core<F, G>(
+    bytes: &[u8],
+    argv: &[String],
+    max_steps: u64,
+    timeout_ms: u64,
+    on_i64: F,
+    on_str: G,
+) -> Result<(), String>
+where
+    F: FnMut(i64) + 'static,
+    G: FnMut(&str) + 'static,
+{
+    crate::wasm_core::run_start(bytes, argv, max_steps, timeout_ms, on_i64, on_str)
 }
 
 #[cfg(test)]

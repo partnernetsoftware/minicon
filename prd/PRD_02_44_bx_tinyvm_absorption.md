@@ -2,8 +2,9 @@
 
 Owner of the decision to replace the `bx` wasm runtime with the `tinyvm`
 engine, and of the migration that lets `tinyvm` be retired with `minicon-bx`
-carrying its needs. Status: `[-]` decision accepted, P0 decisive experiment completed
-2026-11-17 with a shim host; P1 (engine swap) not started.
+carrying its needs. Status: `[-]` decision accepted; P0 completed 2026-11-17; P1 started the same
+day — the vendored core is now the CLI's wasm engine and the in-tree
+interpreter is retained only for one release of differential.
 
 Related: [bx surface](PRD_02_41_bx.md) · [wasm target](PRD_02_42_bx_wasm_target.md) ·
 [wasm migration](PRD_02_43_bx_wasm_migration.md). `tinyvm` facts below are owned
@@ -66,11 +67,12 @@ minicon-bx owns a standard wasm core and one language skin      [-]
 │   ├── module accepted by an independent engine (node)          [v]  existing demo already proves the emitter
 │   └── core-inside-wasm + `.com` size/startup measurement       [_]  linked std delta measured only
 │
-├── P1 engine swap                                              [_]
-│   ├── `bx run --wasm` executes through the core                [_]
-│   ├── validation errors surface with function name/line        [_]
-│   ├── `bx/src/wasm.rs` interpreter retired                     [_]
-│   └── step/memory budgets owned by the core                    [_]
+├── P1 engine swap                                              [~]
+│   ├── `bx run --wasm` executes through the core                [v]  2026-11-17
+│   ├── validation errors surface with function name/line        [v]  `bx check`/`bx run` reject with site
+│   ├── `bx/src/wasm.rs` interpreter retired                     [_]  next: delete + move unit tests to the core
+│   ├── step/memory budgets owned by the core                    [v]  steps, interrupt, memory pages
+│   └── core vendored as a workspace member                      [v]  `bx/vendor/tinyvm` (no crates.io wasm crate)
 │
 ├── P2 language front end simplification                        [_]
 │   ├── uniform tagged value ABI (containers hold values)        [_]
@@ -152,6 +154,31 @@ Findings that change the plan:
    `web.*`/`webgl.*`, `bx.run`/`bx.capture`, and some container printers were not
    exercised. P1 must port the whole surface as one Rust host profile and prove
    it with the differential plus the browser demo.
+## P1 progress (2026-11-17)
+
+- `bx/vendor/tinyvm` is the owned core crate (the `tinyvm` name is kept so a
+  future upstream drift check can diff it), `std` feature only, provenance in
+  its README. `cargo tree -p bx` now shows `bx → tinyvm → libm`; there is still
+  no third-party WebAssembly runtime crate.
+- `bx run <module.wasm>` and `bx run <source>` (wasm target) execute through the
+  core by default. `BX_WASM_OWN=1` still reaches the in-tree interpreter for one
+  release of engine differential; unit tests keep using it for now.
+- The host surface is **not duplicated**: the core adapter (`bx/src/wasm_core.rs`)
+  converts `tinyvm::Val` to bx's `WVal` and calls the existing `PrintHost` arms,
+  so the ABI keeps one implementation. This answers the P0 ABI-drift finding
+  structurally instead of by documentation.
+- Validation is now a product surface: `bx check file.wasm` and `bx run
+  file.wasm` reject the P0 invalid-module class with `wasm module rejected:
+  validation: type mismatch in function #0`; budgets map to core limits
+  (`--max-steps` → step budget, `--timeout` → interrupt).
+- Evidence: unit 93 (91 + two core tests: reject-invalid, run-compiled), suite
+  180, verifier 76, local differential 300 and packed-product differential 300
+  all on the core; corpus (floats/nested/sortstr/maps) is byte-identical across
+  core engine, own interpreter and VM. `.com` grew from ~1.92 MB to ~2.17 MB
+  (win-x64; +243 KB with LTO+strip).
+- Remaining P1 work: delete the interpreter and its decoder, move the unit tests
+  that use `execute` onto the core, then remove `BX_WASM_OWN` and the
+  `#[allow(dead_code)]` exceptions.
 ## Gates
 
 | Gate | Meaning | Evidence required | Status |

@@ -15,5 +15,13 @@ codegen-units = 1
 strip = true
 
 # Standalone: bx is its own workspace so MiniCon's workspace stays untouched.
+# `vendor/tinyvm` is the absorbed standard-wasm core (P1 of PRD_02_44).
 [workspace]
+members = ["vendor/tinyvm"]
+
+[dependencies]
+# Owned, vendored engine (not a third-party runtime): standard-wasm decode,
+# validation, budgets and interpretation. The `std` feature supplies the host
+# plumbing; the static core stays available for the later embeddable phases.
+tinyvm = { path = "vendor/tinyvm", default-features = false, features = ["std"] }
 

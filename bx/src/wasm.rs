@@ -1944,6 +1944,48 @@ where
     Ok(())
 }
 
+/// Owned sink types for the core host adapter (PRD_02_44 P1).
+pub(crate) type BoxedI64Sink = Box<dyn FnMut(i64)>;
+pub(crate) type BoxedStrSink = Box<dyn FnMut(&str)>;
+
+/// Build the native host for the absorbed `tinyvm` core.
+///
+/// The sinks are leaked for the process lifetime: a CLI run uses one host, and
+/// the core adapter needs a `'static` callback table. This is deliberately not
+/// used by the in-tree interpreter (which borrows its sinks per call).
+pub(crate) fn core_print_host(
+    on_i64: BoxedI64Sink,
+    on_str: BoxedStrSink,
+    argv: &[String],
+) -> PrintHost<'static, BoxedI64Sink, BoxedStrSink> {
+    let on_i64: &'static mut BoxedI64Sink = Box::leak(Box::new(on_i64));
+    let on_str: &'static mut BoxedStrSink = Box::leak(Box::new(on_str));
+    PrintHost {
+        on_i64,
+        on_str,
+        next_alloc: 8192,
+        argv: argv.to_vec(),
+        next_argv: 65_536,
+        next_file: 131_072,
+        next_map: 327_680,
+        next_proc: 196_608,
+        started: std::time::Instant::now(),
+        gl: GlBackend::new(),
+    }
+}
+
+impl<'a, F: FnMut(i64), G: FnMut(&str)> PrintHost<'a, F, G> {
+    /// One import call, for adapters that are not the in-tree interpreter.
+    pub(crate) fn dispatch(
+        &mut self,
+        module: &str,
+        name: &str,
+        args: &[WVal],
+        memory: &mut [u8],
+    ) -> Result<Vec<WVal>, String> {
+        <Self as Host>::call(self, module, name, args, memory)
+    }
+}
 /// Run one command line through the platform shell, mirroring bx `sh`.
 fn shell_command(line: &str) -> std::process::Command {
     #[cfg(windows)]
@@ -2010,7 +2052,7 @@ impl GlBackend {
     }
 }
 
-struct PrintHost<'a, F: FnMut(i64), G: FnMut(&str)> {
+pub(crate) struct PrintHost<'a, F: FnMut(i64), G: FnMut(&str)> {
     on_i64: &'a mut F,
     on_str: &'a mut G,
     /// Bump allocator for the prototype `env.alloc` import, 8-byte aligned.
