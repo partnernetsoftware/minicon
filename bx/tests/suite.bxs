@@ -954,6 +954,16 @@ if (wasmBoolGrow.code == 0 && wasmBoolGrowRun.out == wasmBoolGrowVm.out && wasmB
   casesFail += 1
   failures.push("wasm growable bool arrays\n    wasm=" + json(wasmBoolGrowRun.out) + " vm=" + json(wasmBoolGrowVm.out) + " err=" + json(wasmBoolGrowRun.err))
 }
+write(artDir + "/wasm-dyncontainers.bxs", 'let arr = parse(env("BX_A", "[1,2,3]"))\nprint(str(arr))\nprint(str(len(arr)))\nprint(str(arr[0]))\nprint(str(arr[-1]))\nprint(type(arr))\nprint(json(arr))\nlet obj = parse(env("BX_O", "{}"))\nprint(str(obj))\nprint(str(len(obj)))\nprint(type(obj))\nprint(json(obj))\nprint("v=" + str(obj))\nlet nested = parse(env("BX_N", "[[1,2]]"))\nprint(str(nested[0][1]))\nprint(str(len(nested[0])))\nprint(str(nested[0]))\nprint(str(obj.missing))\n')
+let wasmDynContainers = exec([BX, "build", "--wasm", artDir + "/wasm-dyncontainers.bxs", "-o", artDir + "/wasm-dyncontainers.wasm"])
+let wasmDynContainersRun = exec([BX, "run", artDir + "/wasm-dyncontainers.wasm"])
+let wasmDynContainersVm = exec([BX, "run", artDir + "/wasm-dyncontainers.bxs"])
+if (wasmDynContainers.code == 0 && wasmDynContainersRun.out == wasmDynContainersVm.out && wasmDynContainersRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm dynamic containers\n    wasm=" + json(wasmDynContainersRun.out) + " vm=" + json(wasmDynContainersVm.out) + " err=" + json(wasmDynContainersRun.err))
+}
 write(artDir + "/wasm-dynops.bxs", 'let a = parse(env("BX_X", "42"))\nlet f = parse(env("BX_Y", "2.5"))\nlet t = parse(env("BX_Z", "true"))\nlet n = parse(env("BX_W", "null"))\nprint(a + 8)\nprint(a * 2)\nprint(f / 2)\nprint(a % 4)\nprint(a == 42)\nprint(n == 0)\nprint(n == null)\nprint(t == true)\nprint(a < 50)\nprint(f > 2)\nprint(int(f))\nprint(float(a))\nprint(int(n))\nprint(!t)\nif (a > 40) { print("big") } else { print("small") }\nprint(a + "x")\nprint("x" + a)\nprint(-a)\nprint(a && t)\nprint(n || a)\nprint(n && a)\n')
 let wasmDynOps = exec([BX, "build", "--wasm", artDir + "/wasm-dynops.bxs", "-o", artDir + "/wasm-dynops.wasm"])
 let wasmDynOpsRun = exec([BX, "run", artDir + "/wasm-dynops.wasm"])

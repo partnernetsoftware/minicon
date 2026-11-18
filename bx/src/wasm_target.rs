@@ -1356,6 +1356,7 @@ impl Checker {
                             | Ty::ArrObj(_)
                             | Ty::ArrArr
                             | Ty::Map
+                            | Ty::Dyn
                     ) {
                         return Ok(Ty::Int);
                     }
@@ -1371,6 +1372,9 @@ impl Checker {
             }
             Expr::Member(object, key, _) => {
                 let ty = self.infer(object)?;
+                if ty == Ty::Dyn {
+                    return Ok(Ty::Dyn);
+                }
                 match ty {
                     Ty::Obj(shape) => {
                         let index = self.field_index(shape, key)?;
@@ -1454,6 +1458,10 @@ impl Checker {
             }
             Expr::Index(array, index, _) => {
                 let arr_ty = self.infer(array)?;
+                if arr_ty == Ty::Dyn {
+                    let _ = self.infer(index)?;
+                    return Ok(Ty::Dyn);
+                }
                 if !matches!(
                     arr_ty,
                     Ty::Arr
@@ -2407,7 +2415,8 @@ impl Checker {
                             | Ty::ArrF
                             | Ty::ArrStrArr
                             | Ty::Str
-                            | Ty::Map => Ok(Ty::Int),
+                            | Ty::Map
+                            | Ty::Dyn => Ok(Ty::Int),
                             other => {
                                 Err(format!("wasm target cannot take len of {}", ty_name(other)))
                             }
@@ -3163,7 +3172,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 110;
+const IMPORT_COUNT: u32 = 113;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -3261,6 +3270,9 @@ const DYN_NEG: u32 = 106;
 const DYN_TO_INT: u32 = 107;
 const DYN_TO_FLOAT: u32 = 108;
 const DYN_TRUTHY: u32 = 109;
+const DYN_LEN: u32 = 110;
+const DYN_INDEX: u32 = 111;
+const DYN_MEMBER: u32 = 112;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -7060,7 +7072,8 @@ impl<'a> Emitter<'a> {
                         | Ty::ArrArr
                         | Ty::ArrF
                         | Ty::ArrStrArr
-                        | Ty::Map => Ok(Ty::Int),
+                        | Ty::Map
+                        | Ty::Dyn => Ok(Ty::Int),
                         other => Err(format!("wasm target cannot take len of {}", ty_name(other))),
                     };
                 }
@@ -7131,6 +7144,7 @@ impl<'a> Emitter<'a> {
             }
 
             Expr::Index(array, _, _) => match self.type_of(array)? {
+                Ty::Dyn => Ok(Ty::Dyn),
                 Ty::ArrStr | Ty::Str => Ok(Ty::Str),
                 Ty::ArrObj(shape) => Ok(Ty::Obj(shape)),
                 Ty::ArrArr => Ok(Ty::Arr),
@@ -7178,7 +7192,11 @@ impl<'a> Emitter<'a> {
                 Ok(Ty::Obj(self.checker.shape_id(&keys, &kinds)))
             }
             Expr::Member(object, key, _) => {
-                let Ty::Obj(shape) = self.type_of(object)? else {
+                let object_ty = self.type_of(object)?;
+                if object_ty == Ty::Dyn {
+                    return Ok(Ty::Dyn);
+                }
+                let Ty::Obj(shape) = object_ty else {
                     return Err("wasm target reads record fields only".to_string());
                 };
                 let index = self.checker.field_index(shape, key)?;
@@ -8725,6 +8743,12 @@ impl<'a> Emitter<'a> {
 
             Expr::Member(object, key, _) => {
                 let ty = self.type_of(object)?;
+                if ty == Ty::Dyn {
+                    self.emit_expr(object)?;
+                    self.emit_text_literal(key);
+                    self.builder.push(Instr::Call(DYN_MEMBER));
+                    return Ok(Ty::Dyn);
+                }
                 let Ty::Obj(shape) = ty else {
                     return Err(format!(
                         "wasm target can read fields of objects only, got {}",
@@ -8939,6 +8963,17 @@ impl<'a> Emitter<'a> {
             }
             Expr::Index(array, index, _) => {
                 let array_ty = self.type_of(array)?;
+                if array_ty == Ty::Dyn {
+                    self.emit_expr(array)?;
+                    if self.type_of(index)? == Ty::Float {
+                        self.emit_f64(index)?;
+                        self.builder.push(Instr::Op(0xb0));
+                    } else {
+                        self.emit_expr(index)?;
+                    }
+                    self.builder.push(Instr::Call(DYN_INDEX));
+                    return Ok(Ty::Dyn);
+                }
                 if array_ty == Ty::Str {
                     let ptr_tmp = self.builder.add_local(ValType::I32);
                     let len_tmp = self.builder.add_local(ValType::I32);
@@ -9531,6 +9566,11 @@ impl<'a> Emitter<'a> {
                 }
                 if key == "len" && args.is_empty() {
                     return match self.type_of(object)? {
+                        Ty::Dyn => {
+                            self.emit_expr(object)?;
+                            self.builder.push(Instr::Call(DYN_LEN));
+                            Ok(Ty::Int)
+                        }
                         Ty::Map => {
                             self.emit_expr(object)?;
                             self.builder.push(Instr::Call(MAP_LEN));
@@ -11570,6 +11610,11 @@ impl<'a> Emitter<'a> {
                     }
                     if name == "len" && args.len() == 1 {
                         match self.type_of(&args[0])? {
+                            Ty::Dyn => {
+                                self.emit_expr(&args[0])?;
+                                self.builder.push(Instr::Call(DYN_LEN));
+                                return Ok(Ty::Int);
+                            }
                             Ty::Map => {
                                 self.emit_expr(&args[0])?;
                                 self.builder.push(Instr::Call(MAP_LEN));
@@ -14294,6 +14339,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let i32_to_i64_ty = builder.add_type(vec![ValType::I32], vec![ValType::I64]);
     let i32_to_f64_ty = builder.add_type(vec![ValType::I32], vec![ValType::F64]);
     let two_i32_to_i64_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I64]);
+    let i32_i64_to_i32_ty = builder.add_type(vec![ValType::I32, ValType::I64], vec![ValType::I32]);
     let env_add_ty = builder.add_type(
         vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
         vec![],
@@ -14487,6 +14533,9 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "dyn_to_int", i32_to_i64_ty);
     builder.import_func("env", "dyn_to_float", i32_to_f64_ty);
     builder.import_func("env", "dyn_truthy", i32_to_i32_ty);
+    builder.import_func("env", "dyn_len", i32_to_i64_ty);
+    builder.import_func("env", "dyn_index", i32_i64_to_i32_ty);
+    builder.import_func("env", "dyn_member", format_container_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -16164,6 +16213,38 @@ mod tests {
         let expected = [
             "50", "84", "1.25", "2", "true", "true", "true", "true", "true", "true", "2", "42",
             "0", "false", "big", "42x", "x42", "42!", "-42", "true", "42", "null", "42",
+        ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn runtime_parse_containers_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let arr = parse(env(\"BX_A\", \"[1,2,3]\"))\nprint(str(arr))\nprint(str(len(arr)))\nprint(str(arr[0]))\nprint(str(arr[-1]))\nprint(type(arr))\nprint(json(arr))\nlet obj = parse(env(\"BX_O\", \"{\\\"a\\\":1,\\\"b\\\":\\\"x\\\"}\"))\nprint(str(obj))\nprint(str(obj.a))\nprint(obj.b)\nprint(str(len(obj)))\nprint(type(obj))\nprint(json(obj))\nprint(\"v=${obj}\")\nlet nested = parse(env(\"BX_N\", \"{\\\"a\\\":[1,2]}\"))\nprint(str(nested.a[1]))\nprint(str(len(nested.a)))\nprint(str(nested.a))\nprint(str(obj.missing))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = [
+            "[1,2,3]",
+            "3",
+            "1",
+            "3",
+            "array",
+            "[1,2,3]",
+            "{\"a\":1,\"b\":\"x\"}",
+            "1",
+            "x",
+            "2",
+            "object",
+            "{\"a\":1,\"b\":\"x\"}",
+            "v={\"a\":1,\"b\":\"x\"}",
+            "2",
+            "2",
+            "[1,2]",
+            "null",
         ];
         assert_eq!(
             strings,

@@ -759,6 +759,7 @@ pub(crate) fn core_print_host(
         next_map: 327_680,
         next_proc: 196_608,
         next_dyn: 262_144,
+        dyn_null: 0,
         started: std::time::Instant::now(),
         gl: GlBackend::new(),
     }
@@ -792,14 +793,33 @@ fn write_dyn_cell(memory: &mut [u8], ptr: usize, tag: u32, aux: u32, payload: u6
     memory[ptr + 8..ptr + 16].copy_from_slice(&payload.to_le_bytes());
 }
 
-/// Format a dynamic scalar cell (P2a: null/int/float/bool/string).
+/// Allocate raw bytes in the dynamic region.
+fn alloc_dyn_bytes(next_dyn: &mut u32, bytes: usize) -> Result<usize, String> {
+    let ptr = *next_dyn as usize;
+    let size = (bytes + 15) & !15;
+    if ptr + size > 327_680 {
+        return Err("dynamic value region exhausted".to_string());
+    }
+    *next_dyn += size as u32;
+    Ok(ptr)
+}
+
+fn dyn_null_cell(memory: &mut [u8], next_dyn: &mut u32, cached: &mut u32) -> Result<usize, String> {
+    if *cached != 0 {
+        return Ok(*cached as usize);
+    }
+    let cell = alloc_dyn_cell(next_dyn)?;
+    write_dyn_cell(memory, cell, 0, 0, 0);
+    *cached = cell as u32;
+    Ok(cell)
+}
+
+/// Format a dynamic cell (P2a scalars + P2b arrays/objects) as text.
 fn format_dyn_cell(memory: &[u8], cell: usize, json: bool) -> Result<String, String> {
     if cell + 16 > memory.len() {
         return Err("dynamic cell out of bounds".to_string());
     }
-    let tag = u32::from_le_bytes(memory[cell..cell + 4].try_into().unwrap());
-    let aux = u32::from_le_bytes(memory[cell + 4..cell + 8].try_into().unwrap()) as usize;
-    let payload = u64::from_le_bytes(memory[cell + 8..cell + 16].try_into().unwrap());
+    let (tag, aux, payload) = dyn_tag(memory, cell);
     Ok(match tag {
         0 => "null".to_string(),
         1 => (payload as i64).to_string(),
@@ -812,7 +832,7 @@ fn format_dyn_cell(memory: &[u8], cell: usize, json: bool) -> Result<String, Str
             }
         }
         4 => {
-            let text = memory_text(memory, payload as usize, aux);
+            let text = memory_text(memory, payload as usize, aux as usize);
             if json {
                 let mut rendered = String::new();
                 crate::value::write_json_str(&mut rendered, &text);
@@ -821,10 +841,185 @@ fn format_dyn_cell(memory: &[u8], cell: usize, json: bool) -> Result<String, Str
                 text
             }
         }
+        5 => {
+            let count = aux as usize;
+            let base = payload as usize;
+            let mut pieces = Vec::with_capacity(count);
+            for index in 0..count {
+                pieces.push(format_dyn_cell(memory, base + index * 16, true)?);
+            }
+            format!("[{}]", pieces.join(","))
+        }
+        6 => {
+            let count = aux as usize;
+            let base = payload as usize;
+            let mut pieces = Vec::with_capacity(count);
+            for index in 0..count {
+                let entry = base + index * 12;
+                if entry + 12 > memory.len() {
+                    break;
+                }
+                let key_ptr = u32::from_le_bytes(memory[entry..entry + 4].try_into().unwrap());
+                let key_len = u32::from_le_bytes(memory[entry + 4..entry + 8].try_into().unwrap());
+                let value_ptr =
+                    u32::from_le_bytes(memory[entry + 8..entry + 12].try_into().unwrap());
+                let key = memory_text(memory, key_ptr as usize, key_len as usize);
+                let mut rendered_key = String::new();
+                crate::value::write_json_str(&mut rendered_key, &key);
+                let rendered_value = format_dyn_cell(memory, value_ptr as usize, true)?;
+                pieces.push(format!("{rendered_key}:{rendered_value}"));
+            }
+            format!("{{{}}}", pieces.join(","))
+        }
         _ => return Err("unknown dynamic value tag".to_string()),
     })
 }
 
+/// Store a JSON value as a dynamic cell tree (P2a scalars, P2b arrays/objects).
+fn store_dyn_scalar(
+    memory: &mut [u8],
+    next_dyn: &mut u32,
+    next_file: &mut u32,
+    value: &crate::value::Value,
+) -> Result<usize, String> {
+    use crate::value::Value;
+    match value {
+        Value::Array(items) => {
+            let cells = items.borrow();
+            let count = cells.len();
+            let base = alloc_dyn_bytes(next_dyn, count * 16)?;
+            let cell = alloc_dyn_cell(next_dyn)?;
+            for (index, item) in cells.iter().enumerate() {
+                let child = store_dyn_scalar(memory, next_dyn, next_file, item)?;
+                let slot = base + index * 16;
+                memory.copy_within(child..child + 16, slot);
+            }
+            write_dyn_cell(memory, cell, 5, count as u32, base as u64);
+            Ok(cell)
+        }
+        Value::Object(entries) => {
+            let map = entries.borrow();
+            let count = map.len();
+            let base = alloc_dyn_bytes(next_dyn, count * 12)?;
+            let cell = alloc_dyn_cell(next_dyn)?;
+            for (index, (key, item)) in map.iter().enumerate() {
+                let start = store_text_block(memory, next_file, key.as_bytes())
+                    .ok_or_else(|| "dynamic key does not fit the file region".to_string())?;
+                let key_len = u32::from_le_bytes(
+                    memory[start as usize..start as usize + 4]
+                        .try_into()
+                        .unwrap(),
+                );
+                let child = store_dyn_scalar(memory, next_dyn, next_file, item)?;
+                let entry = base + index * 12;
+                memory[entry..entry + 4].copy_from_slice(&(start + 4).to_le_bytes());
+                memory[entry + 4..entry + 8].copy_from_slice(&key_len.to_le_bytes());
+                memory[entry + 8..entry + 12].copy_from_slice(&(child as u32).to_le_bytes());
+            }
+            write_dyn_cell(memory, cell, 6, count as u32, base as u64);
+            Ok(cell)
+        }
+        Value::Null => {
+            let cell = alloc_dyn_cell(next_dyn)?;
+            write_dyn_cell(memory, cell, 0, 0, 0);
+            Ok(cell)
+        }
+        Value::Bool(v) => {
+            let cell = alloc_dyn_cell(next_dyn)?;
+            write_dyn_cell(memory, cell, 3, 0, u64::from(*v));
+            Ok(cell)
+        }
+        Value::Int(v) => {
+            let cell = alloc_dyn_cell(next_dyn)?;
+            write_dyn_cell(memory, cell, 1, 0, *v as u64);
+            Ok(cell)
+        }
+        Value::Float(v) => {
+            let cell = alloc_dyn_cell(next_dyn)?;
+            write_dyn_cell(memory, cell, 2, 0, v.to_bits());
+            Ok(cell)
+        }
+        Value::Str(text) => {
+            let start = store_text_block(memory, next_file, text.as_bytes())
+                .ok_or_else(|| "dynamic string does not fit the file region".to_string())?;
+            let len = u32::from_le_bytes(
+                memory[start as usize..start as usize + 4]
+                    .try_into()
+                    .unwrap(),
+            );
+            let cell = alloc_dyn_cell(next_dyn)?;
+            write_dyn_cell(memory, cell, 4, len, u64::from(start) + 4);
+            Ok(cell)
+        }
+        _ => Err("parse() of runtime text only supports JSON data values".to_string()),
+    }
+}
+
+fn dyn_len_cell(memory: &[u8], cell: usize) -> Result<i64, String> {
+    let (tag, aux, payload) = dyn_tag(memory, cell);
+    Ok(match tag {
+        4 => memory_text(memory, payload as usize, aux as usize)
+            .chars()
+            .count() as i64,
+        5 | 6 => aux as i64,
+        0 => return Err("cannot take len of null".to_string()),
+        1 => return Err("cannot take len of int".to_string()),
+        2 => return Err("cannot take len of float".to_string()),
+        3 => return Err("cannot take len of bool".to_string()),
+        _ => return Err("cannot take len of this dynamic value".to_string()),
+    })
+}
+
+fn dyn_index_cell(
+    memory: &mut [u8],
+    next_dyn: &mut u32,
+    null_slot: &mut u32,
+    cell: usize,
+    index: i64,
+) -> Result<usize, String> {
+    let (tag, aux, payload) = dyn_tag(memory, cell);
+    if tag != 5 {
+        return Err("dynamic index works on dynamic arrays only".to_string());
+    }
+    let count = aux as i64;
+    let mut at = index;
+    if at < 0 {
+        at += count;
+    }
+    if at < 0 || at >= count {
+        return dyn_null_cell(memory, next_dyn, null_slot);
+    }
+    Ok(payload as usize + at as usize * 16)
+}
+
+fn dyn_member_cell(
+    memory: &mut [u8],
+    next_dyn: &mut u32,
+    null_slot: &mut u32,
+    cell: usize,
+    key: &str,
+) -> Result<usize, String> {
+    let (tag, aux, payload) = dyn_tag(memory, cell);
+    if tag != 6 {
+        return Err("dynamic field access works on dynamic objects only".to_string());
+    }
+    let count = aux as usize;
+    let base = payload as usize;
+    for index in 0..count {
+        let entry = base + index * 12;
+        if entry + 12 > memory.len() {
+            break;
+        }
+        let key_ptr = u32::from_le_bytes(memory[entry..entry + 4].try_into().unwrap());
+        let key_len = u32::from_le_bytes(memory[entry + 4..entry + 8].try_into().unwrap());
+        let value_ptr = u32::from_le_bytes(memory[entry + 8..entry + 12].try_into().unwrap());
+        let stored = memory_text(memory, key_ptr as usize, key_len as usize);
+        if stored == key {
+            return Ok(value_ptr as usize);
+        }
+    }
+    dyn_null_cell(memory, next_dyn, null_slot)
+}
 fn dyn_tag(memory: &[u8], cell: usize) -> (u32, u32, u64) {
     let tag = u32::from_le_bytes(memory[cell..cell + 4].try_into().unwrap());
     let aux = u32::from_le_bytes(memory[cell + 4..cell + 8].try_into().unwrap());
@@ -839,7 +1034,7 @@ fn dyn_number(memory: &[u8], cell: usize) -> Result<f64, String> {
         1 => Ok(payload as i64 as f64),
         2 => Ok(f64::from_bits(payload)),
         3 => Ok(if payload != 0 { 1.0 } else { 0.0 }),
-        _ => Err("cannot use a dynamic string as a number".to_string()),
+        _ => Err("cannot use a dynamic container as a number".to_string()),
     }
 }
 
@@ -853,14 +1048,17 @@ fn dyn_text(memory: &[u8], cell: usize) -> Option<(u32, u64)> {
 }
 
 fn dyn_eq_cells(memory: &[u8], a: usize, b: usize) -> Result<bool, String> {
-    let (tag_a, _, _) = dyn_tag(memory, a);
-    let (tag_b, _, _) = dyn_tag(memory, b);
     if let (Some((len_a, ptr_a)), Some((len_b, ptr_b))) = (dyn_text(memory, a), dyn_text(memory, b))
     {
         return Ok(memory_text(memory, ptr_a as usize, len_a as usize)
             == memory_text(memory, ptr_b as usize, len_b as usize));
     }
-    if tag_a == 4 || tag_b == 4 {
+    let (tag_a, _, _) = dyn_tag(memory, a);
+    let (tag_b, _, _) = dyn_tag(memory, b);
+    if tag_a >= 5 || tag_b >= 5 {
+        return Err("dynamic container equality is not supported yet (P2b)".to_string());
+    }
+    if tag_a >= 4 || tag_b >= 4 {
         return Ok(false);
     }
     Ok(dyn_number(memory, a)? == dyn_number(memory, b)?)
@@ -922,7 +1120,7 @@ fn dyn_arith_cells(
     let left = dyn_number(memory, a)?;
     let right = dyn_number(memory, b)?;
     let both_int =
-        matches!(dyn_tag(memory, a).0, 0 | 1 | 3) && matches!(dyn_tag(memory, b).0, 0 | 1 | 3);
+        matches!(dyn_tag(memory, a).0, 0..=1 | 3) && matches!(dyn_tag(memory, b).0, 0..=1 | 3);
     let cell = alloc_dyn_cell(next_dyn)?;
     match op {
         0..=2 if both_int => {
@@ -1001,39 +1199,9 @@ fn dyn_truthy_cell(memory: &[u8], cell: usize) -> Result<bool, String> {
         2 => f64::from_bits(payload) != 0.0,
         3 => payload != 0,
         4 => aux != 0,
-        _ => return Err("cannot test a dynamic container for truthiness".to_string()),
+        5 | 6 => aux != 0,
+        _ => return Err("cannot test a dynamic value for truthiness".to_string()),
     })
-}
-/// Store a scalar JSON value as a dynamic cell (P2a).
-fn store_dyn_scalar(
-    memory: &mut [u8],
-    next_dyn: &mut u32,
-    next_file: &mut u32,
-    value: &crate::value::Value,
-) -> Result<usize, String> {
-    use crate::value::Value;
-    let cell = alloc_dyn_cell(next_dyn)?;
-    match value {
-        Value::Null => write_dyn_cell(memory, cell, 0, 0, 0),
-        Value::Bool(v) => write_dyn_cell(memory, cell, 3, 0, u64::from(*v)),
-        Value::Int(v) => write_dyn_cell(memory, cell, 1, 0, *v as u64),
-        Value::Float(v) => write_dyn_cell(memory, cell, 2, 0, v.to_bits()),
-        Value::Str(text) => {
-            let start = store_text_block(memory, next_file, text.as_bytes())
-                .ok_or_else(|| "dynamic string does not fit the file region".to_string())?;
-            let len = u32::from_le_bytes(
-                memory[start as usize..start as usize + 4]
-                    .try_into()
-                    .unwrap(),
-            );
-            write_dyn_cell(memory, cell, 4, len, u64::from(start) + 4);
-        }
-        _ => return Err(
-            "parse() of runtime text only supports scalar JSON values yet (P2b adds containers)"
-                .to_string(),
-        ),
-    }
-    Ok(cell)
 }
 /// Store a `[status][len][data]` block for the soft file imports: status 0 is
 /// success, 1 carries an error message in `data`.
@@ -1195,8 +1363,10 @@ pub(crate) struct PrintHost<'a, F: FnMut(i64), G: FnMut(&str)> {
     next_map: u32,
     /// `bx.capture` result blocks live in the fourth page.
     next_proc: u32,
-    /// Dynamic (P2a) 16-byte value cells live between the capture and map regions.
+    /// Dynamic (P2a/P2b) 16-byte value cells live between the capture and map regions.
     next_dyn: u32,
+    /// Lazily allocated dynamic null cell (index/member misses return it).
+    dyn_null: u32,
     /// Clock origin for `web.performance_now`.
     started: std::time::Instant,
     /// Software framebuffer for the `webgl.*` namespace.
@@ -1994,6 +2164,32 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 };
                 Ok(vec![WVal::I32(i32::from(dyn_truthy_cell(memory, cell)?))])
             }
+            ("env", "dyn_len") => {
+                let cell = match args.first() {
+                    Some(WVal::I32(cell)) => *cell as usize,
+                    _ => return Err("env.dyn_len expects one i32".to_string()),
+                };
+                Ok(vec![WVal::I64(dyn_len_cell(memory, cell)?)])
+            }
+            ("env", "dyn_index") => {
+                let (cell, index) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(cell)), Some(WVal::I64(index))) => (*cell as usize, *index),
+                    _ => return Err("env.dyn_index expects (i32, i64)".to_string()),
+                };
+                let slot = dyn_index_cell(memory, &mut self.next_dyn, &mut self.dyn_null, cell, index)?;
+                Ok(vec![WVal::I32(slot as i32)])
+            }
+            ("env", "dyn_member") => {
+                let (cell, ptr, len) = match (args.first(), args.get(1), args.get(2)) {
+                    (Some(WVal::I32(cell)), Some(WVal::I32(ptr)), Some(WVal::I32(len))) => {
+                        (*cell as usize, *ptr as usize, *len as usize)
+                    }
+                    _ => return Err("env.dyn_member expects (i32, i32, i32)".to_string()),
+                };
+                let key = memory_text(memory, ptr, len);
+                let slot = dyn_member_cell(memory, &mut self.next_dyn, &mut self.dyn_null, cell, &key)?;
+                Ok(vec![WVal::I32(slot as i32)])
+            }
             ("env", "dyn_parse") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {
                     (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
@@ -2031,6 +2227,8 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     2 => "float",
                     3 => "bool",
                     4 => "str",
+                    5 => "array",
+                    6 => "object",
                     _ => "dynamic",
                 };
                 match store_text_block(memory, &mut self.next_file, name.as_bytes()) {
