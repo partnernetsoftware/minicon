@@ -975,6 +975,16 @@ if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim(
   casesFail += 1
   failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
 }
+write(artDir + "/wasm-growmix.bxs", 'let xs = []\nxs.push(1)\nxs.push("a")\nprint(xs)\nprint(str(len(xs)))\nxs.push([2])\nprint(xs)\nfn build() {\n  let zs = []\n  zs.push(1)\n  zs.push("q")\n  return zs\n}\nprint(build())\n')
+let wasmGrowMix = exec([BX, "build", "--wasm", artDir + "/wasm-growmix.bxs", "-o", artDir + "/wasm-growmix.wasm"])
+let wasmGrowMixRun = exec([BX, "run", artDir + "/wasm-growmix.wasm"])
+let wasmGrowMixVm = exec([BX, "run", artDir + "/wasm-growmix.bxs"])
+if (wasmGrowMix.code == 0 && wasmGrowMixRun.out == wasmGrowMixVm.out && wasmGrowMixRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm growable mixed arrays\n    wasm=" + json(wasmGrowMixRun.out) + " vm=" + json(wasmGrowMixVm.out) + " err=" + json(wasmGrowMix.err))
+}
 write(artDir + "/wasm-mixlit.bxs", 'let a = ["a", 1]\nprint(a)\nprint(json(a))\nprint(a[1] + 2)\nlet b = [1, "x", true, null]\nprint(b)\nprint(str(len(b)))\nlet d = [{a: 1}, {b: 2}]\nprint(d)\n')
 let wasmMixLit = exec([BX, "build", "--wasm", artDir + "/wasm-mixlit.bxs", "-o", artDir + "/wasm-mixlit.wasm"])
 let wasmMixLitRun = exec([BX, "run", artDir + "/wasm-mixlit.wasm"])

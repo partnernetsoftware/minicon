@@ -239,6 +239,17 @@ fn empty_array_push_hints(stmts: &[Stmt]) -> HashMap<String, Ty> {
             }
         }
     }
+    /// Merge push hints: an empty growable array keeps the one kind it is pushed
+    /// with; two different kinds turn it into a dynamic array (P2 cells).
+    fn record_push_hint(pushes: &mut Vec<(String, Ty)>, name: &str, ty: Ty) {
+        if let Some(existing) = pushes.iter_mut().find(|(known, _)| known == name) {
+            if existing.1 != ty {
+                existing.1 = Ty::Dyn;
+            }
+            return;
+        }
+        pushes.push((name.to_string(), ty));
+    }
     fn walk_expr(expr: &Expr, pushes: &mut Vec<(String, Ty)>) {
         match expr {
             Expr::Call(callee, args, _) => {
@@ -246,7 +257,7 @@ fn empty_array_push_hints(stmts: &[Stmt]) -> HashMap<String, Ty> {
                     if name == "push" && args.len() == 2 {
                         if let Expr::Ident(target) = &args[0] {
                             if let Some(ty) = literal_element_ty(&args[1]) {
-                                pushes.push((target.clone(), ty));
+                                record_push_hint(pushes, target, ty);
                             }
                         }
                     }
@@ -259,7 +270,7 @@ fn empty_array_push_hints(stmts: &[Stmt]) -> HashMap<String, Ty> {
                 if key == "push" && args.len() == 1 {
                     if let Expr::Ident(target) = &**object {
                         if let Some(ty) = literal_element_ty(&args[0]) {
-                            pushes.push((target.clone(), ty));
+                            record_push_hint(pushes, target, ty);
                         }
                     }
                 }
@@ -318,6 +329,7 @@ fn empty_array_push_hints(stmts: &[Stmt]) -> HashMap<String, Ty> {
             Ty::ArrStr => Ty::ArrStrArr,
             Ty::Bool => Ty::ArrBool,
             Ty::Arr => Ty::ArrArr,
+            Ty::Dyn => Ty::Dyn,
             _ => continue,
         };
         names.insert(name, widened);
@@ -12915,11 +12927,21 @@ impl<'a> Emitter<'a> {
     fn emit_stmt(&mut self, stmt: &Stmt) -> Result<(), String> {
         match stmt {
             Stmt::Let(name, init, _) => {
-                let ty = match init {
-                    Some(expr) => self.emit_expr(expr)?,
-                    None => {
-                        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
-                        Ty::Int
+                let dyn_empty = matches!(init, Some(Expr::Array(items)) if items.is_empty())
+                    && self.checker.empty_hints.get(name).copied() == Some(Ty::Dyn);
+                let ty = if dyn_empty {
+                    // Mixed push hints turned this growable array dynamic: start
+                    // from an empty dynamic cell array instead of a static header.
+                    self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                    self.builder.push(Instr::Call(DYN_ARRAY_ALLOC));
+                    Ty::Dyn
+                } else {
+                    match init {
+                        Some(expr) => self.emit_expr(expr)?,
+                        None => {
+                            self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                            Ty::Int
+                        }
                     }
                 };
                 if self.fn_mode {
@@ -18123,6 +18145,20 @@ mod tests {
     }
 
     #[test]
+    fn mixed_push_hints_make_growable_arrays_dynamic() {
+        let (numbers, strings) = run_with_argv(
+            "let xs = []\nxs.push(1)\nxs.push(\"a\")\nprint(xs)\nprint(len(xs))\nxs.push([2])\nprint(xs)\nlet ys = []\nys.push(\"z\")\nprint(ys)\nfn build() {\n  let zs = []\n  zs.push(1)\n  zs.push(\"q\")\n  return zs\n}\nprint(build())",
+            &[],
+        );
+        assert_eq!(numbers, vec![2i64]);
+        let expected = ["[1,\"a\"]", "[1,\"a\",[2]]", "[\"z\"]", "[1,\"q\"]"];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn comparator_sort_is_stable_and_matches_the_vm() {
         let (numbers, strings) = run_with_argv(
             "print(sort([3, 1, 2], fn(x, y) { return x - y }))\nprint(sort([3, 1, 2], fn(x, y) { return y - x }))\nprint(sort([5], fn(x, y) { return x - y }))\nprint(sort([], fn(x, y) { return x - y }))\nprint(sort([2.5, 1.5, 3.5], fn(x, y) { if (x < y) { return -1 }\n  return 1 }))\nprint(sort([\"bb\", \"a\", \"ccc\"], fn(x, y) { return len(x) - len(y) }))\nlet rows = [[3], [1, 2], [2]]\nprint(sort(rows, fn(x, y) { return len(x) - len(y) }))\nlet rs = [{a: 3}, {a: 1}, {a: 2}, {a: 1}]\nprint(sort(rs, fn(x, y) { return x.a - y.a }))",
@@ -18854,7 +18890,10 @@ mod tests {
     fn unsupported_constructs_are_rejected() {
         assert!(compile_to_wasm("let f = fn() { return 1 }\nprint(f)").is_err());
         assert!(compile_to_wasm("print(unknown)").is_err());
-        assert!(compile_to_wasm("let a = []\na.push(1)\na.push(\"x\")").is_err());
+        assert!(
+            compile_to_wasm("fn f(x) { if (x) { return 1 }\n  return \"s\" }\nprint(f(1))")
+                .is_err()
+        );
         assert!(compile_to_wasm("print(unknown_name)").is_err());
     }
 }
