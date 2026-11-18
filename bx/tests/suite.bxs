@@ -587,6 +587,16 @@ if (wasmExecAll.code == 0 && wasmExecAllRun.out == wasmExecAllVm.out && wasmExec
   casesFail += 1
   failures.push("wasm exec_all\n    wasm=" + json(wasmExecAllRun.out) + " vm=" + json(wasmExecAllVm.out) + " err=" + json(wasmExecAllRun.err))
 }
+write(artDir + "/wasm-mfr.bxs", 'print(str([1, 2].map(fn(x) { return x * 2 })))\nprint(str([1, 2].filter(fn(x) { return x > 1 })))\nprint(str([1, 2].reduce(fn(acc, x) { return acc + x }, 0)))\nprint(str([true, false].map(fn(x) { return !x })))\nprint(str(["a", "bb"].map(fn(x) { return len(x) })))\nprint(str([{a: 1}].map(fn(r) { return r.a + 1 })))\nprint(str([1, 2].reduce(fn(acc, x) { return acc + x })))\n')
+let wasmMfr = exec([BX, "build", "--wasm", artDir + "/wasm-mfr.bxs", "-o", artDir + "/wasm-mfr.wasm"])
+let wasmMfrRun = exec([BX, "run", artDir + "/wasm-mfr.wasm"])
+let wasmMfrVm = exec([BX, "run", artDir + "/wasm-mfr.bxs"])
+if (wasmMfr.code == 0 && wasmMfrRun.out == wasmMfrVm.out && wasmMfrRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm higher-order methods\n    wasm=" + json(wasmMfrRun.out) + " vm=" + json(wasmMfrVm.out) + " err=" + json(wasmMfrRun.err))
+}
 write(artDir + "/wasm-aggmethods.bxs", 'print(str([1, 2, 3].slice(1)))\nprint(str([1, 2, 3].slice(0, 2)))\nprint("abc".slice(1))\nprint(str([1, 2].sum()))\nprint(str([1.5, 2.5].sum()))\nprint(str([3, 1].min()))\nprint(str([3, 1].max()))\nprint(str([true, false].sum()))\nprint(str([true, false].min()))\nprint(str([true, false].max()))\nprint(str(["b", "a"].min()))\nprint(str([1.5, 2.5].min()))\nprint(str([1.5, 2.5].max()))\n')
 let wasmAgg = exec([BX, "build", "--wasm", artDir + "/wasm-aggmethods.bxs", "-o", artDir + "/wasm-aggmethods.wasm"])
 let wasmAggRun = exec([BX, "run", artDir + "/wasm-aggmethods.wasm"])
@@ -1298,6 +1308,16 @@ if (wasmExecAll.code == 0 && wasmExecAllRun.out == wasmExecAllVm.out && wasmExec
 } else {
   casesFail += 1
   failures.push("wasm exec_all\n    wasm=" + json(wasmExecAllRun.out) + " vm=" + json(wasmExecAllVm.out) + " err=" + json(wasmExecAllRun.err))
+}
+write(artDir + "/wasm-mfr.bxs", 'print(str([1, 2].map(fn(x) { return x * 2 })))\nprint(str([1, 2].filter(fn(x) { return x > 1 })))\nprint(str([1, 2].reduce(fn(acc, x) { return acc + x }, 0)))\nprint(str([true, false].map(fn(x) { return !x })))\nprint(str(["a", "bb"].map(fn(x) { return len(x) })))\nprint(str([{a: 1}].map(fn(r) { return r.a + 1 })))\nprint(str([1, 2].reduce(fn(acc, x) { return acc + x })))\n')
+let wasmMfr = exec([BX, "build", "--wasm", artDir + "/wasm-mfr.bxs", "-o", artDir + "/wasm-mfr.wasm"])
+let wasmMfrRun = exec([BX, "run", artDir + "/wasm-mfr.wasm"])
+let wasmMfrVm = exec([BX, "run", artDir + "/wasm-mfr.bxs"])
+if (wasmMfr.code == 0 && wasmMfrRun.out == wasmMfrVm.out && wasmMfrRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm higher-order methods\n    wasm=" + json(wasmMfrRun.out) + " vm=" + json(wasmMfrVm.out) + " err=" + json(wasmMfrRun.err))
 }
 write(artDir + "/wasm-aggmethods.bxs", 'print(str([1, 2, 3].slice(1)))\nprint(str([1, 2, 3].slice(0, 2)))\nprint("abc".slice(1))\nprint(str([1, 2].sum()))\nprint(str([1.5, 2.5].sum()))\nprint(str([3, 1].min()))\nprint(str([3, 1].max()))\nprint(str([true, false].sum()))\nprint(str([true, false].min()))\nprint(str([true, false].max()))\nprint(str(["b", "a"].min()))\nprint(str([1.5, 2.5].min()))\nprint(str([1.5, 2.5].max()))\n')
 let wasmAgg = exec([BX, "build", "--wasm", artDir + "/wasm-aggmethods.bxs", "-o", artDir + "/wasm-aggmethods.wasm"])

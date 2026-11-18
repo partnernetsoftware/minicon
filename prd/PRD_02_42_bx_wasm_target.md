@@ -219,9 +219,10 @@ bx wasm target
   `.reverse()`, `.pop()`, `slice`, `contains`/`index_of`, `map`/`filter`/
   `reduce`/`each`, `sum`/`min`/`max` over int/float/string/bool arrays, plus
   record `join`/`.join`/`.sort(cmp)` and nested-row joins plus record/nested
-  `contains`/`index_of`, and the method forms `.slice`/`.sum`/`.min`/`.max`,
-  plus the full null scalar set. Sweep on 2026-11-18 (aggregate methods added):
-  three seeds at 40 cases each and the 12-case smoke, all pass.
+  `contains`/`index_of`, and the method forms `.slice`/`.sum`/`.min`/`.max`/
+  `.map`/`.filter`/`.reduce`, plus the full null scalar set. Sweep on 2026-11-18
+  (higher-order methods added): three seeds at 40 cases each and the 12-case
+  smoke, all pass.
 Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
   collection cases and 15 numeric cases. The generator also emits random string
   expressions (trim/upper/lower/replace/repeat/slice/concat/split-join,
@@ -236,7 +237,7 @@ Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 132 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 133 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -499,8 +500,9 @@ Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
   matching the VM; `join` also accepts bool arrays (`join([true, false], ",")`
   via `env.join_bool`, default separator empty).
 - **Array method forms**: `.join([sep])`, `.sort()`, `.sort(cmp)`,
-  `.slice([start[, end]])`, `.sum()`, `.min()`, `.max()` and `.reverse()` work
-  in expression position for int/float/string/bool arrays
+  `.slice([start[, end]])`, `.sum()`, `.min()`, `.max()`, `.map(cb)`,
+  `.filter(cb)`, `.reduce(cb[, init])` and `.reverse()` work in expression
+  position for int/float/string/bool arrays
   (bool arrays also gained `slice`). `join` and the method form `.sort(cmp)` now
   also cover record arrays and nested rows: each record/row is stringified
   through `env.format_container` into a temporary string array, then joined, which

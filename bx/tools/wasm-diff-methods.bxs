@@ -110,10 +110,13 @@ fn int_methods(lines, name) {
     lines.push("print(" + name + ")")
   } else if (choice == 5) {
     lines.push("print(map(" + name + ", fn(x) { return x + 1 }))")
+    lines.push("print(" + name + ".map(fn(x) { return x + 1 }))")
   } else if (choice == 6) {
     lines.push("print(filter(" + name + ", fn(x) { return x > " + num() + " }))")
+    lines.push("print(" + name + ".filter(fn(x) { return x > " + num() + " }))")
   } else if (choice == 7) {
     lines.push("print(reduce(" + name + ", fn(acc, x) { return acc + x }, 0))")
+    lines.push("print(" + name + ".reduce(fn(acc, x) { return acc + x }, 0))")
   } else if (choice == 8) {
     lines.push("each(" + name + ", fn(x) { print(x) })")
   } else if (choice == 9) {
@@ -152,8 +155,10 @@ fn str_methods(lines, name) {
     lines.push("print(" + name + ")")
   } else if (choice == 5) {
     lines.push("print(map(" + name + ", fn(x) { return len(x) }))")
+    lines.push("print(" + name + ".map(fn(x) { return len(x) }))")
   } else if (choice == 6) {
     lines.push("print(filter(" + name + ", fn(x) { return len(x) > 1 }))")
+    lines.push("print(" + name + ".filter(fn(x) { return len(x) > 1 }))")
   } else if (choice == 7) {
     lines.push("print(join(split(join(" + name + ", \",\"), \",\"), \"-\"))")
   } else {
@@ -186,6 +191,7 @@ fn float_methods(lines, name) {
   } else if (choice == 5) {
     lines.push("print(map(" + name + ", fn(x) { return x * 2.0 }))")
     lines.push("print(map(" + name + ", fn(x) { return x > 1.5 }))")
+    lines.push("print(" + name + ".map(fn(x) { return x * 2.0 }))")
   } else {
     lines.push("print(reduce(" + name + ", fn(acc, x) { return acc + x }, 0.0))")
     lines.push("print(" + name + ".pop())")
@@ -210,10 +216,13 @@ fn bool_methods(lines, name) {
   } else if (choice == 5) {
     lines.push("print(map(" + name + ", fn(x) { return x }))")
     lines.push("print(map(" + name + ", fn(x) { return x ? 1 : 0 }))")
+    lines.push("print(" + name + ".map(fn(x) { return x }))")
   } else if (choice == 6) {
     lines.push("print(filter(" + name + ", fn(x) { return !x }))")
+    lines.push("print(" + name + ".filter(fn(x) { return !x }))")
   } else if (choice == 7) {
     lines.push("print(reduce(" + name + ", fn(acc, x) { return acc || x }, false))")
+    lines.push("print(" + name + ".reduce(fn(acc, x) { return acc || x }, false))")
     lines.push("print(sum(" + name + "))")
     lines.push("print(min(" + name + "))")
     lines.push("print(max(" + name + "))")

@@ -1088,6 +1088,90 @@ impl Checker {
                         )),
                     };
                 }
+                if matches!(key.as_str(), "map" | "filter") && args.len() == 1 {
+                    let base = self.infer(object)?;
+                    let element = element_ty(base).ok_or_else(|| {
+                        format!(
+                            "wasm target .{}() takes an array, got {}",
+                            key,
+                            ty_name(base)
+                        )
+                    })?;
+                    let Ty::Func(id) = self.infer(&args[0])? else {
+                        return Err(format!(
+                            "wasm target .{}() needs a function literal callback",
+                            key
+                        ));
+                    };
+                    let sig = self
+                        .lit_sigs
+                        .get(id as usize)
+                        .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+                    if key == "filter" {
+                        if sig.params != vec![element] || sig.result != Some(Ty::Bool) {
+                            return Err(
+                                "wasm target .filter() callbacks take one element and return bool"
+                                    .to_string(),
+                            );
+                        }
+                        return Ok(base);
+                    }
+                    if sig.params != vec![element] {
+                        return Err("wasm target .map() callbacks take one element".to_string());
+                    }
+                    return match sig.result {
+                        Some(Ty::Int) => Ok(Ty::Arr),
+                        Some(Ty::Float) => Ok(Ty::ArrF),
+                        Some(Ty::Str) => Ok(Ty::ArrStr),
+                        Some(Ty::Bool) => Ok(Ty::ArrBool),
+                        Some(Ty::Obj(shape)) => Ok(Ty::ArrObj(shape)),
+                        Some(Ty::Arr) => Ok(Ty::ArrArr),
+                        Some(Ty::ArrStr) => Ok(Ty::ArrStrArr),
+                        _ => Err(
+                            "wasm target .map() callbacks return numbers, strings, bools, records or arrays"
+                                .to_string(),
+                        ),
+                    };
+                }
+                if key == "reduce" && (args.len() == 1 || args.len() == 2) {
+                    let base = self.infer(object)?;
+                    let element = element_ty(base).ok_or_else(|| {
+                        format!(
+                            "wasm target .reduce() takes an array, got {}",
+                            ty_name(base)
+                        )
+                    })?;
+                    let Ty::Func(id) = self.infer(&args[0])? else {
+                        return Err(
+                            "wasm target .reduce() needs a function literal callback".to_string()
+                        );
+                    };
+                    let sig = self
+                        .lit_sigs
+                        .get(id as usize)
+                        .cloned()
+                        .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+                    let acc = if args.len() == 2 {
+                        self.infer(&args[1])?
+                    } else {
+                        element
+                    };
+                    if !matches!(acc, Ty::Int | Ty::Float | Ty::Str | Ty::Bool) {
+                        return Err(format!(
+                            "wasm target .reduce() accumulator must be a number, string or bool, got {}",
+                            ty_name(acc)
+                        ));
+                    }
+                    if sig.params != vec![acc, element] || sig.result != Some(acc) {
+                        return Err(format!(
+                            "wasm target .reduce() callbacks take ({}, {}) and return {}",
+                            ty_name(acc),
+                            ty_name(element),
+                            ty_name(acc)
+                        ));
+                    }
+                    return Ok(acc);
+                }
                 let str_method = match key.as_str() {
                     "trim" | "upper" | "lower" => Some((0usize, Ty::Str)),
                     "repeat" => Some((1usize, Ty::Str)),
@@ -6439,6 +6523,299 @@ impl<'a> Emitter<'a> {
         Ok(())
     }
 
+    fn emit_map_filter(&mut self, name: &str, array: &Expr, callback: &Expr) -> Result<Ty, String> {
+        let input_ty = self.type_of(array)?;
+        let elem = match input_ty {
+            Ty::Arr => Ty::Int,
+            Ty::ArrF => Ty::Float,
+            Ty::ArrStr => Ty::Str,
+            Ty::ArrBool => Ty::Bool,
+            Ty::ArrObj(shape) => Ty::Obj(shape),
+            Ty::ArrArr => Ty::Arr,
+            Ty::ArrStrArr => Ty::ArrStr,
+            other => {
+                return Err(format!(
+                    "wasm target {}() takes an array, got {}",
+                    name,
+                    ty_name(other)
+                ))
+            }
+        };
+        let Ty::Func(id) = self.type_of(callback)? else {
+            return Err(format!(
+                "wasm target {}() needs a function literal callback",
+                name
+            ));
+        };
+        let sig = self
+            .checker
+            .lit_sigs
+            .get(id as usize)
+            .cloned()
+            .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+        let cb_env = self.builder.add_local(ValType::I32);
+        self.emit_expr(callback)?;
+        self.builder.push(Instr::Local(0x21, cb_env));
+        let result_elem = if name == "map" {
+            sig.result
+                .ok_or_else(|| "wasm target map() callback returns nothing".to_string())?
+        } else {
+            elem
+        };
+        if !matches!(
+            result_elem,
+            Ty::Int | Ty::Float | Ty::Str | Ty::Bool | Ty::Obj(_) | Ty::Arr | Ty::ArrStr
+        ) {
+            return Err(
+                "wasm target map() callbacks return numbers, strings or records".to_string(),
+            );
+        }
+        let arr_tmp = self.builder.add_local(ValType::I32);
+        let idx_tmp = self.builder.add_local(ValType::I64);
+        let out_tmp = self.builder.add_local(ValType::I32);
+        let count_tmp = self.builder.add_local(ValType::I32);
+        let addr_tmp = self.builder.add_local(ValType::I32);
+        let ptr_tmp = self.builder.add_local(ValType::I32);
+        let len_tmp = self.builder.add_local(ValType::I32);
+        let val_i64 = self.builder.add_local(ValType::I64);
+        let val_f64 = self.builder.add_local(ValType::F64);
+        let val_i32 = self.builder.add_local(ValType::I32);
+        self.emit_expr(array)?;
+        self.builder.push(Instr::Local(0x21, arr_tmp));
+        self.builder.push(Instr::Local(0x20, arr_tmp));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.emit_alloc_dynamic();
+        self.builder.push(Instr::Local(0x21, out_tmp));
+        if name == "map" {
+            self.builder.push(Instr::Local(0x20, out_tmp));
+            self.builder.push(Instr::Local(0x20, arr_tmp));
+            self.builder.push(Instr::Mem(0x28, 2, 0));
+            self.builder.push(Instr::Mem(0x36, 2, 0));
+        } else {
+            self.builder.push(Instr::Local(0x20, out_tmp));
+            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+            self.builder.push(Instr::Mem(0x36, 2, 0));
+            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+            self.builder.push(Instr::Local(0x21, count_tmp));
+        }
+        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+        self.builder.push(Instr::Local(0x21, idx_tmp));
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x02);
+        self.builder.push(Instr::Block {
+            opcode: 0x03,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x03);
+        self.builder.push(Instr::Local(0x20, idx_tmp));
+        self.builder.push(Instr::Op(0xa7));
+        self.builder.push(Instr::Local(0x20, arr_tmp));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Op(0x48));
+        self.builder.push(Instr::Op(0x45));
+        self.builder.push(Instr::BrIf(1));
+        if name == "map" {
+            self.builder.push(Instr::Local(0x20, out_tmp));
+            self.builder.push(Instr::Local(0x20, idx_tmp));
+            self.builder.push(Instr::Op(0xa7));
+            self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+            self.builder.push(Instr::Op(0x6c));
+            self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+            self.builder.push(Instr::Op(0x6a));
+            self.builder.push(Instr::Op(0x6a));
+            self.builder.push(Instr::Local(0x21, addr_tmp));
+            self.builder.push(Instr::Local(0x20, cb_env));
+            Self::emit_load_slot(self, arr_tmp, idx_tmp, elem);
+            self.builder.push(Instr::Call(sig.index));
+            Self::emit_store_slot(
+                self,
+                addr_tmp,
+                result_elem,
+                val_i64,
+                val_f64,
+                val_i32,
+                ptr_tmp,
+                len_tmp,
+            );
+        } else {
+            self.builder.push(Instr::Local(0x20, cb_env));
+            Self::emit_load_slot(self, arr_tmp, idx_tmp, elem);
+            self.builder.push(Instr::Call(sig.index));
+            self.builder.push(Instr::Block {
+                opcode: 0x04,
+                end: 0,
+                else_at: 0,
+                start: 0,
+            });
+            self.labels.push(0x04);
+            self.builder.push(Instr::Local(0x20, out_tmp));
+            self.builder.push(Instr::Local(0x20, count_tmp));
+            self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+            self.builder.push(Instr::Op(0x6c));
+            self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+            self.builder.push(Instr::Op(0x6a));
+            self.builder.push(Instr::Op(0x6a));
+            self.builder.push(Instr::Local(0x21, addr_tmp));
+            Self::emit_load_slot(self, arr_tmp, idx_tmp, elem);
+            Self::emit_store_slot(
+                self, addr_tmp, elem, val_i64, val_f64, val_i32, ptr_tmp, len_tmp,
+            );
+            self.builder.push(Instr::Local(0x20, count_tmp));
+            self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+            self.builder.push(Instr::Op(0x6a));
+            self.builder.push(Instr::Local(0x21, count_tmp));
+            self.labels.pop();
+            self.builder.push(Instr::Op(0x0b));
+        }
+        self.builder.push(Instr::Local(0x20, idx_tmp));
+        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+        self.builder.push(Instr::Op(0x7c));
+        self.builder.push(Instr::Local(0x21, idx_tmp));
+        self.builder.push(Instr::Br(0));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        if name == "filter" {
+            self.builder.push(Instr::Local(0x20, out_tmp));
+            self.builder.push(Instr::Local(0x20, count_tmp));
+            self.builder.push(Instr::Mem(0x36, 2, 0));
+        }
+        self.builder.push(Instr::Local(0x20, out_tmp));
+        let output_ty = if name == "map" {
+            Self::array_of(result_elem)
+        } else {
+            input_ty
+        };
+        Ok(output_ty)
+    }
+
+    fn emit_reduce(
+        &mut self,
+        array: &Expr,
+        callback: &Expr,
+        init: Option<&Expr>,
+    ) -> Result<Ty, String> {
+        let input_ty = self.type_of(array)?;
+        let elem = match input_ty {
+            Ty::Arr => Ty::Int,
+            Ty::ArrF => Ty::Float,
+            Ty::ArrStr => Ty::Str,
+            Ty::ArrBool => Ty::Bool,
+            Ty::ArrObj(shape) => Ty::Obj(shape),
+            Ty::ArrArr => Ty::Arr,
+            Ty::ArrStrArr => Ty::ArrStr,
+            other => {
+                return Err(format!(
+                    "wasm target reduce() takes an array, got {}",
+                    ty_name(other)
+                ))
+            }
+        };
+        let acc_ty = if let Some(init) = init {
+            self.type_of(init)?
+        } else {
+            elem
+        };
+        if !matches!(acc_ty, Ty::Int | Ty::Float | Ty::Str | Ty::Bool) {
+            return Err(
+                "wasm target reduce() accumulator must be a number, string or bool".to_string(),
+            );
+        }
+        let Ty::Func(id) = self.type_of(callback)? else {
+            return Err("wasm target reduce() needs a function literal callback".to_string());
+        };
+        let sig = self
+            .checker
+            .lit_sigs
+            .get(id as usize)
+            .cloned()
+            .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+        let cb_env = self.builder.add_local(ValType::I32);
+        let arr_tmp = self.builder.add_local(ValType::I32);
+        let idx_tmp = self.builder.add_local(ValType::I64);
+        let acc_i64 = self.builder.add_local(ValType::I64);
+        let acc_f64 = self.builder.add_local(ValType::F64);
+        let acc_ptr = self.builder.add_local(ValType::I32);
+        let acc_len = self.builder.add_local(ValType::I32);
+        self.emit_expr(callback)?;
+        self.builder.push(Instr::Local(0x21, cb_env));
+        self.emit_expr(array)?;
+        self.builder.push(Instr::Local(0x21, arr_tmp));
+        if let Some(init) = init {
+            self.emit_expr(init)?;
+            Self::emit_store_acc(self, acc_ty, acc_i64, acc_f64, acc_ptr, acc_len);
+            self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+        } else {
+            self.builder.push(Instr::Local(0x20, arr_tmp));
+            self.builder.push(Instr::Mem(0x28, 2, 0));
+            self.builder.push(Instr::Op(0x45));
+            self.builder.push(Instr::Block {
+                opcode: 0x04,
+                end: 0,
+                else_at: 0,
+                start: 0,
+            });
+            self.labels.push(0x04);
+            self.emit_panic("reduce of empty array with no initial value");
+            self.labels.pop();
+            self.builder.push(Instr::Op(0x0b));
+            let zero_idx = self.builder.add_local(ValType::I64);
+            Self::emit_load_slot(self, arr_tmp, zero_idx, elem);
+            Self::emit_store_acc(self, acc_ty, acc_i64, acc_f64, acc_ptr, acc_len);
+            self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+        }
+        self.builder.push(Instr::Local(0x21, idx_tmp));
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x02);
+        self.builder.push(Instr::Block {
+            opcode: 0x03,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x03);
+        self.builder.push(Instr::Local(0x20, idx_tmp));
+        self.builder.push(Instr::Local(0x20, arr_tmp));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Op(0xad));
+        self.builder.push(Instr::Op(0x53));
+        self.builder.push(Instr::Op(0x45));
+        self.builder.push(Instr::BrIf(1));
+        self.builder.push(Instr::Local(0x20, cb_env));
+        Self::emit_push_acc(self, acc_ty, acc_i64, acc_f64, acc_ptr, acc_len);
+        Self::emit_load_slot(self, arr_tmp, idx_tmp, elem);
+        self.builder.push(Instr::Call(sig.index));
+        Self::emit_store_acc(self, acc_ty, acc_i64, acc_f64, acc_ptr, acc_len);
+        self.builder.push(Instr::Local(0x20, idx_tmp));
+        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+        self.builder.push(Instr::Op(0x7c));
+        self.builder.push(Instr::Local(0x21, idx_tmp));
+        self.builder.push(Instr::Br(0));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        Self::emit_push_acc(self, acc_ty, acc_i64, acc_f64, acc_ptr, acc_len);
+        Ok(acc_ty)
+    }
+
     fn type_of(&self, expr: &Expr) -> Result<Ty, String> {
         match expr {
             Expr::Ident(name) if name == "__dir__" => Ok(Ty::Str),
@@ -8493,6 +8870,12 @@ impl<'a> Emitter<'a> {
                     self.push_block_as_pair();
                     return Ok(Ty::Str);
                 }
+                if key == "reduce" && (args.len() == 1 || args.len() == 2) {
+                    return self.emit_reduce(object, &args[0], args.get(1));
+                }
+                if matches!(key.as_str(), "map" | "filter") && args.len() == 1 {
+                    return self.emit_map_filter(key, object, &args[0]);
+                }
                 if key == "slice" && (args.len() == 1 || args.len() == 2) {
                     let base = self.type_of(object)?;
                     match base {
@@ -9998,300 +10381,10 @@ impl<'a> Emitter<'a> {
                         return Ok(ty);
                     }
                     if matches!(name.as_str(), "map" | "filter") && args.len() == 2 {
-                        let input_ty = self.type_of(&args[0])?;
-                        let elem = match input_ty {
-                            Ty::Arr => Ty::Int,
-                            Ty::ArrF => Ty::Float,
-                            Ty::ArrStr => Ty::Str,
-                            Ty::ArrBool => Ty::Bool,
-                            Ty::ArrObj(shape) => Ty::Obj(shape),
-                            Ty::ArrArr => Ty::Arr,
-                            Ty::ArrStrArr => Ty::ArrStr,
-                            other => {
-                                return Err(format!(
-                                    "wasm target {}() takes an array, got {}",
-                                    name,
-                                    ty_name(other)
-                                ))
-                            }
-                        };
-                        let Ty::Func(id) = self.type_of(&args[1])? else {
-                            return Err(format!(
-                                "wasm target {}() needs a function literal callback",
-                                name
-                            ));
-                        };
-                        let sig = self
-                            .checker
-                            .lit_sigs
-                            .get(id as usize)
-                            .cloned()
-                            .ok_or_else(|| "wasm target lost a function literal".to_string())?;
-                        let cb_env = self.builder.add_local(ValType::I32);
-                        self.emit_expr(&args[1])?;
-                        self.builder.push(Instr::Local(0x21, cb_env));
-                        let result_elem = if name == "map" {
-                            sig.result.ok_or_else(|| {
-                                "wasm target map() callback returns nothing".to_string()
-                            })?
-                        } else {
-                            elem
-                        };
-                        if !matches!(
-                            result_elem,
-                            Ty::Int
-                                | Ty::Float
-                                | Ty::Str
-                                | Ty::Bool
-                                | Ty::Obj(_)
-                                | Ty::Arr
-                                | Ty::ArrStr
-                        ) {
-                            return Err(
-                                "wasm target map() callbacks return numbers, strings or records"
-                                    .to_string(),
-                            );
-                        }
-                        let arr_tmp = self.builder.add_local(ValType::I32);
-                        let idx_tmp = self.builder.add_local(ValType::I64);
-                        let out_tmp = self.builder.add_local(ValType::I32);
-                        let count_tmp = self.builder.add_local(ValType::I32);
-                        let addr_tmp = self.builder.add_local(ValType::I32);
-                        let ptr_tmp = self.builder.add_local(ValType::I32);
-                        let len_tmp = self.builder.add_local(ValType::I32);
-                        let val_i64 = self.builder.add_local(ValType::I64);
-                        let val_f64 = self.builder.add_local(ValType::F64);
-                        let val_i32 = self.builder.add_local(ValType::I32);
-                        self.emit_expr(&args[0])?;
-                        self.builder.push(Instr::Local(0x21, arr_tmp));
-                        self.builder.push(Instr::Local(0x20, arr_tmp));
-                        self.builder.push(Instr::Mem(0x28, 2, 0));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
-                        self.builder.push(Instr::Op(0x6c));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.emit_alloc_dynamic();
-                        self.builder.push(Instr::Local(0x21, out_tmp));
-                        if name == "map" {
-                            self.builder.push(Instr::Local(0x20, out_tmp));
-                            self.builder.push(Instr::Local(0x20, arr_tmp));
-                            self.builder.push(Instr::Mem(0x28, 2, 0));
-                            self.builder.push(Instr::Mem(0x36, 2, 0));
-                        } else {
-                            self.builder.push(Instr::Local(0x20, out_tmp));
-                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
-                            self.builder.push(Instr::Mem(0x36, 2, 0));
-                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
-                            self.builder.push(Instr::Local(0x21, count_tmp));
-                        }
-                        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
-                        self.builder.push(Instr::Local(0x21, idx_tmp));
-                        self.builder.push(Instr::Block {
-                            opcode: 0x02,
-                            end: 0,
-                            else_at: 0,
-                            start: 0,
-                        });
-                        self.labels.push(0x02);
-                        self.builder.push(Instr::Block {
-                            opcode: 0x03,
-                            end: 0,
-                            else_at: 0,
-                            start: 0,
-                        });
-                        self.labels.push(0x03);
-                        self.builder.push(Instr::Local(0x20, idx_tmp));
-                        self.builder.push(Instr::Op(0xa7));
-                        self.builder.push(Instr::Local(0x20, arr_tmp));
-                        self.builder.push(Instr::Mem(0x28, 2, 0));
-                        self.builder.push(Instr::Op(0x48));
-                        self.builder.push(Instr::Op(0x45));
-                        self.builder.push(Instr::BrIf(1));
-                        if name == "map" {
-                            self.builder.push(Instr::Local(0x20, out_tmp));
-                            self.builder.push(Instr::Local(0x20, idx_tmp));
-                            self.builder.push(Instr::Op(0xa7));
-                            self.builder.push(Instr::Const(0x41, WVal::I32(8)));
-                            self.builder.push(Instr::Op(0x6c));
-                            self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                            self.builder.push(Instr::Op(0x6a));
-                            self.builder.push(Instr::Op(0x6a));
-                            self.builder.push(Instr::Local(0x21, addr_tmp));
-                            self.builder.push(Instr::Local(0x20, cb_env));
-                            Self::emit_load_slot(self, arr_tmp, idx_tmp, elem);
-                            self.builder.push(Instr::Call(sig.index));
-                            Self::emit_store_slot(
-                                self,
-                                addr_tmp,
-                                result_elem,
-                                val_i64,
-                                val_f64,
-                                val_i32,
-                                ptr_tmp,
-                                len_tmp,
-                            );
-                        } else {
-                            self.builder.push(Instr::Local(0x20, cb_env));
-                            Self::emit_load_slot(self, arr_tmp, idx_tmp, elem);
-                            self.builder.push(Instr::Call(sig.index));
-                            self.builder.push(Instr::Block {
-                                opcode: 0x04,
-                                end: 0,
-                                else_at: 0,
-                                start: 0,
-                            });
-                            self.labels.push(0x04);
-                            self.builder.push(Instr::Local(0x20, out_tmp));
-                            self.builder.push(Instr::Local(0x20, count_tmp));
-                            self.builder.push(Instr::Const(0x41, WVal::I32(8)));
-                            self.builder.push(Instr::Op(0x6c));
-                            self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                            self.builder.push(Instr::Op(0x6a));
-                            self.builder.push(Instr::Op(0x6a));
-                            self.builder.push(Instr::Local(0x21, addr_tmp));
-                            Self::emit_load_slot(self, arr_tmp, idx_tmp, elem);
-                            Self::emit_store_slot(
-                                self, addr_tmp, elem, val_i64, val_f64, val_i32, ptr_tmp, len_tmp,
-                            );
-                            self.builder.push(Instr::Local(0x20, count_tmp));
-                            self.builder.push(Instr::Const(0x41, WVal::I32(1)));
-                            self.builder.push(Instr::Op(0x6a));
-                            self.builder.push(Instr::Local(0x21, count_tmp));
-                            self.labels.pop();
-                            self.builder.push(Instr::Op(0x0b));
-                        }
-                        self.builder.push(Instr::Local(0x20, idx_tmp));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
-                        self.builder.push(Instr::Op(0x7c));
-                        self.builder.push(Instr::Local(0x21, idx_tmp));
-                        self.builder.push(Instr::Br(0));
-                        self.labels.pop();
-                        self.builder.push(Instr::Op(0x0b));
-                        self.labels.pop();
-                        self.builder.push(Instr::Op(0x0b));
-                        if name == "filter" {
-                            self.builder.push(Instr::Local(0x20, out_tmp));
-                            self.builder.push(Instr::Local(0x20, count_tmp));
-                            self.builder.push(Instr::Mem(0x36, 2, 0));
-                        }
-                        self.builder.push(Instr::Local(0x20, out_tmp));
-                        let output_ty = if name == "map" {
-                            Self::array_of(result_elem)
-                        } else {
-                            input_ty
-                        };
-                        return Ok(output_ty);
+                        return self.emit_map_filter(name, &args[0], &args[1]);
                     }
                     if name == "reduce" && (args.len() == 2 || args.len() == 3) {
-                        let input_ty = self.type_of(&args[0])?;
-                        let elem = match input_ty {
-                            Ty::Arr => Ty::Int,
-                            Ty::ArrF => Ty::Float,
-                            Ty::ArrStr => Ty::Str,
-                            Ty::ArrBool => Ty::Bool,
-                            Ty::ArrObj(shape) => Ty::Obj(shape),
-                            Ty::ArrArr => Ty::Arr,
-                            Ty::ArrStrArr => Ty::ArrStr,
-                            other => {
-                                return Err(format!(
-                                    "wasm target reduce() takes an array, got {}",
-                                    ty_name(other)
-                                ))
-                            }
-                        };
-                        let acc_ty = if args.len() == 3 {
-                            self.type_of(&args[2])?
-                        } else {
-                            elem
-                        };
-                        if !matches!(acc_ty, Ty::Int | Ty::Float | Ty::Str | Ty::Bool) {
-                            return Err(
-                                "wasm target reduce() accumulator must be a number, string or bool"
-                                    .to_string(),
-                            );
-                        }
-                        let Ty::Func(id) = self.type_of(&args[1])? else {
-                            return Err("wasm target reduce() needs a function literal callback"
-                                .to_string());
-                        };
-                        let sig = self
-                            .checker
-                            .lit_sigs
-                            .get(id as usize)
-                            .cloned()
-                            .ok_or_else(|| "wasm target lost a function literal".to_string())?;
-                        let cb_env = self.builder.add_local(ValType::I32);
-                        let arr_tmp = self.builder.add_local(ValType::I32);
-                        let idx_tmp = self.builder.add_local(ValType::I64);
-                        let acc_i64 = self.builder.add_local(ValType::I64);
-                        let acc_f64 = self.builder.add_local(ValType::F64);
-                        let acc_ptr = self.builder.add_local(ValType::I32);
-                        let acc_len = self.builder.add_local(ValType::I32);
-                        self.emit_expr(&args[1])?;
-                        self.builder.push(Instr::Local(0x21, cb_env));
-                        self.emit_expr(&args[0])?;
-                        self.builder.push(Instr::Local(0x21, arr_tmp));
-                        if args.len() == 3 {
-                            self.emit_expr(&args[2])?;
-                            Self::emit_store_acc(self, acc_ty, acc_i64, acc_f64, acc_ptr, acc_len);
-                            self.builder.push(Instr::Const(0x42, WVal::I64(0)));
-                        } else {
-                            self.builder.push(Instr::Local(0x20, arr_tmp));
-                            self.builder.push(Instr::Mem(0x28, 2, 0));
-                            self.builder.push(Instr::Op(0x45));
-                            self.builder.push(Instr::Block {
-                                opcode: 0x04,
-                                end: 0,
-                                else_at: 0,
-                                start: 0,
-                            });
-                            self.labels.push(0x04);
-                            self.emit_panic("reduce of empty array with no initial value");
-                            self.labels.pop();
-                            self.builder.push(Instr::Op(0x0b));
-                            let zero_idx = self.builder.add_local(ValType::I64);
-                            Self::emit_load_slot(self, arr_tmp, zero_idx, elem);
-                            Self::emit_store_acc(self, acc_ty, acc_i64, acc_f64, acc_ptr, acc_len);
-                            self.builder.push(Instr::Const(0x42, WVal::I64(1)));
-                        }
-                        self.builder.push(Instr::Local(0x21, idx_tmp));
-                        self.builder.push(Instr::Block {
-                            opcode: 0x02,
-                            end: 0,
-                            else_at: 0,
-                            start: 0,
-                        });
-                        self.labels.push(0x02);
-                        self.builder.push(Instr::Block {
-                            opcode: 0x03,
-                            end: 0,
-                            else_at: 0,
-                            start: 0,
-                        });
-                        self.labels.push(0x03);
-                        self.builder.push(Instr::Local(0x20, idx_tmp));
-                        self.builder.push(Instr::Local(0x20, arr_tmp));
-                        self.builder.push(Instr::Mem(0x28, 2, 0));
-                        self.builder.push(Instr::Op(0xad));
-                        self.builder.push(Instr::Op(0x53));
-                        self.builder.push(Instr::Op(0x45));
-                        self.builder.push(Instr::BrIf(1));
-                        self.builder.push(Instr::Local(0x20, cb_env));
-                        Self::emit_push_acc(self, acc_ty, acc_i64, acc_f64, acc_ptr, acc_len);
-                        Self::emit_load_slot(self, arr_tmp, idx_tmp, elem);
-                        self.builder.push(Instr::Call(sig.index));
-                        Self::emit_store_acc(self, acc_ty, acc_i64, acc_f64, acc_ptr, acc_len);
-                        self.builder.push(Instr::Local(0x20, idx_tmp));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
-                        self.builder.push(Instr::Op(0x7c));
-                        self.builder.push(Instr::Local(0x21, idx_tmp));
-                        self.builder.push(Instr::Br(0));
-                        self.labels.pop();
-                        self.builder.push(Instr::Op(0x0b));
-                        self.labels.pop();
-                        self.builder.push(Instr::Op(0x0b));
-                        Self::emit_push_acc(self, acc_ty, acc_i64, acc_f64, acc_ptr, acc_len);
-                        return Ok(acc_ty);
+                        return self.emit_reduce(&args[0], &args[1], args.get(2));
                     }
                     if name == "keys" && args.len() == 1 && self.type_of(&args[0])? == Ty::Map {
                         let map_tmp = self.builder.add_local(ValType::I32);
@@ -12410,6 +12503,38 @@ impl<'a> InferState<'a> {
                     "split" => Some(Ty::ArrStr),
                     "index_of" => Some(Ty::Int),
                     "repeat" => Some(Ty::Str),
+                    "filter" => self.soft(object, locals),
+                    "reduce" => args
+                        .get(1)
+                        .and_then(|arg| self.soft(arg, locals))
+                        .or_else(|| match self.soft(object, locals) {
+                            Some(Ty::ArrStr) => Some(Ty::Str),
+                            Some(Ty::ArrBool) => Some(Ty::Bool),
+                            Some(Ty::ArrF) => Some(Ty::Float),
+                            _ => Some(Ty::Int),
+                        }),
+                    "map" => {
+                        if let Some(Ty::Func(id)) =
+                            args.first().and_then(|arg| self.soft(arg, locals))
+                        {
+                            match self
+                                .results
+                                .get(self.decl_count + id as usize)
+                                .copied()
+                                .flatten()
+                            {
+                                Some(Ty::Str) => Some(Ty::ArrStr),
+                                Some(Ty::ArrStr) => Some(Ty::ArrStrArr),
+                                Some(Ty::Bool) => Some(Ty::ArrBool),
+                                Some(Ty::Float) => Some(Ty::ArrF),
+                                Some(Ty::Obj(shape)) => Some(Ty::ArrObj(shape)),
+                                Some(Ty::Arr) => Some(Ty::ArrArr),
+                                _ => Some(Ty::Arr),
+                            }
+                        } else {
+                            Some(Ty::Arr)
+                        }
+                    }
                     "sort" | "reverse" => self.soft(object, locals),
                     "join" => Some(Ty::Str),
                     "sum" => Some(Ty::Int),
@@ -12715,6 +12840,55 @@ impl<'a> InferState<'a> {
             }
             Expr::MethodCall(object, key, args, _) => {
                 let mut changed = self.walk_expr(object, locals)?;
+                if key == "reduce" && (args.len() == 1 || args.len() == 2) {
+                    if let Some(Ty::Func(id)) = args.first().and_then(|arg| self.soft(arg, locals))
+                    {
+                        let index = self.decl_count + id as usize;
+                        let elem = match self.soft(object, locals) {
+                            Some(Ty::ArrStr) => Ty::Str,
+                            Some(Ty::ArrBool) => Ty::Bool,
+                            Some(Ty::ArrF) => Ty::Float,
+                            Some(Ty::ArrObj(shape)) => Ty::Obj(shape),
+                            Some(Ty::ArrArr) => Ty::Arr,
+                            Some(Ty::ArrStrArr) => Ty::ArrStr,
+                            _ => Ty::Int,
+                        };
+                        let acc = args
+                            .get(1)
+                            .and_then(|arg| self.soft(arg, locals))
+                            .unwrap_or(elem);
+                        changed |= self.unify_param(index, 0, acc)?;
+                        changed |= self.unify_param(index, 1, elem)?;
+                        changed |= self.unify_result(index, acc)?;
+                        for arg in args {
+                            changed |= self.walk_expr(arg, locals)?;
+                        }
+                        return Ok(changed);
+                    }
+                }
+                if matches!(key.as_str(), "map" | "filter" | "each") && args.len() == 1 {
+                    if let Some(Ty::Func(id)) = args.first().and_then(|arg| self.soft(arg, locals))
+                    {
+                        let index = self.decl_count + id as usize;
+                        let elem = match self.soft(object, locals) {
+                            Some(Ty::ArrStr) => Ty::Str,
+                            Some(Ty::ArrBool) => Ty::Bool,
+                            Some(Ty::ArrF) => Ty::Float,
+                            Some(Ty::ArrObj(shape)) => Ty::Obj(shape),
+                            Some(Ty::ArrArr) => Ty::Arr,
+                            Some(Ty::ArrStrArr) => Ty::ArrStr,
+                            _ => Ty::Int,
+                        };
+                        changed |= self.unify_param(index, 0, elem)?;
+                        if key == "filter" {
+                            changed |= self.unify_result(index, Ty::Bool)?;
+                        }
+                        for arg in args {
+                            changed |= self.walk_expr(arg, locals)?;
+                        }
+                        return Ok(changed);
+                    }
+                }
                 if key == "sort" && args.len() == 1 {
                     if let Some(Ty::Func(id)) = args.first().and_then(|arg| self.soft(arg, locals))
                     {
@@ -15559,6 +15733,20 @@ mod tests {
         let expected = [
             "[2,3]", "[1,2]", "bc", "3", "4", "1", "3", "1", "false", "true", "a", "1.5", "2.5",
         ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn array_higher_order_methods_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "print(str([1, 2].map(fn(x) { return x * 2 })))\nprint(str([1, 2].filter(fn(x) { return x > 1 })))\nprint(str([1, 2].reduce(fn(acc, x) { return acc + x }, 0)))\nprint(str([true, false].map(fn(x) { return !x })))\nprint(str([\"a\", \"bb\"].map(fn(x) { return len(x) })))\nprint(str([{a: 1}].map(fn(r) { return r.a + 1 })))\nprint(str([1, 2].reduce(fn(acc, x) { return acc + x })))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = ["[2,4]", "[2]", "3", "[false,true]", "[1,2]", "[2]", "3"];
         assert_eq!(
             strings,
             expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
