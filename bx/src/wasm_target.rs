@@ -725,7 +725,10 @@ impl Checker {
         let mut entries: Vec<(String, u8)> =
             left_keys.into_iter().zip(self.shape_kinds(left)?).collect();
         for (key, kind) in right_keys.into_iter().zip(self.shape_kinds(right)?) {
-            if !entries.iter().any(|(known, _)| *known == key) {
+            if let Some(existing) = entries.iter_mut().find(|(known, _)| *known == key) {
+                // `merge(left, right)` lets the right record win, including its kind.
+                existing.1 = kind;
+            } else {
                 entries.push((key, kind));
             }
         }
@@ -19769,6 +19772,24 @@ mod tests {
                 "[1,2,3]".to_string(),
                 "[1,2,3]".to_string(),
                 "[9]".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn merge_lets_the_right_record_kind_win() {
+        let (numbers, strings) = run_with_argv(
+            "let d = parse(\"{\" + json(\"a\") + \":[1,2],\" + json(\"b\") + \":\" + json(\"x\") + \"}\")\nprint(merge({k: d}, {k: 2}))\nprint(merge({k: 1}, {k: d}))\nprint(json(merge({a: d}, {b: 3})))\nprint(merge({k: 1}, {k: 2}))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec![
+                "{\"k\":2}".to_string(),
+                "{\"k\":{\"a\":[1,2],\"b\":\"x\"}}".to_string(),
+                "{\"a\":{\"a\":[1,2],\"b\":\"x\"},\"b\":3}".to_string(),
+                "{\"k\":2}".to_string()
             ]
         );
     }
