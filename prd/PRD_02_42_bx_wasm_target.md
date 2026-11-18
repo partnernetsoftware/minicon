@@ -216,6 +216,9 @@ bx wasm target
   records, map/filter/each/sort/reverse/slice/reduce/push, nested indexes,
   negative indexes, element writes, two-variable loops and closure captures.
   `bx/tools/wasm-diff-dyn.bxs` (same `[cases] [seed]` form) also generates
+dynamic-object method cases (`keys`/`values`/`get`/`has`/`len`), dynamic and
+dyn-init `reduce`, mixed-return `map`/truthy `filter`, and mixed literal
+containers. It covers the P2 dynamic
 mixed dynamic/static record shapes (`{xs: <dynamic>, list: [4,5], o: <dynamic>}`
 with writes back into the dynamic field), heterogeneous parsed arrays and arrays
 of parsed objects. It covers the P2 dynamic

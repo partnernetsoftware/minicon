@@ -350,6 +350,40 @@ fn gen(kind, x_path, y_path) {
     lines.push("print(str(len(xs)))")
     lines.push("print(xs[1])")
     lines.push("for item in xs { print(item) }")
+  } else if (kind == 18) {
+    lines.push("let o = parse(" + x + ")")
+    lines.push("print(keys(o))")
+    lines.push("print(values(o))")
+    lines.push("print(join(keys(o), \",\"))")
+    lines.push("print(reverse(keys(o)))")
+    lines.push("print(o.get(\"a\"))")
+    lines.push("print(o.get(\"zz\", 7))")
+    lines.push("print(str(o.has(\"a\")))")
+    lines.push("print(str(o.len()))")
+    lines.push("print(o.keys())")
+    lines.push("print(json(o.values()))")
+  } else if (kind == 19) {
+    lines.push("let v = parse(" + x + ")")
+    lines.push("print(reduce(v, fn(a, b) { return a + b }, 0))")
+    lines.push("print(reduce(v, fn(a, b) { return a + b }))")
+    lines.push("print(v.reduce(fn(a, b) { return a + b }, 0))")
+    lines.push("let init = parse(" + y + ")")
+    lines.push("print(reduce([1, 2], fn(a, b) { return a + b }, init))")
+  } else if (kind == 20) {
+    lines.push("let init = parse(" + y + ")")
+    lines.push("print(reduce([1, 2], fn(a, b) { return a + b }, init))")
+    lines.push("print(map([1, 2, 3], fn(v) { if (v > 1) { return \"s\" }")
+    lines.push("  return v }))")
+    lines.push("print(filter([1, 2, 3], fn(v) { return v - 1 }))")
+    lines.push("print(filter([true, false], fn(v) { return v }))")
+    lines.push("print(map([\"a\", \"bb\"], fn(v) { if (len(v) > 1) { return v }")
+    lines.push("  return len(v) }))")
+  } else if (kind == 21) {
+    lines.push("let v = parse(" + x + ")")
+    lines.push("print(filter(v, fn(x) { return x - 1 }))")
+    lines.push("print(v.filter(fn(x) { return x > 1 }))")
+    lines.push("print(map(v, fn(x) { return x + 1 }))")
+    lines.push("print(reduce(v, fn(a, b) { return a + b }, 0))")
   } else {
     lines.push("let v = parse(" + x + ")")
     lines.push("let w = parse(" + y + ")")
@@ -419,7 +453,7 @@ fn payload(kind) {
 
 let failures = 0
 for (let c = 0; c < cases; c += 1) {
-  let kind = pick(18)
+  let kind = pick(22)
   let payload_kind = kind
   if (payload_kind == 5 || payload_kind == 7 || payload_kind == 8 || payload_kind == 13 || payload_kind == 14 || payload_kind == 15 || payload_kind == 16 || payload_kind == 17) {
     payload_kind = 1
@@ -429,7 +463,11 @@ for (let c = 0; c < cases; c += 1) {
   }
   let x_json = ""
   let y_json = int_json()
-  if (kind == 10) {
+  if (kind == 18) {
+    x_json = obj_json()
+  } else if (kind == 19 || kind == 20 || kind == 21) {
+    x_json = int_json()
+  } else if (kind == 10) {
     x_json = int_json()
     y_json = obj_json()
   } else if (kind == 11) {
