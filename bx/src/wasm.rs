@@ -1048,22 +1048,108 @@ fn dyn_text(memory: &[u8], cell: usize) -> Option<(u32, u64)> {
 }
 
 fn dyn_eq_cells(memory: &[u8], a: usize, b: usize) -> Result<bool, String> {
-    if let (Some((len_a, ptr_a)), Some((len_b, ptr_b))) = (dyn_text(memory, a), dyn_text(memory, b))
-    {
-        return Ok(memory_text(memory, ptr_a as usize, len_a as usize)
-            == memory_text(memory, ptr_b as usize, len_b as usize));
+    fn eq(memory: &[u8], a: usize, b: usize, depth: u32) -> Result<bool, String> {
+        if depth > 256 {
+            return Err("dynamic value is too deeply nested to compare".to_string());
+        }
+        let (tag_a, aux_a, payload_a) = dyn_tag(memory, a);
+        let (tag_b, aux_b, payload_b) = dyn_tag(memory, b);
+        match (tag_a, tag_b) {
+            (5, 5) => {
+                if aux_a != aux_b {
+                    return Ok(false);
+                }
+                for index in 0..aux_a as usize {
+                    let left = payload_a as usize + index * 16;
+                    let right = payload_b as usize + index * 16;
+                    if !eq(memory, left, right, depth + 1)? {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            }
+            (6, 6) => {
+                if aux_a != aux_b {
+                    return Ok(false);
+                }
+                for index in 0..aux_a as usize {
+                    let left = payload_a as usize + index * 12;
+                    let right = payload_b as usize + index * 12;
+                    if dyn_entry_key(memory, left)? != dyn_entry_key(memory, right)? {
+                        return Ok(false);
+                    }
+                    let value_left = dyn_entry_value(memory, left)?;
+                    let value_right = dyn_entry_value(memory, right)?;
+                    if !eq(memory, value_left, value_right, depth + 1)? {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            }
+            (5, _) | (6, _) | (_, 5) | (_, 6) => Ok(false),
+            _ => {
+                if let (Some((len_a, ptr_a)), Some((len_b, ptr_b))) =
+                    (dyn_text(memory, a), dyn_text(memory, b))
+                {
+                    return Ok(memory_text(memory, ptr_a as usize, len_a as usize)
+                        == memory_text(memory, ptr_b as usize, len_b as usize));
+                }
+                if tag_a >= 4 || tag_b >= 4 {
+                    return Ok(false);
+                }
+                Ok(dyn_number(memory, a)? == dyn_number(memory, b)?)
+            }
+        }
     }
-    let (tag_a, _, _) = dyn_tag(memory, a);
-    let (tag_b, _, _) = dyn_tag(memory, b);
-    if tag_a >= 5 || tag_b >= 5 {
-        return Err("dynamic container equality is not supported yet (P2b)".to_string());
-    }
-    if tag_a >= 4 || tag_b >= 4 {
-        return Ok(false);
-    }
-    Ok(dyn_number(memory, a)? == dyn_number(memory, b)?)
+    eq(memory, a, b, 0)
 }
 
+fn dyn_entry_key(memory: &[u8], entry: usize) -> Result<String, String> {
+    if entry + 12 > memory.len() {
+        return Err("dynamic object entry out of bounds".to_string());
+    }
+    let key_ptr = u32::from_le_bytes(memory[entry..entry + 4].try_into().unwrap());
+    let key_len = u32::from_le_bytes(memory[entry + 4..entry + 8].try_into().unwrap());
+    Ok(memory_text(memory, key_ptr as usize, key_len as usize))
+}
+
+fn dyn_entry_value(memory: &[u8], entry: usize) -> Result<usize, String> {
+    if entry + 12 > memory.len() {
+        return Err("dynamic object entry out of bounds".to_string());
+    }
+    Ok(u32::from_le_bytes(memory[entry + 8..entry + 12].try_into().unwrap()) as usize)
+}
+
+/// Dynamic for-loop element: array elements, or object keys (the VM's single
+/// loop variable yields keys for objects).
+fn dyn_iter_at_cell(
+    memory: &mut [u8],
+    next_dyn: &mut u32,
+    null_slot: &mut u32,
+    cell: usize,
+    index: i64,
+) -> Result<usize, String> {
+    let (tag, aux, payload) = dyn_tag(memory, cell);
+    if tag == 5 {
+        return dyn_index_cell(memory, next_dyn, null_slot, cell, index);
+    }
+    if tag != 6 {
+        return Err("dynamic for-loops need a dynamic array or object".to_string());
+    }
+    let count = aux as i64;
+    if index < 0 || index >= count {
+        return dyn_null_cell(memory, next_dyn, null_slot);
+    }
+    let entry = payload as usize + index as usize * 12;
+    if entry + 12 > memory.len() {
+        return dyn_null_cell(memory, next_dyn, null_slot);
+    }
+    let key_ptr = u32::from_le_bytes(memory[entry..entry + 4].try_into().unwrap());
+    let key_len = u32::from_le_bytes(memory[entry + 4..entry + 8].try_into().unwrap());
+    let boxed = alloc_dyn_cell(next_dyn)?;
+    write_dyn_cell(memory, boxed, 4, key_len, u64::from(key_ptr));
+    Ok(boxed)
+}
 fn dyn_cmp_cells(memory: &[u8], a: usize, b: usize) -> Result<i64, String> {
     let text_a = dyn_text(memory, a);
     let text_b = dyn_text(memory, b);
@@ -2176,7 +2262,8 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     (Some(WVal::I32(cell)), Some(WVal::I64(index))) => (*cell as usize, *index),
                     _ => return Err("env.dyn_index expects (i32, i64)".to_string()),
                 };
-                let slot = dyn_index_cell(memory, &mut self.next_dyn, &mut self.dyn_null, cell, index)?;
+                let slot =
+                    dyn_index_cell(memory, &mut self.next_dyn, &mut self.dyn_null, cell, index)?;
                 Ok(vec![WVal::I32(slot as i32)])
             }
             ("env", "dyn_member") => {
@@ -2187,7 +2274,17 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     _ => return Err("env.dyn_member expects (i32, i32, i32)".to_string()),
                 };
                 let key = memory_text(memory, ptr, len);
-                let slot = dyn_member_cell(memory, &mut self.next_dyn, &mut self.dyn_null, cell, &key)?;
+                let slot =
+                    dyn_member_cell(memory, &mut self.next_dyn, &mut self.dyn_null, cell, &key)?;
+                Ok(vec![WVal::I32(slot as i32)])
+            }
+            ("env", "dyn_iter_at") => {
+                let (cell, index) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(cell)), Some(WVal::I64(index))) => (*cell as usize, *index),
+                    _ => return Err("env.dyn_iter_at expects (i32, i64)".to_string()),
+                };
+                let slot =
+                    dyn_iter_at_cell(memory, &mut self.next_dyn, &mut self.dyn_null, cell, index)?;
                 Ok(vec![WVal::I32(slot as i32)])
             }
             ("env", "dyn_parse") => {

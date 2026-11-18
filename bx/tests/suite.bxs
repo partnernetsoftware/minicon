@@ -954,6 +954,16 @@ if (wasmBoolGrow.code == 0 && wasmBoolGrowRun.out == wasmBoolGrowVm.out && wasmB
   casesFail += 1
   failures.push("wasm growable bool arrays\n    wasm=" + json(wasmBoolGrowRun.out) + " vm=" + json(wasmBoolGrowVm.out) + " err=" + json(wasmBoolGrowRun.err))
 }
+write(artDir + "/wasm-dyniter.bxs", 'let a = parse(env("BX_A", "[1,2,3]"))\nlet b = parse(env("BX_B", "[1,2,3]"))\nprint(a == b)\nlet c = parse(env("BX_C", "[1,2,4]"))\nprint(a == c)\nfor v in a { print(v) }\nlet obj = parse("{" + json("x") + ":1}")\nprint(obj)\nprint(str(obj.x))\nfor v in obj { print(v) }\nlet nested = parse(env("BX_F", "[[1,2],[3]]"))\nfor v in nested { print(v) }\n')
+let wasmDynIter = exec([BX, "build", "--wasm", artDir + "/wasm-dyniter.bxs", "-o", artDir + "/wasm-dyniter.wasm"])
+let wasmDynIterRun = exec([BX, "run", artDir + "/wasm-dyniter.wasm"])
+let wasmDynIterVm = exec([BX, "run", artDir + "/wasm-dyniter.bxs"])
+if (wasmDynIter.code == 0 && wasmDynIterRun.out == wasmDynIterVm.out && wasmDynIterRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm dynamic iteration\n    wasm=" + json(wasmDynIterRun.out) + " vm=" + json(wasmDynIterVm.out) + " err=" + json(wasmDynIterRun.err))
+}
 write(artDir + "/wasm-dyncontainers.bxs", 'let arr = parse(env("BX_A", "[1,2,3]"))\nprint(str(arr))\nprint(str(len(arr)))\nprint(str(arr[0]))\nprint(str(arr[-1]))\nprint(type(arr))\nprint(json(arr))\nlet obj = parse(env("BX_O", "{}"))\nprint(str(obj))\nprint(str(len(obj)))\nprint(type(obj))\nprint(json(obj))\nprint("v=" + str(obj))\nlet nested = parse(env("BX_N", "[[1,2]]"))\nprint(str(nested[0][1]))\nprint(str(len(nested[0])))\nprint(str(nested[0]))\nprint(str(obj.missing))\n')
 let wasmDynContainers = exec([BX, "build", "--wasm", artDir + "/wasm-dyncontainers.bxs", "-o", artDir + "/wasm-dyncontainers.wasm"])
 let wasmDynContainersRun = exec([BX, "run", artDir + "/wasm-dyncontainers.wasm"])
