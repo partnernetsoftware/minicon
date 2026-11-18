@@ -975,7 +975,7 @@ if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim(
   casesFail += 1
   failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
 }
-write(artDir + "/wasm-dynreduce.bxs", 'let v = parse(env("X", "[1,2,3]"))\nprint(reduce(v, fn(a, b) { return a + b }, 0))\nprint(reduce(v, fn(a, b) { return a + b }))\nprint(v.reduce(fn(a, b) { return a + b }, 0))\nlet init = parse(env("X", "10"))\nprint(reduce(parse(env("X", "[1,2]")), fn(a, b) { return a + b }, init))\n')
+write(artDir + "/wasm-dynreduce.bxs", 'let v = parse(env("X", "[1,2,3]"))\nprint(reduce(v, fn(a, b) { return a + b }, 0))\nprint(reduce(v, fn(a, b) { return a + b }))\nprint(v.reduce(fn(a, b) { return a + b }, 0))\nlet init = parse(env("X", "10"))\nprint(reduce(parse(env("X", "[1,2]")), fn(a, b) { return a + b }, init))\nprint(reduce([1, 2], fn(a, b) { return a + b }, init))\nprint([1, 2].reduce(fn(a, b) { return a + b }, init))\n')
 let wasmDynReduce = exec([BX, "build", "--wasm", artDir + "/wasm-dynreduce.bxs", "-o", artDir + "/wasm-dynreduce.wasm"])
 let wasmDynReduceRun = exec([BX, "run", artDir + "/wasm-dynreduce.wasm"])
 let wasmDynReduceVm = exec([BX, "run", artDir + "/wasm-dynreduce.bxs"])
