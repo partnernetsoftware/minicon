@@ -715,7 +715,7 @@ impl Checker {
         })?;
         Ok(self.shape_id(
             &["error".to_string(), "ok".to_string(), "value".to_string()],
-            &[1, 3, kind],
+            &[8, 3, kind],
         ))
     }
 
@@ -3810,7 +3810,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 143;
+const IMPORT_COUNT: u32 = 144;
 const PRINT_UTF8: u32 = 1;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
@@ -3942,6 +3942,7 @@ const DYN_MATH: u32 = 139;
 const DYN_TEXT_BLOCK: u32 = 140;
 const DYN_RECORD_VALUES: u32 = 141;
 const DYN_WRITE_RECORD: u32 = 142;
+const DYN_TEXT_CELL: u32 = 143;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -4531,12 +4532,16 @@ impl<'a> Emitter<'a> {
 
     /// Store a constant error message into the attempt record and clear `ok`.
     fn emit_attempt_error_constant(&mut self, record: u32, base: u32, len: u32) {
-        for (offset, value) in [(0u32, base), (4u32, len)] {
-            self.builder.push(Instr::Local(0x20, record));
-            self.builder
-                .push(Instr::Const(0x41, WVal::I32(value as i32)));
-            self.builder.push(Instr::Mem(0x36, 2, offset));
-        }
+        // The record's error field is a dynamic cell: a text cell on failure.
+        self.builder.push(Instr::Local(0x20, record));
+        self.builder
+            .push(Instr::Const(0x41, WVal::I32(base as i32)));
+        self.builder.push(Instr::Const(0x41, WVal::I32(len as i32)));
+        self.builder.push(Instr::Call(DYN_TEXT_CELL));
+        self.builder.push(Instr::Mem(0x36, 2, 0));
+        self.builder.push(Instr::Local(0x20, record));
+        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+        self.builder.push(Instr::Mem(0x36, 2, 4));
         self.builder.push(Instr::Local(0x20, record));
         self.builder.push(Instr::Const(0x42, WVal::I64(0)));
         self.builder.push(Instr::Mem(0x37, 3, 8));
@@ -4550,9 +4555,11 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Local(0x21, ptr));
         self.builder.push(Instr::Local(0x20, record));
         self.builder.push(Instr::Local(0x20, ptr));
+        self.builder.push(Instr::Local(0x20, len));
+        self.builder.push(Instr::Call(DYN_TEXT_CELL));
         self.builder.push(Instr::Mem(0x36, 2, 0));
         self.builder.push(Instr::Local(0x20, record));
-        self.builder.push(Instr::Local(0x20, len));
+        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
         self.builder.push(Instr::Mem(0x36, 2, 4));
         self.builder.push(Instr::Local(0x20, record));
         self.builder.push(Instr::Const(0x42, WVal::I64(0)));
@@ -6959,12 +6966,14 @@ impl<'a> Emitter<'a> {
         let record = self.builder.add_local(ValType::I32);
         self.emit_alloc_const(24);
         self.builder.push(Instr::Local(0x21, record));
-        // error = "", ok = true, value = zero value of the result kind
-        for (offset, value) in [(0u32, 0i32), (4, 0)] {
-            self.builder.push(Instr::Local(0x20, record));
-            self.builder.push(Instr::Const(0x41, WVal::I32(value)));
-            self.builder.push(Instr::Mem(0x36, 2, offset));
-        }
+        // error = null (dynamic cell), ok = true, value = zero of the result kind
+        self.builder.push(Instr::Local(0x20, record));
+        let null_literal = Expr::Null;
+        self.emit_box_dyn(&null_literal, Ty::Null)?;
+        self.builder.push(Instr::Mem(0x36, 2, 0));
+        self.builder.push(Instr::Local(0x20, record));
+        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+        self.builder.push(Instr::Mem(0x36, 2, 4));
         self.builder.push(Instr::Local(0x20, record));
         self.builder.push(Instr::Const(0x42, WVal::I64(1)));
         self.builder.push(Instr::Mem(0x37, 3, 8));
@@ -16059,7 +16068,7 @@ impl<'a> CaptureWalker<'a> {
                             let kind = attempt_value_kind(result_ty).unwrap();
                             return Ty::Obj(self.shape_id(
                                 &["error".to_string(), "ok".to_string(), "value".to_string()],
-                                &[1, 3, kind],
+                                &[8, 3, kind],
                             ));
                         }
                     }
@@ -17072,6 +17081,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "dyn_text_block", i32_to_i32_ty);
     builder.import_func("env", "dyn_record_values", four_i32_to_i32_ty);
     builder.import_func("env", "dyn_write_record", five_i32_to_void_ty);
+    builder.import_func("env", "dyn_text_cell", which_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -19497,15 +19507,14 @@ mod tests {
             &[],
         );
         assert!(numbers.is_empty());
-        // The VM prints `null` for both the value and the (null) error field;
-        // the wasm target keeps the error as an empty string for now.
+        // Both value and error are dynamic null cells, matching the VM.
         assert_eq!(
             strings,
             vec![
                 "true".to_string(),
                 "null".to_string(),
                 "null".to_string(),
-                String::new()
+                "null".to_string()
             ]
         );
     }

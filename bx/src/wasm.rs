@@ -3545,6 +3545,15 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 dyn_write_record(memory, kinds, table, count, rec, obj)?;
                 Ok(vec![])
             }
+            ("env", "dyn_text_cell") => {
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("env.dyn_text_cell expects (i32 ptr, i32 len)".to_string()),
+                };
+                let cell = alloc_dyn_cell(&mut self.next_dyn)?;
+                write_dyn_cell(memory, cell, 4, len as u32, ptr as u64);
+                Ok(vec![WVal::I32(cell as i32)])
+            }
             ("env", "dyn_parse") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {
                     (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
