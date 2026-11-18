@@ -954,6 +954,16 @@ if (wasmBoolGrow.code == 0 && wasmBoolGrowRun.out == wasmBoolGrowVm.out && wasmB
   casesFail += 1
   failures.push("wasm growable bool arrays\n    wasm=" + json(wasmBoolGrowRun.out) + " vm=" + json(wasmBoolGrowVm.out) + " err=" + json(wasmBoolGrowRun.err))
 }
+write(artDir + "/wasm-recdynfield.bxs", 'let arr = parse(env("X", "[1,2]"))\nlet r = {a: arr, b: 7}\nprint(r)\nprint(json(r))\nprint(r.a)\nprint(str(len(r.a)))\nprint(str(r.a[0]))\nlet r2 = {a: parse(env("X", "[1,2]")), b: 7}\nprint(r2 == r)\nr.a = parse(env("Y", "[9]"))\nprint(r.a)\nprint(r)\nlet xs = [{a: arr, b: 1}, {a: parse(env("Y", "[]")), b: 2}]\nprint(xs)\nprint(join(xs, ";"))\nlet m = merge({a: arr}, {b: 3})\nprint(m)\n')
+let wasmRecDyn = exec([BX, "build", "--wasm", artDir + "/wasm-recdynfield.bxs", "-o", artDir + "/wasm-recdynfield.wasm"])
+let wasmRecDynRun = exec([BX, "run", artDir + "/wasm-recdynfield.wasm"])
+let wasmRecDynVm = exec([BX, "run", artDir + "/wasm-recdynfield.bxs"])
+if (wasmRecDyn.code == 0 && wasmRecDynRun.out == wasmRecDynVm.out && wasmRecDynRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm record dynamic fields\n    wasm=" + json(wasmRecDynRun.out) + " vm=" + json(wasmRecDynVm.out) + " err=" + json(wasmRecDynRun.err))
+}
 write(artDir + "/wasm-dynsortcmp.bxs", 'let a = parse(env("X", "[3,1,2]"))\nprint(sort(a, fn(x, y) { return y - x }))\nprint(a)\nlet b = parse(env("Y", "[3,1,2]"))\nprint(b.sort(fn(x, y) { return x - y }))\nprint(b)\n')
 let wasmDynSortCmp = exec([BX, "build", "--wasm", artDir + "/wasm-dynsortcmp.bxs", "-o", artDir + "/wasm-dynsortcmp.wasm"])
 let wasmDynSortCmpRun = exec([BX, "run", artDir + "/wasm-dynsortcmp.wasm"])

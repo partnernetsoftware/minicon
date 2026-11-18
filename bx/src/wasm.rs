@@ -723,6 +723,11 @@ fn format_record_typed(
                     "false".to_string()
                 }
             }
+            8 => {
+                let cell =
+                    u32::from_le_bytes(memory[field..field + 4].try_into().unwrap()) as usize;
+                format_dyn_cell(memory, cell, true).unwrap_or_else(|_| "null".to_string())
+            }
             _ => i64::from_le_bytes(memory[field..field + 8].try_into().unwrap()).to_string(),
         };
         pieces.push(format!("\"{}\":{}", key, rendered));

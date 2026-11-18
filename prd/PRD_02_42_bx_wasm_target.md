@@ -542,6 +542,11 @@ Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
   cells through the callback (`env.dyn_cell_at`/`dyn_swap`), accepting int- or
   dynamic-returning comparators. Record/nested-array concatenation and
   converting a dynamic value back into a static container remain explicit errors.
+  Record fields can also hold dynamic values (field kind 8 stores a dynamic cell
+  pointer): `{a: parse("..."), b: 7}` constructs, prints/`json`s, reads (`r.a`
+  is dynamic), assigns, compares and works inside record arrays, `join` and
+  `merge`, all matching the VM; nested static record/array literal fields
+  (`{a: {b: 1}}`) still need the P2c descriptor work.
 - **`null` (static marker)**: `null` is typed `Ty::Null` and covers the VM's
   scalar semantics: printing/`str`/`json`/`type`/interpolation give `null`,
   `null == null`, `null == 0`, `null == 0.0`, `null == false` are true while

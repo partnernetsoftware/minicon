@@ -432,6 +432,7 @@ fn field_kind(ty: Ty) -> Option<u8> {
         Ty::Str => Some(1),
         Ty::Float => Some(2),
         Ty::Bool => Some(3),
+        Ty::Dyn => Some(8),
         _ => None,
     }
 }
@@ -456,6 +457,7 @@ fn kind_ty(kind: u8) -> Ty {
         1 => Ty::Str,
         2 => Ty::Float,
         3 => Ty::Bool,
+        8 => Ty::Dyn,
         _ => Ty::Int,
     }
 }
@@ -1008,7 +1010,7 @@ impl Checker {
                     let ty = self.infer(value)?;
                     let kind = field_kind(ty).ok_or_else(|| {
                         format!(
-                            "wasm target record fields hold int, string, float or bool values, got {}",
+                            "wasm target record fields hold int, string, float, bool or dynamic values, got {}",
                             ty_name(ty)
                         )
                     })?;
@@ -7778,6 +7780,13 @@ impl<'a> Emitter<'a> {
                 }
                 self.builder.push(Instr::Local(0x20, acc));
             }
+            Ty::Dyn => {
+                self.builder.push(Instr::Local(0x20, a));
+                self.builder.push(Instr::Mem(0x28, 2, 0));
+                self.builder.push(Instr::Local(0x20, b));
+                self.builder.push(Instr::Mem(0x28, 2, 0));
+                self.builder.push(Instr::Call(DYN_EQ));
+            }
             Ty::Arr
             | Ty::ArrF
             | Ty::ArrStr
@@ -9312,7 +9321,7 @@ impl<'a> Emitter<'a> {
                     let field_ty = self.type_of(value)?;
                     let kind = field_kind(field_ty).ok_or_else(|| {
                         format!(
-                            "wasm target record fields hold int, string, float or bool values, got {}",
+                            "wasm target record fields hold int, string, float, bool or dynamic values, got {}",
                             ty_name(field_ty)
                         )
                     })?;
@@ -9347,6 +9356,11 @@ impl<'a> Emitter<'a> {
                             self.emit_expr(value)?;
                             self.builder.push(Instr::Op(0xad));
                             self.builder.push(Instr::Mem(0x37, 3, offset));
+                        }
+                        8 => {
+                            self.builder.push(Instr::Local(0x20, self.temp(ARR_TMP)));
+                            self.emit_expr(value)?;
+                            self.builder.push(Instr::Mem(0x36, 2, offset));
                         }
                         _ => {
                             self.builder.push(Instr::Local(0x20, self.temp(ARR_TMP)));
@@ -9398,6 +9412,10 @@ impl<'a> Emitter<'a> {
                     3 => {
                         self.builder.push(Instr::Mem(0x28, 2, offset));
                         Ok(Ty::Bool)
+                    }
+                    8 => {
+                        self.builder.push(Instr::Mem(0x28, 2, offset));
+                        Ok(Ty::Dyn)
                     }
                     _ => {
                         self.builder.push(Instr::Mem(0x29, 3, offset));
@@ -12108,6 +12126,11 @@ impl<'a> Emitter<'a> {
                                 self.builder.push(Instr::Mem(0x28, 2, offset));
                                 return Ok(Ty::Bool);
                             }
+                            8 => {
+                                self.builder.push(Instr::Local(0x20, rec_tmp));
+                                self.builder.push(Instr::Mem(0x28, 2, offset));
+                                return Ok(Ty::Dyn);
+                            }
                             _ => {
                                 self.builder.push(Instr::Local(0x20, rec_tmp));
                                 self.builder.push(Instr::Mem(0x29, 3, offset));
@@ -12456,6 +12479,11 @@ impl<'a> Emitter<'a> {
                             self.emit_expr(value)?;
                             self.builder.push(Instr::Op(0xad));
                             self.builder.push(Instr::Mem(0x37, 3, offset));
+                        }
+                        8 => {
+                            self.builder.push(Instr::Local(0x20, rec_tmp));
+                            self.emit_expr(value)?;
+                            self.builder.push(Instr::Mem(0x36, 2, offset));
                         }
                         _ => {
                             self.builder.push(Instr::Local(0x20, rec_tmp));
@@ -17211,6 +17239,52 @@ mod tests {
             "[1,2,3]",
             "[1,2,3]",
             "[\"a\",\"bb\",\"ccc\"]",
+        ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn record_dynamic_fields_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let arr = parse(env(\"X\", \"[1,2]\"))\nlet r = {a: arr, b: 7}\nprint(r)\nprint(json(r))\nprint(r.a)\nprint(str(len(r.a)))\nprint(str(r.a[0]))\nlet r2 = {a: parse(env(\"X\", \"[1,2]\")), b: 7}\nprint(r2 == r)\nr.a = parse(env(\"Y\", \"[9]\"))\nprint(r.a)\nprint(r)",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = [
+            "{\"a\":[1,2],\"b\":7}",
+            "{\"a\":[1,2],\"b\":7}",
+            "[1,2]",
+            "2",
+            "1",
+            "true",
+            "[9]",
+            "{\"a\":[9],\"b\":7}",
+        ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn record_arrays_and_merge_with_dynamic_fields_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let arr = parse(env(\"X\", \"[1,2]\"))\nlet xs = [{a: arr, b: 1}, {a: parse(env(\"Y\", \"[]\")), b: 2}]\nprint(xs)\nprint(json(xs))\nprint(xs[0].a)\nprint(join(xs, \";\"))\nlet m = merge({a: arr}, {b: 3})\nprint(m)\nprint(type(parse(env(\"X\", \"[1]\"))))\nlet r = {a: arr}\nprint(str(r.a))\nprint(r.a + [3])",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = [
+            "[{\"a\":[1,2],\"b\":1},{\"a\":[],\"b\":2}]",
+            "[{\"a\":[1,2],\"b\":1},{\"a\":[],\"b\":2}]",
+            "[1,2]",
+            "{\"a\":[1,2],\"b\":1};{\"a\":[],\"b\":2}",
+            "{\"a\":[1,2],\"b\":3}",
+            "array",
+            "[1,2]",
+            "[1,2,3]",
         ];
         assert_eq!(
             strings,

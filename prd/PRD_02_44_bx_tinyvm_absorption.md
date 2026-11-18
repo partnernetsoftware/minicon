@@ -78,7 +78,7 @@ minicon-bx owns a standard wasm core and one language skin      [-]
 │   ├── uniform tagged value ABI (containers hold values)        [v]  16-byte cells; runtime parse, scalar ops, arrays/objects, iteration/map/filter/sort/join/concat (144 unit, 232 suite)
 │   ├── element-kind matrix and its host imports deleted         [_]
 │   ├── `.bxb` default flip and retirement (PRD_02_43)           [_]
-│   └── float/nested/mixed containers from the uniform layout    [-]  scalar/array/object dynamic values done; record-field containers (P2c) pending
+│   └── float/nested/mixed containers from the uniform layout    [-]  scalar/array/object dynamic values done; record field kind 8 (dynamic cells in records) landed, nested static literal fields pending
 │
 ├── P3 embeddable product face                                  [_]
 │   ├── static lib + C ABI built in the minicon repo             [_]
@@ -288,7 +288,7 @@ number/string coercion).
 | --- | --- | --- |
 | P2a | `Ty::Dyn` scalars + `null`, `dyn_*` conversions, `parse(exec.out)` for 1/1.5/"a"/true | `[v]` 2026-11-18 — runtime `parse` of scalar JSON returns `Ty::Dyn`; print/`str`/`json`/`type`/interpolation, arithmetic, equality/ordering, `int`/`float`, `!`, truthiness, operand-returning `&&`/`||` all match the VM |
 | P2b | dynamic arrays/maps/records, heterogeneous containers, `dyn_index`/`dyn_member`/`dyn_set_*` | `[v]` 2026-11-18 — arrays/objects parse to nested cells; len/index (negative, OOB→null)/member (missing→null)/nested chains, structural equality, `for`/`for k,v` iteration, `each`/`map`/`filter`, `sort`/comparator-sort/reverse/`sum`/`min`/`max`/`join` and dynamic↔static concatenation match the VM (144 unit, 232 suite; numeric/coll/method/attempt differentials and benchmarks re-run this round). Remaining: record/nested-array concatenation and Dyn→static container conversion |
-| P2c | record field kind 8 (pointer to cell) + `get`/`merge` on heterogeneous shapes — `[_]` not started | `{a:{b:1}}`, `{xs:[1,2]}` round-trip (construct, read, print, json) match VM |
+| P2c | record field kind 8 (pointer to cell) + `get`/`merge` on heterogeneous shapes | `[-]` 2026-11-18 — field kind 8 holds dynamic cell pointers: `{a: parse(...), b: 7}` constructs/prints/`json`s/reads/assigns/compares, and works in record arrays, `join` and `merge` (146 unit, 233 suite). Remaining: nested static literal fields (`{a:{b:1}}`, `{xs:[1,2]}`) need record/array descriptors inside records |
 | P2d | front-end simplification: delete element-kind matrix arms/imports that Dyn makes redundant, flip `.bxb` default (PRD_02_43) — `[_]` not started | one shared value path; import count and emitter arm count drop; suite/verify/both differentials green |
 
 Rollout (updated 2026-11-18): no feature flag was needed — `Ty::Dyn` only
