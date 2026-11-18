@@ -215,7 +215,10 @@ bx wasm target
   covers collections instead: int/float/string arrays, text rows, int rows,
   records, map/filter/each/sort/reverse/slice/reduce/push, nested indexes,
   negative indexes, element writes, two-variable loops and closure captures.
-  `bx/tools/wasm-diff-dyn.bxs` (same `[cases] [seed]` form) covers the P2 dynamic
+  `bx/tools/wasm-diff-dyn.bxs` (same `[cases] [seed]` form) also generates
+mixed dynamic/static record shapes (`{xs: <dynamic>, list: [4,5], o: <dynamic>}`
+with writes back into the dynamic field), heterogeneous parsed arrays and arrays
+of parsed objects. It covers the P2 dynamic
 paths: each case writes a random JSON payload, parses it at runtime and runs
 dynamic print/str/json/type/len, iteration and key/value loops, indexing and
 member access, get/has/contains/index_of/slice, map/filter/each,
