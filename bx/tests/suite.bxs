@@ -975,6 +975,16 @@ if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim(
   casesFail += 1
   failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
 }
+write(artDir + "/wasm-dynreduce.bxs", 'let v = parse(env("X", "[1,2,3]"))\nprint(reduce(v, fn(a, b) { return a + b }, 0))\nprint(reduce(v, fn(a, b) { return a + b }))\nprint(v.reduce(fn(a, b) { return a + b }, 0))\nlet init = parse(env("X", "10"))\nprint(reduce(parse(env("X", "[1,2]")), fn(a, b) { return a + b }, init))\n')
+let wasmDynReduce = exec([BX, "build", "--wasm", artDir + "/wasm-dynreduce.bxs", "-o", artDir + "/wasm-dynreduce.wasm"])
+let wasmDynReduceRun = exec([BX, "run", artDir + "/wasm-dynreduce.wasm"])
+let wasmDynReduceVm = exec([BX, "run", artDir + "/wasm-dynreduce.bxs"])
+if (wasmDynReduce.code == 0 && wasmDynReduceRun.out == wasmDynReduceVm.out && wasmDynReduceRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm dynamic reduce\n    wasm=" + json(wasmDynReduceRun.out) + " vm=" + json(wasmDynReduceVm.out) + " err=" + json(wasmDynReduce.err))
+}
 write(artDir + "/wasm-mixfilter.bxs", 'fn keep(x) {\n  if (x > 1) { return true }\n  return 0\n}\nprint(filter([1, 2, 3], fn(v) { return keep(v) }))\nprint(filter(["a", "bb", "ccc"], fn(v) { if (len(v) > 1) { return 1 }\n  return 0 }))\nlet v = parse(env("X", "[1,2,3]"))\nprint(filter(v, fn(x) { return x - 1 }))\nprint(v.filter(fn(x) { return x > 1 }))\n')
 let wasmMixFilter = exec([BX, "build", "--wasm", artDir + "/wasm-mixfilter.bxs", "-o", artDir + "/wasm-mixfilter.wasm"])
 let wasmMixFilterRun = exec([BX, "run", artDir + "/wasm-mixfilter.wasm"])

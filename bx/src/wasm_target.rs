@@ -1317,6 +1317,29 @@ impl Checker {
                 }
                 if key == "reduce" && (args.len() == 1 || args.len() == 2) {
                     let base = self.infer(object)?;
+                    if base == Ty::Dyn {
+                        let Ty::Func(id) = self.infer(&args[0])? else {
+                            return Err("wasm target .reduce() needs a function literal callback"
+                                .to_string());
+                        };
+                        let sig = self
+                            .lit_sigs
+                            .get(id as usize)
+                            .cloned()
+                            .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+                        if sig.params != vec![Ty::Dyn, Ty::Dyn] {
+                            return Err(
+                                format!(
+                                "wasm target dynamic reduce callbacks take two dynamic values (got {:?})",
+                                sig.params
+                            ),
+                            );
+                        }
+                        if let Some(init) = args.get(1) {
+                            self.infer(init)?;
+                        }
+                        return Ok(Ty::Dyn);
+                    }
                     let element = element_ty(base).ok_or_else(|| {
                         format!(
                             "wasm target .reduce() takes an array, got {}",
@@ -2185,6 +2208,30 @@ impl Checker {
                         };
                     }
                     if name == "reduce" && (args.len() == 2 || args.len() == 3) {
+                        if self.infer(&args[0])? == Ty::Dyn {
+                            let Ty::Func(id) = self.infer(&args[1])? else {
+                                return Err(
+                                    "wasm target reduce() needs a function literal callback"
+                                        .to_string(),
+                                );
+                            };
+                            let sig =
+                                self.lit_sigs.get(id as usize).cloned().ok_or_else(|| {
+                                    "wasm target lost a function literal".to_string()
+                                })?;
+                            if sig.params != vec![Ty::Dyn, Ty::Dyn] {
+                                return Err(
+                                    format!(
+                                    "wasm target dynamic reduce callbacks take two dynamic values (got {:?})",
+                                    sig.params
+                                ),
+                                );
+                            }
+                            if let Some(init) = args.get(2) {
+                                self.infer(init)?;
+                            }
+                            return Ok(Ty::Dyn);
+                        }
                         let elem = match self.infer(&args[0])? {
                             Ty::Arr => Ty::Int,
                             Ty::ArrF => Ty::Float,
@@ -7277,6 +7324,88 @@ impl<'a> Emitter<'a> {
         Ok(output_ty)
     }
 
+    /// Dynamic `reduce(array, cb[, init])`: accumulator and elements are
+    /// dynamic cells; without `init` the first element seeds the accumulator.
+    fn emit_dyn_reduce(
+        &mut self,
+        array: &Expr,
+        callback: &Expr,
+        init: Option<&Expr>,
+    ) -> Result<Ty, String> {
+        let Ty::Func(id) = self.type_of(callback)? else {
+            return Err("wasm target reduce() needs a function literal callback".to_string());
+        };
+        let sig = self
+            .checker
+            .lit_sigs
+            .get(id as usize)
+            .cloned()
+            .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+        let source = self.builder.add_local(ValType::I32);
+        let count = self.builder.add_local(ValType::I64);
+        let index = self.builder.add_local(ValType::I64);
+        let acc = self.builder.add_local(ValType::I32);
+        let cb_env = self.builder.add_local(ValType::I32);
+        self.emit_expr(array)?;
+        self.builder.push(Instr::Local(0x21, source));
+        self.emit_expr(callback)?;
+        self.builder.push(Instr::Local(0x21, cb_env));
+        self.builder.push(Instr::Local(0x20, source));
+        self.builder.push(Instr::Call(DYN_LEN));
+        self.builder.push(Instr::Local(0x21, count));
+        match init {
+            Some(init) => {
+                let init_ty = self.type_of(init)?;
+                self.emit_box_dyn(init, init_ty)?;
+                self.builder.push(Instr::Local(0x21, acc));
+                self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+            }
+            None => {
+                self.builder.push(Instr::Local(0x20, source));
+                self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                self.builder.push(Instr::Call(DYN_ITER_AT));
+                self.builder.push(Instr::Local(0x21, acc));
+                self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+            }
+        }
+        self.builder.push(Instr::Local(0x21, index));
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x02);
+        self.builder.push(Instr::Block {
+            opcode: 0x03,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x03);
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Local(0x20, count));
+        self.builder.push(Instr::Op(0x59));
+        self.builder.push(Instr::BrIf(1));
+        self.builder.push(Instr::Local(0x20, cb_env));
+        self.builder.push(Instr::Local(0x20, acc));
+        self.builder.push(Instr::Local(0x20, source));
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Call(DYN_ITER_AT));
+        self.builder.push(Instr::Call(sig.index));
+        self.builder.push(Instr::Local(0x21, acc));
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+        self.builder.push(Instr::Op(0x7c));
+        self.builder.push(Instr::Local(0x21, index));
+        self.builder.push(Instr::Br(0));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.builder.push(Instr::Local(0x20, acc));
+        Ok(Ty::Dyn)
+    }
     fn emit_reduce(
         &mut self,
         array: &Expr,
@@ -10455,6 +10584,9 @@ impl<'a> Emitter<'a> {
                     return Ok(Ty::Str);
                 }
                 if key == "reduce" && (args.len() == 1 || args.len() == 2) {
+                    if self.type_of(object)? == Ty::Dyn {
+                        return self.emit_dyn_reduce(object, &args[0], args.get(1));
+                    }
                     return self.emit_reduce(object, &args[0], args.get(1));
                 }
                 if matches!(key.as_str(), "map" | "filter") && args.len() == 1 {
@@ -12129,6 +12261,9 @@ impl<'a> Emitter<'a> {
                         return self.emit_map_filter(name, &args[0], &args[1]);
                     }
                     if name == "reduce" && (args.len() == 2 || args.len() == 3) {
+                        if self.type_of(&args[0])? == Ty::Dyn {
+                            return self.emit_dyn_reduce(&args[0], &args[1], args.get(2));
+                        }
                         return self.emit_reduce(&args[0], &args[1], args.get(2));
                     }
                     if name == "keys" && args.len() == 1 && self.type_of(&args[0])? == Ty::Map {
@@ -14792,9 +14927,13 @@ impl<'a> InferState<'a> {
                             };
                             match name.as_str() {
                                 "reduce" => {
-                                    let acc = match args.get(2) {
-                                        Some(init) => self.soft(init, locals).unwrap_or(elem),
-                                        None => elem,
+                                    let acc = if elem == Ty::Dyn {
+                                        Ty::Dyn
+                                    } else {
+                                        match args.get(2) {
+                                            Some(init) => self.soft(init, locals).unwrap_or(elem),
+                                            None => elem,
+                                        }
                                     };
                                     changed |= self.unify_param(index, 0, acc)?;
                                     changed |= self.unify_param(index, 1, elem)?;
@@ -14888,10 +15027,13 @@ impl<'a> InferState<'a> {
                             Some(Ty::Dyn) => Ty::Dyn,
                             _ => Ty::Int,
                         };
-                        let acc = args
-                            .get(1)
-                            .and_then(|arg| self.soft(arg, locals))
-                            .unwrap_or(elem);
+                        let acc = if elem == Ty::Dyn {
+                            Ty::Dyn
+                        } else {
+                            args.get(1)
+                                .and_then(|arg| self.soft(arg, locals))
+                                .unwrap_or(elem)
+                        };
                         changed |= self.unify_param(index, 0, acc)?;
                         changed |= self.unify_param(index, 1, elem)?;
                         changed |= self.unify_result(index, acc)?;
@@ -18374,6 +18516,20 @@ mod tests {
             "[2,3]",
             "[\"a\",\"bb\"]",
         ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn dynamic_reduce_matches_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let v = parse(env(\"X\", \"[1,2,3]\"))\nprint(reduce(v, fn(a, b) { return a + b }, 0))\nprint(reduce(v, fn(a, b) { return a + b }))\nprint(v.reduce(fn(a, b) { return a + b }, 0))\nlet init = parse(env(\"X\", \"10\"))\nprint(reduce(parse(env(\"X\", \"[1,2]\")), fn(a, b) { return a + b }, init))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = ["6", "6", "6", "13"];
         assert_eq!(
             strings,
             expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
