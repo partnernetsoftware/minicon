@@ -95,7 +95,7 @@ bx build --wasm <script.bxs> [-o out.wasm]      alias for --target wasm
   bx eval [--max-steps N] [--timeout MS] "<source>"          evaluate and print
   bx build <script.bxs> [-o out.bxb]         compile source to bytecode
   bx dis <script.bxs|out.bxb>                disassemble bytecode
-  bx check [--json] <script.bxs|script.bxb>  compile only (no execution)
+  bx check [--target wasm|bxb] [--json] <script.bxs|script.bxb>  compile only (no execution)
   bx test <script.bxs>                       run test(name, fn) blocks and report
   bx help [builtin]                          this text, or one builtin's contract
   bx version
@@ -739,19 +739,81 @@ fn cmd_test(args: Vec<String>) -> i32 {
 /// `--json` prints one machine-readable line on stdout in both outcomes.
 fn cmd_check(args: Vec<String>) -> i32 {
     let mut json_mode = false;
+    let mut target: Option<String> = None;
     let mut rest: Vec<String> = Vec::new();
-    for a in args {
-        if a == "--json" {
+    let mut index = 0;
+    while index < args.len() {
+        if args[index] == "--json" {
             json_mode = true;
-        } else {
-            rest.push(a);
+            index += 1;
+            continue;
         }
+        if args[index] == "--target" {
+            match args.get(index + 1) {
+                Some(value) if value == "wasm" || value == "bxb" => {
+                    target = Some(value.clone());
+                    index += 2;
+                    continue;
+                }
+                _ => {
+                    eprintln!("bx check: --target needs wasm or bxb");
+                    return 2;
+                }
+            }
+        }
+        rest.push(args[index].clone());
+        index += 1;
     }
     if rest.is_empty() {
         eprintln!("bx check: missing script path");
         return 2;
     }
     let path = Path::new(&rest[0]);
+    if target.as_deref() == Some("wasm") && !rest[0].to_ascii_lowercase().ends_with(".wasm") {
+        let source = match fs::read_to_string(&rest[0]) {
+            Ok(source) => source,
+            Err(e) => {
+                eprintln!("bx: cannot read '{}': {}", rest[0], e);
+                return 1;
+            }
+        };
+        let outcome = wasm_target::compile_to_wasm(&source)
+            .and_then(|bytes| wasm_target::inspect(&bytes).map(|info| (bytes.len(), info)));
+        return match outcome {
+            Ok((bytes, info)) => {
+                if json_mode {
+                    println!(
+                        "{{\"ok\":true,\"file\":{},\"target\":\"wasm\",\"bytes\":{},\"imports\":{},\"functions\":{}}}",
+                        json_quote(&rest[0]),
+                        bytes,
+                        info.imports.len(),
+                        info.defined_functions
+                    );
+                } else {
+                    println!(
+                        "ok {} (wasm target, {} bytes, {} imports, {} functions)",
+                        rest[0],
+                        bytes,
+                        info.imports.len(),
+                        info.defined_functions
+                    );
+                }
+                0
+            }
+            Err(e) => {
+                if json_mode {
+                    println!(
+                        "{{\"ok\":false,\"file\":{},\"target\":\"wasm\",\"error\":{}}}",
+                        json_quote(&rest[0]),
+                        json_quote(&e)
+                    );
+                } else {
+                    eprintln!("bx: {}", e);
+                }
+                1
+            }
+        };
+    }
     if rest[0].to_ascii_lowercase().ends_with(".wasm") {
         let outcome = fs::read(&rest[0])
             .map_err(|e| format!("cannot read '{}': {}", rest[0], e))

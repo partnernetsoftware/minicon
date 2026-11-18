@@ -2605,9 +2605,9 @@ impl Checker {
                         }
                         return Ok(Ty::Bool);
                     }
-                    if name == "eprint" && args.len() == 1 {
-                        if self.infer(&args[0])? != Ty::Str {
-                            return Err("wasm target eprint(text) takes a string".to_string());
+                    if name == "eprint" && !args.is_empty() {
+                        for arg in args {
+                            self.infer(arg)?;
                         }
                         return Ok(Ty::Int);
                     }
@@ -3083,12 +3083,14 @@ impl Checker {
                     // statement position (e.g. `sort(a)` or `reverse(a)`).
                     return self.infer(expr).map(|_| ());
                 }
-                if args.len() != 1 {
-                    return Err("wasm target supports print(<value>) with one argument".to_string());
-                }
-                let ty = self.infer(&args[0])?;
-                if matches!(ty, Ty::Func(_)) {
-                    return Err("wasm target cannot log functions yet".to_string());
+                for arg in args {
+                    let ty = self.infer(arg)?;
+                    if matches!(ty, Ty::Func(_)) {
+                        return Err(format!(
+                            "wasm target cannot print {} values yet",
+                            ty_name(ty)
+                        ));
+                    }
                 }
             }
 
@@ -3481,6 +3483,7 @@ const ARG_TMP: u32 = 7;
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
 const IMPORT_COUNT: u32 = 137;
+const PRINT_UTF8: u32 = 1;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -8554,6 +8557,62 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// Append one display-formatted operand to the `(ptr, len)` accumulator.
+    fn emit_display_append(
+        &mut self,
+        acc_ptr: u32,
+        acc_len: u32,
+        operand: &Expr,
+    ) -> Result<(), String> {
+        let len_b = self.builder.add_local(ValType::I32);
+        let ptr_b = self.builder.add_local(ValType::I32);
+        self.emit_str_operand(operand)?;
+        self.builder.push(Instr::Local(0x21, len_b));
+        self.builder.push(Instr::Local(0x21, ptr_b));
+        self.builder.push(Instr::Local(0x20, acc_len));
+        self.builder.push(Instr::Local(0x20, len_b));
+        self.builder.push(Instr::Op(0x6a));
+        self.emit_alloc_dynamic();
+        let dst = self.builder.add_local(ValType::I32);
+        self.builder.push(Instr::Local(0x21, dst));
+        self.builder.push(Instr::Local(0x20, dst));
+        self.builder.push(Instr::Local(0x20, acc_ptr));
+        self.builder.push(Instr::Local(0x20, acc_len));
+        self.builder.push(Instr::MemoryCopy);
+        self.builder.push(Instr::Local(0x20, dst));
+        self.builder.push(Instr::Local(0x20, acc_len));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, ptr_b));
+        self.builder.push(Instr::Local(0x20, len_b));
+        self.builder.push(Instr::MemoryCopy);
+        self.builder.push(Instr::Local(0x20, dst));
+        self.builder.push(Instr::Local(0x21, acc_ptr));
+        self.builder.push(Instr::Local(0x20, acc_len));
+        self.builder.push(Instr::Local(0x20, len_b));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x21, acc_len));
+        Ok(())
+    }
+
+    /// Join several values the way the VM's multi-argument `print`/`eprint`
+    /// does (single spaces, display formatting) and leave a `(ptr, len)` pair.
+    fn emit_joined_display(&mut self, args: &[Expr]) -> Result<(), String> {
+        let acc_len = self.builder.add_local(ValType::I32);
+        let acc_ptr = self.builder.add_local(ValType::I32);
+        self.emit_text_literal("");
+        self.builder.push(Instr::Local(0x21, acc_len));
+        self.builder.push(Instr::Local(0x21, acc_ptr));
+        for (index, arg) in args.iter().enumerate() {
+            if index > 0 {
+                let space = Expr::Str(" ".to_string());
+                self.emit_display_append(acc_ptr, acc_len, &space)?;
+            }
+            self.emit_display_append(acc_ptr, acc_len, arg)?;
+        }
+        self.builder.push(Instr::Local(0x20, acc_ptr));
+        self.builder.push(Instr::Local(0x20, acc_len));
+        Ok(())
+    }
     /// Turn a `[len][utf8]` block pointer on the stack into a `(ptr, len)` pair.
     fn push_block_as_pair(&mut self) {
         self.builder.push(Instr::Local(0x21, ARG_TMP));
@@ -10799,11 +10858,8 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Op(0xac));
                         return Ok(Ty::Int);
                     }
-                    if name == "eprint" && args.len() == 1 {
-                        if self.type_of(&args[0])? != Ty::Str {
-                            return Err("wasm target eprint(text) takes a string".to_string());
-                        }
-                        self.emit_str(&args[0])?;
+                    if name == "eprint" && !args.is_empty() {
+                        self.emit_joined_display(args)?;
                         self.builder.push(Instr::Call(EPRINT));
                         self.builder.push(Instr::Const(0x42, WVal::I64(0)));
                         return Ok(Ty::Int);
@@ -13257,10 +13313,11 @@ impl<'a> Emitter<'a> {
                         return Ok(());
                     }
                     "eprint" => {
-                        if args.len() != 1 || self.type_of(&args[0])? != Ty::Str {
-                            return Err("wasm target eprint(text) takes a string".to_string());
+                        if args.is_empty() {
+                            self.emit_text_literal("");
+                        } else {
+                            self.emit_joined_display(args)?;
                         }
-                        self.emit_str(&args[0])?;
                         self.builder.push(Instr::Call(EPRINT));
                         return Ok(());
                     }
@@ -13351,6 +13408,15 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Op(0x1a));
                         return Ok(());
                     }
+                }
+                if name == "print" && args.len() != 1 {
+                    if args.is_empty() {
+                        self.emit_text_literal("");
+                    } else {
+                        self.emit_joined_display(args)?;
+                    }
+                    self.builder.push(Instr::Call(PRINT_UTF8));
+                    return Ok(());
                 }
                 if (name != "print" && name != "console_log") || args.len() != 1 {
                     return Err(
@@ -17893,6 +17959,26 @@ mod tests {
         );
         assert!(numbers.is_empty());
         let expected = ["3", "int", "ab!", "[11,6]", "{\"a\":5,\"b\":2}", "1"];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn multi_argument_print_matches_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "print(\"a\", 1, [2, 3])\nprint({\"b\": 2, \"a\": 1}, \"end\")\nlet v = parse(env(\"X\", \"[1,2]\"))\nprint(\"dyn\", v, 2.5)\nprint(1, 2.5, false)\nprint()",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = [
+            "a 1 [2,3]",
+            "{\"a\":1,\"b\":2} end",
+            "dyn [1,2] 2.5",
+            "1 2.5 false",
+            "",
+        ];
         assert_eq!(
             strings,
             expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()

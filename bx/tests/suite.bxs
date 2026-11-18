@@ -954,6 +954,26 @@ if (wasmBoolGrow.code == 0 && wasmBoolGrowRun.out == wasmBoolGrowVm.out && wasmB
   casesFail += 1
   failures.push("wasm growable bool arrays\n    wasm=" + json(wasmBoolGrowRun.out) + " vm=" + json(wasmBoolGrowVm.out) + " err=" + json(wasmBoolGrowRun.err))
 }
+write(artDir + "/wasm-multiprint.bxs", 'let v = parse(env("X", "[1,2]"))\nprint("a", 1, [2, 3])\nprint(v, 2.5, false)\nprint({"k": 1}, "end")\neprint("x", 1, [2])\nprint()\n')
+let wasmMultiPrint = exec([BX, "build", "--wasm", artDir + "/wasm-multiprint.bxs", "-o", artDir + "/wasm-multiprint.wasm"])
+let wasmMultiPrintRun = exec([BX, "run", artDir + "/wasm-multiprint.wasm"])
+let wasmMultiPrintVm = exec([BX, "run", artDir + "/wasm-multiprint.bxs"])
+if (wasmMultiPrint.code == 0 && wasmMultiPrintRun.out == wasmMultiPrintVm.out && wasmMultiPrintRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm multi-arg print\n    wasm=" + json(wasmMultiPrintRun.out) + " vm=" + json(wasmMultiPrintVm.out) + " err=" + json(wasmMultiPrintRun.err))
+}
+write(artDir + "/check-target.bxs", 'print(1 + 2)\n')
+write(artDir + "/check-target-bad.bxs", 'test("x")\n')
+let checkOk = exec([BX, "check", "--target", "wasm", "--json", artDir + "/check-target.bxs"])
+let checkBad = exec([BX, "check", "--target", "wasm", "--json", artDir + "/check-target-bad.bxs"])
+if (checkOk.code == 0 && checkOk.out.contains("\"ok\":true") && checkBad.code == 1 && checkBad.out.contains("\"ok\":false")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("check --target wasm\n    ok=" + json(checkOk.out) + " bad=" + json(checkBad.out) + " codes=" + str(checkOk.code) + "/" + str(checkBad.code))
+}
 write(artDir + "/wasm-dyncompound.bxs", 'let v = parse(env("X", "1"))\nv += 2\nprint(v)\nprint(type(v))\nlet s = parse(env("X", json("ab")))\ns += "!"\nprint(s)\nlet a = parse(env("X", "[1,2]"))\na[0] += 10\na[-1] *= 3\nprint(a)\nlet o = parse("{" + json("a") + ":1}")\no.a += 4\no["b"] += 2\nprint(o)\nlet n = parse(env("X", "null"))\nn += 1\nprint(n)\n')
 let wasmDynCompound = exec([BX, "build", "--wasm", artDir + "/wasm-dyncompound.bxs", "-o", artDir + "/wasm-dyncompound.wasm"])
 let wasmDynCompoundRun = exec([BX, "run", artDir + "/wasm-dyncompound.wasm"])

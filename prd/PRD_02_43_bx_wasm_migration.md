@@ -26,7 +26,7 @@ flip, never as the long-term default.
 | Gate | Meaning | Evidence required | Status |
 | --- | --- | --- | --- |
 | G0 | Core scripting parity is green | parity matrix "core" rows `[v]`, unit tests + self-hosted suite + verifier + differential all green on four native cells | `[-]` |
-| G1 | Opt-in default | `BX_TARGET=wasm` and `--target wasm` are accepted by both `bx build` and `bx run` (2026-11-18 round 175 closes the `bx run --target` gap); soak with the env override still pending | `[-]` |
+| G1 | Opt-in default | `BX_TARGET=wasm` and `--target wasm` are accepted by `bx build`, `bx run` and `bx check`; `bx/scripts/soak-wasm.sh` compiles + output-diffs the local corpus (10 scripts: 8 matched, 2 informational — one nondeterministic, one `use` module function) and `bx check --target wasm` is the compile-only gate; multi-release soak with the env override still pending | `[-]` |
 | G2 | Default flip | no env set builds `.wasm`; `.bxb` reachable only via `--target bxb`; docs/CHANGELOG announce the flip | `[_]` |
 | G3 | `.bxb` retirement | chunk container/emitter/cache-key code deleted; `--target bxb` rejected with a migration message | `[_]` |
 
