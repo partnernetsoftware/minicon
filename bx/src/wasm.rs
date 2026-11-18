@@ -1278,6 +1278,61 @@ fn dyn_set_member_cell(
     write_dyn_cell(memory, object, 6, count + 1, base as u64);
     Ok(())
 }
+/// Numeric math on a dynamic cell: 0 abs, 1 floor, 2 ceil, 3 round, 4 sqrt.
+fn dyn_math_cell(
+    memory: &mut [u8],
+    next_dyn: &mut u32,
+    cell: usize,
+    mode: u32,
+) -> Result<usize, String> {
+    let (tag, _, payload) = dyn_tag(memory, cell);
+    let result = alloc_dyn_cell(next_dyn)?;
+    match (mode, tag) {
+        (0, 1) => {
+            let value = payload as i64;
+            write_dyn_cell(memory, result, 1, 0, value.unsigned_abs());
+        }
+        (0, 2) => {
+            let value = f64::from_bits(payload).abs();
+            write_dyn_cell(memory, result, 2, 0, value.to_bits());
+        }
+        (1..=3, 1..=3) => {
+            let value = dyn_number(memory, cell)?;
+            // Rounding keeps the VM's integer result shape.
+            let integer = match mode {
+                1 => value.floor() as i64,
+                2 => value.ceil() as i64,
+                _ => round_half_away(value) as i64,
+            };
+            write_dyn_cell(memory, result, 1, 0, integer as u64);
+        }
+        (4, 1..=2) => {
+            let value = dyn_number(memory, cell)?.sqrt();
+            write_dyn_cell(memory, result, 2, 0, value.to_bits());
+        }
+        _ => return Err("dynamic math needs a number".to_string()),
+    }
+    Ok(result)
+}
+
+fn round_half_away(value: f64) -> f64 {
+    if value >= 0.0 {
+        (value + 0.5).floor()
+    } else {
+        (value - 0.5).ceil()
+    }
+}
+/// Dynamic text as a `[len][utf8]` block for the static string builtins.
+fn dyn_text_block(memory: &mut [u8], next_file: &mut u32, cell: usize) -> Result<i32, String> {
+    let (tag, len, payload) = dyn_tag(memory, cell);
+    if tag != 4 {
+        return Err("dynamic string builtins need a string value".to_string());
+    }
+    let text = memory_text(memory, payload as usize, len as usize);
+    store_text_block(memory, next_file, text.as_bytes())
+        .map(|start| start as i32)
+        .ok_or_else(|| "dynamic text block does not fit the file region".to_string())
+}
 /// Dynamic `keys(object)`: a dynamic array of boxed key strings.
 fn dyn_keys_cell(memory: &mut [u8], next_dyn: &mut u32, cell: usize) -> Result<usize, String> {
     let (tag, count, payload) = dyn_tag(memory, cell);
@@ -1342,15 +1397,10 @@ fn dyn_get_cell(
         return dyn_null_cell(memory, next_dyn, null_slot);
     }
     let at = dyn_number(memory, key)? as i64;
+    let _ = (aux, payload);
     match tag {
         4 => dyn_index_cell(memory, next_dyn, null_slot, cell, at),
         5 => dyn_index_cell(memory, next_dyn, null_slot, cell, at),
-        6 => {
-            if at < 0 || at >= aux as i64 {
-                return dyn_null_cell(memory, next_dyn, null_slot);
-            }
-            dyn_entry_value(memory, payload as usize + at as usize * 12)
-        }
         _ => dyn_null_cell(memory, next_dyn, null_slot),
     }
 }
@@ -1370,12 +1420,11 @@ fn dyn_has_cell(memory: &[u8], cell: usize, key: usize) -> Result<bool, String> 
         }
         return Ok(false);
     }
-    let at = dyn_number(memory, key)? as i64;
-    if tag == 4 {
-        // The VM's has() works on objects/maps only, so strings report false.
-        return Ok(false);
-    }
-    Ok(at >= 0 && at < aux as i64 && (tag == 5 || tag == 6))
+    let _ = dyn_number(memory, key)?;
+    // The VM's has() works on object string keys only; arrays, strings and
+    // numeric keys all report false.
+    let _ = (tag, aux);
+    Ok(false)
 }
 
 fn dyn_contains_cell(memory: &[u8], cell: usize, value: usize) -> Result<bool, String> {
@@ -3281,6 +3330,24 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 };
                 let out = dyn_values_cell(memory, &mut self.next_dyn, cell)?;
                 Ok(vec![WVal::I32(out as i32)])
+            }
+            ("env", "dyn_math") => {
+                let (cell, mode) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(cell)), Some(WVal::I32(mode))) => {
+                        (*cell as usize, *mode as u32)
+                    }
+                    _ => return Err("env.dyn_math expects (i32, i32)".to_string()),
+                };
+                let out = dyn_math_cell(memory, &mut self.next_dyn, cell, mode)?;
+                Ok(vec![WVal::I32(out as i32)])
+            }
+            ("env", "dyn_text_block") => {
+                let cell = match args.first() {
+                    Some(WVal::I32(cell)) => *cell as usize,
+                    _ => return Err("env.dyn_text_block expects one i32".to_string()),
+                };
+                let block = dyn_text_block(memory, &mut self.next_file, cell)?;
+                Ok(vec![WVal::I32(block)])
             }
             ("env", "dyn_parse") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {

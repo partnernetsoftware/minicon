@@ -1925,6 +1925,18 @@ impl Checker {
                         }
                         return Ok(Ty::Float);
                     }
+                    if matches!(name.as_str(), "abs" | "floor" | "ceil" | "round" | "sqrt")
+                        && args.len() == 1
+                        && self.infer(&args[0])? == Ty::Dyn
+                    {
+                        return Ok(Ty::Dyn);
+                    }
+                    if matches!(name.as_str(), "trim" | "upper" | "lower")
+                        && args.len() == 1
+                        && self.infer(&args[0])? == Ty::Dyn
+                    {
+                        return Ok(Ty::Str);
+                    }
                     if name == "abs" && args.len() == 1 {
                         return match self.infer(&args[0])? {
                             Ty::Int => Ok(Ty::Int),
@@ -3635,7 +3647,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 139;
+const IMPORT_COUNT: u32 = 141;
 const PRINT_UTF8: u32 = 1;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
@@ -3763,6 +3775,8 @@ const DYN_POP: u32 = 135;
 const DYN_SET_MEMBER: u32 = 136;
 const DYN_KEYS: u32 = 137;
 const DYN_VALUES: u32 = 138;
+const DYN_MATH: u32 = 139;
+const DYN_TEXT_BLOCK: u32 = 140;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -11880,6 +11894,22 @@ impl<'a> Emitter<'a> {
                         }
                         return Ok(Ty::Float);
                     }
+                    if matches!(name.as_str(), "abs" | "floor" | "ceil" | "round" | "sqrt")
+                        && args.len() == 1
+                        && self.type_of(&args[0])? == Ty::Dyn
+                    {
+                        let mode = match name.as_str() {
+                            "abs" => 0,
+                            "floor" => 1,
+                            "ceil" => 2,
+                            "round" => 3,
+                            _ => 4,
+                        };
+                        self.emit_expr(&args[0])?;
+                        self.builder.push(Instr::Const(0x41, WVal::I32(mode)));
+                        self.builder.push(Instr::Call(DYN_MATH));
+                        return Ok(Ty::Dyn);
+                    }
                     if name == "abs" && args.len() == 1 {
                         return match self.type_of(&args[0])? {
                             Ty::Int => {
@@ -11965,6 +11995,14 @@ impl<'a> Emitter<'a> {
                             "upper" => STR_UPPER,
                             _ => STR_LOWER,
                         };
+                        if self.type_of(&args[0])? == Ty::Dyn {
+                            self.emit_expr(&args[0])?;
+                            self.builder.push(Instr::Call(DYN_TEXT_BLOCK));
+                            self.push_block_as_pair();
+                            self.builder.push(Instr::Call(import));
+                            self.push_block_as_pair();
+                            return Ok(Ty::Str);
+                        }
                         self.emit_str(&args[0])?;
                         self.builder.push(Instr::Call(import));
                         self.push_block_as_pair();
@@ -16558,6 +16596,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "dyn_set_member", three_i32_void_ty);
     builder.import_func("env", "dyn_keys", i32_to_i32_ty);
     builder.import_func("env", "dyn_values", i32_to_i32_ty);
+    builder.import_func("env", "dyn_math", which_ty);
+    builder.import_func("env", "dyn_text_block", i32_to_i32_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -18734,6 +18774,22 @@ mod tests {
             "true",
             "[\"a\"]",
             "[1]",
+        ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn dynamic_math_and_case_builtins_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let a = parse(env(\"X\", \"[1,2]\"))\nprint(has(a, 0))\nlet o = parse(env(\"X\", \"{\\\"a\\\":1}\"))\nprint(has(o, 0))\nprint(get(o, 0))\nprint(abs(parse(env(\"X\", \"-3\"))))\nprint(floor(parse(env(\"X\", \"2.7\"))))\nprint(ceil(parse(env(\"X\", \"2.1\"))))\nprint(round(parse(env(\"X\", \"2.5\"))))\nprint(sqrt(parse(env(\"X\", \"9\"))))\nprint(upper(parse(env(\"X\", \"\\\"ab\\\"\"))))\nprint(lower(parse(env(\"X\", \"\\\"AB\\\"\"))))\nprint(trim(parse(env(\"X\", \"\\\"  x  \\\"\"))))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = [
+            "false", "false", "null", "3", "2", "3", "3", "3", "AB", "ab", "x",
         ];
         assert_eq!(
             strings,
