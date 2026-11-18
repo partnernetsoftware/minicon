@@ -1246,7 +1246,16 @@ impl Checker {
                             return Err("wasm target dynamic callbacks take one dynamic element"
                                 .to_string());
                         }
-                        if key == "filter" && sig.result != Some(Ty::Bool) {
+                        if key == "filter"
+                            && !matches!(
+                                sig.result,
+                                Some(Ty::Bool)
+                                    | Some(Ty::Dyn)
+                                    | Some(Ty::Int)
+                                    | Some(Ty::Float)
+                                    | Some(Ty::Str)
+                            )
+                        {
                             return Err(
                                 "wasm target dynamic filter callbacks return bool".to_string()
                             );
@@ -1271,7 +1280,16 @@ impl Checker {
                         .get(id as usize)
                         .ok_or_else(|| "wasm target lost a function literal".to_string())?;
                     if key == "filter" {
-                        if sig.params != vec![element] || sig.result != Some(Ty::Bool) {
+                        if sig.params != vec![element]
+                            || !matches!(
+                                sig.result,
+                                Some(Ty::Bool)
+                                    | Some(Ty::Dyn)
+                                    | Some(Ty::Int)
+                                    | Some(Ty::Float)
+                                    | Some(Ty::Str)
+                            )
+                        {
                             return Err(
                                 "wasm target .filter() callbacks take one element and return bool"
                                     .to_string(),
@@ -2083,7 +2101,16 @@ impl Checker {
                                         .to_string(),
                                 );
                             }
-                            if name == "filter" && sig.result != Some(Ty::Bool) {
+                            if name == "filter"
+                                && !matches!(
+                                    sig.result,
+                                    Some(Ty::Bool)
+                                        | Some(Ty::Dyn)
+                                        | Some(Ty::Int)
+                                        | Some(Ty::Float)
+                                        | Some(Ty::Str)
+                                )
+                            {
                                 return Err(
                                     "wasm target dynamic filter callbacks return bool".to_string()
                                 );
@@ -2140,7 +2167,14 @@ impl Checker {
                                 ),
                             },
                             "filter" => {
-                                if sig.result != Some(Ty::Bool) {
+                                if !matches!(
+                                    sig.result,
+                                    Some(Ty::Bool)
+                                        | Some(Ty::Dyn)
+                                        | Some(Ty::Int)
+                                        | Some(Ty::Float)
+                                        | Some(Ty::Str)
+                                ) {
                                     return Err(
                                         "wasm target filter() callbacks return bools".to_string()
                                     );
@@ -7193,6 +7227,7 @@ impl<'a> Emitter<'a> {
             self.builder.push(Instr::Local(0x20, cb_env));
             Self::emit_load_slot(self, arr_tmp, idx_tmp, elem);
             self.builder.push(Instr::Call(sig.index));
+            self.emit_truthy_result(sig.result.unwrap_or(Ty::Bool))?;
             self.builder.push(Instr::Block {
                 opcode: 0x04,
                 end: 0,
@@ -9100,6 +9135,9 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Local(0x20, cb_env));
         self.builder.push(Instr::Local(0x20, element));
         self.builder.push(Instr::Call(sig.index));
+        if kind != "map" {
+            self.emit_truthy_result(sig.result.unwrap_or(Ty::Bool))?;
+        }
         if kind == "map" {
             match result_ty {
                 Ty::Int => self.builder.push(Instr::Local(0x21, value_i64)),
@@ -9381,6 +9419,40 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// Convert a callback result of `ty` into the i32 truthiness the VM's
+    /// `filter` uses (numbers non-zero, strings non-empty).
+    fn emit_truthy_result(&mut self, ty: Ty) -> Result<(), String> {
+        match ty {
+            Ty::Bool => Ok(()),
+            Ty::Dyn => {
+                self.builder.push(Instr::Call(DYN_TRUTHY));
+                Ok(())
+            }
+            Ty::Int => {
+                self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                self.builder.push(Instr::Op(0x52));
+                Ok(())
+            }
+            Ty::Float => {
+                self.builder.push(Instr::Const(0x44, WVal::F64(0.0)));
+                self.builder.push(Instr::Op(0x62));
+                Ok(())
+            }
+            Ty::Str => {
+                let len = self.builder.add_local(ValType::I32);
+                self.builder.push(Instr::Local(0x21, len));
+                self.builder.push(Instr::Op(0x1a));
+                self.builder.push(Instr::Local(0x20, len));
+                self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                self.builder.push(Instr::Op(0x47));
+                Ok(())
+            }
+            other => Err(format!(
+                "wasm target filter() callbacks return {}, which has no truthiness",
+                ty_name(other)
+            )),
+        }
+    }
     /// Push a reduce/sort accumulator of `kind` from its local slots.
     fn emit_push_acc(&mut self, kind: Ty, i64: u32, f64: u32, ptr: u32, len: u32) {
         match kind {
@@ -18279,6 +18351,28 @@ mod tests {
             "[]",
             "[1,\"s\"]",
             "[1,\"bb\"]",
+        ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn filter_truthiness_matches_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "fn keep(x) { if (x > 1) { return true }\n  return 0 }\nprint(filter([1, 2, 3], fn(v) { return keep(v) }))\nprint(filter([\"a\", \"bb\", \"ccc\"], fn(v) { if (len(v) > 1) { return 1 }\n  return 0 }))\nprint([1, 2, 3].filter(fn(v) { return keep(v) }))\nprint(filter([1, 2], fn(v) { return v }))\nlet v = parse(env(\"X\", \"[1,2,3]\"))\nprint(filter(v, fn(x) { return x - 1 }))\nprint(v.filter(fn(x) { return x > 1 }))\nlet d = parse(env(\"X\", \"[\\\"\\\", \\\"a\\\", \\\"bb\\\"]\"))\nprint(filter(d, fn(x) { return x }))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = [
+            "[2,3]",
+            "[\"bb\",\"ccc\"]",
+            "[2,3]",
+            "[1,2]",
+            "[2,3]",
+            "[2,3]",
+            "[\"a\",\"bb\"]",
         ];
         assert_eq!(
             strings,
