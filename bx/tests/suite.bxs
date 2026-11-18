@@ -676,7 +676,7 @@ if (wasmFnf.code == 0 && wasmFnfRun.out == wasmFnfVm.out && wasmFnfRun.out.trim(
   casesOk += 1
 } else {
   casesFail += 1
-  failures.push("wasm float function params/results\n    wasm=" + json(wasmFnfRun.out) + " vm=" + json(wasmFnfVm.out) + " bad=" + wasmFnBad.code)
+  failures.push("wasm float function params/results\n    wasm=" + json(wasmFnfRun.out) + " vm=" + json(wasmFnfVm.out) + " bad=" + wasmFnf.code)
 }
 write(artDir + "/wasm-richp.bxs", 'fn shout(s) { print(s + "!") }\nfn tag(s) { return s + "?" }\nfn first(xs) { return xs[0] }\nfn make() { return [7, 8] }\nfn kv(o) { return o.k }\nshout("hey")\nprint(tag("ok"))\nlet a = [5, 6]\nprint(first(a))\nlet b = make()\nprint(b[1])\nlet r = {k: 3}\nprint(kv(r))\n')
 let wasmRichp = exec([BX, "build", "--wasm", artDir + "/wasm-richp.bxs", "-o", artDir + "/wasm-richp.wasm"])
@@ -975,6 +975,16 @@ if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim(
   casesFail += 1
   failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
 }
+write(artDir + "/wasm-mixreciter.bxs", 'for k, v in {a: 1, b: "x"} {\n  print(k)\n  print(v)\n}\nlet a = parse(env("X", "[1,2]"))\nlet r = {xs: a}\nfor k, v in r {\n  print(k)\n  print(json(v))\n}\n')
+let wasmMixRecIter = exec([BX, "build", "--wasm", artDir + "/wasm-mixreciter.bxs", "-o", artDir + "/wasm-mixreciter.wasm"])
+let wasmMixRecIterRun = exec([BX, "run", artDir + "/wasm-mixreciter.wasm"])
+let wasmMixRecIterVm = exec([BX, "run", artDir + "/wasm-mixreciter.bxs"])
+if (wasmMixRecIter.code == 0 && wasmMixRecIterRun.out == wasmMixRecIterVm.out && wasmMixRecIterRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm mixed record iteration\n    wasm=" + json(wasmMixRecIterRun.out) + " vm=" + json(wasmMixRecIterVm.out) + " err=" + json(wasmMixRecIter.err))
+}
 write(artDir + "/wasm-redmix2.bxs", 'print(reduce([1, 2], fn(a, b) { if (b == 2) { return a + "y" }\n  return a + b }))\nprint([1, 2].reduce(fn(a, b) { if (b == 2) { return a + "y" }\n  return a + b }))\nprint(reduce([1.5, 2], fn(a, b) { if (b == 2) { return a + "f" }\n  return a + b }))\n')
 let wasmRedMix2 = exec([BX, "build", "--wasm", artDir + "/wasm-redmix2.bxs", "-o", artDir + "/wasm-redmix2.wasm"])
 let wasmRedMix2Run = exec([BX, "run", artDir + "/wasm-redmix2.wasm"])
@@ -1200,6 +1210,16 @@ if (wasmDynMixed.code == 0 && wasmDynMixedRun.out == wasmDynMixedVm.out && wasmD
   failures.push("wasm mixed dynamic record fields\n    wasm=" + json(wasmDynMixedRun.out) + " vm=" + json(wasmDynMixedVm.out) + " err=" + json(wasmDynMixedRun.err))
 }
 write(artDir + "/dynstr.json", json("abc"))
+write(artDir + "/wasm-mixreciter.bxs", 'for k, v in {a: 1, b: "x"} {\n  print(k)\n  print(v)\n}\nlet a = parse(env("X", "[1,2]"))\nlet r = {xs: a}\nfor k, v in r {\n  print(k)\n  print(json(v))\n}\n')
+let wasmMixRecIter = exec([BX, "build", "--wasm", artDir + "/wasm-mixreciter.bxs", "-o", artDir + "/wasm-mixreciter.wasm"])
+let wasmMixRecIterRun = exec([BX, "run", artDir + "/wasm-mixreciter.wasm"])
+let wasmMixRecIterVm = exec([BX, "run", artDir + "/wasm-mixreciter.bxs"])
+if (wasmMixRecIter.code == 0 && wasmMixRecIterRun.out == wasmMixRecIterVm.out && wasmMixRecIterRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm mixed record iteration\n    wasm=" + json(wasmMixRecIterRun.out) + " vm=" + json(wasmMixRecIterVm.out) + " err=" + json(wasmMixRecIter.err))
+}
 write(artDir + "/wasm-redmix2.bxs", 'print(reduce([1, 2], fn(a, b) { if (b == 2) { return a + "y" }\n  return a + b }))\nprint([1, 2].reduce(fn(a, b) { if (b == 2) { return a + "y" }\n  return a + b }))\nprint(reduce([1.5, 2], fn(a, b) { if (b == 2) { return a + "f" }\n  return a + b }))\n')
 let wasmRedMix2 = exec([BX, "build", "--wasm", artDir + "/wasm-redmix2.bxs", "-o", artDir + "/wasm-redmix2.wasm"])
 let wasmRedMix2Run = exec([BX, "run", artDir + "/wasm-redmix2.wasm"])

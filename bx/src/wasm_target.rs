@@ -3563,10 +3563,19 @@ impl Checker {
                         }
                         scope.insert(value_name, Ty::Int);
                     }
-                    Ty::Map | Ty::Obj(_) => {
+                    Ty::Map => {
                         scope.insert(key.clone(), Ty::Str);
                         if let Some(value) = value {
                             scope.insert(value.clone(), Ty::Int);
+                        }
+                    }
+                    Ty::Obj(shape) => {
+                        scope.insert(key.clone(), Ty::Str);
+                        if let Some(value) = value {
+                            let kinds = self.shape_kinds(shape)?;
+                            let all_int = kinds.iter().all(|kind| *kind == 0);
+                            let value_ty = if all_int { Ty::Int } else { Ty::Dyn };
+                            scope.insert(value.clone(), value_ty);
                         }
                     }
                     Ty::ArrStr => {
@@ -4613,7 +4622,16 @@ impl<'a> Emitter<'a> {
         body: &[Stmt],
     ) -> Result<(), String> {
         let (table, count) = self.record_table(shape)?;
+        let kinds = self.checker.shape_kinds(shape)?;
+        let kinds_table = self.record_kinds_table(shape)?;
+        let dynamic_values = kinds.iter().any(|kind| *kind != 0);
+        if dynamic_values && value.map(|name| self.boxed.contains(name)).unwrap_or(false) {
+            return Err(
+                "wasm target cannot capture a dynamic record value in a closure yet".to_string(),
+            );
+        }
         let record_tmp = self.builder.add_local(ValType::I32);
+        let values_tmp = self.builder.add_local(ValType::I32);
         let index_tmp = self.builder.add_local(ValType::I32);
         let block_tmp = self.builder.add_local(ValType::I32);
         let key_slot = self.builder.add_local(ValType::I32);
@@ -4641,11 +4659,15 @@ impl<'a> Emitter<'a> {
             None
         };
         let value_slot = value.map(|value| {
-            let slot = self.builder.add_local(ValType::I64);
+            let (slot, value_ty) = if dynamic_values {
+                (self.builder.add_local(ValType::I32), Ty::Dyn)
+            } else {
+                (self.builder.add_local(ValType::I64), Ty::Int)
+            };
             scope.insert(
                 value.to_string(),
                 LocalSlot {
-                    ty: Ty::Int,
+                    ty: value_ty,
                     slot: value_cell.unwrap_or(slot),
                     boxed: value_boxed,
                     capture: None,
@@ -4656,6 +4678,17 @@ impl<'a> Emitter<'a> {
         self.scoped.push(scope);
         self.emit_expr(iter)?;
         self.builder.push(Instr::Local(0x21, record_tmp));
+        if dynamic_values {
+            self.builder
+                .push(Instr::Const(0x41, WVal::I32(kinds_table as i32)));
+            self.builder
+                .push(Instr::Const(0x41, WVal::I32(table as i32)));
+            self.builder
+                .push(Instr::Const(0x41, WVal::I32(count as i32)));
+            self.builder.push(Instr::Local(0x20, record_tmp));
+            self.builder.push(Instr::Call(DYN_RECORD_VALUES));
+            self.builder.push(Instr::Local(0x21, values_tmp));
+        }
         self.builder.push(Instr::Const(0x41, WVal::I32(0)));
         self.builder.push(Instr::Local(0x21, index_tmp));
         self.builder.push(Instr::Block {
@@ -4698,13 +4731,21 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Op(0x6a));
         self.builder.push(Instr::Local(0x21, key_slot));
         if let Some(value_slot) = value_slot {
-            self.builder.push(Instr::Local(0x20, record_tmp));
-            self.builder.push(Instr::Local(0x20, index_tmp));
-            self.builder.push(Instr::Const(0x41, WVal::I32(8)));
-            self.builder.push(Instr::Op(0x6c));
-            self.builder.push(Instr::Op(0x6a));
-            self.builder.push(Instr::Mem(0x29, 3, 0));
-            self.builder.push(Instr::Local(0x21, value_slot));
+            if dynamic_values {
+                self.builder.push(Instr::Local(0x20, values_tmp));
+                self.builder.push(Instr::Local(0x20, index_tmp));
+                self.builder.push(Instr::Op(0xad));
+                self.builder.push(Instr::Call(DYN_INDEX));
+                self.builder.push(Instr::Local(0x21, value_slot));
+            } else {
+                self.builder.push(Instr::Local(0x20, record_tmp));
+                self.builder.push(Instr::Local(0x20, index_tmp));
+                self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+                self.builder.push(Instr::Op(0x6c));
+                self.builder.push(Instr::Op(0x6a));
+                self.builder.push(Instr::Mem(0x29, 3, 0));
+                self.builder.push(Instr::Local(0x21, value_slot));
+            }
         }
         if let Some(cell) = key_cell {
             self.builder.push(Instr::Local(0x20, cell));
@@ -4717,7 +4758,9 @@ impl<'a> Emitter<'a> {
             self.builder.push(Instr::Mem(0x36, 2, 0));
         }
         if let (Some(cell), Some(slot)) = (value_cell, value_slot) {
-            self.refresh_loop_cell(cell, slot, Ty::Int);
+            if !dynamic_values {
+                self.refresh_loop_cell(cell, slot, Ty::Int);
+            }
         }
         self.push_continue_block();
         for stmt in body {
@@ -19048,6 +19091,20 @@ mod tests {
         );
         assert!(numbers.is_empty());
         let expected = ["1y", "1y", "1.5f", "a"];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn mixed_kind_record_iteration_matches_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "for k, v in {a: 1, b: \"x\"} {\n  print(k)\n  print(v)\n}\nlet a = parse(env(\"X\", \"[1,2]\"))\nlet r = {xs: a}\nfor k, v in r {\n  print(k)\n  print(json(v))\n}",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = ["a", "1", "b", "x", "xs", "[1,2]"];
         assert_eq!(
             strings,
             expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
