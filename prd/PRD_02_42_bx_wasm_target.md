@@ -215,7 +215,13 @@ bx wasm target
   covers collections instead: int/float/string arrays, text rows, int rows,
   records, map/filter/each/sort/reverse/slice/reduce/push, nested indexes,
   negative indexes, element writes, two-variable loops and closure captures.
-  `bx/tools/wasm-diff-methods.bxs` (same `[cases] [seed]` form) targets the
+  `bx/tools/wasm-diff-dyn.bxs` (same `[cases] [seed]` form) covers the P2 dynamic
+paths: each case writes a random JSON payload, parses it at runtime and runs
+dynamic print/str/json/type/len, iteration and key/value loops, indexing and
+member access, get/has/contains/index_of/slice, map/filter/each,
+sort/reverse/sum/min/max/join, equality and dynamic/static concatenation; the
+VM and wasm outputs must match. `bx/scripts/test.sh` runs 12 of its cases with a
+fixed seed after the suite, so CI keeps this parity checked. `bx/tools/wasm-diff-methods.bxs` (same `[cases] [seed]` form) targets the
   method surface and null: `.join([sep])`, `.sort()`, `.sort(cmp)`,
   `.reverse()`, `.pop()`, `slice`, `contains`/`index_of`, `map`/`filter`/
   `reduce`/`each`, `sum`/`min`/`max` over int/float/string/bool arrays, plus

@@ -13,3 +13,7 @@ if [[ -f "$BIN.exe" ]]; then BIN="$BIN.exe"; fi
 [[ -x "$BIN" || -f "$BIN" ]] || { echo "bx binary missing: $BIN" >&2; exit 2; }
 
 BX_BIN="$BIN" "$BIN" run "$ROOT/tests/suite.bxs"
+
+# Dynamic-value parity: generated runtime-parse programs must agree between the
+# VM and the wasm backend (a fixed small run; the tool takes [cases] [seed]).
+"$BIN" run "$ROOT/tools/wasm-diff-dyn.bxs" "$BIN" 12 20261118

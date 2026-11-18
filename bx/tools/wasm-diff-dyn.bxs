@@ -1,0 +1,292 @@
+// Dynamic-value differential tester: generated programs parse runtime JSON and
+// run dynamic operations; the VM and the wasm backend must agree byte for byte.
+//
+//   bx run tools/wasm-diff-dyn.bxs path/to/bx [cases] [seed]
+//
+// JSON payloads are written to data files and loaded with `parse(read(path))`,
+// so the checker sees `Ty::Dyn` and the P2 dynamic paths in the wasm backend
+// are exercised: print, str, json, type, len, iteration, indexing/member
+// access, get/has/search, map/filter/each, sort/reverse/sum/min/max/join,
+// slice and concatenation.
+if (len(argv) < 1) {
+  eprint("usage: bx run tools/wasm-diff-dyn.bxs <bx-binary-or-com> [cases] [seed]\n")
+  exit(2)
+}
+let bin = argv[0]
+let cases = 24
+if (len(argv) > 1) {
+  cases = int(argv[1])
+}
+let tmp = env("TEMP")
+if (tmp == "" || tmp == null) {
+  tmp = env("TMPDIR")
+}
+if (tmp == "" || tmp == null) {
+  tmp = cwd()
+}
+let dir = tmp + "/bx-wasm-diff-dyn-" + str(now())
+mkdir(dir)
+
+let seed = 246813579
+if (len(argv) > 2) {
+  seed = int(argv[2])
+  if (seed <= 0) {
+    seed = 246813579
+  }
+}
+fn next() {
+  seed = (seed * 48271) % 2147483647
+  if (seed == 0) {
+    seed = 12345
+  }
+  return seed
+}
+fn pick(n) {
+  return next() % n
+}
+fn atom_list() {
+  let kind = pick(4)
+  if (kind == 0) {
+    return str(pick(11) - 5)
+  }
+  if (kind == 1) {
+    return json(["a", "bb", "x y"][pick(3)])
+  }
+  if (kind == 2) {
+    return ["true", "false"][pick(2)]
+  }
+  return "null"
+}
+fn atom() {
+  let kind = pick(5)
+  if (kind == 0) {
+    return str(pick(20) - 10)
+  }
+  if (kind == 1) {
+    return str(float(pick(20) - 10) / 4.0)
+  }
+  if (kind == 2) {
+    return json(["a", "bb", "x y", "é", "z"][pick(5)])
+  }
+  if (kind == 3) {
+    return ["true", "false"][pick(2)]
+  }
+  return "null"
+}
+fn int_json() {
+  let raw = []
+  let count = 1 + pick(4)
+  for (let i = 0; i < count; i += 1) {
+    raw.push(str(pick(11) - 5))
+  }
+  return "[" + join(raw, ", ") + "]"
+}
+fn str_json() {
+  let raw = []
+  let count = 1 + pick(3)
+  for (let i = 0; i < count; i += 1) {
+    raw.push(json(["a", "bb", "ccc", "x y", "é"][pick(5)]))
+  }
+  return "[" + join(raw, ", ") + "]"
+}
+fn obj_json() {
+  let count = 1 + pick(3)
+  let used = []
+  let raw = []
+  for (let i = 0; i < count; i += 1) {
+    let key = ["a", "b", "c", "d"][pick(4)]
+    if (used.contains(key)) {
+      continue
+    }
+    used.push(key)
+    raw.push(json(key) + ": " + atom())
+  }
+  if (len(raw) == 0) {
+    raw.push(json("a") + ": 1")
+  }
+  return "{" + join(raw, ", ") + "}"
+}
+fn nested_json() {
+  let mode = pick(3)
+  if (mode == 0) {
+    return "[" + int_json() + ", " + int_json() + "]"
+  }
+  if (mode == 1) {
+    return "{" + json("xs") + ": " + int_json() + ", " + json("a") + ": 1}"
+  }
+  return "{" + json("o") + ": " + obj_json() + "}"
+}
+
+fn scalar_ops(lines, name) {
+  lines.push("print(" + name + ")")
+  lines.push("print(str(" + name + "))")
+  lines.push("print(json(" + name + "))")
+  lines.push("print(type(" + name + "))")
+  lines.push("print(" + name + " + 1)")
+  lines.push("print(" + name + " == " + name + ")")
+  lines.push("print(int(" + name + "))")
+  lines.push("print(float(" + name + "))")
+}
+fn int_array_ops(lines, name) {
+  lines.push("print(" + name + ")")
+  lines.push("print(json(" + name + "))")
+  lines.push("print(type(" + name + "))")
+  lines.push("print(len(" + name + "))")
+  lines.push("for item in " + name + " { print(item) }")
+  lines.push("print(" + name + "[0])")
+  lines.push("print(" + name + "[-1])")
+  lines.push("print(" + name + " == " + name + ")")
+  lines.push("print(" + name + " + [7])")
+  lines.push("print([7] + " + name + ")")
+  lines.push("print(get(" + name + ", 0))")
+  lines.push("print(get(" + name + ", 99))")
+  lines.push("print(contains(" + name + ", 1))")
+  lines.push("print(index_of(" + name + ", 1))")
+  lines.push("print(" + name + ".contains(2))")
+  lines.push("print(" + name + ".index_of(3))")
+  lines.push("print(sort(" + name + "))")
+  lines.push("print(reverse(" + name + "))")
+  lines.push("print(" + name + ".slice(1))")
+  lines.push("print(" + name + ".slice(0, 2))")
+  lines.push("print(sum(" + name + "))")
+  lines.push("print(min(" + name + "))")
+  lines.push("print(max(" + name + "))")
+  lines.push("print(join(" + name + ", \",\"))")
+  lines.push("print(map(" + name + ", fn(v) { return v + 1 }))")
+  lines.push("print(filter(" + name + ", fn(v) { return v > 0 }))")
+  lines.push("each(" + name + ", fn(v) { print(v * 2) })")
+  lines.push("print(" + name + ".map(fn(v) { return v * 3 }))")
+  lines.push("print(" + name + ".sort(fn(a, b) { return b - a }))")
+  lines.push("for i, v in " + name + " { print(i); print(v) }")
+}
+fn str_array_ops(lines, name) {
+  lines.push("print(" + name + ")")
+  lines.push("print(json(" + name + "))")
+  lines.push("print(type(" + name + "))")
+  lines.push("print(len(" + name + "))")
+  lines.push("for item in " + name + " { print(item) }")
+  lines.push("print(" + name + "[0])")
+  lines.push("print(" + name + " == " + name + ")")
+  lines.push("print(sort(" + name + "))")
+  lines.push("print(reverse(" + name + "))")
+  lines.push("print(join(" + name + ", \"-\"))")
+  lines.push("print(min(" + name + "))")
+  lines.push("print(max(" + name + "))")
+  lines.push("print(contains(" + name + ", \"a\"))")
+  lines.push("print(index_of(" + name + ", \"bb\"))")
+  lines.push("print(map(" + name + ", fn(v) { return len(v) }))")
+  lines.push("print(filter(" + name + ", fn(v) { return len(v) > 1 }))")
+}
+fn object_ops(lines, name) {
+  lines.push("print(" + name + ")")
+  lines.push("print(json(" + name + "))")
+  lines.push("print(type(" + name + "))")
+  lines.push("print(len(" + name + "))")
+  lines.push("for k in " + name + " { print(k) }")
+  lines.push("print(get(" + name + ", \"a\"))")
+  lines.push("print(get(" + name + ", \"a\", 42))")
+  lines.push("print(has(" + name + ", \"a\"))")
+  lines.push("print(has(" + name + ", \"zz\"))")
+  lines.push("print(" + name + " == " + name + ")")
+}
+fn nested_ops(lines, name) {
+  lines.push("print(" + name + ")")
+  lines.push("print(json(" + name + "))")
+  lines.push("print(type(" + name + "))")
+  lines.push("print(" + name + " == " + name + ")")
+}
+
+fn gen(kind, x_path, y_path) {
+  let x = "read(" + json(x_path) + ")"
+  let y = "read(" + json(y_path) + ")"
+  let lines = []
+  if (kind == 0) {
+    lines.push("let v = parse(" + x + ")")
+    scalar_ops(lines, "v")
+  } else if (kind == 1) {
+    lines.push("let v = parse(" + x + ")")
+    int_array_ops(lines, "v")
+  } else if (kind == 2) {
+    lines.push("let v = parse(" + x + ")")
+    str_array_ops(lines, "v")
+  } else if (kind == 3) {
+    lines.push("let v = parse(" + x + ")")
+    object_ops(lines, "v")
+  } else if (kind == 4) {
+    lines.push("let v = parse(" + x + ")")
+    nested_ops(lines, "v")
+    lines.push("print(len(v))")
+  } else {
+    lines.push("let v = parse(" + x + ")")
+    lines.push("let w = parse(" + y + ")")
+    lines.push("print(v + w)")
+    lines.push("print(v == w)")
+    lines.push("let m = map(v, fn(x) { return x * 2 })")
+    lines.push("print(m)")
+    lines.push("print(m + w)")
+    lines.push("for k, x in v { print(k); print(x) }")
+  }
+  let source = ""
+  for (let i = 0; i < len(lines); i += 1) {
+    source = source + lines[i] + "\n"
+  }
+  return source
+}
+
+fn payload(kind) {
+  if (kind == 0) {
+    return atom_list()
+  }
+  if (kind == 1) {
+    return int_json()
+  }
+  if (kind == 2) {
+    return str_json()
+  }
+  if (kind == 3) {
+    return obj_json()
+  }
+  return nested_json()
+}
+
+let failures = 0
+for (let c = 0; c < cases; c += 1) {
+  let kind = pick(6)
+  let payload_kind = kind
+  if (payload_kind == 5) {
+    payload_kind = 1
+  }
+  let x_json = payload(payload_kind)
+  let y_json = int_json()
+  let x_path = dir + "/x-" + str(c) + ".json"
+  let y_path = dir + "/y-" + str(c) + ".json"
+  write(x_path, x_json)
+  write(y_path, y_json)
+  let source = gen(kind, x_path, y_path)
+  let script = dir + "/case-" + str(c) + ".bxs"
+  let module = dir + "/case-" + str(c) + ".wasm"
+  write(script, source)
+  let vm = exec([bin, "run", script])
+  let built = exec([bin, "build", "--wasm", script, "-o", module])
+  if (built.code != 0) {
+    failures += 1
+    eprint("case " + str(c) + ": wasm build failed: " + built.err + "\n--- source ---\n" + source)
+    continue
+  }
+  let wasm = exec([bin, "run", module])
+  if (vm.code != wasm.code || vm.out != wasm.out) {
+    failures += 1
+    eprint(
+      "case " + str(c) + ": VM and wasm disagree\n" +
+      "  vm code/out:   " + str(vm.code) + " " + json(vm.out) + "\n" +
+      "  wasm code/out: " + str(wasm.code) + " " + json(wasm.out) + "\n" +
+      "--- source ---\n" + source
+    )
+  }
+}
+if (failures == 0) {
+  print("PASS " + str(cases) + " dynamic differential cases\n")
+  exit(0)
+}
+print("FAIL " + str(failures) + " of " + str(cases) + " dynamic differential cases\n")
+exit(1)
