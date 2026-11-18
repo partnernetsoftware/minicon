@@ -437,6 +437,17 @@ fn field_kind(ty: Ty) -> Option<u8> {
     }
 }
 
+/// Field kind for record literals: dynamic values and any container are boxed
+/// into a dynamic cell (kind 8); scalars keep their dedicated slots.
+fn field_kind_for_ty(ty: Ty) -> Option<u8> {
+    if let Some(kind) = field_kind(ty) {
+        return Some(kind);
+    }
+    if is_array_ty(ty) || matches!(ty, Ty::Obj(_)) {
+        return Some(8);
+    }
+    None
+}
 /// Keys and field kinds of the record `exec()`/`sh()` return.
 fn exec_result_keys() -> (Vec<String>, Vec<u8>) {
     (
@@ -1008,7 +1019,7 @@ impl Checker {
                         return Err(format!("duplicate object key '{}'", key));
                     }
                     let ty = self.infer(value)?;
-                    let kind = field_kind(ty).ok_or_else(|| {
+                    let kind = field_kind_for_ty(ty).ok_or_else(|| {
                         format!(
                             "wasm target record fields hold int, string, float, bool or dynamic values, got {}",
                             ty_name(ty)
@@ -2697,10 +2708,12 @@ impl Checker {
                         };
                         let expected = self.field_ty(shape, key)?;
                         let actual = self.infer(value)?;
-                        let ok = expected == actual
-                            || (expected == Ty::Float && actual == Ty::Int);
-                        if !ok {
-                            return Err(format!(
+                           let ok = expected == actual
+                               || (expected == Ty::Float && actual == Ty::Int)
+                               || (expected == Ty::Dyn
+                                   && (is_array_ty(actual) || matches!(actual, Ty::Obj(_))));
+                           if !ok {
+                               return Err(format!(
                                 "wasm target record field '{}' holds {}, assigned {}",
                                 key,
                                 ty_name(expected),
@@ -3330,7 +3343,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 126;
+const IMPORT_COUNT: u32 = 127;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -3444,6 +3457,7 @@ const DYN_JOIN: u32 = 122;
 const DYN_FROM_ARRAY: u32 = 123;
 const DYN_CELL_AT: u32 = 124;
 const DYN_SWAP: u32 = 125;
+const DYN_FROM_RECORD: u32 = 126;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -8715,6 +8729,29 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Local(0x20, out));
         Ok(Ty::Dyn)
     }
+    /// Box any literal value into a dynamic cell for a record field (kind 8).
+    fn emit_box_dyn_value(&mut self, expr: &Expr, ty: Ty) -> Result<(), String> {
+        if ty == Ty::Dyn || is_array_ty(ty) {
+            return self.emit_box_dyn_or_array(expr, ty);
+        }
+        if let Ty::Obj(shape) = ty {
+            let kinds = self.record_kinds_table(shape)?;
+            let (table, count) = self.record_table(shape)?;
+            self.builder
+                .push(Instr::Const(0x41, WVal::I32(kinds as i32)));
+            self.builder
+                .push(Instr::Const(0x41, WVal::I32(table as i32)));
+            self.builder
+                .push(Instr::Const(0x41, WVal::I32(count as i32)));
+            self.emit_expr(expr)?;
+            self.builder.push(Instr::Call(DYN_FROM_RECORD));
+            return Ok(());
+        }
+        Err(format!(
+            "wasm target cannot store {} in a dynamic record field",
+            ty_name(ty)
+        ))
+    }
     /// Push a dynamic cell for `expr`, converting a static array through the host.
     fn emit_box_dyn_or_array(&mut self, expr: &Expr, ty: Ty) -> Result<(), String> {
         if ty == Ty::Dyn {
@@ -9319,7 +9356,7 @@ impl<'a> Emitter<'a> {
                 let mut kinds: Vec<u8> = Vec::new();
                 for (key, value) in fields {
                     let field_ty = self.type_of(value)?;
-                    let kind = field_kind(field_ty).ok_or_else(|| {
+                    let kind = field_kind_for_ty(field_ty).ok_or_else(|| {
                         format!(
                             "wasm target record fields hold int, string, float, bool or dynamic values, got {}",
                             ty_name(field_ty)
@@ -9330,8 +9367,11 @@ impl<'a> Emitter<'a> {
                 }
                 let shape = Ty::Obj(self.checker.shape_id(&keys, &kinds));
                 let size = 8 * fields.len() as u32;
+                let rec_local = self.builder.add_local(ValType::I32);
                 self.emit_alloc_const(size);
                 self.builder.push(Instr::Local(0x21, self.temp(ARR_TMP)));
+                self.builder.push(Instr::Local(0x20, self.temp(ARR_TMP)));
+                self.builder.push(Instr::Local(0x21, rec_local));
                 for (index, ((_, value), kind)) in fields.iter().zip(kinds.iter()).enumerate() {
                     let offset = (8 * index) as u32;
                     match kind {
@@ -9339,37 +9379,37 @@ impl<'a> Emitter<'a> {
                             self.emit_str(value)?;
                             self.builder.push(Instr::Local(0x21, self.temp(LEN_A)));
                             self.builder.push(Instr::Local(0x21, self.temp(PTR_A)));
-                            self.builder.push(Instr::Local(0x20, self.temp(ARR_TMP)));
+                            self.builder.push(Instr::Local(0x20, rec_local));
                             self.builder.push(Instr::Local(0x20, self.temp(PTR_A)));
                             self.builder.push(Instr::Mem(0x36, 2, offset));
-                            self.builder.push(Instr::Local(0x20, self.temp(ARR_TMP)));
+                            self.builder.push(Instr::Local(0x20, rec_local));
                             self.builder.push(Instr::Local(0x20, self.temp(LEN_A)));
                             self.builder.push(Instr::Mem(0x36, 2, offset + 4));
                         }
                         2 => {
-                            self.builder.push(Instr::Local(0x20, self.temp(ARR_TMP)));
+                            self.builder.push(Instr::Local(0x20, rec_local));
                             self.emit_f64(value)?;
                             self.builder.push(Instr::Mem(0x39, 3, offset));
                         }
                         3 => {
-                            self.builder.push(Instr::Local(0x20, self.temp(ARR_TMP)));
+                            self.builder.push(Instr::Local(0x20, rec_local));
                             self.emit_expr(value)?;
                             self.builder.push(Instr::Op(0xad));
                             self.builder.push(Instr::Mem(0x37, 3, offset));
                         }
                         8 => {
-                            self.builder.push(Instr::Local(0x20, self.temp(ARR_TMP)));
-                            self.emit_expr(value)?;
+                            self.builder.push(Instr::Local(0x20, rec_local));
+                            self.emit_box_dyn_value(value, self.type_of(value)?)?;
                             self.builder.push(Instr::Mem(0x36, 2, offset));
                         }
                         _ => {
-                            self.builder.push(Instr::Local(0x20, self.temp(ARR_TMP)));
+                            self.builder.push(Instr::Local(0x20, rec_local));
                             self.emit_expr(value)?;
                             self.builder.push(Instr::Mem(0x37, 3, offset));
                         }
                     }
                 }
-                self.builder.push(Instr::Local(0x20, self.temp(ARR_TMP)));
+                self.builder.push(Instr::Local(0x20, rec_local));
                 Ok(shape)
             }
 
@@ -12482,7 +12522,7 @@ impl<'a> Emitter<'a> {
                         }
                         8 => {
                             self.builder.push(Instr::Local(0x20, rec_tmp));
-                            self.emit_expr(value)?;
+                            self.emit_box_dyn_value(value, self.type_of(value)?)?;
                             self.builder.push(Instr::Mem(0x36, 2, offset));
                         }
                         _ => {
@@ -15398,6 +15438,11 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "dyn_from_array", which_ty);
     builder.import_func("env", "dyn_cell_at", i32_i64_to_i32_ty);
     builder.import_func("env", "dyn_swap", dyn_swap_ty);
+    let four_i32_to_i32_ty = builder.add_type(
+        vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+        vec![ValType::I32],
+    );
+    builder.import_func("env", "dyn_from_record", four_i32_to_i32_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -17285,6 +17330,32 @@ mod tests {
             "array",
             "[1,2]",
             "[1,2,3]",
+        ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn nested_literals_in_record_fields_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let r = {a: {b: 1}, xs: [1, 2], s: \"x\"}\nprint(r)\nprint(json(r))\nprint(str(r.a.b))\nprint(str(r.xs[0]))\nprint(str(len(r.xs)))\nprint(r.s)\nr.a = {b: 7}\nprint(str(r.a.b))\nr.xs = [3]\nprint(r.xs)\nlet xs = [{inner: {k: 1}, n: 2}]\nprint(xs)\nprint(str(xs[0].inner.k))\nlet m = merge({p: {q: 1}}, {z: 2})\nprint(m)",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = [
+            "{\"a\":{\"b\":1},\"s\":\"x\",\"xs\":[1,2]}",
+            "{\"a\":{\"b\":1},\"s\":\"x\",\"xs\":[1,2]}",
+            "1",
+            "1",
+            "2",
+            "x",
+            "7",
+            "[3]",
+            "[{\"inner\":{\"k\":1},\"n\":2}]",
+            "1",
+            "{\"p\":{\"q\":1},\"z\":2}",
         ];
         assert_eq!(
             strings,

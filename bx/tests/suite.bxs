@@ -954,6 +954,16 @@ if (wasmBoolGrow.code == 0 && wasmBoolGrowRun.out == wasmBoolGrowVm.out && wasmB
   casesFail += 1
   failures.push("wasm growable bool arrays\n    wasm=" + json(wasmBoolGrowRun.out) + " vm=" + json(wasmBoolGrowVm.out) + " err=" + json(wasmBoolGrowRun.err))
 }
+write(artDir + "/wasm-recnestedlit.bxs", 'let r = {a: {b: 1}, xs: [1, 2], s: "x"}\nprint(r)\nprint(json(r))\nprint(str(r.a.b))\nprint(str(r.xs[0]))\nr.a = {b: 7}\nprint(str(r.a.b))\nlet xs = [{inner: {k: 1}, n: 2}]\nprint(xs)\nprint(str(xs[0].inner.k))\n')
+let wasmRecNested = exec([BX, "build", "--wasm", artDir + "/wasm-recnestedlit.bxs", "-o", artDir + "/wasm-recnestedlit.wasm"])
+let wasmRecNestedRun = exec([BX, "run", artDir + "/wasm-recnestedlit.wasm"])
+let wasmRecNestedVm = exec([BX, "run", artDir + "/wasm-recnestedlit.bxs"])
+if (wasmRecNested.code == 0 && wasmRecNestedRun.out == wasmRecNestedVm.out && wasmRecNestedRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm nested record literals\n    wasm=" + json(wasmRecNestedRun.out) + " vm=" + json(wasmRecNestedVm.out) + " err=" + json(wasmRecNestedRun.err))
+}
 write(artDir + "/wasm-recdynfield.bxs", 'let arr = parse(env("X", "[1,2]"))\nlet r = {a: arr, b: 7}\nprint(r)\nprint(json(r))\nprint(r.a)\nprint(str(len(r.a)))\nprint(str(r.a[0]))\nlet r2 = {a: parse(env("X", "[1,2]")), b: 7}\nprint(r2 == r)\nr.a = parse(env("Y", "[9]"))\nprint(r.a)\nprint(r)\nlet xs = [{a: arr, b: 1}, {a: parse(env("Y", "[]")), b: 2}]\nprint(xs)\nprint(join(xs, ";"))\nlet m = merge({a: arr}, {b: 3})\nprint(m)\n')
 let wasmRecDyn = exec([BX, "build", "--wasm", artDir + "/wasm-recdynfield.bxs", "-o", artDir + "/wasm-recdynfield.wasm"])
 let wasmRecDynRun = exec([BX, "run", artDir + "/wasm-recdynfield.wasm"])

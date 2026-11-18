@@ -132,6 +132,7 @@ const imports = {
     dyn_minmax: () => 0,
     dyn_join: () => 0,
     dyn_from_array: () => 0,
+    dyn_from_record: () => 0,
     dyn_cell_at: () => 0,
     dyn_swap: () => {},
     dyn_array_alloc: () => { throw new Error("dynamic arrays are not available in the browser demo"); },

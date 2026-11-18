@@ -546,7 +546,12 @@ Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
   pointer): `{a: parse("..."), b: 7}` constructs, prints/`json`s, reads (`r.a`
   is dynamic), assigns, compares and works inside record arrays, `join` and
   `merge`, all matching the VM; nested static record/array literal fields
-  (`{a: {b: 1}}`) still need the P2c descriptor work.
+  (`{a: {b: 1}}`) are boxed into dynamic cells too (static records go through
+  `env.dyn_from_record`, arrays through `env.dyn_from_array`), so
+  `{a: {b: 1}, xs: [1, 2], s: "x"}` prints/`json`s/reads/assigns/nests inside
+  record arrays and `merge` exactly like the VM; record printing now sorts keys
+  like the VM. Remaining P2c: `get` on dynamic fields and converting a dynamic
+  value back into a static container.
 - **`null` (static marker)**: `null` is typed `Ty::Null` and covers the VM's
   scalar semantics: printing/`str`/`json`/`type`/interpolation give `null`,
   `null == null`, `null == 0`, `null == 0.0`, `null == false` are true while

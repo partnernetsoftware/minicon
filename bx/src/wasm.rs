@@ -680,7 +680,7 @@ fn format_record_typed(
     count: usize,
     rec: usize,
 ) -> String {
-    let mut pieces: Vec<String> = Vec::new();
+    let mut pairs: Vec<(String, String)> = Vec::new();
     for index in 0..count {
         let offset_at = table + index * 4;
         if offset_at + 4 > memory.len() {
@@ -730,8 +730,14 @@ fn format_record_typed(
             }
             _ => i64::from_le_bytes(memory[field..field + 8].try_into().unwrap()).to_string(),
         };
-        pieces.push(format!("\"{}\":{}", key, rendered));
+        pairs.push((key, rendered));
     }
+    // The VM prints records with sorted keys; keep that order here.
+    pairs.sort_by(|a, b| a.0.cmp(&b.0));
+    let pieces: Vec<String> = pairs
+        .into_iter()
+        .map(|(key, rendered)| format!("\"{}\":{}", key, rendered))
+        .collect();
     format!("{{{}}}", pieces.join(","))
 }
 /// Owned sink types for the core host adapter (PRD_02_44 P1).
@@ -1174,6 +1180,69 @@ fn dyn_concat_cells(
     Ok(cell)
 }
 
+/// Convert a static record (kinds/table/count descriptor plus record pointer)
+/// into a dynamic object cell.
+fn dyn_from_record(
+    memory: &mut [u8],
+    next_dyn: &mut u32,
+    kinds: usize,
+    table: usize,
+    count: usize,
+    rec: usize,
+) -> Result<usize, String> {
+    let base = alloc_dyn_bytes(next_dyn, count.max(1) * 12)?;
+    for index in 0..count {
+        let field = rec + index * 8;
+        if field + 8 > memory.len() {
+            return Err("static record field out of bounds".to_string());
+        }
+        let offset_at = table + index * 4;
+        if offset_at + 4 > memory.len() {
+            return Err("static record key table out of bounds".to_string());
+        }
+        let block = table
+            + u32::from_le_bytes(memory[offset_at..offset_at + 4].try_into().unwrap()) as usize;
+        let size = u32::from_le_bytes(memory[block..block + 4].try_into().unwrap()) as usize;
+        let kind = memory.get(kinds + index).copied().unwrap_or(0);
+        let cell = alloc_dyn_cell(next_dyn)?;
+        match kind {
+            0 => {
+                let value = i64::from_le_bytes(memory[field..field + 8].try_into().unwrap());
+                write_dyn_cell(memory, cell, 1, 0, value as u64);
+            }
+            1 => {
+                let ptr = u32::from_le_bytes(memory[field..field + 4].try_into().unwrap());
+                let len = u32::from_le_bytes(memory[field + 4..field + 8].try_into().unwrap());
+                write_dyn_cell(memory, cell, 4, len, u64::from(ptr));
+            }
+            2 => {
+                let bits = u64::from_le_bytes(memory[field..field + 8].try_into().unwrap());
+                write_dyn_cell(memory, cell, 2, 0, bits);
+            }
+            3 => {
+                let value = i64::from_le_bytes(memory[field..field + 8].try_into().unwrap());
+                write_dyn_cell(memory, cell, 3, 0, u64::from(value != 0));
+            }
+            8 => {
+                let ptr = u32::from_le_bytes(memory[field..field + 4].try_into().unwrap());
+                let _ = cell;
+                let entry = base + index * 12;
+                memory[entry..entry + 4].copy_from_slice(&(block as u32 + 4).to_le_bytes());
+                memory[entry + 4..entry + 8].copy_from_slice(&(size as u32).to_le_bytes());
+                memory[entry + 8..entry + 12].copy_from_slice(&ptr.to_le_bytes());
+                continue;
+            }
+            _ => return Err("unsupported record field kind in dyn_from_record".to_string()),
+        }
+        let entry = base + index * 12;
+        memory[entry..entry + 4].copy_from_slice(&((block + 4) as u32).to_le_bytes());
+        memory[entry + 4..entry + 8].copy_from_slice(&(size as u32).to_le_bytes());
+        memory[entry + 8..entry + 12].copy_from_slice(&(cell as u32).to_le_bytes());
+    }
+    let cell = alloc_dyn_cell(next_dyn)?;
+    write_dyn_cell(memory, cell, 6, count as u32, base as u64);
+    Ok(cell)
+}
 /// Convert a static array (by element kind code) into a dynamic array cell.
 fn dyn_from_static_array(
     memory: &mut [u8],
@@ -2748,6 +2817,29 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 memory.copy_within(right..right + 16, left);
                 memory[right..right + 16].copy_from_slice(&temp);
                 Ok(vec![])
+            }
+            ("env", "dyn_from_record") => {
+                let (kinds, table, count, rec) =
+                    match (args.first(), args.get(1), args.get(2), args.get(3)) {
+                        (
+                            Some(WVal::I32(kinds)),
+                            Some(WVal::I32(table)),
+                            Some(WVal::I32(count)),
+                            Some(WVal::I32(rec)),
+                        ) => (
+                            *kinds as usize,
+                            *table as usize,
+                            *count as usize,
+                            *rec as usize,
+                        ),
+                        _ => {
+                            return Err(
+                                "env.dyn_from_record expects (i32, i32, i32, i32)".to_string()
+                            )
+                        }
+                    };
+                let cell = dyn_from_record(memory, &mut self.next_dyn, kinds, table, count, rec)?;
+                Ok(vec![WVal::I32(cell as i32)])
             }
             ("env", "dyn_parse") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {
