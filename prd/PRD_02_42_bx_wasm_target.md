@@ -576,7 +576,10 @@ Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
   `eprint` accept any number of arguments like the VM: values are display-
   formatted and joined with single spaces (`print("a", 1, [2,3])` →
   `a 1 [2,3]`; zero arguments print an empty line), which also makes
-  `bx check --target wasm` usable as a compile-only gate. Fixed a latent stack imbalance in string
+  `bx check --target wasm` usable as a compile-only gate. `use "file"` is
+  expanded before compilation for `bx build/run/check --target wasm` (paths
+  resolve relative to the including file; cycles and >16 nesting levels are
+  errors), so shared helper modules compile and run like the VM. Fixed a latent stack imbalance in string
   boxing that these paths exposed.
 - **`null` (static marker)**: `null` is typed `Ty::Null` and covers the VM's
   scalar semantics: printing/`str`/`json`/`type`/interpolation give `null`,

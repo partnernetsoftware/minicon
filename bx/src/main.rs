@@ -296,9 +296,16 @@ fn cmd_run(args: Vec<String>) -> i32 {
         };
         let wasm_argv: Vec<String> = args[1..].to_vec();
         let cache_path = wasm_cache_path(Path::new(path), &src);
+        let expanded = match expand_use_source(Path::new(path), &src) {
+            Ok(expanded) => expanded,
+            Err(e) => {
+                eprintln!("bx: {}", e);
+                return 1;
+            }
+        };
         let bytes = match cache_path.as_ref().and_then(|p| fs::read(p).ok()) {
             Some(bytes) if wasm_target::validate(&bytes).is_ok() => bytes,
-            _ => match wasm_target::compile_to_wasm(&src) {
+            _ => match wasm_target::compile_to_wasm(&expanded) {
                 Ok(bytes) => {
                     if wasm_target::validate(&bytes).is_ok() {
                         if let Some(cache_path) = &cache_path {
@@ -463,6 +470,27 @@ mod target_tests {
     }
 
     #[test]
+    fn use_includes_expand_for_the_wasm_target() {
+        let dir = std::env::temp_dir().join(format!("bx-use-expand-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        std::fs::write(dir.join("lib.bxs"), "fn twice(n) {\n  return n * 2\n}\n").expect("lib");
+        let main = dir.join("main.bxs");
+        let source = "use \"lib.bxs\"\nprint(twice(3))\n";
+        std::fs::write(&main, source).expect("main");
+        let expanded = expand_use_source(&main, source).expect("expand");
+        assert!(expanded.contains("fn twice(n)"), "{expanded}");
+        assert!(!expanded.contains("use \"lib.bxs\""), "{expanded}");
+        assert!(expanded.contains("print(twice(3))"), "{expanded}");
+        std::fs::write(dir.join("cycle-a.bxs"), "use \"cycle-b.bxs\"\n").expect("a");
+        std::fs::write(dir.join("cycle-b.bxs"), "use \"cycle-a.bxs\"\n").expect("b");
+        let cycle = dir.join("cycle-a.bxs");
+        let cycle_source = std::fs::read_to_string(&cycle).expect("cycle source");
+        assert!(expand_use_source(&cycle, &cycle_source).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn run_target_flag_selects_the_engine() {
         let wasm = parse_budget(vec![
             "--target".to_string(),
@@ -488,6 +516,7 @@ mod target_tests {
         assert!(parse_budget(vec!["--target".to_string(), "x.bxs".to_string()]).is_err());
     }
     use super::cache_key;
+    use super::expand_use_source;
     use super::parse_budget;
     use super::resolve_target;
     use super::wasm_cache_path;
@@ -617,6 +646,13 @@ fn cmd_build(args: Vec<String>) -> i32 {
         return 0;
     }
     if wasm {
+        let src = match expand_use_source(Path::new(&input), &src) {
+            Ok(expanded) => expanded,
+            Err(e) => {
+                eprintln!("bx: {}", e);
+                return 1;
+            }
+        };
         let bytes = match wasm_target::compile_to_wasm(&src) {
             Ok(bytes) => bytes,
             Err(e) => {
@@ -777,6 +813,13 @@ fn cmd_check(args: Vec<String>) -> i32 {
                 return 1;
             }
         };
+        let source = match expand_use_source(path, &source) {
+            Ok(expanded) => expanded,
+            Err(e) => {
+                eprintln!("bx: {}", e);
+                return 1;
+            }
+        };
         let outcome = wasm_target::compile_to_wasm(&source)
             .and_then(|bytes| wasm_target::inspect(&bytes).map(|info| (bytes.len(), info)));
         return match outcome {
@@ -933,6 +976,54 @@ fn cmd_dis(args: Vec<String>) -> i32 {
     0
 }
 
+/// Expand `use "file"` lines for the wasm target, which compiles a single
+/// source string (the VM loader resolves `use` itself). Paths are relative to
+/// the including file; cycles and excessive nesting are errors.
+fn expand_use_source(path: &Path, source: &str) -> Result<String, String> {
+    let base = path.parent().map(Path::to_path_buf).unwrap_or_default();
+    expand_includes(source, &base, 0, &mut Vec::new())
+}
+
+fn expand_includes(
+    source: &str,
+    base: &Path,
+    depth: usize,
+    stack: &mut Vec<PathBuf>,
+) -> Result<String, String> {
+    if depth > 16 {
+        return Err("use nesting is too deep".to_string());
+    }
+    let mut out = String::new();
+    for line in source.split_inclusive('\n') {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("use") {
+            let rest = rest.trim_start();
+            if let Some(stripped) = rest.strip_prefix('"') {
+                if let Some(end) = stripped.find('"') {
+                    let relative = &stripped[..end];
+                    let target = base.join(relative);
+                    let canonical = target.canonicalize().unwrap_or_else(|_| target.clone());
+                    if stack.contains(&canonical) {
+                        return Err(format!("use cycle at '{}'", target.display()));
+                    }
+                    let text = fs::read_to_string(&target)
+                        .map_err(|e| format!("cannot include '{}': {}", target.display(), e))?;
+                    stack.push(canonical);
+                    let nested =
+                        expand_includes(&text, target.parent().unwrap_or(base), depth + 1, stack)?;
+                    stack.pop();
+                    out.push_str(&nested);
+                    if !nested.ends_with('\n') {
+                        out.push('\n');
+                    }
+                    continue;
+                }
+            }
+        }
+        out.push_str(line);
+    }
+    Ok(out)
+}
 fn load_program(path: &Path, keep_last: bool) -> Result<(Vec<Chunk>, String), String> {
     let is_bxb = path
         .extension()

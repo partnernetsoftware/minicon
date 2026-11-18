@@ -954,6 +954,17 @@ if (wasmBoolGrow.code == 0 && wasmBoolGrowRun.out == wasmBoolGrowVm.out && wasmB
   casesFail += 1
   failures.push("wasm growable bool arrays\n    wasm=" + json(wasmBoolGrowRun.out) + " vm=" + json(wasmBoolGrowVm.out) + " err=" + json(wasmBoolGrowRun.err))
 }
+write(artDir + "/dynuse-lib.bxs", 'fn twice(n) {\n  return n * 2\n}\n')
+write(artDir + "/wasm-use.bxs", 'use "dynuse-lib.bxs"\nprint(twice(3))\n')
+let wasmUse = exec([BX, "build", "--target", "wasm", artDir + "/wasm-use.bxs", "-o", artDir + "/wasm-use.wasm"])
+let wasmUseRun = exec([BX, "run", artDir + "/wasm-use.wasm"])
+let wasmUseVm = exec([BX, "run", artDir + "/wasm-use.bxs"])
+if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim() == "6") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
+}
 write(artDir + "/wasm-multiprint.bxs", 'let v = parse(env("X", "[1,2]"))\nprint("a", 1, [2, 3])\nprint(v, 2.5, false)\nprint({"k": 1}, "end")\neprint("x", 1, [2])\nprint()\n')
 let wasmMultiPrint = exec([BX, "build", "--wasm", artDir + "/wasm-multiprint.bxs", "-o", artDir + "/wasm-multiprint.wasm"])
 let wasmMultiPrintRun = exec([BX, "run", artDir + "/wasm-multiprint.wasm"])
