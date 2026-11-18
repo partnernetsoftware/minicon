@@ -219,7 +219,7 @@ bx dis script.bxb
 2. **加语法**：`src/parser.rs` 出 AST，`src/chunk.rs` 的 `compile_expr/compile_stmt` 出指令；新语义优先用已有指令组合（如 `++` 被编译成 `Compound`）。
 3. **加指令**：`chunk::op` 加常量 + `op_name`，`vm.rs` 加一个 `match` 分支。指令带 4 字节操作数，`has_operand` 决定长度。
 
-改完跑 `pwsh tests\run.ps1`——它只是启动器，**51 项用例都写在 [tests/suite.bxs](tests/suite.bxs) 里、由 bx 自己执行**。这是自举的入口：bx 跑不动自己的测试，就不该被当成工具。基准用 `pwsh tests\bench.ps1`。字节码格式变更必须同步升 `MAGIC` 的版本号，否则旧 `.bxb` 会按新布局误读。
+改完跑 `pwsh tests\run.ps1`——它只是启动器，**全部用例都写在 [tests/suite.bxs](tests/suite.bxs) 里、由 bx 自己执行**。这是自举的入口：bx 跑不动自己的测试，就不该被当成工具。基准用 `pwsh tests\bench.ps1`。字节码格式变更必须同步升 `MAGIC` 的版本号，否则旧 `.bxb` 会按新布局误读。
 
 ## 限制（现在明确不做）
 

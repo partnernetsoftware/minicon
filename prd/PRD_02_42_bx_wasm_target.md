@@ -701,7 +701,7 @@ conversions rather than rewriting the static fast path.
   growable `[]` declared inside a loop or function can feed `map`/`filter`/
   `reduce` callbacks without the old `function returns both bool and int values`
   error. Both the hint walker and the inference pass descend into function
-  bodies; unit 135 and suite 261 pin the loop and function-local forms.
+  bodies; unit 135 and suite 223 pin the loop and function-local forms.
 ## Non-goals
 
 - No WASI: the ABI is web-shaped on purpose.
