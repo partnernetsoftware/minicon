@@ -975,6 +975,14 @@ if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim(
   casesFail += 1
   failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
 }
+write(artDir + "/wasm-rednumericreject.bxs", 'let v = parse(env("X", "[1,2]"))\nlet xs = map(v, fn(it) { return it })\nprint(reduce(xs, fn(a, b) { return a + b }, 0))\n')
+let wasmRedNumericReject = exec([BX, "build", "--wasm", artDir + "/wasm-rednumericreject.bxs", "-o", artDir + "/wasm-rednumericreject.wasm"])
+if (wasmRedNumericReject.code == 1 && wasmRedNumericReject.err.contains("dynamic reduce callbacks")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm map-produced reduce is rejected cleanly\n    code=" + str(wasmRedNumericReject.code) + " err=" + json(wasmRedNumericReject.err))
+}
 write(artDir + "/wasm-dynstrkey.bxs", 'let data = parse("{" + json("items") + ":[{" + json("score") + ":2},{" + json("score") + ":3}]}")\nlet xs = map(data["items"], fn(it) { return it["score"] })\nprint(json(xs))\nlet a = parse(env("X", "[1,2]"))\nprint(a["0"])\nprint(reduce(parse("[1.5,2.5]"), fn(b, c) { return b + c }, 0))\nprint(parse("[1.5,2.5]")[1])\n')
 let wasmDynStrKey = exec([BX, "build", "--wasm", artDir + "/wasm-dynstrkey.bxs", "-o", artDir + "/wasm-dynstrkey.wasm"])
 let wasmDynStrKeyRun = exec([BX, "run", artDir + "/wasm-dynstrkey.wasm"])
@@ -1229,6 +1237,14 @@ if (wasmDynMixed.code == 0 && wasmDynMixedRun.out == wasmDynMixedVm.out && wasmD
   failures.push("wasm mixed dynamic record fields\n    wasm=" + json(wasmDynMixedRun.out) + " vm=" + json(wasmDynMixedVm.out) + " err=" + json(wasmDynMixedRun.err))
 }
 write(artDir + "/dynstr.json", json("abc"))
+write(artDir + "/wasm-rednumericreject.bxs", 'let v = parse(env("X", "[1,2]"))\nlet xs = map(v, fn(it) { return it })\nprint(reduce(xs, fn(a, b) { return a + b }, 0))\n')
+let wasmRedNumericReject = exec([BX, "build", "--wasm", artDir + "/wasm-rednumericreject.bxs", "-o", artDir + "/wasm-rednumericreject.wasm"])
+if (wasmRedNumericReject.code == 1 && wasmRedNumericReject.err.contains("dynamic reduce callbacks")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm map-produced reduce is rejected cleanly\n    code=" + str(wasmRedNumericReject.code) + " err=" + json(wasmRedNumericReject.err))
+}
 write(artDir + "/wasm-dynstrkey.bxs", 'let data = parse("{" + json("items") + ":[{" + json("score") + ":2},{" + json("score") + ":3}]}")\nlet xs = map(data["items"], fn(it) { return it["score"] })\nprint(json(xs))\nlet a = parse(env("X", "[1,2]"))\nprint(a["0"])\nprint(reduce(parse("[1.5,2.5]"), fn(b, c) { return b + c }, 0))\nprint(parse("[1.5,2.5]")[1])\n')
 let wasmDynStrKey = exec([BX, "build", "--wasm", artDir + "/wasm-dynstrkey.bxs", "-o", artDir + "/wasm-dynstrkey.wasm"])
 let wasmDynStrKeyRun = exec([BX, "run", artDir + "/wasm-dynstrkey.wasm"])
