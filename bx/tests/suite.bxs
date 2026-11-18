@@ -955,7 +955,7 @@ if (wasmBoolGrow.code == 0 && wasmBoolGrowRun.out == wasmBoolGrowVm.out && wasmB
   failures.push("wasm growable bool arrays\n    wasm=" + json(wasmBoolGrowRun.out) + " vm=" + json(wasmBoolGrowVm.out) + " err=" + json(wasmBoolGrowRun.err))
 }
 write(artDir + "/dynstr.json", json("abc"))
-write(artDir + "/wasm-dynstr.bxs", 'let v = parse(read("' + artDir + '/dynstr.json"))\nprint(len(v))\nprint(str(contains(v, "b")))\nprint(str(index_of(v, "b")))\nprint(v.slice(1))\nprint(v[0])\nprint(v[-1])\nprint(v[99])\nprint(str(has(v, 0)))\n')
+write(artDir + "/wasm-dynstr.bxs", 'let v = parse(read(' + json(artDir + "/dynstr.json") + '))\nprint(len(v))\nprint(str(contains(v, "b")))\nprint(str(index_of(v, "b")))\nprint(v.slice(1))\nprint(v[0])\nprint(v[-1])\nprint(v[99])\nprint(str(has(v, 0)))\n')
 let wasmDynStr = exec([BX, "build", "--wasm", artDir + "/wasm-dynstr.bxs", "-o", artDir + "/wasm-dynstr.wasm"])
 let wasmDynStrRun = exec([BX, "run", artDir + "/wasm-dynstr.wasm"])
 let wasmDynStrVm = exec([BX, "run", artDir + "/wasm-dynstr.bxs"])
@@ -1316,7 +1316,7 @@ if (wasmInterpField.code == 0 && wasmInterpFieldRun.out == wasmInterpFieldVm.out
   failures.push("wasm interpolation with record fields\n    wasm=" + json(wasmInterpFieldRun.out) + " vm=" + json(wasmInterpFieldVm.out) + " err=" + json(wasmInterpFieldRun.err))
 }
 write(artDir + "/dynstr.json", json("abc"))
-write(artDir + "/wasm-dynstr.bxs", 'let v = parse(read("' + artDir + '/dynstr.json"))\nprint(len(v))\nprint(str(contains(v, "b")))\nprint(str(index_of(v, "b")))\nprint(v.slice(1))\nprint(v[0])\nprint(v[-1])\nprint(v[99])\nprint(str(has(v, 0)))\n')
+write(artDir + "/wasm-dynstr.bxs", 'let v = parse(read(' + json(artDir + "/dynstr.json") + '))\nprint(len(v))\nprint(str(contains(v, "b")))\nprint(str(index_of(v, "b")))\nprint(v.slice(1))\nprint(v[0])\nprint(v[-1])\nprint(v[99])\nprint(str(has(v, 0)))\n')
 let wasmDynStr = exec([BX, "build", "--wasm", artDir + "/wasm-dynstr.bxs", "-o", artDir + "/wasm-dynstr.wasm"])
 let wasmDynStrRun = exec([BX, "run", artDir + "/wasm-dynstr.wasm"])
 let wasmDynStrVm = exec([BX, "run", artDir + "/wasm-dynstr.bxs"])
