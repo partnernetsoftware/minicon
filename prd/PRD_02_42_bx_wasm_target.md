@@ -234,6 +234,8 @@ Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
   len(x) })` failed) which is fixed. This is what caught the VM/floats
   divergence: bx's `/` is float division, so the wasm target now rejects `/` with a
   clear message instead of silently producing integer results.
+- Review sweep 2026-11-18 after the P2a/P2b rounds: `wasm-diff` (numeric) and `wasm-diff-coll` three seeds x 20 cases each, `wasm-diff-methods` three seeds x 20, `wasm-diff-attempt` three seeds x 12 - all PASS; `bench.sh --wasm` re-run (`BX_BENCH_RUNS=3`) keeps the static benchmarks flat (fib 127/226, loop 330/240, calls 162/266, coll 94/99, recs 94/96, boolarr 95/99 ms), so the dynamic-value additions did not slow the static path.
+
 - `bx build --wasm` output starts with `\0asm` and is instantiated by **node v24**
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
