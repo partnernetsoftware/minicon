@@ -74,11 +74,11 @@ minicon-bx owns a standard wasm core and one language skin      [-]
 │   ├── step/memory budgets owned by the core                    [v]  steps, interrupt, memory pages
 │   └── core vendored as a workspace member                      [v]  `bx/vendor/tinyvm` (no crates.io wasm crate)
 │
-├── P2 language front end simplification                        [-]  hybrid tagged-value design done 2026-11-18; implementation staged P2a-P2d
-│   ├── uniform tagged value ABI (containers hold values)        [-]  design: 16-byte [tag][aux][payload] cells, hybrid boundary; P2a null marker done
+├── P2 language front end simplification                        [-]  hybrid tagged-value P2a/P2b shipped 2026-11-18; P2c/P2d pending
+│   ├── uniform tagged value ABI (containers hold values)        [v]  16-byte cells; runtime parse, scalar ops, arrays/objects, iteration/map/filter/sort/join/concat (144 unit, 232 suite)
 │   ├── element-kind matrix and its host imports deleted         [_]
 │   ├── `.bxb` default flip and retirement (PRD_02_43)           [_]
-│   └── float/nested/mixed containers from the uniform layout    [_]
+│   └── float/nested/mixed containers from the uniform layout    [-]  scalar/array/object dynamic values done; record-field containers (P2c) pending
 │
 ├── P3 embeddable product face                                  [_]
 │   ├── static lib + C ABI built in the minicon repo             [_]
@@ -286,17 +286,19 @@ number/string coercion).
 
 | step | scope | gate |
 | --- | --- | --- |
-| P2a | `Ty::Dyn` scalars + `null`, `dyn_*` conversions, `parse(exec.out)` for 1/1.5/"a"/true | `null` static marker (2026-11-18) plus dynamic cells: runtime `parse` of scalar JSON returns `Ty::Dyn`, prints/`str`/`json`/`type`/interpolates and supports scalar arithmetic/comparisons/conversions/truthiness/`&&`/`||` like the VM (137 unit, 225 suite); P2b containers landed 2026-11-18: arrays/objects with len/index/member/nested chains, structural equality and `for` iteration (array values / object keys); `dyn_*` conversions from dynamic values into static containers, record/nested-array concatenation and dynamic→static container conversion remain |
-| P2b | dynamic arrays/maps/records, heterogeneous containers, `dyn_index`/`dyn_member`/`dyn_set_*` | `parse` over `exec(...).out` with arrays of records matches VM; collection differential extended with mixed fixtures |
-| P2c | record field kind 8 (pointer to cell) + `get`/`merge` on heterogeneous shapes | `{a:{b:1}}`, `{xs:[1,2]}` round-trip (construct, read, print, json) match VM |
-| P2d | front-end simplification: delete element-kind matrix arms/imports that Dyn makes redundant, flip `.bxb` default (PRD_02_43) | one shared value path; import count and emitter arm count drop; suite/verify/both differentials green |
+| P2a | `Ty::Dyn` scalars + `null`, `dyn_*` conversions, `parse(exec.out)` for 1/1.5/"a"/true | `[v]` 2026-11-18 — runtime `parse` of scalar JSON returns `Ty::Dyn`; print/`str`/`json`/`type`/interpolation, arithmetic, equality/ordering, `int`/`float`, `!`, truthiness, operand-returning `&&`/`||` all match the VM |
+| P2b | dynamic arrays/maps/records, heterogeneous containers, `dyn_index`/`dyn_member`/`dyn_set_*` | `[v]` 2026-11-18 — arrays/objects parse to nested cells; len/index (negative, OOB→null)/member (missing→null)/nested chains, structural equality, `for`/`for k,v` iteration, `each`/`map`/`filter`, `sort`/comparator-sort/reverse/`sum`/`min`/`max`/`join` and dynamic↔static concatenation match the VM (144 unit, 232 suite; numeric/coll/method/attempt differentials and benchmarks re-run this round). Remaining: record/nested-array concatenation and Dyn→static container conversion |
+| P2c | record field kind 8 (pointer to cell) + `get`/`merge` on heterogeneous shapes — `[_]` not started | `{a:{b:1}}`, `{xs:[1,2]}` round-trip (construct, read, print, json) match VM |
+| P2d | front-end simplification: delete element-kind matrix arms/imports that Dyn makes redundant, flip `.bxb` default (PRD_02_43) — `[_]` not started | one shared value path; import count and emitter arm count drop; suite/verify/both differentials green |
 
-Rollout: `BX_WASM_DYN=1` enables the Dyn arm first; once P2c lands it is the
-default for the affected constructs while static code keeps its current code
-paths. Each step keeps the four differential tools (`wasm-diff`,
-`wasm-diff-coll`, `wasm-diff-attempt`, `verify.bxs` as far as its static subset
-allows) green.
-
+Rollout (updated 2026-11-18): no feature flag was needed — `Ty::Dyn` only
+appears for values whose kind the checker cannot prove statically (runtime
+`parse` results), so the static fast path keeps its exact code shapes and the
+dynamic path is opt-in by data, not by a build switch. P2a/P2b are shipped and
+`verify`/the four differential tools stay green (numeric/coll/method diffs
+3 seeds × 20 cases each, attempt 3 × 12, re-run 2026-11-18); P2c (record-field
+containers) and P2d (delete the now-redundant element-kind matrix, flip `.bxb`
+default) are still open.
 Performance budget: static benchmarks (`fib`, `loop`, `calls`, `coll`, `recs`)
 must not regress more than 5%; dynamic-heavy workloads (parse/exec output
 pipelines) target at least 0.5x VM time. The hybrid design is what keeps that
