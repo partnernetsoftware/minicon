@@ -955,6 +955,16 @@ if (wasmBoolGrow.code == 0 && wasmBoolGrowRun.out == wasmBoolGrowVm.out && wasmB
   failures.push("wasm growable bool arrays\n    wasm=" + json(wasmBoolGrowRun.out) + " vm=" + json(wasmBoolGrowVm.out) + " err=" + json(wasmBoolGrowRun.err))
 }
 write(artDir + "/dynuse-lib.bxs", 'fn twice(n) {\n  return n * 2\n}\n')
+write(artDir + "/rehearse.bxs", 'let a = parse(env("X", "[3,1]"))\nprint(sort(a))\n')
+let rehearseDefault = exec([BX, "run", artDir + "/rehearse.bxs"], {env: {BX_DEFAULT_TARGET: "wasm"}})
+let rehearseRollback = exec([BX, "run", "--target", "bxb", artDir + "/rehearse.bxs"], {env: {BX_DEFAULT_TARGET: "wasm"}})
+let rehearseVm = exec([BX, "run", artDir + "/rehearse.bxs"])
+if (rehearseDefault.code == 0 && rehearseDefault.out == rehearseVm.out && rehearseRollback.code == 0 && rehearseRollback.out == rehearseVm.out) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("BX_DEFAULT_TARGET rehearsal\n    default=" + json(rehearseDefault.out) + " rollback=" + json(rehearseRollback.out) + " vm=" + json(rehearseVm.out))
+}
 write(artDir + "/wasm-use.bxs", 'use "dynuse-lib.bxs"\nprint(twice(3))\n')
 let wasmUse = exec([BX, "build", "--target", "wasm", artDir + "/wasm-use.bxs", "-o", artDir + "/wasm-use.wasm"])
 let wasmUseRun = exec([BX, "run", artDir + "/wasm-use.wasm"])

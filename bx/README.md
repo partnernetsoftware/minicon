@@ -48,7 +48,7 @@ bx test tools/verify.bxs <bx 或 .com>      # bx 原生端到端自检（跨平�
 git log | bx run filter.bxs               # read("-") 读 stdin，脚本可当管道过滤器
 bx run --timeout 5000 script.bxs           # 墙钟超时（毫秒），超时退出 1
 bx run --max-steps 1000000 script.bxs      # 指令步数上限，防止死循环
-bx run --wasm script.bxs                   # 强制走 wasm 目标（覆盖 BX_TARGET）`nbx run --target wasm|bxb script.bxs        # 显式选择执行引擎（--target 优先于 BX_TARGET）
+bx run --wasm script.bxs                   # 强制走 wasm 目标（覆盖 BX_TARGET）`nbx run --target wasm|bxb script.bxs        # 显式选择执行引擎（--target 优先于 BX_TARGET）`nBX_DEFAULT_TARGET=wasm bx run script.bxs   # 演练 G2 默认翻转（回滚：--target bxb 或 BX_TARGET=bxb）
 bx help exec                                # 单个内建的契约
 bx --version                                # 等价 bx version（-v/-V 亦可）
 bx --help                                   # 等价 bx help

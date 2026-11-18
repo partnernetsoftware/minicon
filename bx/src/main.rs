@@ -275,10 +275,18 @@ fn cmd_run(args: Vec<String>) -> i32 {
             }
         };
     }
+    let default_target = match default_target_from_env() {
+        Ok(target) => target,
+        Err(message) => {
+            eprintln!("{}", message);
+            return 2;
+        }
+    };
     let target = match resolve_target(
         budget.target.clone(),
         budget.wasm,
         std::env::var("BX_TARGET").ok(),
+        default_target,
     ) {
         Ok(target) => target,
         Err(message) => {
@@ -423,12 +431,27 @@ fn cmd_eval(args: Vec<String>) -> i32 {
 /// Resolve the execution target from `--target`, `--wasm` and `BX_TARGET`.
 /// `--target` wins over the environment; `--wasm` is the legacy alias for
 /// `--target wasm` and conflicts with an explicit `--target bxb`.
+/// Rehearsal switch for the G2 default flip (PRD_02_43): an operator can run
+/// with `BX_DEFAULT_TARGET=wasm` to make wasm the default engine while keeping
+/// the documented rollback path (`--target bxb` / `BX_TARGET=bxb`).
+fn default_target_from_env() -> Result<Option<String>, String> {
+    match std::env::var("BX_DEFAULT_TARGET").as_deref() {
+        Ok("wasm") => Ok(Some("wasm".to_string())),
+        Ok("bxb") => Ok(Some("bxb".to_string())),
+        Ok(other) => Err(format!(
+            "bx: unknown BX_DEFAULT_TARGET '{}' (expected wasm or bxb)",
+            other
+        )),
+        Err(_) => Ok(None),
+    }
+}
 fn resolve_target(
     flag: Option<String>,
     wasm_flag: bool,
     env_target: Option<String>,
+    default_target: Option<String>,
 ) -> Result<String, String> {
-    let mut target = flag.or(env_target);
+    let mut target = flag.or(env_target.clone());
     if wasm_flag {
         match target.as_deref() {
             Some("bxb") => {
@@ -437,7 +460,15 @@ fn resolve_target(
             _ => target = Some("wasm".to_string()),
         }
     }
-    let target = target.unwrap_or_else(|| "bxb".to_string());
+    if target.is_none() && default_target.is_some() {
+        eprintln!(
+            "bx: {} is the default target (BX_DEFAULT_TARGET; rollback: --target bxb or BX_TARGET=bxb)",
+            default_target.as_deref().unwrap_or("bxb")
+        );
+    }
+    let target = target
+        .or(default_target)
+        .unwrap_or_else(|| "bxb".to_string());
     match target.as_str() {
         "wasm" | "bxb" => Ok(target),
         other => Err(format!(
@@ -467,6 +498,34 @@ mod target_tests {
         assert_eq!(budget.args, vec!["x.bxs".to_string()]);
         let plain = parse_budget(vec!["x.bxs".to_string()]).unwrap();
         assert!(!plain.wasm);
+    }
+
+    #[test]
+    fn default_target_rehearses_the_g2_flip() {
+        assert_eq!(
+            resolve_target(None, false, None, Some("wasm".to_string())).unwrap(),
+            "wasm"
+        );
+        assert_eq!(
+            resolve_target(
+                None,
+                false,
+                Some("bxb".to_string()),
+                Some("wasm".to_string())
+            )
+            .unwrap(),
+            "bxb"
+        );
+        assert_eq!(
+            resolve_target(
+                Some("bxb".to_string()),
+                false,
+                None,
+                Some("wasm".to_string())
+            )
+            .unwrap(),
+            "bxb"
+        );
     }
 
     #[test]
@@ -524,18 +583,24 @@ mod target_tests {
 
     #[test]
     fn target_resolution_prefers_flags_and_validates() {
-        assert_eq!(resolve_target(None, false, None).unwrap(), "bxb");
+        assert_eq!(resolve_target(None, false, None, None).unwrap(), "bxb");
         assert_eq!(
-            resolve_target(None, false, Some("wasm".to_string())).unwrap(),
+            resolve_target(None, false, Some("wasm".to_string()), None).unwrap(),
             "wasm"
         );
         assert_eq!(
-            resolve_target(Some("wasm".to_string()), false, Some("bxb".to_string())).unwrap(),
+            resolve_target(
+                Some("wasm".to_string()),
+                false,
+                Some("bxb".to_string()),
+                None
+            )
+            .unwrap(),
             "wasm"
         );
-        assert_eq!(resolve_target(None, true, None).unwrap(), "wasm");
-        assert!(resolve_target(Some("bxb".to_string()), true, None).is_err());
-        assert!(resolve_target(None, false, Some("nope".to_string())).is_err());
+        assert_eq!(resolve_target(None, true, None, None).unwrap(), "wasm");
+        assert!(resolve_target(Some("bxb".to_string()), true, None, None).is_err());
+        assert!(resolve_target(None, false, Some("nope".to_string()), None).is_err());
     }
 }
 
@@ -582,7 +647,19 @@ fn cmd_build(args: Vec<String>) -> i32 {
             }
         }
     }
-    let target = match resolve_target(target_flag, wasm, std::env::var("BX_TARGET").ok()) {
+    let default_target = match default_target_from_env() {
+        Ok(target) => target,
+        Err(message) => {
+            eprintln!("{}", message);
+            return 2;
+        }
+    };
+    let target = match resolve_target(
+        target_flag,
+        wasm,
+        std::env::var("BX_TARGET").ok(),
+        default_target,
+    ) {
         Ok(target) => target,
         Err(e) => {
             eprintln!("{}", e);
@@ -804,8 +881,27 @@ fn cmd_check(args: Vec<String>) -> i32 {
         eprintln!("bx check: missing script path");
         return 2;
     }
+    let mut selected_target = target;
+    if selected_target.is_none() {
+        match default_target_from_env() {
+            Ok(Some(default)) => {
+                eprintln!(
+                    "bx: {} is the default target (BX_DEFAULT_TARGET; rollback: --target bxb or BX_TARGET=bxb)",
+                    default
+                );
+                selected_target = Some(default);
+            }
+            Ok(None) => {}
+            Err(message) => {
+                eprintln!("{}", message);
+                return 2;
+            }
+        }
+    }
     let path = Path::new(&rest[0]);
-    if target.as_deref() == Some("wasm") && !rest[0].to_ascii_lowercase().ends_with(".wasm") {
+    if selected_target.as_deref() == Some("wasm")
+        && !rest[0].to_ascii_lowercase().ends_with(".wasm")
+    {
         let source = match fs::read_to_string(&rest[0]) {
             Ok(source) => source,
             Err(e) => {
