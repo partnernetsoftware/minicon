@@ -985,6 +985,13 @@ if (wasmAliasPush.code == 0 && wasmAliasPushRun.out == wasmAliasPushVm.out && wa
   casesFail += 1
   failures.push("wasm array alias push\n    wasm=" + json(wasmAliasPushRun.out) + " vm=" + json(wasmAliasPushVm.out) + " err=" + json(wasmAliasPush.err))
 }
+let wasmDataCase = exec([BX, "build", "--wasm", __dir__ + "/cases/data.bxs", "-o", artDir + "/wasm-data.wasm"])
+if (wasmDataCase.code == 1 && wasmDataCase.err.contains("dynamic sort comparators")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm nested-array comparator is rejected cleanly\n    code=" + str(wasmDataCase.code) + " err=" + json(wasmDataCase.err))
+}
 write(artDir + "/wasm-nullparse.bxs", 'print(parse("{" + json("k") + ": [1, 2.5, " + json("s") + ", true, null]}"))\nprint(json(parse("{" + json("k") + ": [1, null]}" )))\nprint(json("a" + json("") + ""))\nprint(parse("[1, null]")[1])\nprint(type(parse("1e3")))\nprint(parse("[1, null]")[0] + 1)\n')
 let wasmNullParse = exec([BX, "build", "--wasm", artDir + "/wasm-nullparse.bxs", "-o", artDir + "/wasm-nullparse.wasm"])
 let wasmNullParseRun = exec([BX, "run", artDir + "/wasm-nullparse.wasm"])
@@ -1308,6 +1315,13 @@ if (wasmAliasPush.code == 0 && wasmAliasPushRun.out == wasmAliasPushVm.out && wa
 } else {
   casesFail += 1
   failures.push("wasm array alias push\n    wasm=" + json(wasmAliasPushRun.out) + " vm=" + json(wasmAliasPushVm.out) + " err=" + json(wasmAliasPush.err))
+}
+let wasmDataCase = exec([BX, "build", "--wasm", __dir__ + "/cases/data.bxs", "-o", artDir + "/wasm-data.wasm"])
+if (wasmDataCase.code == 1 && wasmDataCase.err.contains("dynamic sort comparators")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm nested-array comparator is rejected cleanly\n    code=" + str(wasmDataCase.code) + " err=" + json(wasmDataCase.err))
 }
 write(artDir + "/wasm-nullparse.bxs", 'print(parse("{" + json("k") + ": [1, 2.5, " + json("s") + ", true, null]}"))\nprint(json(parse("{" + json("k") + ": [1, null]}" )))\nprint(json("a" + json("") + ""))\nprint(parse("[1, null]")[1])\nprint(type(parse("1e3")))\nprint(parse("[1, null]")[0] + 1)\n')
 let wasmNullParse = exec([BX, "build", "--wasm", artDir + "/wasm-nullparse.bxs", "-o", artDir + "/wasm-nullparse.wasm"])
