@@ -975,6 +975,16 @@ if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim(
   casesFail += 1
   failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
 }
+write(artDir + "/wasm-rmdir.bxs", 'let d = __dir__ + "/bx-wasm-rmdir-probe"\nprint(mkdir(d))\nprint(exists(d))\nprint(remove(d))\nprint(exists(d))\n')
+let wasmRmdir = exec([BX, "build", "--wasm", artDir + "/wasm-rmdir.bxs", "-o", artDir + "/wasm-rmdir.wasm"])
+let wasmRmdirRun = exec([BX, "run", artDir + "/wasm-rmdir.wasm"])
+let wasmRmdirVm = exec([BX, "run", artDir + "/wasm-rmdir.bxs"])
+if (wasmRmdir.code == 0 && wasmRmdirRun.code == 0 && wasmRmdirVm.code == 0) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm remove directory\n    wasm=" + json(wasmRmdirRun.out) + " vm=" + json(wasmRmdirVm.out) + " err=" + json(wasmRmdirRun.err))
+}
 write(artDir + "/wasm-splitchars.bxs", 'print(json(split("abc", "")))\nprint(json(split("", "")))\nprint(json(split("héllo", "")))\nlet s = parse(env("X", json("héllo")))\nprint(json(split(s, "")))\n')
 let wasmSplitChars = exec([BX, "build", "--wasm", artDir + "/wasm-splitchars.bxs", "-o", artDir + "/wasm-splitchars.wasm"])
 let wasmSplitCharsRun = exec([BX, "run", artDir + "/wasm-splitchars.wasm"])
@@ -1259,6 +1269,16 @@ if (wasmDynMixed.code == 0 && wasmDynMixedRun.out == wasmDynMixedVm.out && wasmD
   failures.push("wasm mixed dynamic record fields\n    wasm=" + json(wasmDynMixedRun.out) + " vm=" + json(wasmDynMixedVm.out) + " err=" + json(wasmDynMixedRun.err))
 }
 write(artDir + "/dynstr.json", json("abc"))
+write(artDir + "/wasm-rmdir.bxs", 'let d = __dir__ + "/bx-wasm-rmdir-probe"\nprint(mkdir(d))\nprint(exists(d))\nprint(remove(d))\nprint(exists(d))\n')
+let wasmRmdir = exec([BX, "build", "--wasm", artDir + "/wasm-rmdir.bxs", "-o", artDir + "/wasm-rmdir.wasm"])
+let wasmRmdirRun = exec([BX, "run", artDir + "/wasm-rmdir.wasm"])
+let wasmRmdirVm = exec([BX, "run", artDir + "/wasm-rmdir.bxs"])
+if (wasmRmdir.code == 0 && wasmRmdirRun.code == 0 && wasmRmdirVm.code == 0) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm remove directory\n    wasm=" + json(wasmRmdirRun.out) + " vm=" + json(wasmRmdirVm.out) + " err=" + json(wasmRmdirRun.err))
+}
 write(artDir + "/wasm-splitchars.bxs", 'print(json(split("abc", "")))\nprint(json(split("", "")))\nprint(json(split("héllo", "")))\nlet s = parse(env("X", json("héllo")))\nprint(json(split(s, "")))\n')
 let wasmSplitChars = exec([BX, "build", "--wasm", artDir + "/wasm-splitchars.bxs", "-o", artDir + "/wasm-splitchars.wasm"])
 let wasmSplitCharsRun = exec([BX, "run", artDir + "/wasm-splitchars.wasm"])

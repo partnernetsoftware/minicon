@@ -19464,6 +19464,19 @@ mod tests {
     }
 
     #[test]
+    fn remove_also_deletes_directories() {
+        let dir = std::env::temp_dir().join(format!("bx-wasm-rmdir-{}", std::process::id()));
+        let escaped = dir.to_string_lossy().replace('\\', "/");
+        let source = format!(
+            "print(mkdir(\"{escaped}\"))\nprint(exists(\"{escaped}\"))\nprint(remove(\"{escaped}\"))\nprint(exists(\"{escaped}\"))",
+        );
+        let (numbers, strings) = run_with_argv(&source, &[]);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(numbers, vec![0, 0]);
+        assert_eq!(strings, vec!["true".to_string(), "false".to_string()]);
+    }
+
+    #[test]
     fn comparator_sort_is_stable_and_matches_the_vm() {
         let (numbers, strings) = run_with_argv(
             "print(sort([3, 1, 2], fn(x, y) { return x - y }))\nprint(sort([3, 1, 2], fn(x, y) { return y - x }))\nprint(sort([5], fn(x, y) { return x - y }))\nprint(sort([], fn(x, y) { return x - y }))\nprint(sort([2.5, 1.5, 3.5], fn(x, y) { if (x < y) { return -1 }\n  return 1 }))\nprint(sort([\"bb\", \"a\", \"ccc\"], fn(x, y) { return len(x) - len(y) }))\nlet rows = [[3], [1, 2], [2]]\nprint(sort(rows, fn(x, y) { return len(x) - len(y) }))\nlet rs = [{a: 3}, {a: 1}, {a: 2}, {a: 1}]\nprint(sort(rs, fn(x, y) { return x.a - y.a }))",

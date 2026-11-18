@@ -2999,7 +2999,9 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     _ => return Err("env.remove_file expects (i32 ptr, i32 len)".to_string()),
                 };
                 let path = memory_text(memory, ptr, len);
-                match std::fs::remove_file(&path) {
+                // The VM removes files and empty directories with the same call.
+                let result = std::fs::remove_file(&path).or_else(|_| std::fs::remove_dir(&path));
+                match result {
                     Ok(()) => Ok(vec![WVal::I32(0)]),
                     Err(error) => Err(format!("cannot remove '{}': {}", path, error)),
                 }
