@@ -975,6 +975,16 @@ if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim(
   casesFail += 1
   failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
 }
+write(artDir + "/wasm-getdynkey.bxs", 'let o = {a: 1, b: "x", c: [2]}\nprint(get(o, env("K", "b")))\nprint(get(o, env("K", "c")))\nprint(get(o, env("K", "z"), 9))\nprint(str(has(o, env("K", "a"))))\n')
+let wasmGetDynKey = exec([BX, "build", "--wasm", artDir + "/wasm-getdynkey.bxs", "-o", artDir + "/wasm-getdynkey.wasm"])
+let wasmGetDynKeyRun = exec([BX, "run", artDir + "/wasm-getdynkey.wasm"])
+let wasmGetDynKeyVm = exec([BX, "run", artDir + "/wasm-getdynkey.bxs"])
+if (wasmGetDynKey.code == 0 && wasmGetDynKeyRun.out == wasmGetDynKeyVm.out && wasmGetDynKeyRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm runtime get key\n    wasm=" + json(wasmGetDynKeyRun.out) + " vm=" + json(wasmGetDynKeyVm.out) + " err=" + json(wasmGetDynKey.err))
+}
 write(artDir + "/wasm-recordvalues.bxs", 'let arr = parse(env("X", "[1,2]"))\nlet r = {a: arr, b: 7}\nprint(values(r))\nprint(json(values(r)))\nprint(values({a: 1, b: "x"}))\nprint(sum(values({a: 1, b: 2})))\n')
 let wasmRecordValues = exec([BX, "build", "--wasm", artDir + "/wasm-recordvalues.bxs", "-o", artDir + "/wasm-recordvalues.wasm"])
 let wasmRecordValuesRun = exec([BX, "run", artDir + "/wasm-recordvalues.wasm"])
@@ -1140,6 +1150,16 @@ if (wasmDynMixed.code == 0 && wasmDynMixedRun.out == wasmDynMixedVm.out && wasmD
   failures.push("wasm mixed dynamic record fields\n    wasm=" + json(wasmDynMixedRun.out) + " vm=" + json(wasmDynMixedVm.out) + " err=" + json(wasmDynMixedRun.err))
 }
 write(artDir + "/dynstr.json", json("abc"))
+write(artDir + "/wasm-getdynkey.bxs", 'let o = {a: 1, b: "x", c: [2]}\nprint(get(o, env("K", "b")))\nprint(get(o, env("K", "c")))\nprint(get(o, env("K", "z"), 9))\nprint(str(has(o, env("K", "a"))))\n')
+let wasmGetDynKey = exec([BX, "build", "--wasm", artDir + "/wasm-getdynkey.bxs", "-o", artDir + "/wasm-getdynkey.wasm"])
+let wasmGetDynKeyRun = exec([BX, "run", artDir + "/wasm-getdynkey.wasm"])
+let wasmGetDynKeyVm = exec([BX, "run", artDir + "/wasm-getdynkey.bxs"])
+if (wasmGetDynKey.code == 0 && wasmGetDynKeyRun.out == wasmGetDynKeyVm.out && wasmGetDynKeyRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm runtime get key\n    wasm=" + json(wasmGetDynKeyRun.out) + " vm=" + json(wasmGetDynKeyVm.out) + " err=" + json(wasmGetDynKey.err))
+}
 write(artDir + "/wasm-recordvalues.bxs", 'let arr = parse(env("X", "[1,2]"))\nlet r = {a: arr, b: 7}\nprint(values(r))\nprint(json(values(r)))\nprint(values({a: 1, b: "x"}))\nprint(sum(values({a: 1, b: 2})))\n')
 let wasmRecordValues = exec([BX, "build", "--wasm", artDir + "/wasm-recordvalues.bxs", "-o", artDir + "/wasm-recordvalues.wasm"])
 let wasmRecordValuesRun = exec([BX, "run", artDir + "/wasm-recordvalues.wasm"])

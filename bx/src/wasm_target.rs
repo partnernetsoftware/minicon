@@ -2425,24 +2425,12 @@ impl Checker {
                         }
                         if let Ty::Obj(shape) = base {
                             let Expr::Str(key) = &args[1] else {
-                                let kinds = self.shape_kinds(shape)?;
-                                if kinds.iter().any(|kind| *kind != kinds[0]) {
-                                    return Err(
-                                        "wasm target dynamic get() needs a record whose fields share one type"
-                                            .to_string(),
-                                    );
-                                }
-                                let field_ty = kind_ty(kinds[0]);
+                                // A runtime key sees the record as a dynamic
+                                // object, so heterogeneous shapes work too.
                                 if let Some(default) = args.get(2) {
-                                    let default_ty = self.infer(default)?;
-                                    if default_ty != field_ty
-                                        && !(field_ty == Ty::Float && default_ty == Ty::Int)
-                                    {
-                                        return Err("wasm target get() default has the wrong type"
-                                            .to_string());
-                                    }
+                                    self.infer(default)?;
                                 }
-                                return Ok(field_ty);
+                                return Ok(Ty::Dyn);
                             };
                             let keys = self.shape_keys(shape)?;
                             let Some(position) = keys.iter().position(|known| known == key) else {
@@ -13072,177 +13060,29 @@ impl<'a> Emitter<'a> {
                             return Err("wasm target get() takes a record".to_string());
                         };
                         let Expr::Str(key) = &args[1] else {
-                            // Dynamic key: fields must share one type (checked above).
-                            let kinds = self.checker.shape_kinds(shape)?;
-                            let kind = kinds[0];
-                            let field_ty = kind_ty(kind);
+                            // Runtime key: view the record as a dynamic object.
+                            let kinds = self.record_kinds_table(shape)?;
                             let (table, count) = self.record_table(shape)?;
-                            let rec_tmp = self.builder.add_local(ValType::I32);
-                            self.emit_expr(&args[0])?;
-                            self.builder.push(Instr::Local(0x21, rec_tmp));
-                            let key_ptr = self.builder.add_local(ValType::I32);
-                            let key_len = self.builder.add_local(ValType::I32);
-                            self.emit_str(&args[1])?;
-                            self.builder.push(Instr::Local(0x21, key_len));
-                            self.builder.push(Instr::Local(0x21, key_ptr));
-                            let index = self.builder.add_local(ValType::I32);
-                            let found = self.builder.add_local(ValType::I32);
-                            let block = self.builder.add_local(ValType::I32);
-                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
-                            self.builder.push(Instr::Local(0x21, index));
-                            self.builder.push(Instr::Const(0x41, WVal::I32(-1)));
-                            self.builder.push(Instr::Local(0x21, found));
-                            self.builder.push(Instr::Block {
-                                opcode: 0x02,
-                                end: 0,
-                                else_at: 0,
-                                start: 0,
-                            });
-                            self.labels.push(0x02);
-                            self.builder.push(Instr::Block {
-                                opcode: 0x03,
-                                end: 0,
-                                else_at: 0,
-                                start: 0,
-                            });
-                            self.labels.push(0x03);
-                            self.builder.push(Instr::Local(0x20, index));
+                            self.builder
+                                .push(Instr::Const(0x41, WVal::I32(kinds as i32)));
+                            self.builder
+                                .push(Instr::Const(0x41, WVal::I32(table as i32)));
                             self.builder
                                 .push(Instr::Const(0x41, WVal::I32(count as i32)));
-                            self.builder.push(Instr::Op(0x4f));
-                            self.builder.push(Instr::BrIf(1));
-                            self.builder
-                                .push(Instr::Const(0x41, WVal::I32(table as i32)));
-                            self.builder.push(Instr::Local(0x20, index));
-                            self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                            self.builder.push(Instr::Op(0x6c));
-                            self.builder.push(Instr::Op(0x6a));
-                            self.builder.push(Instr::Mem(0x28, 2, 0));
-                            self.builder
-                                .push(Instr::Const(0x41, WVal::I32(table as i32)));
-                            self.builder.push(Instr::Op(0x6a));
-                            self.builder.push(Instr::Local(0x21, block));
-                            self.builder.push(Instr::Local(0x20, block));
-                            self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                            self.builder.push(Instr::Op(0x6a));
-                            self.builder.push(Instr::Local(0x20, block));
-                            self.builder.push(Instr::Mem(0x28, 2, 0));
-                            self.builder.push(Instr::Local(0x20, key_ptr));
-                            self.builder.push(Instr::Local(0x20, key_len));
-                            self.builder.push(Instr::Call(STR_COMPARE));
-                            self.builder.push(Instr::Op(0x45));
-                            self.builder.push(Instr::Block {
-                                opcode: 0x04,
-                                end: 0,
-                                else_at: 0,
-                                start: 0,
-                            });
-                            self.labels.push(0x04);
-                            self.builder.push(Instr::Local(0x20, index));
-                            self.builder.push(Instr::Local(0x21, found));
-                            self.builder.push(Instr::Br(2));
-                            self.labels.pop();
-                            self.builder.push(Instr::Op(0x0b));
-                            self.builder.push(Instr::Local(0x20, index));
-                            self.builder.push(Instr::Const(0x41, WVal::I32(1)));
-                            self.builder.push(Instr::Op(0x6a));
-                            self.builder.push(Instr::Local(0x21, index));
-                            self.builder.push(Instr::Br(0));
-                            self.labels.pop();
-                            self.builder.push(Instr::Op(0x0b));
-                            self.labels.pop();
-                            self.builder.push(Instr::Op(0x0b));
-                            self.builder.push(Instr::Local(0x20, found));
-                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
-                            self.builder.push(Instr::Op(0x48));
-                            let result_i64 = self.builder.add_local(ValType::I64);
-                            let result_f64 = self.builder.add_local(ValType::F64);
-                            let result_i32 = self.builder.add_local(ValType::I32);
-                            let result_ptr = self.builder.add_local(ValType::I32);
-                            let result_len = self.builder.add_local(ValType::I32);
-                            self.builder.push(Instr::Block {
-                                opcode: 0x04,
-                                end: 0,
-                                else_at: 0,
-                                start: 0,
-                            });
-                            self.labels.push(0x04);
-                            // Missing key: store the default (or abort).
+                            self.emit_expr(&args[0])?;
+                            self.builder.push(Instr::Call(DYN_FROM_RECORD));
+                            let key_ty = self.type_of(&args[1])?;
+                            self.emit_box_dyn(&args[1], key_ty)?;
                             match args.get(2) {
-                                Some(default) => match field_ty {
-                                    Ty::Str => {
-                                        self.emit_str(default)?;
-                                        self.builder.push(Instr::Local(0x21, result_len));
-                                        self.builder.push(Instr::Local(0x21, result_ptr));
-                                    }
-                                    Ty::Float => {
-                                        self.emit_f64(default)?;
-                                        self.builder.push(Instr::Local(0x21, result_f64));
-                                    }
-                                    Ty::Bool => {
-                                        self.emit_expr(default)?;
-                                        self.builder.push(Instr::Local(0x21, result_i32));
-                                    }
-                                    _ => {
-                                        self.emit_expr(default)?;
-                                        self.builder.push(Instr::Local(0x21, result_i64));
-                                    }
-                                },
+                                Some(default) => {
+                                    self.emit_box_dyn(default, self.type_of(default)?)?;
+                                    self.builder.push(Instr::Call(DYN_GET_DEFAULT));
+                                }
                                 None => {
-                                    self.emit_panic("get() missing key with no default");
+                                    self.builder.push(Instr::Call(DYN_GET));
                                 }
                             }
-                            self.builder.push(Instr::Else { end: 0 });
-                            let addr = self.builder.add_local(ValType::I32);
-                            self.builder.push(Instr::Local(0x20, rec_tmp));
-                            self.builder.push(Instr::Local(0x20, found));
-                            self.builder.push(Instr::Const(0x41, WVal::I32(8)));
-                            self.builder.push(Instr::Op(0x6c));
-                            self.builder.push(Instr::Op(0x6a));
-                            self.builder.push(Instr::Local(0x21, addr));
-                            match field_ty {
-                                Ty::Str => {
-                                    self.builder.push(Instr::Local(0x20, addr));
-                                    self.builder.push(Instr::Mem(0x28, 2, 0));
-                                    self.builder.push(Instr::Local(0x21, result_ptr));
-                                    self.builder.push(Instr::Local(0x20, addr));
-                                    self.builder.push(Instr::Mem(0x28, 2, 4));
-                                    self.builder.push(Instr::Local(0x21, result_len));
-                                }
-                                Ty::Float => {
-                                    self.builder.push(Instr::Local(0x20, addr));
-                                    self.builder.push(Instr::Mem(0x2b, 3, 0));
-                                    self.builder.push(Instr::Local(0x21, result_f64));
-                                }
-                                Ty::Bool => {
-                                    self.builder.push(Instr::Local(0x20, addr));
-                                    self.builder.push(Instr::Mem(0x28, 2, 0));
-                                    self.builder.push(Instr::Local(0x21, result_i32));
-                                }
-                                _ => {
-                                    self.builder.push(Instr::Local(0x20, addr));
-                                    self.builder.push(Instr::Mem(0x29, 3, 0));
-                                    self.builder.push(Instr::Local(0x21, result_i64));
-                                }
-                            }
-                            self.labels.pop();
-                            self.builder.push(Instr::Op(0x0b));
-                            match field_ty {
-                                Ty::Str => {
-                                    self.builder.push(Instr::Local(0x20, result_ptr));
-                                    self.builder.push(Instr::Local(0x20, result_len));
-                                }
-                                Ty::Float => {
-                                    self.builder.push(Instr::Local(0x20, result_f64));
-                                }
-                                Ty::Bool => {
-                                    self.builder.push(Instr::Local(0x20, result_i32));
-                                }
-                                _ => {
-                                    self.builder.push(Instr::Local(0x20, result_i64));
-                                }
-                            }
-                            return Ok(field_ty);
+                            return Ok(Ty::Dyn);
                         };
                         let rec_tmp = self.builder.add_local(ValType::I32);
                         self.emit_expr(&args[0])?;
@@ -18940,6 +18780,20 @@ mod tests {
     }
 
     #[test]
+    fn runtime_get_key_sees_record_as_dynamic() {
+        let (numbers, strings) = run_with_argv(
+            "let o = {a: 1, b: \"x\", c: [2]}\nlet k = env(\"K\", \"b\")\nprint(get(o, k))\nprint(get(o, env(\"K\", \"c\")))\nprint(get(o, env(\"K\", \"z\"), 9))\nprint(has(o, env(\"K\", \"a\")))\nprint(type(get(o, k)))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = ["x", "[2]", "9", "true", "str"];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn comparator_sort_is_stable_and_matches_the_vm() {
         let (numbers, strings) = run_with_argv(
             "print(sort([3, 1, 2], fn(x, y) { return x - y }))\nprint(sort([3, 1, 2], fn(x, y) { return y - x }))\nprint(sort([5], fn(x, y) { return x - y }))\nprint(sort([], fn(x, y) { return x - y }))\nprint(sort([2.5, 1.5, 3.5], fn(x, y) { if (x < y) { return -1 }\n  return 1 }))\nprint(sort([\"bb\", \"a\", \"ccc\"], fn(x, y) { return len(x) - len(y) }))\nlet rows = [[3], [1, 2], [2]]\nprint(sort(rows, fn(x, y) { return len(x) - len(y) }))\nlet rs = [{a: 3}, {a: 1}, {a: 2}, {a: 1}]\nprint(sort(rs, fn(x, y) { return x.a - y.a }))",
@@ -18980,10 +18834,17 @@ mod tests {
             "let o = {a: 1, b: 2}\nlet k = \"b\"\nprint(get(o, k))\nprint(get(o, \"a\"))\nlet missing = \"z\"\nprint(get(o, missing, 9))\nlet s = {x: \"p\", y: \"q\"}\nlet sk = \"y\"\nprint(get(s, sk))\nlet f = {m: 1.5, n: 2.5}\nlet fk = \"m\"\nprint(get(f, fk))\nlet b = {u: true, v: false}\nlet bk = \"v\"\nprint(get(b, bk))",
             &[],
         );
-        assert_eq!(numbers, vec![2, 1, 9]);
+        // Runtime keys go through the dynamic path; a literal key stays static.
+        assert_eq!(numbers, vec![1]);
         assert_eq!(
             strings,
-            vec!["q".to_string(), "1.5".to_string(), "false".to_string()]
+            vec![
+                "2".to_string(),
+                "9".to_string(),
+                "q".to_string(),
+                "1.5".to_string(),
+                "false".to_string()
+            ]
         );
     }
 
