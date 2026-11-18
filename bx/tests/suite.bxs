@@ -975,6 +975,16 @@ if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim(
   casesFail += 1
   failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
 }
+write(artDir + "/wasm-splitchars.bxs", 'print(json(split("abc", "")))\nprint(json(split("", "")))\nprint(json(split("héllo", "")))\nlet s = parse(env("X", json("héllo")))\nprint(json(split(s, "")))\n')
+let wasmSplitChars = exec([BX, "build", "--wasm", artDir + "/wasm-splitchars.bxs", "-o", artDir + "/wasm-splitchars.wasm"])
+let wasmSplitCharsRun = exec([BX, "run", artDir + "/wasm-splitchars.wasm"])
+let wasmSplitCharsVm = exec([BX, "run", artDir + "/wasm-splitchars.bxs"])
+if (wasmSplitChars.code == 0 && wasmSplitCharsRun.out == wasmSplitCharsVm.out && wasmSplitCharsRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm empty separator split\n    wasm=" + json(wasmSplitCharsRun.out) + " vm=" + json(wasmSplitCharsVm.out) + " err=" + json(wasmSplitChars.err))
+}
 write(artDir + "/wasm-dynreducemember.bxs", 'let data = parse("{" + json("items") + ":[{" + json("score") + ":2},{" + json("score") + ":3}]}")\nlet xs = map(data["items"], fn(it) { return it["score"] })\nprint(reduce(xs, fn(a, b) { return a + b }, 0))\nprint(reduce(xs, fn(a, b) { return a }))\nprint(json(xs))\n')
 let wasmDynReduceMember = exec([BX, "build", "--wasm", artDir + "/wasm-dynreducemember.bxs", "-o", artDir + "/wasm-dynreducemember.wasm"])
 let wasmDynReduceMemberRun = exec([BX, "run", artDir + "/wasm-dynreducemember.wasm"])
@@ -1249,6 +1259,16 @@ if (wasmDynMixed.code == 0 && wasmDynMixedRun.out == wasmDynMixedVm.out && wasmD
   failures.push("wasm mixed dynamic record fields\n    wasm=" + json(wasmDynMixedRun.out) + " vm=" + json(wasmDynMixedVm.out) + " err=" + json(wasmDynMixedRun.err))
 }
 write(artDir + "/dynstr.json", json("abc"))
+write(artDir + "/wasm-splitchars.bxs", 'print(json(split("abc", "")))\nprint(json(split("", "")))\nprint(json(split("héllo", "")))\nlet s = parse(env("X", json("héllo")))\nprint(json(split(s, "")))\n')
+let wasmSplitChars = exec([BX, "build", "--wasm", artDir + "/wasm-splitchars.bxs", "-o", artDir + "/wasm-splitchars.wasm"])
+let wasmSplitCharsRun = exec([BX, "run", artDir + "/wasm-splitchars.wasm"])
+let wasmSplitCharsVm = exec([BX, "run", artDir + "/wasm-splitchars.bxs"])
+if (wasmSplitChars.code == 0 && wasmSplitCharsRun.out == wasmSplitCharsVm.out && wasmSplitCharsRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm empty separator split\n    wasm=" + json(wasmSplitCharsRun.out) + " vm=" + json(wasmSplitCharsVm.out) + " err=" + json(wasmSplitChars.err))
+}
 write(artDir + "/wasm-dynreducemember.bxs", 'let data = parse("{" + json("items") + ":[{" + json("score") + ":2},{" + json("score") + ":3}]}")\nlet xs = map(data["items"], fn(it) { return it["score"] })\nprint(reduce(xs, fn(a, b) { return a + b }, 0))\nprint(reduce(xs, fn(a, b) { return a }))\nprint(json(xs))\n')
 let wasmDynReduceMember = exec([BX, "build", "--wasm", artDir + "/wasm-dynreducemember.bxs", "-o", artDir + "/wasm-dynreducemember.wasm"])
 let wasmDynReduceMemberRun = exec([BX, "run", artDir + "/wasm-dynreducemember.wasm"])

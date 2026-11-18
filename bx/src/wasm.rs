@@ -3776,22 +3776,28 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 let sep = memory
                     .get(sep_ptr..sep_ptr.saturating_add(sep_len))
                     .ok_or_else(|| "env.str_split separator is outside memory".to_string())?;
-                if sep.is_empty() {
-                    return Err("wasm target split() needs a non-empty separator".to_string());
-                }
                 let text = memory
                     .get(ptr..ptr.saturating_add(len))
                     .ok_or_else(|| "env.str_split string is outside memory".to_string())?;
                 let mut pieces: Vec<(u32, u32)> = Vec::new();
-                let mut cursor = 0usize;
-                while let Some(found) = text[cursor..]
-                    .windows(sep.len())
-                    .position(|window| window == sep)
-                {
-                    pieces.push(((ptr + cursor) as u32, found as u32));
-                    cursor += found + sep.len();
+                if sep.is_empty() {
+                    // The VM splits an empty separator into Unicode chars.
+                    if !text.is_empty() {
+                        for (offset, ch) in String::from_utf8_lossy(text).char_indices() {
+                            pieces.push(((ptr + offset) as u32, ch.len_utf8() as u32));
+                        }
+                    }
+                } else {
+                    let mut cursor = 0usize;
+                    while let Some(found) = text[cursor..]
+                        .windows(sep.len())
+                        .position(|window| window == sep)
+                    {
+                        pieces.push(((ptr + cursor) as u32, found as u32));
+                        cursor += found + sep.len();
+                    }
+                    pieces.push(((ptr + cursor) as u32, (text.len() - cursor) as u32));
                 }
-                pieces.push(((ptr + cursor) as u32, (text.len() - cursor) as u32));
                 let count = pieces.len() as u32;
                 let size = 4 + 8 * pieces.len();
                 let start = self.next_file as usize;

@@ -19444,6 +19444,26 @@ mod tests {
     }
 
     #[test]
+    fn empty_separator_split_splits_chars_like_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "print(json(split(\"abc\", \"\")))\nprint(json(split(\"\", \"\")))\nprint(json(split(\"a b\", \"\")))\nprint(json(split(\"héllo\", \"\")))\nlet s = parse(env(\"X\", json(\"héllo\")))\nprint(json(split(s, \"\")))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = [
+            "[\"a\",\"b\",\"c\"]",
+            "[]",
+            "[\"a\",\" \",\"b\"]",
+            "[\"h\",\"é\",\"l\",\"l\",\"o\"]",
+            "[\"h\",\"é\",\"l\",\"l\",\"o\"]",
+        ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn comparator_sort_is_stable_and_matches_the_vm() {
         let (numbers, strings) = run_with_argv(
             "print(sort([3, 1, 2], fn(x, y) { return x - y }))\nprint(sort([3, 1, 2], fn(x, y) { return y - x }))\nprint(sort([5], fn(x, y) { return x - y }))\nprint(sort([], fn(x, y) { return x - y }))\nprint(sort([2.5, 1.5, 3.5], fn(x, y) { if (x < y) { return -1 }\n  return 1 }))\nprint(sort([\"bb\", \"a\", \"ccc\"], fn(x, y) { return len(x) - len(y) }))\nlet rows = [[3], [1, 2], [2]]\nprint(sort(rows, fn(x, y) { return len(x) - len(y) }))\nlet rs = [{a: 3}, {a: 1}, {a: 2}, {a: 1}]\nprint(sort(rs, fn(x, y) { return x.a - y.a }))",
