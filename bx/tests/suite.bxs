@@ -988,7 +988,7 @@ if (wasmAliasPush.code == 0 && wasmAliasPushRun.out == wasmAliasPushVm.out && wa
 write(artDir + "/wasm-attemptcatch.bxs", 'let a = attempt(fn() { assert(1 == 2, "bad") })\nprint(a.ok)\nprint(a.error)\nlet b = attempt(fn() { return int("x") })\nprint(b.ok)\nprint(b.error)\nlet c = attempt(fn() { return float("x") })\nprint(c.ok)\nprint(c.error)\n')
 let wasmAttCatch = exec([BX, "build", "--wasm", artDir + "/wasm-attemptcatch.bxs", "-o", artDir + "/wasm-attemptcatch.wasm"])
 let wasmAttCatchRun = exec([BX, "run", artDir + "/wasm-attemptcatch.wasm"])
-if (wasmAttCatch.code == 0 && wasmAttCatchRun.code == 0 && wasmAttCatchRun.out.contains("bad") && wasmAttCatchRun.out.contains("cannot convert str to int") && wasmAttCatchRun.out.contains("cannot convert str to float")) {
+if (wasmAttCatch.code == 0 && wasmAttCatchRun.code == 0 && wasmAttCatchRun.out.contains("wasm-attemptcatch.bxs(1): bad") && wasmAttCatchRun.out.contains("cannot convert 'x' to int") && wasmAttCatchRun.out.contains("cannot convert str to float")) {
   casesOk += 1
 } else {
   casesFail += 1
@@ -1338,7 +1338,7 @@ if (wasmAliasPush.code == 0 && wasmAliasPushRun.out == wasmAliasPushVm.out && wa
 write(artDir + "/wasm-attemptcatch.bxs", 'let a = attempt(fn() { assert(1 == 2, "bad") })\nprint(a.ok)\nprint(a.error)\nlet b = attempt(fn() { return int("x") })\nprint(b.ok)\nprint(b.error)\nlet c = attempt(fn() { return float("x") })\nprint(c.ok)\nprint(c.error)\n')
 let wasmAttCatch = exec([BX, "build", "--wasm", artDir + "/wasm-attemptcatch.bxs", "-o", artDir + "/wasm-attemptcatch.wasm"])
 let wasmAttCatchRun = exec([BX, "run", artDir + "/wasm-attemptcatch.wasm"])
-if (wasmAttCatch.code == 0 && wasmAttCatchRun.code == 0 && wasmAttCatchRun.out.contains("bad") && wasmAttCatchRun.out.contains("cannot convert str to int") && wasmAttCatchRun.out.contains("cannot convert str to float")) {
+if (wasmAttCatch.code == 0 && wasmAttCatchRun.code == 0 && wasmAttCatchRun.out.contains("wasm-attemptcatch.bxs(1): bad") && wasmAttCatchRun.out.contains("cannot convert 'x' to int") && wasmAttCatchRun.out.contains("cannot convert str to float")) {
   casesOk += 1
 } else {
   casesFail += 1

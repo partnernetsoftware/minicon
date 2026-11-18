@@ -3552,6 +3552,39 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 write_dyn_cell(memory, cell, 4, len as u32, ptr as u64);
                 Ok(vec![WVal::I32(cell as i32)])
             }
+            ("env", "text_concat") => {
+                let read = |value: Option<&WVal>| match value {
+                    Some(WVal::I32(v)) => Some(*v as usize),
+                    _ => None,
+                };
+                let (a_ptr, a_len, b_ptr, b_len) = match (
+                    read(args.first()),
+                    read(args.get(1)),
+                    read(args.get(2)),
+                    read(args.get(3)),
+                ) {
+                    (Some(a_ptr), Some(a_len), Some(b_ptr), Some(b_len)) => {
+                        (a_ptr, a_len, b_ptr, b_len)
+                    }
+                    _ => {
+                        return Err(
+                            "env.text_concat expects (i32 ptr, i32 len, i32 ptr, i32 len)"
+                                .to_string(),
+                        )
+                    }
+                };
+                if a_ptr.saturating_add(a_len) > memory.len()
+                    || b_ptr.saturating_add(b_len) > memory.len()
+                {
+                    return Err("env.text_concat string is outside memory".to_string());
+                }
+                let mut text = Vec::with_capacity(a_len + b_len);
+                text.extend_from_slice(&memory[a_ptr..a_ptr + a_len]);
+                text.extend_from_slice(&memory[b_ptr..b_ptr + b_len]);
+                let start = store_text_block(memory, &mut self.next_file, &text)
+                    .ok_or_else(|| "env.text_concat block allocation failed".to_string())?;
+                Ok(vec![WVal::I32(start as i32)])
+            }
             ("env", "dyn_parse") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {
                     (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),

@@ -144,6 +144,7 @@ const imports = {
     dyn_record_values: () => 0,
     dyn_write_record: () => {},
     dyn_text_cell: () => 0,
+    text_concat: () => 0,
     dyn_get: () => 0,
     dyn_get_default: () => 0,
     dyn_has: () => 0,

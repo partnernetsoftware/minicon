@@ -3823,7 +3823,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 144;
+const IMPORT_COUNT: u32 = 145;
 const PRINT_UTF8: u32 = 1;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
@@ -3956,6 +3956,7 @@ const DYN_TEXT_BLOCK: u32 = 140;
 const DYN_RECORD_VALUES: u32 = 141;
 const DYN_WRITE_RECORD: u32 = 142;
 const DYN_TEXT_CELL: u32 = 143;
+const TEXT_CONCAT: u32 = 144;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -3969,6 +3970,22 @@ struct LocalSlot {
     capture: Option<u32>,
 }
 
+/// Source line carried by a statement (0 when the parser has none).
+fn stmt_line(stmt: &Stmt) -> u32 {
+    match stmt {
+        Stmt::Expr(_, line)
+        | Stmt::Let(_, _, line)
+        | Stmt::Fn(_, _, _, line)
+        | Stmt::If(_, _, _, line)
+        | Stmt::While(_, _, line)
+        | Stmt::Return(_, line)
+        | Stmt::Break(line)
+        | Stmt::Continue(line)
+        | Stmt::Use(_, line) => *line,
+        Stmt::ForC(_, _, _, _, line) | Stmt::ForIn(_, _, _, _, line) => *line,
+        Stmt::Block(_) => 0,
+    }
+}
 struct Emitter<'a> {
     checker: &'a Checker,
     builder: &'a mut Builder,
@@ -4006,11 +4023,29 @@ struct Emitter<'a> {
     /// Compile-time alias groups for array/record pointer bindings.
     alias_groups: Vec<Vec<String>>,
     alias_of: HashMap<String, usize>,
+    /// Source name shown in attempt/panic messages (basename, like the VM).
+    file_name: Option<String>,
+    /// Line of the statement currently being emitted (0 = unknown).
+    current_line: u32,
 }
 
 impl Emitter<'_> {
     fn temp(&self, offset: u32) -> u32 {
         self.temp_base + offset
+    }
+
+    /// VM-style `name(line): ` prefix for attempt/panic messages.
+    fn message_prefix(&self) -> String {
+        match (&self.file_name, self.current_line) {
+            (Some(file), line) if !file.is_empty() && line > 0 => {
+                let name = std::path::Path::new(file)
+                    .file_name()
+                    .map(|value| value.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| file.clone());
+                format!("{}({}): ", name, line)
+            }
+            _ => String::new(),
+        }
     }
 
     /// Track that `name` now refers to the same storage as `source` (or a fresh
@@ -4565,17 +4600,18 @@ impl<'a> Emitter<'a> {
 
     /// Abort the module with `message` (host `env.panic`), mirroring VM aborts.
     fn emit_panic(&mut self, message: &str) {
+        let text = format!("{}{}", self.message_prefix(), message);
         if let Some(ctx) = self.attempts.last().copied() {
-            let base = self.builder.add_data(message.as_bytes());
-            self.emit_attempt_error_constant(ctx.record, base, message.len() as u32);
+            let base = self.builder.add_data(text.as_bytes());
+            self.emit_attempt_error_constant(ctx.record, base, text.len() as u32);
             self.emit_attempt_jump();
             return;
         }
-        let base = self.builder.add_data(message.as_bytes());
+        let base = self.builder.add_data(text.as_bytes());
         self.builder
             .push(Instr::Const(0x41, WVal::I32(base as i32)));
         self.builder
-            .push(Instr::Const(0x41, WVal::I32(message.len() as i32)));
+            .push(Instr::Const(0x41, WVal::I32(text.len() as i32)));
         self.builder.push(Instr::Call(PANIC));
     }
 
@@ -4598,10 +4634,31 @@ impl<'a> Emitter<'a> {
 
     /// Store a runtime `(ptr, len)` error message into the attempt record.
     fn emit_attempt_error_pair(&mut self, record: u32) {
-        let len = self.builder.add_local(ValType::I32);
-        let ptr = self.builder.add_local(ValType::I32);
-        self.builder.push(Instr::Local(0x21, len));
-        self.builder.push(Instr::Local(0x21, ptr));
+        let message_len = self.builder.add_local(ValType::I32);
+        let message_ptr = self.builder.add_local(ValType::I32);
+        self.builder.push(Instr::Local(0x21, message_len));
+        self.builder.push(Instr::Local(0x21, message_ptr));
+        let prefix = self.message_prefix();
+        if prefix.is_empty() {
+            self.builder.push(Instr::Local(0x20, message_ptr));
+            self.builder.push(Instr::Local(0x20, message_len));
+        } else {
+            self.emit_text_literal(&prefix);
+            self.builder.push(Instr::Local(0x20, message_ptr));
+            self.builder.push(Instr::Local(0x20, message_len));
+            self.builder.push(Instr::Call(TEXT_CONCAT));
+            let block = self.builder.add_local(ValType::I32);
+            self.builder.push(Instr::Local(0x21, block));
+            self.builder.push(Instr::Local(0x20, block));
+            self.builder.push(Instr::Mem(0x28, 2, 0));
+            self.builder.push(Instr::Local(0x21, message_len));
+            self.builder.push(Instr::Local(0x20, block));
+            self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+            self.builder.push(Instr::Op(0x6a));
+            self.builder.push(Instr::Local(0x21, message_ptr));
+        }
+        let len = message_len;
+        let ptr = message_ptr;
         self.builder.push(Instr::Local(0x20, record));
         self.builder.push(Instr::Local(0x20, ptr));
         self.builder.push(Instr::Local(0x20, len));
@@ -13907,6 +13964,12 @@ impl<'a> Emitter<'a> {
                             }
                             Ty::Str => {
                                 self.emit_str(&args[0])?;
+                                let text_len = self.builder.add_local(ValType::I32);
+                                let text_ptr = self.builder.add_local(ValType::I32);
+                                self.builder.push(Instr::Local(0x21, text_len));
+                                self.builder.push(Instr::Local(0x21, text_ptr));
+                                self.builder.push(Instr::Local(0x20, text_ptr));
+                                self.builder.push(Instr::Local(0x20, text_len));
                                 self.builder.push(Instr::Call(STR_TO_INT));
                                 let value = self.builder.add_local(ValType::I64);
                                 self.builder.push(Instr::Local(0x21, value));
@@ -13920,7 +13983,46 @@ impl<'a> Emitter<'a> {
                                     start: 0,
                                 });
                                 self.labels.push(0x04);
-                                self.emit_panic("cannot convert str to int");
+                                // VM wording: cannot convert '<text>' to int
+                                let p1 = self.builder.add_local(ValType::I32);
+                                let l1 = self.builder.add_local(ValType::I32);
+                                self.emit_text_literal("cannot convert '");
+                                self.builder.push(Instr::Local(0x21, l1));
+                                self.builder.push(Instr::Local(0x21, p1));
+                                self.builder.push(Instr::Local(0x20, p1));
+                                self.builder.push(Instr::Local(0x20, l1));
+                                self.builder.push(Instr::Local(0x20, text_ptr));
+                                self.builder.push(Instr::Local(0x20, text_len));
+                                self.builder.push(Instr::Call(TEXT_CONCAT));
+                                let block = self.builder.add_local(ValType::I32);
+                                self.builder.push(Instr::Local(0x21, block));
+                                self.builder.push(Instr::Local(0x20, block));
+                                self.builder.push(Instr::Mem(0x28, 2, 0));
+                                self.builder.push(Instr::Local(0x21, l1));
+                                self.builder.push(Instr::Local(0x20, block));
+                                self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                                self.builder.push(Instr::Op(0x6a));
+                                self.builder.push(Instr::Local(0x21, p1));
+                                self.builder.push(Instr::Local(0x20, p1));
+                                self.builder.push(Instr::Local(0x20, l1));
+                                self.emit_text_literal("' to int");
+                                self.builder.push(Instr::Call(TEXT_CONCAT));
+                                self.builder.push(Instr::Local(0x21, block));
+                                self.builder.push(Instr::Local(0x20, block));
+                                self.builder.push(Instr::Mem(0x28, 2, 0));
+                                self.builder.push(Instr::Local(0x21, l1));
+                                self.builder.push(Instr::Local(0x20, block));
+                                self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                                self.builder.push(Instr::Op(0x6a));
+                                self.builder.push(Instr::Local(0x21, p1));
+                                self.builder.push(Instr::Local(0x20, p1));
+                                self.builder.push(Instr::Local(0x20, l1));
+                                if let Some(ctx) = self.attempts.last().copied() {
+                                    self.emit_attempt_error_pair(ctx.record);
+                                    self.emit_attempt_jump();
+                                } else {
+                                    self.builder.push(Instr::Call(PANIC));
+                                }
                                 self.labels.pop();
                                 self.builder.push(Instr::Op(0x0b));
                                 self.builder.push(Instr::Local(0x20, value));
@@ -14012,6 +14114,7 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_stmt(&mut self, stmt: &Stmt) -> Result<(), String> {
+        self.current_line = stmt_line(stmt);
         match stmt {
             Stmt::Let(name, init, _) => {
                 let dyn_empty = matches!(init, Some(Expr::Array(items)) if items.is_empty())
@@ -16685,6 +16788,12 @@ impl<'a> CaptureWalker<'a> {
 }
 /// Compile bx source to a standard WebAssembly module (current subset only).
 pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
+    compile_to_wasm_named(source, None)
+}
+
+/// Compile `source` while remembering `file` for attempt/panic message prefixes.
+pub fn compile_to_wasm_named(source: &str, file: Option<&str>) -> Result<Vec<u8>, String> {
+    let file_name = file.map(|value| value.to_string());
     let stmts = crate::parser::parse(source)?;
     let mut checker = Checker::new();
     checker.empty_hints = empty_array_push_hints(&stmts);
@@ -17297,6 +17406,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "dyn_record_values", four_i32_to_i32_ty);
     builder.import_func("env", "dyn_write_record", five_i32_to_void_ty);
     builder.import_func("env", "dyn_text_cell", which_ty);
+    builder.import_func("env", "text_concat", four_i32_to_i32_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -17349,6 +17459,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             analysis: &analysis,
             alias_groups: Vec::new(),
             alias_of: HashMap::new(),
+            file_name: file_name.clone(),
+            current_line: 0,
         };
         for stmt in &stmts {
             emitter.emit_stmt(stmt)?;
@@ -17390,6 +17502,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                 analysis: &analysis,
                 alias_groups: Vec::new(),
                 alias_of: HashMap::new(),
+                file_name: file_name.clone(),
+                current_line: 0,
             };
             let mut used = 0u32;
             for (param, ty) in decl.params.iter().zip(sig.params.iter()) {
@@ -17482,6 +17596,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                 analysis: &analysis,
                 alias_groups: Vec::new(),
                 alias_of: HashMap::new(),
+                file_name: file_name.clone(),
+                current_line: 0,
             };
             let mut used = 1u32;
             for (param, ty) in decl.params.iter().zip(sig.params.iter()) {
@@ -19847,7 +19963,7 @@ mod tests {
                 "false".to_string(),
                 "bad".to_string(),
                 "false".to_string(),
-                "cannot convert str to int".to_string(),
+                "cannot convert 'x' to int".to_string(),
                 "false".to_string(),
                 "cannot convert str to float".to_string(),
                 "false".to_string(),

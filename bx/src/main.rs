@@ -330,7 +330,7 @@ fn cmd_run(args: Vec<String>) -> i32 {
         };
         let bytes = match cache_path.as_ref().and_then(|p| fs::read(p).ok()) {
             Some(bytes) if wasm_target::validate(&bytes).is_ok() => bytes,
-            _ => match wasm_target::compile_to_wasm(&expanded) {
+            _ => match wasm_target::compile_to_wasm_named(&expanded, Some(path)) {
                 Ok(bytes) => {
                     if wasm_target::validate(&bytes).is_ok() {
                         if let Some(cache_path) = &cache_path {
@@ -754,7 +754,7 @@ fn cmd_build(args: Vec<String>) -> i32 {
                 return 1;
             }
         };
-        let bytes = match wasm_target::compile_to_wasm(&src) {
+        let bytes = match wasm_target::compile_to_wasm_named(&src, Some(&input)) {
             Ok(bytes) => bytes,
             Err(e) => {
                 eprintln!("bx: {}", e);
@@ -948,7 +948,7 @@ fn cmd_check(args: Vec<String>) -> i32 {
                 return 1;
             }
         };
-        let outcome = wasm_target::compile_to_wasm(&source)
+        let outcome = wasm_target::compile_to_wasm_named(&source, Some(&rest[0]))
             .and_then(|bytes| wasm_target::inspect(&bytes).map(|info| (bytes.len(), info)));
         return match outcome {
             Ok((bytes, info)) => {
