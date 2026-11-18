@@ -19434,6 +19434,16 @@ mod tests {
     }
 
     #[test]
+    fn dynamic_reduce_over_member_maps_matches_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let data = parse(\"{\" + json(\"items\") + \":[{\" + json(\"score\") + \":2},{\" + json(\"score\") + \":3}]}\")\nlet xs = map(data[\"items\"], fn(it) { return it[\"score\"] })\nprint(reduce(xs, fn(a, b) { return a + b }, 0))\nprint(reduce(xs, fn(a, b) { return a }))\nprint(json(xs))",
+            &[],
+        );
+        assert_eq!(numbers, vec![5i64, 2]);
+        assert_eq!(strings, vec!["[2,3]".to_string()]);
+    }
+
+    #[test]
     fn comparator_sort_is_stable_and_matches_the_vm() {
         let (numbers, strings) = run_with_argv(
             "print(sort([3, 1, 2], fn(x, y) { return x - y }))\nprint(sort([3, 1, 2], fn(x, y) { return y - x }))\nprint(sort([5], fn(x, y) { return x - y }))\nprint(sort([], fn(x, y) { return x - y }))\nprint(sort([2.5, 1.5, 3.5], fn(x, y) { if (x < y) { return -1 }\n  return 1 }))\nprint(sort([\"bb\", \"a\", \"ccc\"], fn(x, y) { return len(x) - len(y) }))\nlet rows = [[3], [1, 2], [2]]\nprint(sort(rows, fn(x, y) { return len(x) - len(y) }))\nlet rs = [{a: 3}, {a: 1}, {a: 2}, {a: 1}]\nprint(sort(rs, fn(x, y) { return x.a - y.a }))",
