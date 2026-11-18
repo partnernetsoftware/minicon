@@ -312,6 +312,17 @@ fn gen(kind, x_path, y_path) {
     lines.push("print(get(arr[0], \"a\"))")
     lines.push("print(has(arr[0], \"a\"))")
     lines.push("for item in arr { print(item) }")
+  } else if (kind == 14) {
+    lines.push("let v = parse(" + x + ")")
+    lines.push("if (type(v) == \"array\") {")
+    lines.push("  print(len(v))")
+    lines.push("  v[0] = 5")
+    lines.push("  print(v)")
+    lines.push("  print(v.push(6))")
+    lines.push("  print(len(v))")
+    lines.push("  print(v.pop())")
+    lines.push("  print(v)")
+    lines.push("}")
   } else {
     lines.push("let v = parse(" + x + ")")
     lines.push("let w = parse(" + y + ")")
@@ -370,6 +381,9 @@ fn payload(kind) {
   if (kind == 10 || kind == 11 || kind == 13) {
     return mixed_json()
   }
+  if (kind == 14) {
+    return int_json()
+  }
   if (kind == 12) {
     return "{" + json("xs") + ": " + int_json() + ", " + json("a") + ": " + atom() + ", " + json("o") + ": " + obj_json() + "}"
   }
@@ -378,9 +392,9 @@ fn payload(kind) {
 
 let failures = 0
 for (let c = 0; c < cases; c += 1) {
-  let kind = pick(14)
+  let kind = pick(15)
   let payload_kind = kind
-  if (payload_kind == 5 || payload_kind == 7 || payload_kind == 8 || payload_kind == 13) {
+  if (payload_kind == 5 || payload_kind == 7 || payload_kind == 8 || payload_kind == 13 || payload_kind == 14) {
     payload_kind = 1
   }
   if (payload_kind == 9) {

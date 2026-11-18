@@ -567,7 +567,11 @@ Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
   and method forms, matching the VM. Dynamic strings behave like the VM too:
   char-based `len`/index (negative/OOB -> `null`)/`slice`, substring
   `contains`/`index_of` (char index), while `get` on strings/arrays-with-string
-  keys and `has` on strings stay errors/false exactly like the VM. Fixed a latent stack imbalance in string
+  keys and `has` on strings stay errors/false exactly like the VM. Dynamic
+  containers are mutable like the VM: `a[i] = v` (negative indexes), `o.k = v`
+  and `o["k"] = v` (missing keys are appended), and `push`/`pop` in function and
+  method form (empty `pop()` is `null`); compound assignment on dynamic
+  elements remains an explicit error. Fixed a latent stack imbalance in string
   boxing that these paths exposed.
 - **`null` (static marker)**: `null` is typed `Ty::Null` and covers the VM's
   scalar semantics: printing/`str`/`json`/`type`/interpolation give `null`,

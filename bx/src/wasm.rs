@@ -1150,6 +1150,134 @@ fn dyn_entry_value(memory: &[u8], entry: usize) -> Result<usize, String> {
     Ok(u32::from_le_bytes(memory[entry + 8..entry + 12].try_into().unwrap()) as usize)
 }
 
+/// `a[i] = value` for a dynamic array; negative indexes count from the end.
+fn dyn_set_index_cell(memory: &mut [u8], a: usize, index: i64, value: usize) -> Result<(), String> {
+    let (tag, aux, payload) = dyn_tag(memory, a);
+    if tag != 5 {
+        return Err("indexed assignment needs a dynamic array".to_string());
+    }
+    let count = aux as i64;
+    let at = if index < 0 { count + index } else { index };
+    if at < 0 || at >= count {
+        return Err("dynamic array assignment index out of bounds".to_string());
+    }
+    let slot = payload as usize + at as usize * 16;
+    memory.copy_within(value..value + 16, slot);
+    Ok(())
+}
+
+/// `container[key] = value` with a dynamic key: string keys write object
+/// members, numeric keys write array elements or object entry values.
+fn dyn_set_at_cell(
+    memory: &mut [u8],
+    next_dyn: &mut u32,
+    container: usize,
+    key: usize,
+    value: usize,
+) -> Result<(), String> {
+    let (key_tag, _, _) = dyn_tag(memory, key);
+    let (tag, aux, payload) = dyn_tag(memory, container);
+    if key_tag == 4 {
+        if tag != 6 {
+            return Err("dynamic string-keyed assignment needs an object".to_string());
+        }
+        return dyn_set_member_cell(memory, next_dyn, container, key, value);
+    }
+    let at = dyn_number(memory, key)? as i64;
+    match tag {
+        5 => dyn_set_index_cell(memory, container, at, value),
+        6 => {
+            if at < 0 || at >= aux as i64 {
+                return Err("dynamic object assignment index out of bounds".to_string());
+            }
+            let slot = payload as usize + at as usize * 12 + 8;
+            memory[slot..slot + 4].copy_from_slice(&(value as u32).to_le_bytes());
+            Ok(())
+        }
+        4 => Err("strings are immutable".to_string()),
+        _ => Err("dynamic indexed assignment needs a container".to_string()),
+    }
+}
+/// `a.push(value)` for a dynamic array; grows the cell block when needed.
+fn dyn_push_cell(
+    memory: &mut [u8],
+    next_dyn: &mut u32,
+    a: usize,
+    value: usize,
+) -> Result<(), String> {
+    let (tag, count, payload) = dyn_tag(memory, a);
+    if tag != 5 {
+        return Err("push() needs a dynamic array".to_string());
+    }
+    let base = alloc_dyn_bytes(next_dyn, (count as usize + 1) * 16)?;
+    let old = payload as usize;
+    for index in 0..count as usize {
+        let source = old + index * 16;
+        memory.copy_within(source..source + 16, base + index * 16);
+    }
+    memory.copy_within(value..value + 16, base + count as usize * 16);
+    write_dyn_cell(memory, a, 5, count + 1, base as u64);
+    Ok(())
+}
+
+fn dyn_pop_cell(
+    memory: &mut [u8],
+    next_dyn: &mut u32,
+    null_slot: &mut u32,
+    a: usize,
+) -> Result<usize, String> {
+    let (tag, count, payload) = dyn_tag(memory, a);
+    if tag != 5 {
+        return Err("pop() needs a dynamic array".to_string());
+    }
+    if count == 0 {
+        return dyn_null_cell(memory, next_dyn, null_slot);
+    }
+    let last = payload as usize + (count as usize - 1) * 16;
+    write_dyn_cell(memory, a, 5, count - 1, payload);
+    Ok(last)
+}
+
+/// `o.key = value` for a dynamic object; appends the key when it is missing.
+fn dyn_set_member_cell(
+    memory: &mut [u8],
+    next_dyn: &mut u32,
+    object: usize,
+    key: usize,
+    value: usize,
+) -> Result<(), String> {
+    let (key_tag, key_len, key_payload) = dyn_tag(memory, key);
+    if key_tag != 4 {
+        return Err("dynamic member assignment needs a string key".to_string());
+    }
+    let (tag, count, payload) = dyn_tag(memory, object);
+    if tag != 6 {
+        return Err("dynamic member assignment needs an object".to_string());
+    }
+    let wanted = memory_text(memory, key_payload as usize, key_len as usize);
+    for index in 0..count as usize {
+        let entry = payload as usize + index * 12;
+        if dyn_entry_key(memory, entry)? == wanted {
+            let slot = entry + 8;
+            memory[slot..slot + 4].copy_from_slice(&(value as u32).to_le_bytes());
+            return Ok(());
+        }
+    }
+    let base = alloc_dyn_bytes(next_dyn, (count as usize + 1) * 12)?;
+    let old = payload as usize;
+    for index in 0..count as usize {
+        memory.copy_within(old + index * 12..old + index * 12 + 12, base + index * 12);
+    }
+    let key_bytes = wanted.as_bytes();
+    let key_start = alloc_dyn_bytes(next_dyn, key_bytes.len().max(1))?;
+    memory[key_start..key_start + key_bytes.len()].copy_from_slice(key_bytes);
+    let entry = base + count as usize * 12;
+    memory[entry..entry + 4].copy_from_slice(&(key_start as u32).to_le_bytes());
+    memory[entry + 4..entry + 8].copy_from_slice(&(key_bytes.len() as u32).to_le_bytes());
+    memory[entry + 8..entry + 12].copy_from_slice(&(value as u32).to_le_bytes());
+    write_dyn_cell(memory, object, 6, count + 1, base as u64);
+    Ok(())
+}
 /// Dynamic `get(value, key)`: array index for numeric keys, object member for
 /// string keys; missing entries return the shared null cell.
 fn dyn_get_cell(
@@ -3001,6 +3129,42 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     };
                 let cell = dyn_from_record(memory, &mut self.next_dyn, kinds, table, count, rec)?;
                 Ok(vec![WVal::I32(cell as i32)])
+            }
+            ("env", "dyn_set_at") => {
+                let (container, key, value) = match (args.first(), args.get(1), args.get(2)) {
+                    (Some(WVal::I32(a)), Some(WVal::I32(key)), Some(WVal::I32(value))) => {
+                        (*a as usize, *key as usize, *value as usize)
+                    }
+                    _ => return Err("env.dyn_set_at expects (i32, i32, i32)".to_string()),
+                };
+                dyn_set_at_cell(memory, &mut self.next_dyn, container, key, value)?;
+                Ok(vec![])
+            }
+            ("env", "dyn_push") => {
+                let (a, value) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(a)), Some(WVal::I32(value))) => (*a as usize, *value as usize),
+                    _ => return Err("env.dyn_push expects (i32, i32)".to_string()),
+                };
+                dyn_push_cell(memory, &mut self.next_dyn, a, value)?;
+                Ok(vec![WVal::I32(a as i32)])
+            }
+            ("env", "dyn_pop") => {
+                let a = match args.first() {
+                    Some(WVal::I32(a)) => *a as usize,
+                    _ => return Err("env.dyn_pop expects one i32".to_string()),
+                };
+                let value = dyn_pop_cell(memory, &mut self.next_dyn, &mut self.dyn_null, a)?;
+                Ok(vec![WVal::I32(value as i32)])
+            }
+            ("env", "dyn_set_member") => {
+                let (object, key, value) = match (args.first(), args.get(1), args.get(2)) {
+                    (Some(WVal::I32(object)), Some(WVal::I32(key)), Some(WVal::I32(value))) => {
+                        (*object as usize, *key as usize, *value as usize)
+                    }
+                    _ => return Err("env.dyn_set_member expects (i32, i32, i32)".to_string()),
+                };
+                dyn_set_member_cell(memory, &mut self.next_dyn, object, key, value)?;
+                Ok(vec![])
             }
             ("env", "dyn_get") => {
                 let (cell, key) = match (args.first(), args.get(1)) {

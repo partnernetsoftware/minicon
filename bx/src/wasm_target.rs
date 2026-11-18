@@ -1031,8 +1031,22 @@ impl Checker {
                 Ok(Ty::Obj(self.shape_id(&keys, &kinds)))
             }
             Expr::MethodCall(object, key, args, _) => {
+                if matches!(key.as_str(), "push" | "pop") && self.infer(object)? == Ty::Dyn {
+                    if key == "push" {
+                        if args.len() != 1 {
+                            return Err("wasm target .push takes one value".to_string());
+                        }
+                        self.infer(&args[0])?;
+                    } else if !args.is_empty() {
+                        return Err("wasm target .pop takes no arguments".to_string());
+                    }
+                    return Ok(Ty::Dyn);
+                }
                 if key == "pop" && args.is_empty() {
                     let base = self.infer(object)?;
+                    if base == Ty::Dyn {
+                        return Ok(Ty::Dyn);
+                    }
                     return element_ty(base)
                         .ok_or_else(|| "wasm target .pop works on arrays only".to_string());
                 }
@@ -2481,6 +2495,10 @@ impl Checker {
                         return Ok(Ty::Obj(self.exec_result_shape()));
                     }
                     if name == "push" && args.len() == 2 {
+                        if self.infer(&args[0])? == Ty::Dyn {
+                            self.infer(&args[1])?;
+                            return Ok(Ty::Dyn);
+                        }
                         if !matches!(args[0], Expr::Ident(_)) {
                             return Err(
                                 "wasm target pushes into a named array variable only".to_string()
@@ -2504,6 +2522,9 @@ impl Checker {
                     }
                     if name == "pop" && args.len() == 1 {
                         let arr_ty = self.infer(&args[0])?;
+                        if arr_ty == Ty::Dyn {
+                            return Ok(Ty::Dyn);
+                        }
                         return element_ty(arr_ty).ok_or_else(|| {
                             format!("wasm target pops arrays only, got {}", ty_name(arr_ty))
                         });
@@ -2773,6 +2794,10 @@ impl Checker {
                         }
                     }
                     Expr::Member(object, key, _) => {
+                        if self.infer(object)? == Ty::Dyn {
+                            self.infer(value)?;
+                            return Ok(());
+                        }
                         let Ty::Obj(shape) = self.infer(object)? else {
                             return Err(
                                 "wasm target writes record fields only".to_string()
@@ -2795,6 +2820,11 @@ impl Checker {
                     }
                     Expr::Index(array, index, _) => {
                         let arr_ty = self.infer(array)?;
+                        if arr_ty == Ty::Dyn {
+                            self.infer(index)?;
+                            self.infer(value)?;
+                            return Ok(());
+                        }
                         if !matches!(
                             arr_ty,
                             Ty::Arr
@@ -2849,6 +2879,10 @@ impl Checker {
                             return Err(
                                 "wasm target push(array, value) takes two arguments".to_string()
                             );
+                        }
+                        if self.infer(&args[0])? == Ty::Dyn {
+                            self.infer(&args[1])?;
+                            return Ok(());
                         }
                         if !matches!(args[0], Expr::Ident(_)) {
                             return Err(
@@ -3122,6 +3156,21 @@ impl Checker {
             }
             Stmt::Expr(Expr::MethodCall(object, name, args, _), _) => {
                 let base = self.infer(object)?;
+                if base == Ty::Dyn {
+                    match name.as_str() {
+                        "pop" if args.is_empty() => return Ok(()),
+                        "push" if args.len() == 1 => {
+                            self.infer(&args[0])?;
+                            return Ok(());
+                        }
+                        _ => {
+                            return Err(format!(
+                                "wasm target does not support the .{} method on dynamic values yet",
+                                name
+                            ))
+                        }
+                    }
+                }
                 let element = match base {
                     Ty::Arr => Ty::Int,
                     Ty::ArrStr => Ty::Str,
@@ -3415,7 +3464,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 133;
+const IMPORT_COUNT: u32 = 137;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -3536,6 +3585,10 @@ const DYN_HAS: u32 = 129;
 const DYN_CONTAINS: u32 = 130;
 const DYN_INDEX_OF: u32 = 131;
 const DYN_SLICE: u32 = 132;
+const DYN_SET_AT: u32 = 133;
+const DYN_PUSH: u32 = 134;
+const DYN_POP: u32 = 135;
+const DYN_SET_MEMBER: u32 = 136;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -9911,6 +9964,24 @@ impl<'a> Emitter<'a> {
                 Ok(Ty::Obj(shape))
             }
             Expr::MethodCall(object, key, args, _) => {
+                if matches!(key.as_str(), "push" | "pop") && self.type_of(object)? == Ty::Dyn {
+                    if key == "push" {
+                        if args.len() != 1 {
+                            return Err("wasm target .push takes one value".to_string());
+                        }
+                        let value_ty = self.type_of(&args[0])?;
+                        self.emit_expr(object)?;
+                        self.emit_box_dyn(&args[0], value_ty)?;
+                        self.builder.push(Instr::Call(DYN_PUSH));
+                        return Ok(Ty::Dyn);
+                    }
+                    if !args.is_empty() {
+                        return Err("wasm target .pop takes no arguments".to_string());
+                    }
+                    self.emit_expr(object)?;
+                    self.builder.push(Instr::Call(DYN_POP));
+                    return Ok(Ty::Dyn);
+                }
                 if key == "pop" && args.is_empty() {
                     let Expr::Ident(array) = &**object else {
                         return Err("wasm target pops a named array variable only".to_string());
@@ -10971,6 +11042,13 @@ impl<'a> Emitter<'a> {
                         return self.emit_exec_record(args, true);
                     }
                     if name == "push" && args.len() == 2 {
+                        if self.type_of(&args[0])? == Ty::Dyn {
+                            let value_ty = self.type_of(&args[1])?;
+                            self.emit_expr(&args[0])?;
+                            self.emit_box_dyn(&args[1], value_ty)?;
+                            self.builder.push(Instr::Call(DYN_PUSH));
+                            return Ok(Ty::Dyn);
+                        }
                         let Expr::Ident(array) = &args[0] else {
                             return Err(
                                 "wasm target pushes into a named array variable only".to_string()
@@ -10982,6 +11060,11 @@ impl<'a> Emitter<'a> {
                         return Ok(ty);
                     }
                     if name == "pop" && args.len() == 1 {
+                        if self.type_of(&args[0])? == Ty::Dyn {
+                            self.emit_expr(&args[0])?;
+                            self.builder.push(Instr::Call(DYN_POP));
+                            return Ok(Ty::Dyn);
+                        }
                         let Expr::Ident(array) = &args[0] else {
                             return Err("wasm target pops a named array variable only".to_string());
                         };
@@ -12643,6 +12726,15 @@ impl<'a> Emitter<'a> {
             }
             Stmt::Expr(Expr::Assign(target, value, _), _) => {
                 if let Expr::Member(object, key, _) = &**target {
+                    if self.type_of(object)? == Ty::Dyn {
+                        let value_ty = self.type_of(value)?;
+                        self.emit_expr(object)?;
+                        let key_expr = Expr::Str(key.clone());
+                        self.emit_box_dyn(&key_expr, Ty::Str)?;
+                        self.emit_box_dyn(value, value_ty)?;
+                        self.builder.push(Instr::Call(DYN_SET_MEMBER));
+                        return Ok(());
+                    }
                     let Ty::Obj(shape) = self.type_of(object)? else {
                         return Err("wasm target writes record fields only".to_string());
                     };
@@ -12689,6 +12781,17 @@ impl<'a> Emitter<'a> {
                         }
                     }
                     return Ok(());
+                }
+                if let Expr::Index(array, index, _) = &**target {
+                    if self.type_of(array)? == Ty::Dyn {
+                        let value_ty = self.type_of(value)?;
+                        let key_ty = self.type_of(index)?;
+                        self.emit_expr(array)?;
+                        self.emit_box_dyn(index, key_ty)?;
+                        self.emit_box_dyn(value, value_ty)?;
+                        self.builder.push(Instr::Call(DYN_SET_AT));
+                        return Ok(());
+                    }
                 }
                 if !matches!(**target, Expr::Ident(_)) {
                     if matches!(**target, Expr::Index(..)) {
@@ -12849,6 +12952,14 @@ impl<'a> Emitter<'a> {
                         return Ok(());
                     }
                     "push" => {
+                        if self.type_of(&args[0])? == Ty::Dyn {
+                            let value_ty = self.type_of(&args[1])?;
+                            self.emit_expr(&args[0])?;
+                            self.emit_box_dyn(&args[1], value_ty)?;
+                            self.builder.push(Instr::Call(DYN_PUSH));
+                            self.builder.push(Instr::Op(0x1a));
+                            return Ok(());
+                        }
                         let Expr::Ident(array) = &args[0] else {
                             return Err(
                                 "wasm target pushes into a named array variable only".to_string()
@@ -12858,6 +12969,12 @@ impl<'a> Emitter<'a> {
                         return Ok(());
                     }
                     "pop" => {
+                        if self.type_of(&args[0])? == Ty::Dyn {
+                            self.emit_expr(&args[0])?;
+                            self.builder.push(Instr::Call(DYN_POP));
+                            self.builder.push(Instr::Op(0x1a));
+                            return Ok(());
+                        }
                         let Expr::Ident(array) = &args[0] else {
                             return Err("wasm target pops a named array variable only".to_string());
                         };
@@ -13289,6 +13406,30 @@ impl<'a> Emitter<'a> {
                         return Err("wasm target .pop takes no arguments".to_string());
                     }
                     return self.emit_pop(array);
+                }
+                if self.type_of(object)? == Ty::Dyn {
+                    match name.as_str() {
+                        "pop" if args.is_empty() => {
+                            self.emit_expr(object)?;
+                            self.builder.push(Instr::Call(DYN_POP));
+                            self.builder.push(Instr::Op(0x1a));
+                            return Ok(());
+                        }
+                        "push" if args.len() == 1 => {
+                            let value_ty = self.type_of(&args[0])?;
+                            self.emit_expr(object)?;
+                            self.emit_box_dyn(&args[0], value_ty)?;
+                            self.builder.push(Instr::Call(DYN_PUSH));
+                            self.builder.push(Instr::Op(0x1a));
+                            return Ok(());
+                        }
+                        _ => {
+                            return Err(format!(
+                                "wasm target does not support the .{} method on dynamic values yet",
+                                name
+                            ))
+                        }
+                    }
                 }
                 if name != "push" || args.len() != 1 {
                     return Err(format!(
@@ -15615,6 +15756,13 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "dyn_contains", which_ty);
     builder.import_func("env", "dyn_index_of", two_i32_to_i64_ty);
     builder.import_func("env", "dyn_slice", i32_i64_i64_to_i32_ty);
+
+    let three_i32_void_ty =
+        builder.add_type(vec![ValType::I32, ValType::I32, ValType::I32], vec![]);
+    builder.import_func("env", "dyn_set_at", three_i32_void_ty);
+    builder.import_func("env", "dyn_push", which_ty);
+    builder.import_func("env", "dyn_pop", i32_to_i32_ty);
+    builder.import_func("env", "dyn_set_member", three_i32_void_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -17586,6 +17734,34 @@ mod tests {
             "{\"list\":[4,5],\"o\":{\"k\":[3]},\"xs\":[3]}",
             "[3,9]",
             "[3]",
+        ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn dynamic_mutation_matches_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let a = parse(env(\"X\", \"[1,2]\"))\na[0] = 9\nprint(a)\na[-1] = 8\nprint(a)\nprint(a.push(3))\nprint(a)\nprint(a.pop())\nprint(a)\nlet b = parse(env(\"X\", \"[]\"))\nprint(b.pop())\nprint(push(a, 7))\nprint(pop(a))\nlet o = parse(env(\"O\", \"{\\\"a\\\":1}\"))\no.a = 5\nprint(o)\no[\"c\"] = \"x\"\nprint(o)\nprint(get(o, \"c\"))",
+            &[],
+        );
+        // pop() is typed dynamic, so its value prints through the string sink.
+        assert!(numbers.is_empty());
+        let expected = [
+            "[9,2]",
+            "[9,8]",
+            "[9,8,3]",
+            "[9,8,3]",
+            "3",
+            "[9,8]",
+            "null",
+            "[9,8,7]",
+            "7",
+            "{\"a\":5}",
+            "{\"a\":5,\"c\":\"x\"}",
+            "x",
         ];
         assert_eq!(
             strings,
