@@ -1034,6 +1034,7 @@ impl Checker {
                             | Ty::ArrObj(_)
                             | Ty::ArrArr
                             | Ty::ArrStrArr
+                            | Ty::Dyn
                     ) {
                         return Err("wasm target .join works on arrays only".to_string());
                     }
@@ -1084,6 +1085,7 @@ impl Checker {
                             | Ty::ArrObj(_)
                             | Ty::ArrArr
                             | Ty::ArrStrArr
+                            | Ty::Dyn
                     ) {
                         return Err(format!("wasm target .{} works on arrays only", key));
                     }
@@ -1113,6 +1115,7 @@ impl Checker {
                 }
                 if key == "sum" && args.is_empty() {
                     return match self.infer(object)? {
+                        Ty::Dyn => Ok(Ty::Dyn),
                         Ty::Arr => Ok(Ty::Int),
                         Ty::ArrBool => Ok(Ty::Int),
                         Ty::ArrF => Ok(Ty::Float),
@@ -1124,6 +1127,7 @@ impl Checker {
                 }
                 if matches!(key.as_str(), "min" | "max") && args.is_empty() {
                     return match self.infer(object)? {
+                        Ty::Dyn => Ok(Ty::Dyn),
                         Ty::Arr => Ok(Ty::Int),
                         Ty::ArrBool => Ok(Ty::Bool),
                         Ty::ArrF => Ok(Ty::Float),
@@ -1796,6 +1800,7 @@ impl Checker {
                     }
                     if matches!(name.as_str(), "min" | "max") && args.len() == 1 {
                         return match self.infer(&args[0])? {
+                            Ty::Dyn => Ok(Ty::Dyn),
                             Ty::Arr => Ok(Ty::Int),
                             Ty::ArrBool => Ok(Ty::Bool),
                             Ty::ArrF => Ok(Ty::Float),
@@ -1824,6 +1829,12 @@ impl Checker {
                     }
                     if name == "join" && (args.len() == 1 || args.len() == 2) {
                         let base = self.infer(&args[0])?;
+                        if base == Ty::Dyn {
+                            if args.len() == 2 && self.infer(&args[1])? != Ty::Str {
+                                return Err("wasm target join() separator is a string".to_string());
+                            }
+                            return Ok(Ty::Str);
+                        }
                         if !matches!(
                             base,
                             Ty::Arr
@@ -1870,6 +1881,7 @@ impl Checker {
                     }
                     if name == "sum" && args.len() == 1 {
                         return match self.infer(&args[0])? {
+                            Ty::Dyn => Ok(Ty::Dyn),
                             Ty::Arr => Ok(Ty::Int),
                             Ty::ArrBool => Ok(Ty::Int),
                             Ty::ArrF => Ok(Ty::Float),
@@ -1878,6 +1890,9 @@ impl Checker {
                     }
                     if matches!(name.as_str(), "reverse" | "sort") && args.len() == 1 {
                         let input = self.infer(&args[0])?;
+                        if input == Ty::Dyn {
+                            return Ok(Ty::Dyn);
+                        }
                         let supported = matches!(
                             input,
                             Ty::Arr
@@ -3266,7 +3281,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 118;
+const IMPORT_COUNT: u32 = 123;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -3372,6 +3387,11 @@ const DYN_ARRAY_ALLOC: u32 = 114;
 const DYN_ARRAY_PUSH: u32 = 115;
 const DYN_VALUE_AT: u32 = 116;
 const DYN_KEY_AT: u32 = 117;
+const DYN_SORT: u32 = 118;
+const DYN_REVERSE: u32 = 119;
+const DYN_SUM: u32 = 120;
+const DYN_MINMAX: u32 = 121;
+const DYN_JOIN: u32 = 122;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -9557,6 +9577,18 @@ impl<'a> Emitter<'a> {
                     return self.emit_pop_value(array);
                 }
                 if key == "join" && (args.is_empty() || args.len() == 1) {
+                    if self.type_of(object)? == Ty::Dyn {
+                        self.emit_expr(object)?;
+                        if args.len() == 1 {
+                            self.emit_str(&args[0])?;
+                        } else {
+                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                        }
+                        self.builder.push(Instr::Call(DYN_JOIN));
+                        self.push_block_as_pair();
+                        return Ok(Ty::Str);
+                    }
                     if matches!(
                         self.type_of(object)?,
                         Ty::ArrObj(_) | Ty::ArrArr | Ty::ArrStrArr
@@ -9647,6 +9679,11 @@ impl<'a> Emitter<'a> {
                 }
                 if key == "sum" && args.is_empty() {
                     return match self.type_of(object)? {
+                        Ty::Dyn => {
+                            self.emit_expr(object)?;
+                            self.builder.push(Instr::Call(DYN_SUM));
+                            Ok(Ty::Dyn)
+                        }
                         Ty::ArrF => {
                             self.emit_expr(object)?;
                             self.builder.push(Instr::Call(ARR_SUM_F));
@@ -9666,6 +9703,13 @@ impl<'a> Emitter<'a> {
                 if matches!(key.as_str(), "min" | "max") && args.is_empty() {
                     let want_min = key == "min";
                     return match self.type_of(object)? {
+                        Ty::Dyn => {
+                            self.emit_expr(object)?;
+                            self.builder
+                                .push(Instr::Const(0x41, WVal::I32(if want_min { 1 } else { 0 })));
+                            self.builder.push(Instr::Call(DYN_MINMAX));
+                            Ok(Ty::Dyn)
+                        }
                         Ty::Arr => {
                             self.emit_expr(object)?;
                             self.builder
@@ -9758,6 +9802,11 @@ impl<'a> Emitter<'a> {
                 }
                 if key == "sort" && args.is_empty() {
                     let ty = self.type_of(object)?;
+                    if ty == Ty::Dyn {
+                        self.emit_expr(object)?;
+                        self.builder.push(Instr::Call(DYN_SORT));
+                        return Ok(Ty::Dyn);
+                    }
                     let import = match ty {
                         Ty::Arr => ARR_SORT,
                         Ty::ArrF => ARR_SORT_F,
@@ -9776,6 +9825,11 @@ impl<'a> Emitter<'a> {
                 }
                 if key == "reverse" && args.is_empty() {
                     let ty = self.type_of(object)?;
+                    if ty == Ty::Dyn {
+                        self.emit_expr(object)?;
+                        self.builder.push(Instr::Call(DYN_REVERSE));
+                        return Ok(Ty::Dyn);
+                    }
                     if !matches!(
                         ty,
                         Ty::Arr
@@ -10792,6 +10846,15 @@ impl<'a> Emitter<'a> {
                     if matches!(name.as_str(), "min" | "max") && args.len() == 1 {
                         let want_min = name == "min";
                         return match self.type_of(&args[0])? {
+                            Ty::Dyn => {
+                                self.emit_expr(&args[0])?;
+                                self.builder.push(Instr::Const(
+                                    0x41,
+                                    WVal::I32(if want_min { 1 } else { 0 }),
+                                ));
+                                self.builder.push(Instr::Call(DYN_MINMAX));
+                                Ok(Ty::Dyn)
+                            }
                             Ty::Arr => {
                                 self.emit_expr(&args[0])?;
                                 self.builder.push(Instr::Const(
@@ -10915,6 +10978,18 @@ impl<'a> Emitter<'a> {
                     }
                     if name == "join" && (args.len() == 1 || args.len() == 2) {
                         let base = self.type_of(&args[0])?;
+                        if base == Ty::Dyn {
+                            self.emit_expr(&args[0])?;
+                            if args.len() == 2 {
+                                self.emit_str(&args[1])?;
+                            } else {
+                                self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                                self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                            }
+                            self.builder.push(Instr::Call(DYN_JOIN));
+                            self.push_block_as_pair();
+                            return Ok(Ty::Str);
+                        }
                         if matches!(base, Ty::ArrObj(_) | Ty::ArrArr | Ty::ArrStrArr) {
                             self.emit_join_records(&args[0], args.get(1))?;
                             return Ok(Ty::Str);
@@ -11010,6 +11085,11 @@ impl<'a> Emitter<'a> {
                     }
                     if name == "sum" && args.len() == 1 {
                         return match self.type_of(&args[0])? {
+                            Ty::Dyn => {
+                                self.emit_expr(&args[0])?;
+                                self.builder.push(Instr::Call(DYN_SUM));
+                                Ok(Ty::Dyn)
+                            }
                             Ty::ArrF => {
                                 self.emit_expr(&args[0])?;
                                 self.builder.push(Instr::Call(ARR_SUM_F));
@@ -11082,6 +11162,15 @@ impl<'a> Emitter<'a> {
                     }
                     if matches!(name.as_str(), "reverse" | "sort") && args.len() == 1 {
                         let ty = self.type_of(&args[0])?;
+                        if ty == Ty::Dyn {
+                            self.emit_expr(&args[0])?;
+                            self.builder.push(Instr::Call(if name == "sort" {
+                                DYN_SORT
+                            } else {
+                                DYN_REVERSE
+                            }));
+                            return Ok(Ty::Dyn);
+                        }
                         if name == "sort"
                             && matches!(ty, Ty::ArrObj(_) | Ty::ArrArr | Ty::ArrStrArr)
                         {
@@ -15033,6 +15122,11 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "dyn_array_push", two_i32_void_ty);
     builder.import_func("env", "dyn_value_at", i32_i64_to_i32_ty);
     builder.import_func("env", "dyn_key_at", i32_i64_to_i32_ty);
+    builder.import_func("env", "dyn_sort", i32_to_i32_ty);
+    builder.import_func("env", "dyn_reverse", i32_to_i32_ty);
+    builder.import_func("env", "dyn_sum", i32_to_i32_ty);
+    builder.import_func("env", "dyn_minmax", which_ty);
+    builder.import_func("env", "dyn_join", format_container_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -16801,6 +16895,37 @@ mod tests {
         let expected = [
             "0", "10", "1", "1", "20", "2", "a", "1", "a!", "b", "2", "b!", "10", "20", "20", "40",
             "1", "2",
+        ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn dynamic_sort_and_aggregates_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let a = parse(env(\"X\", \"[3,1,2]\"))\nprint(sort(a))\nprint(a)\nprint(reverse(a))\nprint(a)\nlet s = parse(env(\"X\", \"[1,2,3]\"))\nprint(sum(s))\nprint(min(s))\nprint(max(s))\nprint(join(s, \",\"))\nprint(s.join(\"-\"))\nprint(s.sort())\nprint(s.sum())\nprint(s.min())\nlet strs = parse(env(\"X\", \"[\\\"b\\\",\\\"a\\\"]\"))\nprint(sort(strs))\nprint(reverse(strs))\nprint(min(strs))\nprint(max(strs))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = [
+            "[1,2,3]",
+            "[1,2,3]",
+            "[3,2,1]",
+            "[3,2,1]",
+            "6",
+            "1",
+            "3",
+            "1,2,3",
+            "1-2-3",
+            "[1,2,3]",
+            "6",
+            "1",
+            "[\"a\",\"b\"]",
+            "[\"b\",\"a\"]",
+            "a",
+            "b",
         ];
         assert_eq!(
             strings,

@@ -1142,6 +1142,160 @@ fn dyn_value_at_cell(
     }
 }
 
+/// Order two numeric-or-string dynamic cells for sort/min/max.
+fn dyn_order(memory: &[u8], a: usize, b: usize) -> Result<std::cmp::Ordering, String> {
+    let (tag_a, aux_a, payload_a) = dyn_tag(memory, a);
+    let (tag_b, aux_b, payload_b) = dyn_tag(memory, b);
+    if tag_a == 4 && tag_b == 4 {
+        let left = memory_text(memory, payload_a as usize, aux_a as usize);
+        let right = memory_text(memory, payload_b as usize, aux_b as usize);
+        return Ok(left.cmp(&right));
+    }
+    if tag_a == 4 || tag_b == 4 {
+        return Err("cannot compare a dynamic string with a number".to_string());
+    }
+    let left = dyn_number(memory, a)?;
+    let right = dyn_number(memory, b)?;
+    Ok(left
+        .partial_cmp(&right)
+        .unwrap_or(std::cmp::Ordering::Equal))
+}
+
+/// Stable insertion sort of a dynamic array's 16-byte cells.
+fn dyn_sort_cells(memory: &mut [u8], cell: usize) -> Result<(), String> {
+    let (tag, aux, payload) = dyn_tag(memory, cell);
+    if tag != 5 {
+        return Err("sort() on a dynamic value needs a dynamic array".to_string());
+    }
+    let count = aux as usize;
+    let base = payload as usize;
+    for index in 1..count {
+        let current = base + index * 16;
+        let mut slot = 16usize;
+        let mut scan = index;
+        while scan > 0 {
+            let previous = base + (scan - 1) * 16;
+            if dyn_order(memory, previous, current)? != std::cmp::Ordering::Greater {
+                break;
+            }
+            slot = previous;
+            scan -= 1;
+        }
+        if slot != 16 {
+            let mut temp = [0u8; 16];
+            temp.copy_from_slice(&memory[current..current + 16]);
+            memory.copy_within(slot..slot + (index - scan) * 16, slot + 16);
+            memory[slot..slot + 16].copy_from_slice(&temp);
+        }
+    }
+    Ok(())
+}
+
+fn dyn_reverse_cells(memory: &mut [u8], cell: usize) -> Result<(), String> {
+    let (tag, aux, payload) = dyn_tag(memory, cell);
+    if tag != 5 {
+        return Err("reverse() on a dynamic value needs a dynamic array".to_string());
+    }
+    let count = aux as usize;
+    let base = payload as usize;
+    for index in 0..count / 2 {
+        let left = base + index * 16;
+        let right = base + (count - 1 - index) * 16;
+        let mut temp = [0u8; 16];
+        temp.copy_from_slice(&memory[left..left + 16]);
+        memory.copy_within(right..right + 16, left);
+        memory[right..right + 16].copy_from_slice(&temp);
+    }
+    Ok(())
+}
+
+fn dyn_sum_cells(memory: &mut [u8], next_dyn: &mut u32, cell: usize) -> Result<usize, String> {
+    let (tag, aux, payload) = dyn_tag(memory, cell);
+    if tag != 5 {
+        return Err("sum() on a dynamic value needs a dynamic array".to_string());
+    }
+    let count = aux as usize;
+    let base = payload as usize;
+    let mut total = 0.0;
+    let mut all_int = true;
+    for index in 0..count {
+        let item = base + index * 16;
+        let (item_tag, _, _) = dyn_tag(memory, item);
+        if item_tag == 4 || item_tag >= 5 {
+            return Err("sum() needs numbers".to_string());
+        }
+        if item_tag == 2 {
+            all_int = false;
+        }
+        total += dyn_number(memory, item)?;
+    }
+    let result = alloc_dyn_cell(next_dyn)?;
+    if all_int {
+        write_dyn_cell(memory, result, 1, 0, total as i64 as u64);
+    } else {
+        write_dyn_cell(memory, result, 2, 0, total.to_bits());
+    }
+    Ok(result)
+}
+
+fn dyn_minmax_cells(
+    memory: &mut [u8],
+    next_dyn: &mut u32,
+    cell: usize,
+    want_min: bool,
+) -> Result<usize, String> {
+    let (tag, aux, payload) = dyn_tag(memory, cell);
+    if tag != 5 {
+        return Err("min()/max() on a dynamic value needs a dynamic array".to_string());
+    }
+    let count = aux as usize;
+    if count == 0 {
+        return Err("min()/max() of an empty array".to_string());
+    }
+    let base = payload as usize;
+    let mut best = base;
+    for index in 1..count {
+        let item = base + index * 16;
+        let order = dyn_order(memory, item, best)?;
+        let better = if want_min {
+            order == std::cmp::Ordering::Less
+        } else {
+            order == std::cmp::Ordering::Greater
+        };
+        if better {
+            best = item;
+        }
+    }
+    let result = alloc_dyn_cell(next_dyn)?;
+    memory.copy_within(best..best + 16, result);
+    Ok(result)
+}
+
+fn dyn_join_cells(
+    memory: &mut [u8],
+    next_dyn: &mut u32,
+    next_file: &mut u32,
+    cell: usize,
+    sep_ptr: usize,
+    sep_len: usize,
+) -> Result<i32, String> {
+    let (tag, aux, payload) = dyn_tag(memory, cell);
+    if tag != 5 {
+        return Err("join() on a dynamic value needs a dynamic array".to_string());
+    }
+    let sep = memory_text(memory, sep_ptr, sep_len);
+    let count = aux as usize;
+    let base = payload as usize;
+    let mut pieces = Vec::with_capacity(count);
+    for index in 0..count {
+        pieces.push(format_dyn_cell(memory, base + index * 16, false)?);
+    }
+    let joined = pieces.join(&sep);
+    let _ = next_dyn;
+    store_text_block(memory, next_file, joined.as_bytes())
+        .map(|start| start as i32)
+        .ok_or_else(|| "dyn_join result does not fit the file region".to_string())
+}
 /// Dynamic for-loop key: boxed int index for arrays, boxed string key for objects.
 fn dyn_key_at_cell(
     memory: &mut [u8],
@@ -2407,6 +2561,57 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 };
                 dyn_array_push(memory, cell, value)?;
                 Ok(vec![])
+            }
+            ("env", "dyn_sort") => {
+                let cell = match args.first() {
+                    Some(WVal::I32(cell)) => *cell as usize,
+                    _ => return Err("env.dyn_sort expects one i32".to_string()),
+                };
+                dyn_sort_cells(memory, cell)?;
+                Ok(vec![WVal::I32(cell as i32)])
+            }
+            ("env", "dyn_reverse") => {
+                let cell = match args.first() {
+                    Some(WVal::I32(cell)) => *cell as usize,
+                    _ => return Err("env.dyn_reverse expects one i32".to_string()),
+                };
+                dyn_reverse_cells(memory, cell)?;
+                Ok(vec![WVal::I32(cell as i32)])
+            }
+            ("env", "dyn_sum") => {
+                let cell = match args.first() {
+                    Some(WVal::I32(cell)) => *cell as usize,
+                    _ => return Err("env.dyn_sum expects one i32".to_string()),
+                };
+                let result = dyn_sum_cells(memory, &mut self.next_dyn, cell)?;
+                Ok(vec![WVal::I32(result as i32)])
+            }
+            ("env", "dyn_minmax") => {
+                let (cell, want_min) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(cell)), Some(WVal::I32(want_min))) => {
+                        (*cell as usize, *want_min != 0)
+                    }
+                    _ => return Err("env.dyn_minmax expects (i32, i32)".to_string()),
+                };
+                let result = dyn_minmax_cells(memory, &mut self.next_dyn, cell, want_min)?;
+                Ok(vec![WVal::I32(result as i32)])
+            }
+            ("env", "dyn_join") => {
+                let (cell, sep_ptr, sep_len) = match (args.first(), args.get(1), args.get(2)) {
+                    (Some(WVal::I32(cell)), Some(WVal::I32(ptr)), Some(WVal::I32(len))) => {
+                        (*cell as usize, *ptr as usize, *len as usize)
+                    }
+                    _ => return Err("env.dyn_join expects (i32, i32, i32)".to_string()),
+                };
+                let start = dyn_join_cells(
+                    memory,
+                    &mut self.next_dyn,
+                    &mut self.next_file,
+                    cell,
+                    sep_ptr,
+                    sep_len,
+                )?;
+                Ok(vec![WVal::I32(start)])
             }
             ("env", "dyn_parse") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {
