@@ -2362,11 +2362,14 @@ impl Checker {
                             .get(id as usize)
                             .ok_or_else(|| "wasm target lost a function literal".to_string())?
                             .clone();
-                        let acc = if args.len() == 3 {
+                        let mut acc = if args.len() == 3 {
                             self.infer(&args[2])?
                         } else {
                             elem
                         };
+                        if args.len() == 3 && acc == Ty::Int && elem == Ty::Float {
+                            acc = Ty::Float;
+                        }
                         if sig.result == Some(Ty::Dyn)
                             && sig.params == vec![Ty::Dyn, elem]
                             && (args.len() == 3
@@ -7729,7 +7732,12 @@ impl<'a> Emitter<'a> {
             }
         };
         let acc_ty = if let Some(init) = init {
-            self.type_of(init)?
+            let init_ty = self.type_of(init)?;
+            if init_ty == Ty::Int && elem == Ty::Float {
+                Ty::Float
+            } else {
+                init_ty
+            }
         } else {
             elem
         };
@@ -7756,10 +7764,19 @@ impl<'a> Emitter<'a> {
         let acc_len = self.builder.add_local(ValType::I32);
         self.emit_expr(callback)?;
         self.builder.push(Instr::Local(0x21, cb_env));
-        self.emit_expr(array)?;
+        let emitted = self.emit_expr(array)?;
+        if emitted != input_ty {
+            return Err(format!(
+                "wasm target reduce() array is {} at emission but was typed {}; run with BX_TARGET=bxb",
+                ty_name(emitted),
+                ty_name(input_ty)
+            ));
+        }
         self.builder.push(Instr::Local(0x21, arr_tmp));
         if let Some(init) = init {
+            let init_ty = self.type_of(init)?;
             self.emit_expr(init)?;
+            self.coerce_arg(acc_ty, init_ty)?;
             Self::emit_store_acc(self, acc_ty, acc_i64, acc_f64, acc_ptr, acc_len);
             self.builder.push(Instr::Const(0x42, WVal::I64(0)));
         } else {
@@ -10645,8 +10662,9 @@ impl<'a> Emitter<'a> {
                         self.emit_f64(index)?;
                         self.builder.push(Instr::Op(0xb0));
                     } else if index_ty == Ty::Str {
-                        self.emit_str(index)?;
-                        self.builder.push(Instr::Call(STR_TO_INT));
+                        self.emit_box_dyn(index, Ty::Str)?;
+                        self.builder.push(Instr::Call(DYN_GET));
+                        return Ok(Ty::Dyn);
                     } else if index_ty == Ty::Bool {
                         self.emit_expr(index)?;
                         self.builder.push(Instr::Op(0xad));
@@ -15287,6 +15305,14 @@ impl<'a> InferState<'a> {
                                             None => elem,
                                         }
                                     };
+                                    let acc = if args.get(2).is_some()
+                                        && acc == Ty::Int
+                                        && elem == Ty::Float
+                                    {
+                                        Ty::Float
+                                    } else {
+                                        acc
+                                    };
                                     changed |= self.unify_param(index, 0, acc)?;
                                     changed |= self.unify_param(index, 1, elem)?;
                                     if self.results[index] == Some(Ty::Dyn) {
@@ -15399,6 +15425,11 @@ impl<'a> InferState<'a> {
                             args.get(1)
                                 .and_then(|arg| self.soft(arg, locals))
                                 .unwrap_or(elem)
+                        };
+                        let acc = if args.get(1).is_some() && acc == Ty::Int && elem == Ty::Float {
+                            Ty::Float
+                        } else {
+                            acc
                         };
                         changed |= self.unify_param(index, 0, acc)?;
                         changed |= self.unify_param(index, 1, elem)?;
@@ -19108,6 +19139,24 @@ mod tests {
         assert_eq!(
             strings,
             expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn dynamic_string_index_and_float_reduce_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let data = parse(\"{\" + json(\"items\") + \":[{\" + json(\"score\") + \":2},{\" + json(\"score\") + \":3}]}\")\nlet xs = map(data[\"items\"], fn(it) { return it[\"score\"] })\nprint(json(xs))\nlet a = parse(env(\"X\", \"[1,2]\"))\nprint(a[\"0\"])\nprint(reduce(parse(\"[1.5,2.5]\"), fn(b, c) { return b + c }, 0))\nprint(parse(\"[1.5,2.5]\")[1])",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec![
+                "[2,3]".to_string(),
+                "1".to_string(),
+                "4".to_string(),
+                "2.5".to_string()
+            ]
         );
     }
 

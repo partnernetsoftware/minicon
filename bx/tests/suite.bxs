@@ -975,6 +975,16 @@ if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim(
   casesFail += 1
   failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
 }
+write(artDir + "/wasm-dynstrkey.bxs", 'let data = parse("{" + json("items") + ":[{" + json("score") + ":2},{" + json("score") + ":3}]}")\nlet xs = map(data["items"], fn(it) { return it["score"] })\nprint(json(xs))\nlet a = parse(env("X", "[1,2]"))\nprint(a["0"])\nprint(reduce(parse("[1.5,2.5]"), fn(b, c) { return b + c }, 0))\nprint(parse("[1.5,2.5]")[1])\n')
+let wasmDynStrKey = exec([BX, "build", "--wasm", artDir + "/wasm-dynstrkey.bxs", "-o", artDir + "/wasm-dynstrkey.wasm"])
+let wasmDynStrKeyRun = exec([BX, "run", artDir + "/wasm-dynstrkey.wasm"])
+let wasmDynStrKeyVm = exec([BX, "run", artDir + "/wasm-dynstrkey.bxs"])
+if (wasmDynStrKey.code == 0 && wasmDynStrKeyRun.out == wasmDynStrKeyVm.out && wasmDynStrKeyRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm dynamic string index\n    wasm=" + json(wasmDynStrKeyRun.out) + " vm=" + json(wasmDynStrKeyVm.out) + " err=" + json(wasmDynStrKey.err))
+}
 write(artDir + "/wasm-recinsert.bxs", 'let r = {a: 1}\nr[env("K", "b")] = 2\nprint(r)\n')
 let wasmRecInsert = exec([BX, "build", "--wasm", artDir + "/wasm-recinsert.bxs", "-o", artDir + "/wasm-recinsert.wasm"])
 let wasmRecInsertRun = exec([BX, "run", artDir + "/wasm-recinsert.wasm"])
@@ -1219,6 +1229,16 @@ if (wasmDynMixed.code == 0 && wasmDynMixedRun.out == wasmDynMixedVm.out && wasmD
   failures.push("wasm mixed dynamic record fields\n    wasm=" + json(wasmDynMixedRun.out) + " vm=" + json(wasmDynMixedVm.out) + " err=" + json(wasmDynMixedRun.err))
 }
 write(artDir + "/dynstr.json", json("abc"))
+write(artDir + "/wasm-dynstrkey.bxs", 'let data = parse("{" + json("items") + ":[{" + json("score") + ":2},{" + json("score") + ":3}]}")\nlet xs = map(data["items"], fn(it) { return it["score"] })\nprint(json(xs))\nlet a = parse(env("X", "[1,2]"))\nprint(a["0"])\nprint(reduce(parse("[1.5,2.5]"), fn(b, c) { return b + c }, 0))\nprint(parse("[1.5,2.5]")[1])\n')
+let wasmDynStrKey = exec([BX, "build", "--wasm", artDir + "/wasm-dynstrkey.bxs", "-o", artDir + "/wasm-dynstrkey.wasm"])
+let wasmDynStrKeyRun = exec([BX, "run", artDir + "/wasm-dynstrkey.wasm"])
+let wasmDynStrKeyVm = exec([BX, "run", artDir + "/wasm-dynstrkey.bxs"])
+if (wasmDynStrKey.code == 0 && wasmDynStrKeyRun.out == wasmDynStrKeyVm.out && wasmDynStrKeyRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm dynamic string index\n    wasm=" + json(wasmDynStrKeyRun.out) + " vm=" + json(wasmDynStrKeyVm.out) + " err=" + json(wasmDynStrKey.err))
+}
 write(artDir + "/wasm-recinsert.bxs", 'let r = {a: 1}\nr[env("K", "b")] = 2\nprint(r)\n')
 let wasmRecInsert = exec([BX, "build", "--wasm", artDir + "/wasm-recinsert.bxs", "-o", artDir + "/wasm-recinsert.wasm"])
 let wasmRecInsertRun = exec([BX, "run", artDir + "/wasm-recinsert.wasm"])

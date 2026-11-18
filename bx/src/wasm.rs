@@ -1513,10 +1513,17 @@ fn dyn_get_cell(
         return Err("get() does not index dynamic strings".to_string());
     }
     if key_tag == 4 {
+        let wanted = memory_text(memory, key_payload as usize, key_aux as usize);
+        if tag == 5 {
+            // A numeric string key indexes arrays like `a["0"]` in the VM.
+            let Ok(index) = wanted.trim().parse::<i64>() else {
+                return Err("array get() needs an integer index".to_string());
+            };
+            return dyn_index_cell(memory, next_dyn, null_slot, cell, index);
+        }
         if tag != 6 {
             return Err("get() with a string key needs a dynamic object".to_string());
         }
-        let wanted = memory_text(memory, key_payload as usize, key_aux as usize);
         for index in 0..aux as usize {
             let entry = payload as usize + index * 12;
             let entry_key = dyn_entry_key(memory, entry)?;
