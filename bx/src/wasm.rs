@@ -2706,6 +2706,44 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 )?;
                 Ok(vec![WVal::I32(cell as i32)])
             }
+            ("env", "dyn_cell_at") => {
+                let (cell, index) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(cell)), Some(WVal::I64(index))) => (*cell as usize, *index),
+                    _ => return Err("env.dyn_cell_at expects (i32, i64)".to_string()),
+                };
+                let (tag, aux, payload) = dyn_tag(memory, cell);
+                if tag != 5 {
+                    return Err("dynamic sort needs a dynamic array".to_string());
+                }
+                if index < 0 || index >= aux as i64 {
+                    return Err("dynamic sort index out of bounds".to_string());
+                }
+                Ok(vec![WVal::I32(
+                    (payload as usize + index as usize * 16) as i32,
+                )])
+            }
+            ("env", "dyn_swap") => {
+                let (cell, a, b) = match (args.first(), args.get(1), args.get(2)) {
+                    (Some(WVal::I32(cell)), Some(WVal::I64(a)), Some(WVal::I64(b))) => {
+                        (*cell as usize, *a, *b)
+                    }
+                    _ => return Err("env.dyn_swap expects (i32, i64, i64)".to_string()),
+                };
+                let (tag, aux, payload) = dyn_tag(memory, cell);
+                if tag != 5 {
+                    return Err("dynamic sort needs a dynamic array".to_string());
+                }
+                if a < 0 || b < 0 || a >= aux as i64 || b >= aux as i64 {
+                    return Err("dynamic sort index out of bounds".to_string());
+                }
+                let left = payload as usize + a as usize * 16;
+                let right = payload as usize + b as usize * 16;
+                let mut temp = [0u8; 16];
+                temp.copy_from_slice(&memory[left..left + 16]);
+                memory.copy_within(right..right + 16, left);
+                memory[right..right + 16].copy_from_slice(&temp);
+                Ok(vec![])
+            }
             ("env", "dyn_parse") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {
                     (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),

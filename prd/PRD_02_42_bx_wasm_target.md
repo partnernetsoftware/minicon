@@ -238,7 +238,7 @@ Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 143 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 144 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -535,9 +535,11 @@ Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
   ordering), reverse, `sum`/`min`/`max` and `join` (both call and method form).
   `+` concatenates dynamic arrays with each other and with static int/string/
   float/bool arrays (`dyn + [3]`, `[0] + dyn`, `dyn + dyn`; static sides are
-  converted through `env.dyn_from_array`). Comparator sort of dynamic values,
-  record/nested-array concatenation and converting a dynamic value back into a
-  static container remain explicit errors.
+  converted through `env.dyn_from_array`). Dynamic comparator sort works in both
+  forms (`sort(dyn, cmp)`, `dyn.sort(cmp)`): a guest-side insertion sort orders
+  cells through the callback (`env.dyn_cell_at`/`dyn_swap`), accepting int- or
+  dynamic-returning comparators. Record/nested-array concatenation and
+  converting a dynamic value back into a static container remain explicit errors.
 - **`null` (static marker)**: `null` is typed `Ty::Null` and covers the VM's
   scalar semantics: printing/`str`/`json`/`type`/interpolation give `null`,
   `null == null`, `null == 0`, `null == 0.0`, `null == false` are true while

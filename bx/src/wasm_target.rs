@@ -1045,6 +1045,30 @@ impl Checker {
                 }
                 if key == "sort" && args.len() == 1 {
                     let base = self.infer(object)?;
+                    if base == Ty::Dyn {
+                        let Ty::Func(id) = self.infer(&args[0])? else {
+                            return Err(
+                                "wasm target .sort(cmp) needs a function literal comparator"
+                                    .to_string(),
+                            );
+                        };
+                        let sig = self
+                            .lit_sigs
+                            .get(id as usize)
+                            .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+                        if sig.params != vec![Ty::Dyn, Ty::Dyn] {
+                            return Err(
+                                "wasm target dynamic sort comparators take two dynamic values"
+                                    .to_string(),
+                            );
+                        }
+                        if !matches!(sig.result, Some(Ty::Int) | Some(Ty::Dyn)) {
+                            return Err(
+                                "wasm target dynamic sort comparators return an int".to_string()
+                            );
+                        }
+                        return Ok(Ty::Dyn);
+                    }
                     let element = match base {
                         Ty::Arr => Ty::Int,
                         Ty::ArrF => Ty::Float,
@@ -2148,6 +2172,29 @@ impl Checker {
                     }
                     if name == "sort" && args.len() == 2 {
                         let input = self.infer(&args[0])?;
+                        if input == Ty::Dyn {
+                            let Ty::Func(id) = self.infer(&args[1])? else {
+                                return Err(
+                                    "wasm target sort() needs a function literal comparator"
+                                        .to_string(),
+                                );
+                            };
+                            let sig = self
+                                .lit_sigs
+                                .get(id as usize)
+                                .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+                            if sig.params != vec![Ty::Dyn, Ty::Dyn] {
+                                return Err(
+                                    "wasm target dynamic sort comparators take two dynamic values"
+                                        .to_string(),
+                                );
+                            }
+                            if !matches!(sig.result, Some(Ty::Int) | Some(Ty::Dyn)) {
+                                return Err("wasm target dynamic sort comparators return an int"
+                                    .to_string());
+                            }
+                            return Ok(Ty::Dyn);
+                        }
                         let element = match input {
                             Ty::Arr => Ty::Int,
                             Ty::ArrF => Ty::Float,
@@ -3281,7 +3328,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 124;
+const IMPORT_COUNT: u32 = 126;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -3393,6 +3440,8 @@ const DYN_SUM: u32 = 120;
 const DYN_MINMAX: u32 = 121;
 const DYN_JOIN: u32 = 122;
 const DYN_FROM_ARRAY: u32 = 123;
+const DYN_CELL_AT: u32 = 124;
+const DYN_SWAP: u32 = 125;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -8398,6 +8447,129 @@ impl<'a> Emitter<'a> {
         Ok(())
     }
 
+    /// `sort(dynArray, cmp)`: guest-side insertion sort that asks the callback
+    /// to order two dynamic cells, swapping cells in place via the host.
+    fn emit_dyn_sort_cmp(&mut self, array: &Expr, callback: &Expr) -> Result<(), String> {
+        let Ty::Func(id) = self.type_of(callback)? else {
+            return Err("wasm target sort() needs a function literal comparator".to_string());
+        };
+        let sig = self
+            .checker
+            .lit_sigs
+            .get(id as usize)
+            .cloned()
+            .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+        if sig.params != vec![Ty::Dyn, Ty::Dyn] {
+            return Err("wasm target dynamic sort comparators take two dynamic values".to_string());
+        }
+        let result_ty = sig.result.unwrap_or(Ty::Int);
+        if !matches!(result_ty, Ty::Int | Ty::Dyn) {
+            return Err("wasm target dynamic sort comparators return an int".to_string());
+        }
+        let arr = self.builder.add_local(ValType::I32);
+        let cb_env = self.builder.add_local(ValType::I32);
+        let count = self.builder.add_local(ValType::I64);
+        let i = self.builder.add_local(ValType::I64);
+        let j = self.builder.add_local(ValType::I64);
+        let a = self.builder.add_local(ValType::I32);
+        let b = self.builder.add_local(ValType::I32);
+        let cmp = self.builder.add_local(ValType::I64);
+        self.emit_expr(array)?;
+        self.builder.push(Instr::Local(0x21, arr));
+        self.emit_expr(callback)?;
+        self.builder.push(Instr::Local(0x21, cb_env));
+        self.builder.push(Instr::Local(0x20, arr));
+        self.builder.push(Instr::Call(DYN_LEN));
+        self.builder.push(Instr::Local(0x21, count));
+        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+        self.builder.push(Instr::Local(0x21, i));
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x02);
+        self.builder.push(Instr::Block {
+            opcode: 0x03,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x03);
+        self.builder.push(Instr::Local(0x20, i));
+        self.builder.push(Instr::Local(0x20, count));
+        self.builder.push(Instr::Op(0x59));
+        self.builder.push(Instr::BrIf(1));
+        self.builder.push(Instr::Local(0x20, i));
+        self.builder.push(Instr::Local(0x21, j));
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x02);
+        self.builder.push(Instr::Block {
+            opcode: 0x03,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x03);
+        self.builder.push(Instr::Local(0x20, j));
+        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+        self.builder.push(Instr::Op(0x57));
+        self.builder.push(Instr::BrIf(1));
+        for (slot, offset) in [(a, -1i64), (b, 0i64)] {
+            self.builder.push(Instr::Local(0x20, arr));
+            self.builder.push(Instr::Local(0x20, j));
+            self.builder.push(Instr::Const(0x42, WVal::I64(offset)));
+            self.builder.push(Instr::Op(0x7c));
+            self.builder.push(Instr::Call(DYN_CELL_AT));
+            self.builder.push(Instr::Local(0x21, slot));
+        }
+        self.builder.push(Instr::Local(0x20, cb_env));
+        self.builder.push(Instr::Local(0x20, a));
+        self.builder.push(Instr::Local(0x20, b));
+        self.builder.push(Instr::Call(sig.index));
+        if result_ty == Ty::Dyn {
+            self.builder.push(Instr::Local(0x21, a));
+            self.builder.push(Instr::Local(0x20, a));
+            self.builder.push(Instr::Call(DYN_TO_INT));
+        }
+        self.builder.push(Instr::Local(0x21, cmp));
+        self.builder.push(Instr::Local(0x20, cmp));
+        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+        self.builder.push(Instr::Op(0x57));
+        self.builder.push(Instr::BrIf(1));
+        self.builder.push(Instr::Local(0x20, arr));
+        self.builder.push(Instr::Local(0x20, j));
+        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+        self.builder.push(Instr::Op(0x7d));
+        self.builder.push(Instr::Local(0x20, j));
+        self.builder.push(Instr::Call(DYN_SWAP));
+        self.builder.push(Instr::Local(0x20, j));
+        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+        self.builder.push(Instr::Op(0x7d));
+        self.builder.push(Instr::Local(0x21, j));
+        self.builder.push(Instr::Br(0));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.builder.push(Instr::Local(0x20, i));
+        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+        self.builder.push(Instr::Op(0x7c));
+        self.builder.push(Instr::Local(0x21, i));
+        self.builder.push(Instr::Br(0));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.builder.push(Instr::Local(0x20, arr));
+        Ok(())
+    }
     /// `map(dynArray, cb)` / `filter(dynArray, cb)`: iterate dynamic elements,
     /// box callback results and build a new dynamic array (P2b).
     fn emit_dyn_map_filter(
@@ -9814,6 +9986,10 @@ impl<'a> Emitter<'a> {
                 }
                 if key == "sort" && args.len() == 1 {
                     let input_ty = self.type_of(object)?;
+                    if input_ty == Ty::Dyn {
+                        self.emit_dyn_sort_cmp(object, &args[0])?;
+                        return Ok(Ty::Dyn);
+                    }
                     let mode = match input_ty {
                         Ty::ArrF => SortMode::Float,
                         Ty::ArrBool => SortMode::Bool,
@@ -11139,6 +11315,10 @@ impl<'a> Emitter<'a> {
                                 ty_name(other)
                             )),
                         };
+                    }
+                    if name == "sort" && args.len() == 2 && self.type_of(&args[0])? == Ty::Dyn {
+                        self.emit_dyn_sort_cmp(&args[0], &args[1])?;
+                        return Ok(Ty::Dyn);
                     }
                     if name == "sort"
                         && args.len() == 2
@@ -13010,6 +13190,29 @@ impl<'a> Emitter<'a> {
                         let actual = self.emit_expr(expr)?;
                         if expected == Ty::Float && actual == Ty::Int {
                             self.builder.push(Instr::Op(0xb9));
+                        } else if actual == Ty::Dyn && expected != Ty::Dyn {
+                            match expected {
+                                Ty::Int => {
+                                    self.builder.push(Instr::Call(DYN_TO_INT));
+                                }
+                                Ty::Float => {
+                                    self.builder.push(Instr::Call(DYN_TO_FLOAT));
+                                }
+                                Ty::Bool => {
+                                    self.builder.push(Instr::Call(DYN_TRUTHY));
+                                }
+                                Ty::Str => {
+                                    self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                                    self.builder.push(Instr::Call(DYN_STR));
+                                    self.push_block_as_pair();
+                                }
+                                _ => {
+                                    return Err(format!(
+                                        "wasm target function returns {}, got dynamic",
+                                        ty_name(expected)
+                                    ))
+                                }
+                            }
                         } else if expected != actual {
                             return Err(format!(
                                 "wasm target function returns {}, got {}",
@@ -13587,11 +13790,12 @@ impl<'a> InferState<'a> {
                 Ok(true)
             }
             Some(current) if current == ty => Ok(false),
-            Some(Ty::Dyn) => Ok(false),
-            Some(_) if ty == Ty::Dyn => {
-                self.results[index] = Some(Ty::Dyn);
+            Some(Ty::Dyn) if ty != Ty::Dyn => {
+                self.results[index] = Some(ty);
                 Ok(true)
             }
+            Some(Ty::Dyn) => Ok(false),
+            Some(_) if ty == Ty::Dyn => Ok(false),
             Some(current) if is_number(current) && is_number(ty) => {
                 if ty == Ty::Float && current == Ty::Int {
                     self.results[index] = Some(Ty::Float);
@@ -13720,6 +13924,7 @@ impl<'a> InferState<'a> {
                                 Some(Ty::ArrObj(shape)) => Ty::Obj(shape),
                                 Some(Ty::ArrArr) => Ty::Arr,
                                 Some(Ty::ArrStrArr) => Ty::ArrStr,
+                                Some(Ty::Dyn) => Ty::Dyn,
                                 _ => Ty::Int,
                             };
                             changed |= self.unify_param(index, 0, elem)?;
@@ -14955,6 +15160,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let two_i32_to_i64_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I64]);
     let i32_i64_to_i32_ty = builder.add_type(vec![ValType::I32, ValType::I64], vec![ValType::I32]);
     let two_i32_void_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![]);
+    let dyn_swap_ty = builder.add_type(vec![ValType::I32, ValType::I64, ValType::I64], vec![]);
     let env_add_ty = builder.add_type(
         vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
         vec![],
@@ -15162,6 +15368,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "dyn_minmax", which_ty);
     builder.import_func("env", "dyn_join", format_container_ty);
     builder.import_func("env", "dyn_from_array", which_ty);
+    builder.import_func("env", "dyn_cell_at", i32_i64_to_i32_ty);
+    builder.import_func("env", "dyn_swap", dyn_swap_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -16983,6 +17191,26 @@ mod tests {
             "[\"w\",\"x\"]",
             "[1.5,2.5]",
             "[true,false]",
+        ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn dynamic_comparator_sort_matches_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let a = parse(env(\"X\", \"[3,1,2]\"))\nprint(sort(a, fn(x, y) { return y - x }))\nprint(a)\nlet b = parse(env(\"Y\", \"[3,1,2]\"))\nprint(b.sort(fn(x, y) { return x - y }))\nprint(b)\nlet s = parse(env(\"S\", \"[\\\"bb\\\",\\\"a\\\",\\\"ccc\\\"]\"))\nprint(sort(s, fn(x, y) { return len(x) - len(y) }))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = [
+            "[3,2,1]",
+            "[3,2,1]",
+            "[1,2,3]",
+            "[1,2,3]",
+            "[\"a\",\"bb\",\"ccc\"]",
         ];
         assert_eq!(
             strings,

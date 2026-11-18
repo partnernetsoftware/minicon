@@ -954,6 +954,16 @@ if (wasmBoolGrow.code == 0 && wasmBoolGrowRun.out == wasmBoolGrowVm.out && wasmB
   casesFail += 1
   failures.push("wasm growable bool arrays\n    wasm=" + json(wasmBoolGrowRun.out) + " vm=" + json(wasmBoolGrowVm.out) + " err=" + json(wasmBoolGrowRun.err))
 }
+write(artDir + "/wasm-dynsortcmp.bxs", 'let a = parse(env("X", "[3,1,2]"))\nprint(sort(a, fn(x, y) { return y - x }))\nprint(a)\nlet b = parse(env("Y", "[3,1,2]"))\nprint(b.sort(fn(x, y) { return x - y }))\nprint(b)\n')
+let wasmDynSortCmp = exec([BX, "build", "--wasm", artDir + "/wasm-dynsortcmp.bxs", "-o", artDir + "/wasm-dynsortcmp.wasm"])
+let wasmDynSortCmpRun = exec([BX, "run", artDir + "/wasm-dynsortcmp.wasm"])
+let wasmDynSortCmpVm = exec([BX, "run", artDir + "/wasm-dynsortcmp.bxs"])
+if (wasmDynSortCmp.code == 0 && wasmDynSortCmpRun.out == wasmDynSortCmpVm.out && wasmDynSortCmpRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm dynamic comparator sort\n    wasm=" + json(wasmDynSortCmpRun.out) + " vm=" + json(wasmDynSortCmpVm.out) + " err=" + json(wasmDynSortCmpRun.err))
+}
 write(artDir + "/wasm-dynconcat.bxs", 'let a = parse(env("X", "[1,2]"))\nprint(a + [3])\nprint([0] + a)\nlet b = parse(env("Y", "[4,5]"))\nprint(a + b)\nlet f = parse(env("F", "[1.5]"))\nprint(f + [2.5])\nlet bo = parse(env("B", "[true]"))\nprint(bo + [false])\n')
 let wasmDynConcat = exec([BX, "build", "--wasm", artDir + "/wasm-dynconcat.bxs", "-o", artDir + "/wasm-dynconcat.wasm"])
 let wasmDynConcatRun = exec([BX, "run", artDir + "/wasm-dynconcat.wasm"])
