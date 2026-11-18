@@ -1419,6 +1419,33 @@ impl Checker {
                     let base = self.infer(object)?;
                     if base == Ty::Dyn {
                         match key.as_str() {
+                            "trim" | "upper" | "lower" => {
+                                return Ok(Ty::Str);
+                            }
+                            "repeat" => {
+                                if self.infer(&args[0])? != Ty::Int {
+                                    return Err("wasm target .repeat() count is an int".to_string());
+                                }
+                                return Ok(Ty::Str);
+                            }
+                            "split" => {
+                                if self.infer(&args[0])? != Ty::Str {
+                                    return Err(
+                                        "wasm target .split() separator is a string".to_string()
+                                    );
+                                }
+                                return Ok(Ty::ArrStr);
+                            }
+                            "replace" => {
+                                for arg in args {
+                                    if self.infer(arg)? != Ty::Str {
+                                        return Err(
+                                            "wasm target .replace() needs strings".to_string()
+                                        );
+                                    }
+                                }
+                                return Ok(Ty::Str);
+                            }
                             "index_of" => {
                                 self.infer(&args[0])?;
                                 return Ok(Ty::Int);
@@ -1469,12 +1496,15 @@ impl Checker {
                     }
                     let base = self.infer(object)?;
                     if base == Ty::Dyn {
-                        if key != "contains" {
-                            return Err(
-                                "wasm target dynamic values support .contains only".to_string()
-                            );
+                        if key != "contains" && self.infer(&args[0])? != Ty::Str {
+                            return Err(format!(
+                                "wasm target .{} on dynamic values needs a string",
+                                key
+                            ));
                         }
-                        self.infer(&args[0])?;
+                        if key == "contains" {
+                            self.infer(&args[0])?;
+                        }
                         return Ok(Ty::Bool);
                     }
                     match base {
@@ -1966,6 +1996,16 @@ impl Checker {
                         return Ok(Ty::Str);
                     }
                     if name == "replace" && args.len() == 3 {
+                        if self.infer(&args[0])? == Ty::Dyn {
+                            for arg in &args[1..] {
+                                if self.infer(arg)? != Ty::Str {
+                                    return Err(
+                                        "wasm target replace() needs string arguments".to_string()
+                                    );
+                                }
+                            }
+                            return Ok(Ty::Str);
+                        }
                         for arg in args {
                             if self.infer(arg)? != Ty::Str {
                                 return Err("wasm target replace() takes three strings".to_string());
@@ -2018,6 +2058,12 @@ impl Checker {
                         };
                     }
                     if name == "repeat" && args.len() == 2 {
+                        if self.infer(&args[0])? == Ty::Dyn {
+                            if self.infer(&args[1])? != Ty::Int {
+                                return Err("wasm target repeat() count is an int".to_string());
+                            }
+                            return Ok(Ty::Str);
+                        }
                         if self.infer(&args[0])? != Ty::Str || self.infer(&args[1])? != Ty::Int {
                             return Err(
                                 "wasm target repeat() takes a string and an int".to_string()
@@ -2030,6 +2076,12 @@ impl Checker {
                         return Ok(Ty::Str);
                     }
                     if name == "split" && args.len() == 2 {
+                        if self.infer(&args[0])? == Ty::Dyn {
+                            if self.infer(&args[1])? != Ty::Str {
+                                return Err("wasm target split() separator is a string".to_string());
+                            }
+                            return Ok(Ty::ArrStr);
+                        }
                         if self.infer(&args[0])? != Ty::Str || self.infer(&args[1])? != Ty::Str {
                             return Err("wasm target split() takes two strings".to_string());
                         }
@@ -2784,6 +2836,15 @@ impl Checker {
                     }
 
                     if matches!(name.as_str(), "starts_with" | "ends_with") && args.len() == 2 {
+                        if self.infer(&args[0])? == Ty::Dyn {
+                            if self.infer(&args[1])? != Ty::Str {
+                                return Err(format!(
+                                    "wasm target {}(text, ...) needs a string needle",
+                                    name
+                                ));
+                            }
+                            return Ok(Ty::Bool);
+                        }
                         for arg in args {
                             if self.infer(arg)? != Ty::Str {
                                 return Err(format!(
@@ -11017,6 +11078,19 @@ impl<'a> Emitter<'a> {
                 }
                 match key.as_str() {
                     "trim" | "upper" | "lower" if args.is_empty() => {
+                        let import = match key.as_str() {
+                            "trim" => STR_TRIM,
+                            "upper" => STR_UPPER,
+                            _ => STR_LOWER,
+                        };
+                        if self.type_of(object)? == Ty::Dyn {
+                            self.emit_expr(object)?;
+                            self.builder.push(Instr::Call(DYN_TEXT_BLOCK));
+                            self.push_block_as_pair();
+                            self.builder.push(Instr::Call(import));
+                            self.push_block_as_pair();
+                            return Ok(Ty::Str);
+                        }
                         self.emit_str(object)?;
                         let import = match key.as_str() {
                             "trim" => STR_TRIM,
@@ -11028,6 +11102,15 @@ impl<'a> Emitter<'a> {
                         return Ok(Ty::Str);
                     }
                     "repeat" if args.len() == 1 => {
+                        if self.type_of(object)? == Ty::Dyn {
+                            self.emit_expr(object)?;
+                            self.builder.push(Instr::Call(DYN_TEXT_BLOCK));
+                            self.push_block_as_pair();
+                            self.emit_expr(&args[0])?;
+                            self.builder.push(Instr::Call(STR_REPEAT));
+                            self.push_block_as_pair();
+                            return Ok(Ty::Str);
+                        }
                         self.emit_str(object)?;
                         self.emit_expr(&args[0])?;
                         self.builder.push(Instr::Call(STR_REPEAT));
@@ -11035,6 +11118,14 @@ impl<'a> Emitter<'a> {
                         return Ok(Ty::Str);
                     }
                     "split" if args.len() == 1 => {
+                        if self.type_of(object)? == Ty::Dyn {
+                            self.emit_expr(object)?;
+                            self.builder.push(Instr::Call(DYN_TEXT_BLOCK));
+                            self.push_block_as_pair();
+                            self.emit_str(&args[0])?;
+                            self.builder.push(Instr::Call(STR_SPLIT));
+                            return Ok(Ty::ArrStr);
+                        }
                         self.emit_str(object)?;
                         self.emit_str(&args[0])?;
                         self.builder.push(Instr::Call(STR_SPLIT));
@@ -11049,6 +11140,16 @@ impl<'a> Emitter<'a> {
                         return Ok(Ty::Str);
                     }
                     "replace" if args.len() == 2 => {
+                        if self.type_of(object)? == Ty::Dyn {
+                            self.emit_expr(object)?;
+                            self.builder.push(Instr::Call(DYN_TEXT_BLOCK));
+                            self.push_block_as_pair();
+                            self.emit_str(&args[0])?;
+                            self.emit_str(&args[1])?;
+                            self.builder.push(Instr::Call(STR_REPLACE));
+                            self.push_block_as_pair();
+                            return Ok(Ty::Str);
+                        }
                         self.emit_str(object)?;
                         self.emit_str(&args[0])?;
                         self.emit_str(&args[1])?;
@@ -11121,6 +11222,18 @@ impl<'a> Emitter<'a> {
                 if matches!(key.as_str(), "contains" | "starts_with" | "ends_with") {
                     if args.len() != 1 {
                         return Err(format!("wasm target .{} takes one string", key));
+                    }
+                    if matches!(key.as_str(), "starts_with" | "ends_with")
+                        && self.type_of(object)? == Ty::Dyn
+                    {
+                        let mode = if key == "starts_with" { 1 } else { 2 };
+                        self.emit_expr(object)?;
+                        self.builder.push(Instr::Call(DYN_TEXT_BLOCK));
+                        self.push_block_as_pair();
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Const(0x41, WVal::I32(mode)));
+                        self.builder.push(Instr::Call(STR_TEST));
+                        return Ok(Ty::Bool);
                     }
                     if key == "contains" {
                         if self.type_of(object)? == Ty::Dyn {
@@ -11864,6 +11977,16 @@ impl<'a> Emitter<'a> {
                     }
 
                     if matches!(name.as_str(), "starts_with" | "ends_with") && args.len() == 2 {
+                        if self.type_of(&args[0])? == Ty::Dyn {
+                            let mode = if name == "starts_with" { 1 } else { 2 };
+                            self.emit_expr(&args[0])?;
+                            self.builder.push(Instr::Call(DYN_TEXT_BLOCK));
+                            self.push_block_as_pair();
+                            self.emit_str(&args[1])?;
+                            self.builder.push(Instr::Const(0x41, WVal::I32(mode)));
+                            self.builder.push(Instr::Call(STR_TEST));
+                            return Ok(Ty::Bool);
+                        }
                         if self.type_of(&args[0])? != Ty::Str || self.type_of(&args[1])? != Ty::Str
                         {
                             return Err(format!("wasm target {}(text, ...) needs strings", name));
@@ -12009,6 +12132,16 @@ impl<'a> Emitter<'a> {
                         return Ok(Ty::Str);
                     }
                     if name == "replace" && args.len() == 3 {
+                        if self.type_of(&args[0])? == Ty::Dyn {
+                            self.emit_expr(&args[0])?;
+                            self.builder.push(Instr::Call(DYN_TEXT_BLOCK));
+                            self.push_block_as_pair();
+                            self.emit_str(&args[1])?;
+                            self.emit_str(&args[2])?;
+                            self.builder.push(Instr::Call(STR_REPLACE));
+                            self.push_block_as_pair();
+                            return Ok(Ty::Str);
+                        }
                         for arg in args {
                             self.emit_str(arg)?;
                         }
@@ -12159,6 +12292,15 @@ impl<'a> Emitter<'a> {
                         };
                     }
                     if name == "repeat" && args.len() == 2 {
+                        if self.type_of(&args[0])? == Ty::Dyn {
+                            self.emit_expr(&args[0])?;
+                            self.builder.push(Instr::Call(DYN_TEXT_BLOCK));
+                            self.push_block_as_pair();
+                            self.emit_expr(&args[1])?;
+                            self.builder.push(Instr::Call(STR_REPEAT));
+                            self.push_block_as_pair();
+                            return Ok(Ty::Str);
+                        }
                         self.emit_str(&args[0])?;
                         self.emit_expr(&args[1])?;
                         self.builder.push(Instr::Call(STR_REPEAT));
@@ -12198,6 +12340,14 @@ impl<'a> Emitter<'a> {
                         return Ok(Ty::Str);
                     }
                     if name == "split" && args.len() == 2 {
+                        if self.type_of(&args[0])? == Ty::Dyn {
+                            self.emit_expr(&args[0])?;
+                            self.builder.push(Instr::Call(DYN_TEXT_BLOCK));
+                            self.push_block_as_pair();
+                            self.emit_str(&args[1])?;
+                            self.builder.push(Instr::Call(STR_SPLIT));
+                            return Ok(Ty::ArrStr);
+                        }
                         self.emit_str(&args[0])?;
                         self.emit_str(&args[1])?;
                         self.builder.push(Instr::Call(STR_SPLIT));
@@ -18790,6 +18940,32 @@ mod tests {
         assert!(numbers.is_empty());
         let expected = [
             "false", "false", "null", "3", "2", "3", "3", "3", "AB", "ab", "x",
+        ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn dynamic_string_methods_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let s = parse(env(\"X\", \"\\\"a-b-c\\\"\"))\nprint(replace(s, \"-\", \"+\"))\nprint(split(s, \"-\"))\nprint(json(split(s, \"-\")))\nprint(repeat(s, 2))\nprint(starts_with(s, \"a-\"))\nprint(ends_with(s, \"-c\"))\nprint(contains(s, \"-b\"))\nprint(s.split(\"-\"))\nprint(s.starts_with(\"a\"))\nprint(s.replace(\"a\", \"z\"))\nprint(s.repeat(1))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = [
+            "a+b+c",
+            "[\"a\",\"b\",\"c\"]",
+            "[\"a\",\"b\",\"c\"]",
+            "a-b-ca-b-c",
+            "true",
+            "true",
+            "true",
+            "[\"a\",\"b\",\"c\"]",
+            "true",
+            "z-b-c",
+            "a-b-c",
         ];
         assert_eq!(
             strings,

@@ -975,6 +975,16 @@ if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim(
   casesFail += 1
   failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
 }
+write(artDir + "/wasm-dynstr.bxs", 'let s = parse(env("X", json("a-b-c")))\nprint(replace(s, "-", "+"))\nprint(split(s, "-"))\nprint(repeat(s, 2))\nprint(str(starts_with(s, "a-")))\nprint(str(ends_with(s, "-c")))\nprint(s.split("-"))\nprint(s.replace("a", "z"))\n')
+let wasmDynStrOps = exec([BX, "build", "--wasm", artDir + "/wasm-dynstr.bxs", "-o", artDir + "/wasm-dynstr.wasm"])
+let wasmDynStrOpsRun = exec([BX, "run", artDir + "/wasm-dynstr.wasm"])
+let wasmDynStrOpsVm = exec([BX, "run", artDir + "/wasm-dynstr.bxs"])
+if (wasmDynStrOps.code == 0 && wasmDynStrOpsRun.out == wasmDynStrOpsVm.out && wasmDynStrOpsRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm dynamic string ops\n    wasm=" + json(wasmDynStrOpsRun.out) + " vm=" + json(wasmDynStrOpsVm.out) + " err=" + json(wasmDynStrOps.err))
+}
 write(artDir + "/wasm-dynmath.bxs", 'let a = parse(env("X", "[1,2]"))\nprint(str(has(a, 0)))\nprint(abs(parse(env("X", "-3"))))\nprint(floor(parse(env("X", "2.7"))))\nprint(round(parse(env("X", "2.5"))))\nprint(sqrt(parse(env("X", "9"))))\nprint(upper(parse(env("X", json("ab")))))\nprint(trim(parse(env("X", json("  x  ")))))\n')
 let wasmDynMath = exec([BX, "build", "--wasm", artDir + "/wasm-dynmath.bxs", "-o", artDir + "/wasm-dynmath.wasm"])
 let wasmDynMathRun = exec([BX, "run", artDir + "/wasm-dynmath.wasm"])
