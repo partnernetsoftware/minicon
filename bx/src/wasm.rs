@@ -1721,7 +1721,10 @@ fn dyn_order(memory: &[u8], a: usize, b: usize) -> Result<std::cmp::Ordering, St
         return Ok(left.cmp(&right));
     }
     if tag_a == 4 || tag_b == 4 {
-        return Err("cannot compare a dynamic string with a number".to_string());
+        // The VM's ordering comparator treats mixed number/string pairs as
+        // equal (comparison operators still raise), so mixed arrays keep their
+        // original order and min()/max() skip incomparable elements.
+        return Ok(std::cmp::Ordering::Equal);
     }
     let left = dyn_number(memory, a)?;
     let right = dyn_number(memory, b)?;

@@ -975,6 +975,16 @@ if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim(
   casesFail += 1
   failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
 }
+write(artDir + "/wasm-mixorder.bxs", 'let xs = parse("[" + "3," + json("a") + ",1," + json("z") + ",2]")\nprint(sort(xs))\nprint(min(xs))\nprint(max(xs))\nlet ys = parse("[" + json("b") + ",2," + json("a") + ",1]")\nprint(min(ys))\nprint(max(ys))\n')
+let wasmMixOrder = exec([BX, "build", "--wasm", artDir + "/wasm-mixorder.bxs", "-o", artDir + "/wasm-mixorder.wasm"])
+let wasmMixOrderRun = exec([BX, "run", artDir + "/wasm-mixorder.wasm"])
+let wasmMixOrderVm = exec([BX, "run", artDir + "/wasm-mixorder.bxs"])
+if (wasmMixOrder.code == 0 && wasmMixOrderRun.out == wasmMixOrderVm.out && wasmMixOrderRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm mixed ordering\n    wasm=" + json(wasmMixOrderRun.out) + " vm=" + json(wasmMixOrderVm.out) + " err=" + json(wasmMixOrder.err))
+}
 write(artDir + "/wasm-getdynkey.bxs", 'let o = {a: 1, b: "x", c: [2]}\nprint(get(o, env("K", "b")))\nprint(get(o, env("K", "c")))\nprint(get(o, env("K", "z"), 9))\nprint(str(has(o, env("K", "a"))))\n')
 let wasmGetDynKey = exec([BX, "build", "--wasm", artDir + "/wasm-getdynkey.bxs", "-o", artDir + "/wasm-getdynkey.wasm"])
 let wasmGetDynKeyRun = exec([BX, "run", artDir + "/wasm-getdynkey.wasm"])
@@ -1150,6 +1160,16 @@ if (wasmDynMixed.code == 0 && wasmDynMixedRun.out == wasmDynMixedVm.out && wasmD
   failures.push("wasm mixed dynamic record fields\n    wasm=" + json(wasmDynMixedRun.out) + " vm=" + json(wasmDynMixedVm.out) + " err=" + json(wasmDynMixedRun.err))
 }
 write(artDir + "/dynstr.json", json("abc"))
+write(artDir + "/wasm-mixorder.bxs", 'let xs = parse("[" + "3," + json("a") + ",1," + json("z") + ",2]")\nprint(sort(xs))\nprint(min(xs))\nprint(max(xs))\nlet ys = parse("[" + json("b") + ",2," + json("a") + ",1]")\nprint(min(ys))\nprint(max(ys))\n')
+let wasmMixOrder = exec([BX, "build", "--wasm", artDir + "/wasm-mixorder.bxs", "-o", artDir + "/wasm-mixorder.wasm"])
+let wasmMixOrderRun = exec([BX, "run", artDir + "/wasm-mixorder.wasm"])
+let wasmMixOrderVm = exec([BX, "run", artDir + "/wasm-mixorder.bxs"])
+if (wasmMixOrder.code == 0 && wasmMixOrderRun.out == wasmMixOrderVm.out && wasmMixOrderRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm mixed ordering\n    wasm=" + json(wasmMixOrderRun.out) + " vm=" + json(wasmMixOrderVm.out) + " err=" + json(wasmMixOrder.err))
+}
 write(artDir + "/wasm-getdynkey.bxs", 'let o = {a: 1, b: "x", c: [2]}\nprint(get(o, env("K", "b")))\nprint(get(o, env("K", "c")))\nprint(get(o, env("K", "z"), 9))\nprint(str(has(o, env("K", "a"))))\n')
 let wasmGetDynKey = exec([BX, "build", "--wasm", artDir + "/wasm-getdynkey.bxs", "-o", artDir + "/wasm-getdynkey.wasm"])
 let wasmGetDynKeyRun = exec([BX, "run", artDir + "/wasm-getdynkey.wasm"])
