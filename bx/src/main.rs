@@ -294,7 +294,24 @@ fn cmd_run(args: Vec<String>) -> i32 {
             return 2;
         }
     };
-    if target == "wasm" {
+    let bxb_input = Path::new(path)
+        .extension()
+        .map(|extension| extension.eq_ignore_ascii_case("bxb"))
+        .unwrap_or(false);
+    if target == "wasm" && bxb_input {
+        let explicit = budget.target.is_some()
+            || budget.wasm
+            || matches!(std::env::var("BX_TARGET").as_deref(), Ok("wasm"));
+        if explicit {
+            eprintln!(
+                "bx: '{}' is a .bxb chunk (VM bytecode); rebuild it from source with `bx build --target wasm`",
+                path
+            );
+            return 1;
+        }
+        // Default-target rehearsal only: legacy chunks still run on the VM.
+    }
+    if target == "wasm" && !bxb_input {
         let src = match fs::read_to_string(path) {
             Ok(src) => src,
             Err(e) => {
@@ -686,6 +703,13 @@ fn cmd_build(args: Vec<String>) -> i32 {
         }
     };
     if wasm && html {
+        let src = match expand_use_source(Path::new(&input), &src) {
+            Ok(expanded) => expanded,
+            Err(e) => {
+                eprintln!("bx: {}", e);
+                return 1;
+            }
+        };
         let (module, js, page) = match wasm_demo::build_demo(&src) {
             Ok(parts) => parts,
             Err(e) => {
@@ -897,6 +921,14 @@ fn cmd_check(args: Vec<String>) -> i32 {
                 return 2;
             }
         }
+    }
+    if selected_target.as_deref() == Some("wasm") && rest[0].to_ascii_lowercase().ends_with(".bxb")
+    {
+        eprintln!(
+            "bx: '{}' is a .bxb chunk (VM bytecode); check its .bxs source with --target wasm",
+            rest[0]
+        );
+        return 1;
     }
     let path = Path::new(&rest[0]);
     if selected_target.as_deref() == Some("wasm")

@@ -975,6 +975,20 @@ if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim(
   casesFail += 1
   failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
 }
+write(artDir + "/cli-legacy.bxs", 'print("hello")\n')
+let buildLegacy = exec([BX, "build", artDir + "/cli-legacy.bxs", "-o", artDir + "/cli-legacy.bxb"])
+let runLegacyDefault = exec([BX, "run", artDir + "/cli-legacy.bxb"], {env: {BX_DEFAULT_TARGET: "wasm"}})
+let runLegacyWasm = exec([BX, "run", "--target", "wasm", artDir + "/cli-legacy.bxb"])
+let checkLegacyWasm = exec([BX, "check", "--target", "wasm", artDir + "/cli-legacy.bxb"])
+write(artDir + "/cli-use-lib.bxs", 'fn twice(n) {\n  return n * 2\n}\n')
+write(artDir + "/cli-use-main.bxs", 'use "cli-use-lib.bxs"\nprint(twice(2))\n')
+let buildUseHtml = exec([BX, "build", "--wasm", "--html", artDir + "/cli-use-main.bxs", "-o", artDir + "/cli-use-main.html"])
+if (buildLegacy.code == 0 && runLegacyDefault.code == 0 && runLegacyDefault.out.trim() == "hello" && runLegacyWasm.code == 1 && runLegacyWasm.err.contains(".bxb chunk") && checkLegacyWasm.code == 1 && buildUseHtml.code == 0 && exists(artDir + "/cli-use-main.html")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("legacy .bxb and html use handling\n    build=" + str(buildLegacy.code) + " default=" + json(runLegacyDefault.out) + " wasmCode=" + str(runLegacyWasm.code) + " check=" + str(checkLegacyWasm.code) + " html=" + str(buildUseHtml.code))
+}
 write(artDir + "/wasm-growmix.bxs", 'let xs = []\nxs.push(1)\nxs.push("a")\nprint(xs)\nprint(str(len(xs)))\nxs.push([2])\nprint(xs)\nfn build() {\n  let zs = []\n  zs.push(1)\n  zs.push("q")\n  return zs\n}\nprint(build())\n')
 let wasmGrowMix = exec([BX, "build", "--wasm", artDir + "/wasm-growmix.bxs", "-o", artDir + "/wasm-growmix.wasm"])
 let wasmGrowMixRun = exec([BX, "run", artDir + "/wasm-growmix.wasm"])
