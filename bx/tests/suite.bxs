@@ -975,6 +975,16 @@ if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim(
   casesFail += 1
   failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
 }
+write(artDir + "/wasm-aliaspush.bxs", 'let a = [1, 2]\nlet b = a\npush(b, 3)\nprint(a)\nprint(b)\nlet r = {x: 1}\nlet r2 = r\nr2.x = 5\nprint(r)\nprint(r2)\n')
+let wasmAliasPush = exec([BX, "build", "--wasm", artDir + "/wasm-aliaspush.bxs", "-o", artDir + "/wasm-aliaspush.wasm"])
+let wasmAliasPushRun = exec([BX, "run", artDir + "/wasm-aliaspush.wasm"])
+let wasmAliasPushVm = exec([BX, "run", artDir + "/wasm-aliaspush.bxs"])
+if (wasmAliasPush.code == 0 && wasmAliasPushRun.out == wasmAliasPushVm.out && wasmAliasPushRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm array alias push\n    wasm=" + json(wasmAliasPushRun.out) + " vm=" + json(wasmAliasPushVm.out) + " err=" + json(wasmAliasPush.err))
+}
 write(artDir + "/wasm-nullparse.bxs", 'print(parse("{" + json("k") + ": [1, 2.5, " + json("s") + ", true, null]}"))\nprint(json(parse("{" + json("k") + ": [1, null]}" )))\nprint(json("a" + json("") + ""))\nprint(parse("[1, null]")[1])\nprint(type(parse("1e3")))\nprint(parse("[1, null]")[0] + 1)\n')
 let wasmNullParse = exec([BX, "build", "--wasm", artDir + "/wasm-nullparse.bxs", "-o", artDir + "/wasm-nullparse.wasm"])
 let wasmNullParseRun = exec([BX, "run", artDir + "/wasm-nullparse.wasm"])
@@ -1289,6 +1299,16 @@ if (wasmDynMixed.code == 0 && wasmDynMixedRun.out == wasmDynMixedVm.out && wasmD
   failures.push("wasm mixed dynamic record fields\n    wasm=" + json(wasmDynMixedRun.out) + " vm=" + json(wasmDynMixedVm.out) + " err=" + json(wasmDynMixedRun.err))
 }
 write(artDir + "/dynstr.json", json("abc"))
+write(artDir + "/wasm-aliaspush.bxs", 'let a = [1, 2]\nlet b = a\npush(b, 3)\nprint(a)\nprint(b)\nlet r = {x: 1}\nlet r2 = r\nr2.x = 5\nprint(r)\nprint(r2)\n')
+let wasmAliasPush = exec([BX, "build", "--wasm", artDir + "/wasm-aliaspush.bxs", "-o", artDir + "/wasm-aliaspush.wasm"])
+let wasmAliasPushRun = exec([BX, "run", artDir + "/wasm-aliaspush.wasm"])
+let wasmAliasPushVm = exec([BX, "run", artDir + "/wasm-aliaspush.bxs"])
+if (wasmAliasPush.code == 0 && wasmAliasPushRun.out == wasmAliasPushVm.out && wasmAliasPushRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm array alias push\n    wasm=" + json(wasmAliasPushRun.out) + " vm=" + json(wasmAliasPushVm.out) + " err=" + json(wasmAliasPush.err))
+}
 write(artDir + "/wasm-nullparse.bxs", 'print(parse("{" + json("k") + ": [1, 2.5, " + json("s") + ", true, null]}"))\nprint(json(parse("{" + json("k") + ": [1, null]}" )))\nprint(json("a" + json("") + ""))\nprint(parse("[1, null]")[1])\nprint(type(parse("1e3")))\nprint(parse("[1, null]")[0] + 1)\n')
 let wasmNullParse = exec([BX, "build", "--wasm", artDir + "/wasm-nullparse.bxs", "-o", artDir + "/wasm-nullparse.wasm"])
 let wasmNullParseRun = exec([BX, "run", artDir + "/wasm-nullparse.wasm"])

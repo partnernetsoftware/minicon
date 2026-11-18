@@ -7301,7 +7301,9 @@ impl<'a> Emitter<'a> {
             }
         };
         let arr_tmp = self.builder.add_local(ValType::I32);
+        let count_tmp = self.builder.add_local(ValType::I32);
         let new_tmp = self.builder.add_local(ValType::I32);
+        let addr_tmp = self.builder.add_local(ValType::I32);
         let value_ptr = self.builder.add_local(ValType::I32);
         let value_len = self.builder.add_local(ValType::I32);
         let value_f = self.builder.add_local(ValType::F64);
@@ -7360,6 +7362,41 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Local(0x21, arr_tmp));
         self.builder.push(Instr::Local(0x20, arr_tmp));
         self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Local(0x21, count_tmp));
+        // If the array is still the heap top, append in place so aliases share
+        // the growth like the VM's reference arrays.
+        self.builder.push(Instr::Local(0x20, arr_tmp));
+        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Local(0x20, count_tmp));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6c));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Global(0x23, self.heap));
+        self.builder.push(Instr::Op(0x46));
+        self.builder.push(Instr::Block {
+            opcode: 0x04,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x04);
+        Self::emit_push_slot_addr(self, arr_tmp, count_tmp, addr_tmp);
+        Self::emit_push_store(
+            self, element, addr_tmp, value_ptr, value_len, value_f, value_i64,
+        );
+        self.builder.push(Instr::Local(0x20, arr_tmp));
+        self.builder.push(Instr::Local(0x20, count_tmp));
+        self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Mem(0x36, 2, 0));
+        self.builder.push(Instr::Local(0x20, addr_tmp));
+        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
+        self.builder.push(Instr::Op(0x6a));
+        self.builder.push(Instr::Global(0x24, self.heap));
+        self.builder.push(Instr::Else { end: 0 });
+        self.builder.push(Instr::Local(0x20, arr_tmp));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
         self.builder.push(Instr::Const(0x41, WVal::I32(8)));
         self.builder.push(Instr::Op(0x6c));
         self.builder.push(Instr::Const(0x41, WVal::I32(12)));
@@ -7381,54 +7418,69 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Const(0x41, WVal::I32(1)));
         self.builder.push(Instr::Op(0x6a));
         self.builder.push(Instr::Mem(0x36, 2, 0));
-        // value slot address = new + 4 + 8*len
-        let addr_tmp = self.builder.add_local(ValType::I32);
-        self.builder.push(Instr::Local(0x20, new_tmp));
-        self.builder.push(Instr::Local(0x20, arr_tmp));
-        self.builder.push(Instr::Mem(0x28, 2, 0));
-        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
-        self.builder.push(Instr::Op(0x6c));
-        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-        self.builder.push(Instr::Op(0x6a));
-        self.builder.push(Instr::Op(0x6a));
-        self.builder.push(Instr::Local(0x21, addr_tmp));
-        match element {
-            Ty::Int => {
-                self.builder.push(Instr::Local(0x20, addr_tmp));
-                self.builder.push(Instr::Local(0x20, value_i64));
-                self.builder.push(Instr::Mem(0x37, 3, 0));
-            }
-            Ty::Str => {
-                self.builder.push(Instr::Local(0x20, addr_tmp));
-                self.builder.push(Instr::Local(0x20, value_ptr));
-                self.builder.push(Instr::Mem(0x36, 2, 0));
-                self.builder.push(Instr::Local(0x20, addr_tmp));
-                self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                self.builder.push(Instr::Op(0x6a));
-                self.builder.push(Instr::Local(0x20, value_len));
-                self.builder.push(Instr::Mem(0x36, 2, 0));
-            }
-            Ty::Float => {
-                self.builder.push(Instr::Local(0x20, addr_tmp));
-                self.builder.push(Instr::Local(0x20, value_f));
-                self.builder.push(Instr::Mem(0x39, 3, 0));
-            }
-            Ty::Bool => {
-                self.builder.push(Instr::Local(0x20, addr_tmp));
-                self.builder.push(Instr::Local(0x20, value_i64));
-                self.builder.push(Instr::Mem(0x37, 3, 0));
-            }
-            _ => {
-                self.builder.push(Instr::Local(0x20, addr_tmp));
-                self.builder.push(Instr::Local(0x20, value_ptr));
-                self.builder.push(Instr::Mem(0x36, 2, 0));
-            }
-        }
+        Self::emit_push_slot_addr(self, new_tmp, count_tmp, addr_tmp);
+        Self::emit_push_store(
+            self, element, addr_tmp, value_ptr, value_len, value_f, value_i64,
+        );
         self.builder.push(Instr::Local(0x20, new_tmp));
         self.emit_store(name)?;
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
         Ok(())
     }
 
+    /// Slot address `arr + 4 + 8 * count` into `addr`.
+    fn emit_push_slot_addr(emitter: &mut Emitter, arr: u32, count: u32, addr: u32) {
+        let b = &mut emitter.builder;
+        b.push(Instr::Local(0x20, arr));
+        b.push(Instr::Const(0x41, WVal::I32(4)));
+        b.push(Instr::Op(0x6a));
+        b.push(Instr::Local(0x20, count));
+        b.push(Instr::Const(0x41, WVal::I32(8)));
+        b.push(Instr::Op(0x6c));
+        b.push(Instr::Op(0x6a));
+        b.push(Instr::Local(0x21, addr));
+    }
+
+    /// Store the pending push value into the slot at `addr`.
+    fn emit_push_store(
+        emitter: &mut Emitter,
+        element: Ty,
+        addr: u32,
+        value_ptr: u32,
+        value_len: u32,
+        value_f: u32,
+        value_i64: u32,
+    ) {
+        let b = &mut emitter.builder;
+        match element {
+            Ty::Int | Ty::Bool => {
+                b.push(Instr::Local(0x20, addr));
+                b.push(Instr::Local(0x20, value_i64));
+                b.push(Instr::Mem(0x37, 3, 0));
+            }
+            Ty::Str => {
+                b.push(Instr::Local(0x20, addr));
+                b.push(Instr::Local(0x20, value_ptr));
+                b.push(Instr::Mem(0x36, 2, 0));
+                b.push(Instr::Local(0x20, addr));
+                b.push(Instr::Const(0x41, WVal::I32(4)));
+                b.push(Instr::Op(0x6a));
+                b.push(Instr::Local(0x20, value_len));
+                b.push(Instr::Mem(0x36, 2, 0));
+            }
+            Ty::Float => {
+                b.push(Instr::Local(0x20, addr));
+                b.push(Instr::Local(0x20, value_f));
+                b.push(Instr::Mem(0x39, 3, 0));
+            }
+            _ => {
+                b.push(Instr::Local(0x20, addr));
+                b.push(Instr::Local(0x20, value_ptr));
+                b.push(Instr::Mem(0x36, 2, 0));
+            }
+        }
+    }
     fn emit_map_filter(&mut self, name: &str, array: &Expr, callback: &Expr) -> Result<Ty, String> {
         let input_ty = self.type_of(array)?;
         let elem = match input_ty {
@@ -19594,6 +19646,24 @@ mod tests {
                 "null".to_string(),
                 "float".to_string(),
                 "2".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn array_push_grows_aliases_in_place_when_possible() {
+        let (numbers, strings) = run_with_argv(
+            "let a = [1, 2]\nlet b = a\npush(b, 3)\nprint(a)\nprint(b)\nlet r = {x: 1}\nlet r2 = r\nr2.x = 5\nprint(r)\nprint(r2)",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec![
+                "[1,2,3]".to_string(),
+                "[1,2,3]".to_string(),
+                "{\"x\":5}".to_string(),
+                "{\"x\":5}".to_string()
             ]
         );
     }
