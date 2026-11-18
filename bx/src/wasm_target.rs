@@ -231,7 +231,7 @@ fn empty_array_push_hints(stmts: &[Stmt]) -> HashMap<String, Ty> {
                     }
                     walk_stmts(body, names, pushes);
                 }
-                Stmt::Fn(..) => {}
+                Stmt::Fn(_, _, body, _) => walk_stmts(body, names, pushes),
                 _ => {}
             }
         }
@@ -12238,6 +12238,7 @@ struct InferState<'a> {
     decl_count: usize,
     params: Vec<Vec<Option<Ty>>>,
     results: Vec<Option<Ty>>,
+    empty_hints: &'a HashMap<String, Ty>,
 }
 
 impl InferState<'_> {
@@ -12652,10 +12653,14 @@ impl<'a> InferState<'a> {
                     if let Some(init) = init {
                         changed |= self.walk_expr(init, locals)?;
                     }
-                    let ty = init
-                        .as_ref()
-                        .and_then(|expr| self.soft(expr, locals))
-                        .unwrap_or(Ty::Int);
+                    let empty_array = matches!(init, Some(Expr::Array(items)) if items.is_empty());
+                    let ty = if empty_array {
+                        self.empty_hints.get(name).copied().unwrap_or(Ty::Arr)
+                    } else {
+                        init.as_ref()
+                            .and_then(|expr| self.soft(expr, locals))
+                            .unwrap_or(Ty::Int)
+                    };
                     locals.insert(name.clone(), ty);
                 }
                 Stmt::Expr(expr, _) => {
@@ -13678,6 +13683,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             globals: &globals,
             shapes: &checker.shapes,
             literal_ids: &literal_ids,
+            empty_hints: &checker.empty_hints,
             decl_count,
             params: declarations
                 .iter()
@@ -13787,6 +13793,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             globals: &globals,
             shapes: &checker.shapes,
             literal_ids: &literal_ids,
+            empty_hints: &checker.empty_hints,
             decl_count,
             params: inferred_params.clone(),
             results: inferred_results.clone(),
@@ -15787,6 +15794,20 @@ mod tests {
             .into_iter()
             .map(|s| s.to_string())
             .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn loop_growable_arrays_feed_higher_order_callbacks() {
+        let (numbers, strings) = run_with_argv(
+            "let xs = []\nfor (let i = 0; i < 4; i += 1) { push(xs, i * 2) }\nprint(map(xs, fn(v) { return v + 1 }))\nprint(filter(xs, fn(v) { return v > 2 }))\nprint(reduce(xs, fn(acc, v) { return acc + v }, 0))\nlet bs = []\nfor (let i = 0; i < 3; i += 1) { push(bs, i % 2 == 0) }\nprint(map(bs, fn(v) { return !v }))\nprint(filter(bs, fn(v) { return v }))",
+            &[],
+        );
+        assert_eq!(numbers, vec![12]);
+        let expected = ["[1,3,5,7]", "[4,6]", "[false,true,false]", "[true,true]"];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
         );
     }
 

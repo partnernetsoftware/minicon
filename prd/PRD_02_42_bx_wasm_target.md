@@ -238,7 +238,7 @@ Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 134 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 135 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -696,12 +696,12 @@ points when built for wasm. How these boundaries get removed is owned by
 hybrid"), which stages a 16-byte tagged cell behind static/dynamic boundary
 conversions rather than rewriting the static fast path.
 
-- **Inference convergence edge**: a growable `[]` declared **inside a loop**
-  and later fed to a higher-order callback (`map`/`filter`) can still fail with
-  `function returns both bool and int values`, because the provisional parameter
-  type of the callback changes between inference passes. Workaround: hoist the
-  array to top level or use an explicit typed literal. The top-level form and
-  explicit literals are covered by tests and the differential tools.
+- **Inference convergence (fixed 2026-11-18)**: `InferState` now seeds the type
+  of an empty-array `let` from the same push-hint map the checker uses, so a
+  growable `[]` declared inside a loop or function can feed `map`/`filter`/
+  `reduce` callbacks without the old `function returns both bool and int values`
+  error. Both the hint walker and the inference pass descend into function
+  bodies; unit 135 and suite 261 pin the loop and function-local forms.
 ## Non-goals
 
 - No WASI: the ABI is web-shaped on purpose.
