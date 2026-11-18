@@ -1347,7 +1347,11 @@ fn dyn_write_record(
     if tag != 6 {
         return Err("record write-back needs a dynamic object".to_string());
     }
-    let _ = entries;
+    if entries as usize > count {
+        return Err(
+            "record runtime-key write cannot insert a new field in the wasm target".to_string(),
+        );
+    }
     for index in 0..count {
         let offset_at = table + index * 4;
         let block = table

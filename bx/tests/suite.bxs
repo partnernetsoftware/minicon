@@ -975,6 +975,15 @@ if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim(
   casesFail += 1
   failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
 }
+write(artDir + "/wasm-recinsert.bxs", 'let r = {a: 1}\nr[env("K", "b")] = 2\nprint(r)\n')
+let wasmRecInsert = exec([BX, "build", "--wasm", artDir + "/wasm-recinsert.bxs", "-o", artDir + "/wasm-recinsert.wasm"])
+let wasmRecInsertRun = exec([BX, "run", artDir + "/wasm-recinsert.wasm"])
+if (wasmRecInsert.code == 0 && wasmRecInsertRun.code != 0 && wasmRecInsertRun.err.contains("cannot insert a new field")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm record key insert fails loudly\n    build=" + json(wasmRecInsert.code) + " run=" + json(wasmRecInsertRun.out) + " err=" + json(wasmRecInsertRun.err))
+}
 write(artDir + "/wasm-mixreciter.bxs", 'for k, v in {a: 1, b: "x"} {\n  print(k)\n  print(v)\n}\nlet a = parse(env("X", "[1,2]"))\nlet r = {xs: a}\nfor k, v in r {\n  print(k)\n  print(json(v))\n}\n')
 let wasmMixRecIter = exec([BX, "build", "--wasm", artDir + "/wasm-mixreciter.bxs", "-o", artDir + "/wasm-mixreciter.wasm"])
 let wasmMixRecIterRun = exec([BX, "run", artDir + "/wasm-mixreciter.wasm"])
@@ -1210,6 +1219,15 @@ if (wasmDynMixed.code == 0 && wasmDynMixedRun.out == wasmDynMixedVm.out && wasmD
   failures.push("wasm mixed dynamic record fields\n    wasm=" + json(wasmDynMixedRun.out) + " vm=" + json(wasmDynMixedVm.out) + " err=" + json(wasmDynMixedRun.err))
 }
 write(artDir + "/dynstr.json", json("abc"))
+write(artDir + "/wasm-recinsert.bxs", 'let r = {a: 1}\nr[env("K", "b")] = 2\nprint(r)\n')
+let wasmRecInsert = exec([BX, "build", "--wasm", artDir + "/wasm-recinsert.bxs", "-o", artDir + "/wasm-recinsert.wasm"])
+let wasmRecInsertRun = exec([BX, "run", artDir + "/wasm-recinsert.wasm"])
+if (wasmRecInsert.code == 0 && wasmRecInsertRun.code != 0 && wasmRecInsertRun.err.contains("cannot insert a new field")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm record key insert fails loudly\n    build=" + json(wasmRecInsert.code) + " run=" + json(wasmRecInsertRun.out) + " err=" + json(wasmRecInsertRun.err))
+}
 write(artDir + "/wasm-mixreciter.bxs", 'for k, v in {a: 1, b: "x"} {\n  print(k)\n  print(v)\n}\nlet a = parse(env("X", "[1,2]"))\nlet r = {xs: a}\nfor k, v in r {\n  print(k)\n  print(json(v))\n}\n')
 let wasmMixRecIter = exec([BX, "build", "--wasm", artDir + "/wasm-mixreciter.bxs", "-o", artDir + "/wasm-mixreciter.wasm"])
 let wasmMixRecIterRun = exec([BX, "run", artDir + "/wasm-mixreciter.wasm"])
