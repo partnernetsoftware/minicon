@@ -954,6 +954,16 @@ if (wasmBoolGrow.code == 0 && wasmBoolGrowRun.out == wasmBoolGrowVm.out && wasmB
   casesFail += 1
   failures.push("wasm growable bool arrays\n    wasm=" + json(wasmBoolGrowRun.out) + " vm=" + json(wasmBoolGrowVm.out) + " err=" + json(wasmBoolGrowRun.err))
 }
+write(artDir + "/wasm-dyncompound.bxs", 'let v = parse(env("X", "1"))\nv += 2\nprint(v)\nprint(type(v))\nlet s = parse(env("X", json("ab")))\ns += "!"\nprint(s)\nlet a = parse(env("X", "[1,2]"))\na[0] += 10\na[-1] *= 3\nprint(a)\nlet o = parse("{" + json("a") + ":1}")\no.a += 4\no["b"] += 2\nprint(o)\nlet n = parse(env("X", "null"))\nn += 1\nprint(n)\n')
+let wasmDynCompound = exec([BX, "build", "--wasm", artDir + "/wasm-dyncompound.bxs", "-o", artDir + "/wasm-dyncompound.wasm"])
+let wasmDynCompoundRun = exec([BX, "run", artDir + "/wasm-dyncompound.wasm"])
+let wasmDynCompoundVm = exec([BX, "run", artDir + "/wasm-dyncompound.bxs"])
+if (wasmDynCompound.code == 0 && wasmDynCompoundRun.out == wasmDynCompoundVm.out && wasmDynCompoundRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm dynamic compound\n    wasm=" + json(wasmDynCompoundRun.out) + " vm=" + json(wasmDynCompoundVm.out) + " err=" + json(wasmDynCompoundRun.err))
+}
 write(artDir + "/wasm-dynmut.bxs", 'let a = parse(env("X", "[1,2]"))\na[0] = 9\nprint(a)\na[-1] = 8\nprint(a)\nprint(a.push(3))\nprint(a)\nprint(a.pop())\nprint(a)\nlet b = parse(env("X", "[]"))\nprint(b.pop())\nprint(push(a, 7))\nprint(pop(a))\nlet o = parse("{" + json("a") + ":1}")\no.a = 5\nprint(o)\no["c"] = "x"\nprint(o)\nprint(get(o, "c"))\n')
 let wasmDynMut = exec([BX, "build", "--wasm", artDir + "/wasm-dynmut.bxs", "-o", artDir + "/wasm-dynmut.wasm"])
 let wasmDynMutRun = exec([BX, "run", artDir + "/wasm-dynmut.wasm"])
@@ -1334,47 +1344,6 @@ if (wasmInterpField.code == 0 && wasmInterpFieldRun.out == wasmInterpFieldVm.out
 } else {
   casesFail += 1
   failures.push("wasm interpolation with record fields\n    wasm=" + json(wasmInterpFieldRun.out) + " vm=" + json(wasmInterpFieldVm.out) + " err=" + json(wasmInterpFieldRun.err))
-}
-write(artDir + "/wasm-dynmut.bxs", 'let a = parse(env("X", "[1,2]"))\na[0] = 9\nprint(a)\na[-1] = 8\nprint(a)\nprint(a.push(3))\nprint(a)\nprint(a.pop())\nprint(a)\nlet b = parse(env("X", "[]"))\nprint(b.pop())\nprint(push(a, 7))\nprint(pop(a))\nlet o = parse("{" + json("a") + ":1}")\no.a = 5\nprint(o)\no["c"] = "x"\nprint(o)\nprint(get(o, "c"))\n')
-let wasmDynMut = exec([BX, "build", "--wasm", artDir + "/wasm-dynmut.bxs", "-o", artDir + "/wasm-dynmut.wasm"])
-let wasmDynMutRun = exec([BX, "run", artDir + "/wasm-dynmut.wasm"])
-let wasmDynMutVm = exec([BX, "run", artDir + "/wasm-dynmut.bxs"])
-if (wasmDynMut.code == 0 && wasmDynMutRun.out == wasmDynMutVm.out && wasmDynMutRun.out.trim() != "") {
-  casesOk += 1
-} else {
-  casesFail += 1
-  failures.push("wasm dynamic mutation\n    wasm=" + json(wasmDynMutRun.out) + " vm=" + json(wasmDynMutVm.out) + " err=" + json(wasmDynMutRun.err))
-}
-write(artDir + "/wasm-dynmixed.bxs", 'let arr = parse(env("X", "[1,2]"))\nlet o = parse("{" + json("k") + ":[3]}")\nlet r = {xs: arr, list: [4, 5], o: o}\nprint(r)\nprint(json(r))\nprint(r.xs)\nprint(r.o.k)\nprint(str(len(r.list)))\nfor item in r.xs { print(item) }\nr.xs = o.k\nprint(r.xs)\nprint(r)\nprint(r.xs + [9])\n')
-let wasmDynMixed = exec([BX, "build", "--wasm", artDir + "/wasm-dynmixed.bxs", "-o", artDir + "/wasm-dynmixed.wasm"])
-let wasmDynMixedRun = exec([BX, "run", artDir + "/wasm-dynmixed.wasm"])
-let wasmDynMixedVm = exec([BX, "run", artDir + "/wasm-dynmixed.bxs"])
-if (wasmDynMixed.code == 0 && wasmDynMixedRun.out == wasmDynMixedVm.out && wasmDynMixedRun.out.trim() != "") {
-  casesOk += 1
-} else {
-  casesFail += 1
-  failures.push("wasm mixed dynamic record fields\n    wasm=" + json(wasmDynMixedRun.out) + " vm=" + json(wasmDynMixedVm.out) + " err=" + json(wasmDynMixedRun.err))
-}
-write(artDir + "/dynstr.json", json("abc"))
-write(artDir + "/wasm-dynstr.bxs", 'let v = parse(read(' + json(artDir + "/dynstr.json") + '))\nprint(len(v))\nprint(str(contains(v, "b")))\nprint(str(index_of(v, "b")))\nprint(v.slice(1))\nprint(v[0])\nprint(v[-1])\nprint(v[99])\nprint(str(has(v, 0)))\n')
-let wasmDynStr = exec([BX, "build", "--wasm", artDir + "/wasm-dynstr.bxs", "-o", artDir + "/wasm-dynstr.wasm"])
-let wasmDynStrRun = exec([BX, "run", artDir + "/wasm-dynstr.wasm"])
-let wasmDynStrVm = exec([BX, "run", artDir + "/wasm-dynstr.bxs"])
-if (wasmDynStr.code == 0 && wasmDynStrRun.out == wasmDynStrVm.out && wasmDynStrRun.out.trim() != "") {
-  casesOk += 1
-} else {
-  casesFail += 1
-  failures.push("wasm dynamic strings\n    wasm=" + json(wasmDynStrRun.out) + " vm=" + json(wasmDynStrVm.out) + " err=" + json(wasmDynStrRun.err))
-}
-write(artDir + "/wasm-dynget.bxs", 'fn probe() {\n  let o = {a: 1, b: 2}\n  let k = "b"\n  print(get(o, k))\n  let missing = "z"\n  print(get(o, missing, 9))\n  let s = {x: "p", y: "q"}\n  let sk = "y"\n  print(get(s, sk))\n  let f = {m: 1.5, n: 2.5}\n  let fk = "m"\n  print(get(f, fk))\n}\nprobe()\n')
-let wasmDynGet = exec([BX, "build", "--wasm", artDir + "/wasm-dynget.bxs", "-o", artDir + "/wasm-dynget.wasm"])
-let wasmDynGetRun = exec([BX, "run", artDir + "/wasm-dynget.wasm"])
-let wasmDynGetVm = exec([BX, "run", artDir + "/wasm-dynget.bxs"])
-if (wasmDynGet.code == 0 && wasmDynGetRun.out == wasmDynGetVm.out && wasmDynGetRun.out.trim() == "2\n9\nq\n1.5") {
-  casesOk += 1
-} else {
-  casesFail += 1
-  failures.push("wasm dynamic record get\n    wasm=" + json(wasmDynGetRun.out) + " vm=" + json(wasmDynGetVm.out) + " err=" + json(wasmDynGetRun.err))
 }
 write(artDir + "/wasm-eq.bxs", 'fn same() {\n  let a = {x: 1, y: "s"}\n  let b = {x: 1, y: "s"}\n  print(a == b)\n  print(a == {x: 2, y: "s"})\n  print(contains([a], b))\n  print(index_of([{a: 1}, {a: 2}], {a: 2}))\n  print(get(a, "y"))\n  print(has(a, "z"))\n  print([1, 2] == [1, 3])\n  print([[1], [2]] == [[1], [2]])\n}\nsame()\n')
 let wasmEq = exec([BX, "build", "--wasm", artDir + "/wasm-eq.bxs", "-o", artDir + "/wasm-eq.wasm"])

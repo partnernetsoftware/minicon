@@ -570,8 +570,9 @@ Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
   keys and `has` on strings stay errors/false exactly like the VM. Dynamic
   containers are mutable like the VM: `a[i] = v` (negative indexes), `o.k = v`
   and `o["k"] = v` (missing keys are appended), and `push`/`pop` in function and
-  method form (empty `pop()` is `null`); compound assignment on dynamic
-  elements remains an explicit error. Fixed a latent stack imbalance in string
+  method form (empty `pop()` is `null`). Compound assignment works on dynamic
+  variables, elements and members (`v += 2`, `a[i] += n`, `o.k += n`,
+  `o["new"] += n`; `null` starts at 0 and strings concatenate). Fixed a latent stack imbalance in string
   boxing that these paths exposed.
 - **`null` (static marker)**: `null` is typed `Ty::Null` and covers the VM's
   scalar semantics: printing/`str`/`json`/`type`/interpolation give `null`,

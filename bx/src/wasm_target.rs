@@ -3093,9 +3093,19 @@ impl Checker {
             }
 
             Stmt::Expr(Expr::Compound(target, _op, value, _), _) => {
+                if let Expr::Ident(name) = &**target {
+                    if self.lookup(name)? == Ty::Dyn {
+                        self.infer(value)?;
+                        return Ok(());
+                    }
+                }
                 if !matches!(**target, Expr::Ident(_)) {
                     match &**target {
                         Expr::Member(object, key, _) => {
+                            if self.infer(object)? == Ty::Dyn {
+                                self.infer(value)?;
+                                return Ok(());
+                            }
                             let Ty::Obj(shape) = self.infer(object)? else {
                                 return Err(
                                     "wasm target writes record fields only".to_string()
@@ -3104,7 +3114,13 @@ impl Checker {
                             self.field_index(shape, key)?;
                         }
                         Expr::Index(array, index, _) => {
-                            if self.infer(array)? != Ty::Arr {
+                            let arr_ty = self.infer(array)?;
+                            if arr_ty == Ty::Dyn {
+                                self.infer(index)?;
+                                self.infer(value)?;
+                                return Ok(());
+                            }
+                            if arr_ty != Ty::Arr {
                                 return Err(
                                     "wasm target writes int array elements only".to_string()
                                 );
@@ -7657,6 +7673,82 @@ impl<'a> Emitter<'a> {
     }
 
     /// Dynamic (P2a) arithmetic: both operands become cells, the host returns a cell.
+    /// Compound assignment on a dynamic variable: read its cell, apply the
+    /// arithmetic operation and store the result cell back.
+    fn emit_dyn_compound_ident(
+        &mut self,
+        name: &str,
+        opcode: u32,
+        value: &Expr,
+    ) -> Result<(), String> {
+        let cell = self.builder.add_local(ValType::I32);
+        if let Some(slot) = self.local_of(name) {
+            self.builder.push(Instr::Local(0x20, slot.slot));
+        } else {
+            let base = self.checker.binding(name)?.base;
+            self.builder.push(Instr::Global(0x23, base));
+        }
+        self.builder.push(Instr::Local(0x21, cell));
+        self.builder
+            .push(Instr::Const(0x41, WVal::I32(opcode as i32)));
+        self.builder.push(Instr::Local(0x20, cell));
+        let value_ty = self.type_of(value)?;
+        self.emit_box_dyn(value, value_ty)?;
+        self.builder.push(Instr::Call(DYN_ARITH));
+        let result = self.builder.add_local(ValType::I32);
+        self.builder.push(Instr::Local(0x21, result));
+        if let Some(slot) = self.local_of(name) {
+            self.builder.push(Instr::Local(0x20, result));
+            self.builder.push(Instr::Local(0x21, slot.slot));
+        } else {
+            let base = self.checker.binding(name)?.base;
+            self.builder.push(Instr::Local(0x20, result));
+            self.builder.push(Instr::Global(0x24, base));
+        }
+        Ok(())
+    }
+    /// Compound assignment on a dynamic container element: read through the
+    /// dynamic protocol, apply the arithmetic operation and write it back.
+    fn emit_dyn_compound_element(
+        &mut self,
+        target: &Expr,
+        opcode: u32,
+        value: &Expr,
+    ) -> Result<(), String> {
+        let (container, key) = match target {
+            Expr::Member(object, key, _) => (&**object, Expr::Str(key.clone())),
+            Expr::Index(array, index, _) => (&**array, (**index).clone()),
+            _ => return Err("wasm target compound target is not an element".to_string()),
+        };
+        if self.type_of(container)? != Ty::Dyn {
+            return Err(format!(
+                "wasm target cannot compound-assign into {}",
+                ty_name(self.type_of(container)?)
+            ));
+        }
+        let base = self.builder.add_local(ValType::I32);
+        let key_slot = self.builder.add_local(ValType::I32);
+        let result = self.builder.add_local(ValType::I32);
+        self.emit_expr(container)?;
+        self.builder.push(Instr::Local(0x21, base));
+        let key_ty = self.type_of(&key)?;
+        self.emit_box_dyn(&key, key_ty)?;
+        self.builder.push(Instr::Local(0x21, key_slot));
+        self.builder
+            .push(Instr::Const(0x41, WVal::I32(opcode as i32)));
+        self.builder.push(Instr::Local(0x20, base));
+        self.builder.push(Instr::Local(0x20, key_slot));
+        self.builder.push(Instr::Call(DYN_GET));
+        let value_ty = self.type_of(value)?;
+        self.emit_box_dyn(value, value_ty)?;
+        self.builder.push(Instr::Call(DYN_ARITH));
+        self.builder.push(Instr::Local(0x21, result));
+        self.builder.push(Instr::Local(0x20, base));
+        self.builder.push(Instr::Local(0x20, key_slot));
+        self.builder.push(Instr::Local(0x20, result));
+        self.builder.push(Instr::Call(DYN_SET_AT));
+        Ok(())
+    }
     fn emit_dyn_arith(&mut self, opcode: u32, left: &Expr, right: &Expr) -> Result<Ty, String> {
         let lt = self.type_of(left)?;
         let rt = self.type_of(right)?;
@@ -13441,6 +13533,30 @@ impl<'a> Emitter<'a> {
                 Ok(())
             }
             Stmt::Expr(Expr::Compound(target, op, value, _), _) => {
+                let dyn_code = match op {
+                    BinOp::Add => 0,
+                    BinOp::Sub => 1,
+                    BinOp::Mul => 2,
+                    BinOp::Div => 3,
+                    BinOp::Mod => 4,
+                    _ => return Err("wasm target compound-assigns with + - * / % only".to_string()),
+                };
+                if let Expr::Ident(name) = &**target {
+                    if self.type_of(target)? == Ty::Dyn {
+                        return self.emit_dyn_compound_ident(name, dyn_code, value);
+                    }
+                } else {
+                    let container = match &**target {
+                        Expr::Member(object, _, _) => &**object,
+                        Expr::Index(array, _, _) => &**array,
+                        _ => {
+                            return Err("wasm target compound target is not an element".to_string())
+                        }
+                    };
+                    if self.type_of(container)? == Ty::Dyn {
+                        return self.emit_dyn_compound_element(target, dyn_code, value);
+                    }
+                }
                 if !matches!(**target, Expr::Ident(_)) {
                     let address = self.builder.add_local(ValType::I32);
                     self.emit_target_address(target)?;
@@ -17763,6 +17879,20 @@ mod tests {
             "{\"a\":5,\"c\":\"x\"}",
             "x",
         ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn dynamic_compound_assignment_matches_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let v = parse(env(\"X\", \"1\"))\nv += 2\nprint(v)\nprint(type(v))\nlet s = parse(env(\"X\", \"\\\"ab\\\"\"))\ns += \"!\"\nprint(s)\nlet a = parse(env(\"X\", \"[1,2]\"))\na[0] += 10\na[-1] *= 3\nprint(a)\nlet o = parse(env(\"X\", \"{\\\"a\\\":1}\"))\no.a += 4\no[\"b\"] += 2\nprint(o)\nlet n = parse(env(\"X\", \"null\"))\nn += 1\nprint(n)",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = ["3", "int", "ab!", "[11,6]", "{\"a\":5,\"b\":2}", "1"];
         assert_eq!(
             strings,
             expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
