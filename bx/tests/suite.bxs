@@ -975,6 +975,16 @@ if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim(
   casesFail += 1
   failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
 }
+write(artDir + "/wasm-redmix.bxs", 'print(reduce([1, 2], fn(a, b) { if (b == 1) { return a + "x" }\n  return a + b }, ""))\nprint(reduce([1, 2], fn(a, b) { if (b == 1) { return str(a) + "x" }\n  return a + b }, 0))\nprint([1, 2].reduce(fn(a, b) { if (b == 1) { return a + "x" }\n  return a + b }, ""))\n')
+let wasmRedMix = exec([BX, "build", "--wasm", artDir + "/wasm-redmix.bxs", "-o", artDir + "/wasm-redmix.wasm"])
+let wasmRedMixRun = exec([BX, "run", artDir + "/wasm-redmix.wasm"])
+let wasmRedMixVm = exec([BX, "run", artDir + "/wasm-redmix.bxs"])
+if (wasmRedMix.code == 0 && wasmRedMixRun.out == wasmRedMixVm.out && wasmRedMixRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm mixed static reduce\n    wasm=" + json(wasmRedMixRun.out) + " vm=" + json(wasmRedMixVm.out) + " err=" + json(wasmRedMix.err))
+}
 write(artDir + "/wasm-reckeywrite.bxs", 'let r = {a: 1}\nr[env("K", "a")] = 9\nprint(r)\nr[env("K", "a")] = r[env("K", "a")] + 1\nprint(r)\nlet h = {a: 1, b: "x"}\nh[env("K", "b")] = "y"\nprint(h)\n')
 let wasmRecKeyWrite = exec([BX, "build", "--wasm", artDir + "/wasm-reckeywrite.bxs", "-o", artDir + "/wasm-reckeywrite.wasm"])
 let wasmRecKeyWriteRun = exec([BX, "run", artDir + "/wasm-reckeywrite.wasm"])
@@ -1180,6 +1190,16 @@ if (wasmDynMixed.code == 0 && wasmDynMixedRun.out == wasmDynMixedVm.out && wasmD
   failures.push("wasm mixed dynamic record fields\n    wasm=" + json(wasmDynMixedRun.out) + " vm=" + json(wasmDynMixedVm.out) + " err=" + json(wasmDynMixedRun.err))
 }
 write(artDir + "/dynstr.json", json("abc"))
+write(artDir + "/wasm-redmix.bxs", 'print(reduce([1, 2], fn(a, b) { if (b == 1) { return a + "x" }\n  return a + b }, ""))\nprint(reduce([1, 2], fn(a, b) { if (b == 1) { return str(a) + "x" }\n  return a + b }, 0))\nprint([1, 2].reduce(fn(a, b) { if (b == 1) { return a + "x" }\n  return a + b }, ""))\n')
+let wasmRedMix = exec([BX, "build", "--wasm", artDir + "/wasm-redmix.bxs", "-o", artDir + "/wasm-redmix.wasm"])
+let wasmRedMixRun = exec([BX, "run", artDir + "/wasm-redmix.wasm"])
+let wasmRedMixVm = exec([BX, "run", artDir + "/wasm-redmix.bxs"])
+if (wasmRedMix.code == 0 && wasmRedMixRun.out == wasmRedMixVm.out && wasmRedMixRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm mixed static reduce\n    wasm=" + json(wasmRedMixRun.out) + " vm=" + json(wasmRedMixVm.out) + " err=" + json(wasmRedMix.err))
+}
 write(artDir + "/wasm-reckeywrite.bxs", 'let r = {a: 1}\nr[env("K", "a")] = 9\nprint(r)\nr[env("K", "a")] = r[env("K", "a")] + 1\nprint(r)\nlet h = {a: 1, b: "x"}\nh[env("K", "b")] = "y"\nprint(h)\n')
 let wasmRecKeyWrite = exec([BX, "build", "--wasm", artDir + "/wasm-reckeywrite.bxs", "-o", artDir + "/wasm-reckeywrite.wasm"])
 let wasmRecKeyWriteRun = exec([BX, "run", artDir + "/wasm-reckeywrite.wasm"])

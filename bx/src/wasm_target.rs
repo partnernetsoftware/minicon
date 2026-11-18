@@ -1380,6 +1380,12 @@ impl Checker {
                     } else {
                         element
                     };
+                    if args.len() == 2
+                        && sig.result == Some(Ty::Dyn)
+                        && sig.params == vec![Ty::Dyn, element]
+                    {
+                        return Ok(Ty::Dyn);
+                    }
                     if acc == Ty::Dyn {
                         if sig.params != vec![Ty::Dyn, element] {
                             return Err(format!(
@@ -2360,6 +2366,12 @@ impl Checker {
                         } else {
                             elem
                         };
+                        if args.len() == 3
+                            && sig.result == Some(Ty::Dyn)
+                            && sig.params == vec![Ty::Dyn, elem]
+                        {
+                            return Ok(Ty::Dyn);
+                        }
                         if acc == Ty::Dyn {
                             if sig.params != vec![Ty::Dyn, elem] {
                                 return Err(format!(
@@ -10849,7 +10861,9 @@ impl<'a> Emitter<'a> {
                         return self.emit_dyn_reduce(object, &args[0], args.get(1));
                     }
                     if let Some(init) = args.get(1) {
-                        if self.type_of(init)? == Ty::Dyn {
+                        let dynamic_acc = self.type_of(init)? == Ty::Dyn
+                            || self.map_callback_result(&args[0])? == Some(Ty::Dyn);
+                        if dynamic_acc {
                             return self.emit_reduce_static_dyn_init(object, &args[0], init);
                         }
                     }
@@ -12644,7 +12658,9 @@ impl<'a> Emitter<'a> {
                             return self.emit_dyn_reduce(&args[0], &args[1], args.get(2));
                         }
                         if let Some(init) = args.get(2) {
-                            if self.type_of(init)? == Ty::Dyn {
+                            let dynamic_acc = self.type_of(init)? == Ty::Dyn
+                                || self.map_callback_result(&args[1])? == Some(Ty::Dyn);
+                            if dynamic_acc {
                                 return self.emit_reduce_static_dyn_init(&args[0], &args[1], init);
                             }
                         }
@@ -14994,10 +15010,8 @@ impl<'a> InferState<'a> {
                 Ok(true)
             }
             Some(current) if current == ty => Ok(false),
-            Some(Ty::Dyn) if ty != Ty::Dyn => {
-                self.results[index] = Some(ty);
-                Ok(true)
-            }
+            // A dynamic result is sticky: mixed returns must not be reverted by
+            // a later pass that only sees one concrete type.
             Some(Ty::Dyn) => Ok(false),
             Some(_) if ty == Ty::Dyn => Ok(false),
             Some(current) if is_number(current) && is_number(ty) => {
@@ -15138,6 +15152,16 @@ impl<'a> InferState<'a> {
                             for arg in args {
                                 changed |= self.walk_expr(arg, locals)?;
                             }
+                            if name == "reduce" && args.get(2).is_some() {
+                                let index = self.decl_count
+                                    + match args.get(1).and_then(|arg| self.soft(arg, locals)) {
+                                        Some(Ty::Func(id)) => id as usize,
+                                        _ => usize::MAX,
+                                    };
+                                if index != usize::MAX && self.results[index] == Some(Ty::Dyn) {
+                                    changed |= self.unify_param(index, 0, Ty::Dyn)?;
+                                }
+                            }
                             return Ok(changed);
                         }
                     } // Higher-order array helpers: unify the literal callback.
@@ -15168,7 +15192,11 @@ impl<'a> InferState<'a> {
                                     };
                                     changed |= self.unify_param(index, 0, acc)?;
                                     changed |= self.unify_param(index, 1, elem)?;
-                                    changed |= self.unify_result(index, acc)?;
+                                    if self.results[index] == Some(Ty::Dyn) {
+                                        changed |= self.unify_param(index, 0, Ty::Dyn)?;
+                                    } else {
+                                        changed |= self.unify_result(index, acc)?;
+                                    }
                                 }
                                 "filter" => {
                                     changed |= self.unify_param(index, 0, elem)?;
@@ -15181,6 +15209,16 @@ impl<'a> InferState<'a> {
                             }
                             for arg in args {
                                 changed |= self.walk_expr(arg, locals)?;
+                            }
+                            if name == "reduce" && args.get(2).is_some() {
+                                let index = self.decl_count
+                                    + match args.get(1).and_then(|arg| self.soft(arg, locals)) {
+                                        Some(Ty::Func(id)) => id as usize,
+                                        _ => usize::MAX,
+                                    };
+                                if index != usize::MAX && self.results[index] == Some(Ty::Dyn) {
+                                    changed |= self.unify_param(index, 0, Ty::Dyn)?;
+                                }
                             }
                             return Ok(changed);
                         }
@@ -15267,7 +15305,11 @@ impl<'a> InferState<'a> {
                         };
                         changed |= self.unify_param(index, 0, acc)?;
                         changed |= self.unify_param(index, 1, elem)?;
-                        changed |= self.unify_result(index, acc)?;
+                        if self.results[index] == Some(Ty::Dyn) {
+                            changed |= self.unify_param(index, 0, Ty::Dyn)?;
+                        } else {
+                            changed |= self.unify_result(index, acc)?;
+                        }
                         for arg in args {
                             changed |= self.walk_expr(arg, locals)?;
                         }
@@ -18924,6 +18966,20 @@ mod tests {
         );
         assert!(numbers.is_empty());
         let expected = ["{\"a\":9}", "{\"a\":10}", "{\"a\":1,\"b\":\"y\"}", "3"];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn static_reduce_with_mixed_callback_matches_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "print(reduce([1, 2], fn(a, b) { if (b == 1) { return a + \"x\" }\n  return a + b }, \"\"))\nprint(reduce([1, 2], fn(a, b) { if (b == 1) { return str(a) + \"x\" }\n  return a + b }, 0))\nprint(reduce([1, 2], fn(a, b) { if (b == 1) { return a }\n  return [a, b] }, 0))\nprint([1, 2].reduce(fn(a, b) { if (b == 1) { return a + \"x\" }\n  return a + b }, \"\"))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = ["x2", "0x2", "[0,2]", "x2"];
         assert_eq!(
             strings,
             expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
