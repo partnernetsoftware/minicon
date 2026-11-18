@@ -1333,6 +1333,84 @@ fn dyn_text_block(memory: &mut [u8], next_file: &mut u32, cell: usize) -> Result
         .map(|start| start as i32)
         .ok_or_else(|| "dynamic text block does not fit the file region".to_string())
 }
+/// Write a dynamic object built from a static record back into the record
+/// storage (used by `record[runtimeKey] = value`).
+fn dyn_write_record(
+    memory: &mut [u8],
+    kinds: usize,
+    table: usize,
+    count: usize,
+    rec: usize,
+    obj: usize,
+) -> Result<(), String> {
+    let (tag, entries, payload) = dyn_tag(memory, obj);
+    if tag != 6 {
+        return Err("record write-back needs a dynamic object".to_string());
+    }
+    let _ = entries;
+    for index in 0..count {
+        let offset_at = table + index * 4;
+        let block = table
+            + u32::from_le_bytes(memory[offset_at..offset_at + 4].try_into().unwrap()) as usize;
+        let size = u32::from_le_bytes(memory[block..block + 4].try_into().unwrap()) as usize;
+        let key_ptr = memory[block + 4..block + 4 + size].to_vec();
+        let mut found = None;
+        for entry in 0..entries as usize {
+            let at = payload as usize + entry * 12;
+            let ptr = u32::from_le_bytes(memory[at..at + 4].try_into().unwrap()) as usize;
+            let len = u32::from_le_bytes(memory[at + 4..at + 8].try_into().unwrap()) as usize;
+            if len == size && memory[ptr..ptr + len] == key_ptr[..] {
+                found =
+                    Some(u32::from_le_bytes(memory[at + 8..at + 12].try_into().unwrap()) as usize);
+                break;
+            }
+        }
+        let Some(cell) = found else { continue };
+        let field = rec + index * 8;
+        let kind = memory.get(kinds + index).copied().unwrap_or(0);
+        let (cell_tag, cell_aux, cell_payload) = dyn_tag(memory, cell);
+        match kind {
+            0 => {
+                let value = match cell_tag {
+                    0 => 0i64,
+                    1 | 3 => cell_payload as i64,
+                    2 => f64::from_bits(cell_payload) as i64,
+                    _ => return Err("record field expects a number".to_string()),
+                };
+                memory[field..field + 8].copy_from_slice(&value.to_le_bytes());
+            }
+            1 => {
+                if cell_tag != 4 {
+                    return Err("record field expects a string".to_string());
+                }
+                memory[field..field + 4].copy_from_slice(&(cell_payload as u32).to_le_bytes());
+                memory[field + 4..field + 8].copy_from_slice(&cell_aux.to_le_bytes());
+            }
+            2 => {
+                let bits = match cell_tag {
+                    1 | 3 => (cell_payload as i64 as f64).to_bits(),
+                    2 => cell_payload,
+                    _ => return Err("record field expects a number".to_string()),
+                };
+                memory[field..field + 8].copy_from_slice(&bits.to_le_bytes());
+            }
+            3 => {
+                let value = match cell_tag {
+                    3 => cell_payload != 0,
+                    1 => cell_payload != 0,
+                    0 => false,
+                    _ => return Err("record field expects a bool".to_string()),
+                };
+                memory[field..field + 8].copy_from_slice(&u64::from(value).to_le_bytes());
+            }
+            8 => {
+                memory[field..field + 4].copy_from_slice(&(cell as u32).to_le_bytes());
+            }
+            _ => return Err("unsupported record field kind in write-back".to_string()),
+        }
+    }
+    Ok(())
+}
 /// Static `values(record)` as a dynamic array (the VM's record values may mix
 /// kinds, e.g. `{a: [1,2], b: 7}` -> `[[1,2],7]`).
 fn dyn_from_record_values(
@@ -3423,6 +3501,36 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 let out =
                     dyn_from_record_values(memory, &mut self.next_dyn, kinds, table, count, rec)?;
                 Ok(vec![WVal::I32(out as i32)])
+            }
+            ("env", "dyn_write_record") => {
+                let (kinds, table, count, rec, obj) = match (
+                    args.first(),
+                    args.get(1),
+                    args.get(2),
+                    args.get(3),
+                    args.get(4),
+                ) {
+                    (
+                        Some(WVal::I32(kinds)),
+                        Some(WVal::I32(table)),
+                        Some(WVal::I32(count)),
+                        Some(WVal::I32(rec)),
+                        Some(WVal::I32(obj)),
+                    ) => (
+                        *kinds as usize,
+                        *table as usize,
+                        *count as usize,
+                        *rec as usize,
+                        *obj as usize,
+                    ),
+                    _ => {
+                        return Err(
+                            "env.dyn_write_record expects (i32, i32, i32, i32, i32)".to_string()
+                        )
+                    }
+                };
+                dyn_write_record(memory, kinds, table, count, rec, obj)?;
+                Ok(vec![])
             }
             ("env", "dyn_parse") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {

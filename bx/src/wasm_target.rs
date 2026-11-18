@@ -3044,6 +3044,15 @@ impl Checker {
                             self.infer(value)?;
                             return Ok(());
                         }
+                        if let Ty::Obj(_) = arr_ty {
+                            if self.infer(index)? != Ty::Str {
+                                return Err(
+                                    "wasm target record writes need a string key".to_string()
+                                );
+                            }
+                            self.infer(value)?;
+                            return Ok(());
+                        }
                         if !matches!(
                             arr_ty,
                             Ty::Arr
@@ -3701,7 +3710,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 142;
+const IMPORT_COUNT: u32 = 143;
 const PRINT_UTF8: u32 = 1;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
@@ -3832,6 +3841,7 @@ const DYN_VALUES: u32 = 138;
 const DYN_MATH: u32 = 139;
 const DYN_TEXT_BLOCK: u32 = 140;
 const DYN_RECORD_VALUES: u32 = 141;
+const DYN_WRITE_RECORD: u32 = 142;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -7970,6 +7980,7 @@ impl<'a> Emitter<'a> {
 
             Expr::Index(array, _, _) => match self.type_of(array)? {
                 Ty::Dyn => Ok(Ty::Dyn),
+                Ty::Obj(_) => Ok(Ty::Dyn),
                 Ty::ArrStr | Ty::Str => Ok(Ty::Str),
                 Ty::ArrObj(shape) => Ok(Ty::Obj(shape)),
                 Ty::ArrArr => Ok(Ty::Arr),
@@ -13537,6 +13548,43 @@ impl<'a> Emitter<'a> {
                     return Ok(());
                 }
                 if let Expr::Index(array, index, _) = &**target {
+                    if let Ty::Obj(shape) = self.type_of(array)? {
+                        let Expr::Ident(_) = &**array else {
+                            return Err("wasm target writes record fields through variables only"
+                                .to_string());
+                        };
+                        let kinds = self.record_kinds_table(shape)?;
+                        let (table, count) = self.record_table(shape)?;
+                        let rec_tmp = self.builder.add_local(ValType::I32);
+                        let obj_tmp = self.builder.add_local(ValType::I32);
+                        self.emit_expr(array)?;
+                        self.builder.push(Instr::Local(0x21, rec_tmp));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(kinds as i32)));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(table as i32)));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(count as i32)));
+                        self.builder.push(Instr::Local(0x20, rec_tmp));
+                        self.builder.push(Instr::Call(DYN_FROM_RECORD));
+                        self.builder.push(Instr::Local(0x21, obj_tmp));
+                        let key_ty = self.type_of(index)?;
+                        self.builder.push(Instr::Local(0x20, obj_tmp));
+                        self.emit_box_dyn(index, key_ty)?;
+                        let value_ty = self.type_of(value)?;
+                        self.emit_box_dyn(value, value_ty)?;
+                        self.builder.push(Instr::Call(DYN_SET_MEMBER));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(kinds as i32)));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(table as i32)));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(count as i32)));
+                        self.builder.push(Instr::Local(0x20, rec_tmp));
+                        self.builder.push(Instr::Local(0x20, obj_tmp));
+                        self.builder.push(Instr::Call(DYN_WRITE_RECORD));
+                        return Ok(());
+                    }
                     if self.type_of(array)? == Ty::Dyn {
                         let value_ty = self.type_of(value)?;
                         let key_ty = self.type_of(index)?;
@@ -16534,6 +16582,16 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "dyn_from_array", which_ty);
     builder.import_func("env", "dyn_cell_at", i32_i64_to_i32_ty);
     builder.import_func("env", "dyn_swap", dyn_swap_ty);
+    let five_i32_to_void_ty = builder.add_type(
+        vec![
+            ValType::I32,
+            ValType::I32,
+            ValType::I32,
+            ValType::I32,
+            ValType::I32,
+        ],
+        vec![],
+    );
     let four_i32_to_i32_ty = builder.add_type(
         vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
         vec![ValType::I32],
@@ -16566,6 +16624,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "dyn_math", which_ty);
     builder.import_func("env", "dyn_text_block", i32_to_i32_ty);
     builder.import_func("env", "dyn_record_values", four_i32_to_i32_ty);
+    builder.import_func("env", "dyn_write_record", five_i32_to_void_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -18851,6 +18910,20 @@ mod tests {
         );
         assert!(numbers.is_empty());
         let expected = ["2", "x", "1", "null", "2"];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn record_runtime_key_write_matches_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let r = {a: 1}\nr[env(\"K\", \"a\")] = 9\nprint(r)\nr[env(\"K\", \"a\")] = r[env(\"K\", \"a\")] + 1\nprint(r)\nlet h = {a: 1, b: \"x\"}\nh[env(\"K\", \"b\")] = \"y\"\nprint(h)\nlet rows = [{a: 1}, {a: 2}]\nprint(rows[1][env(\"K\", \"a\")] + 1)",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = ["{\"a\":9}", "{\"a\":10}", "{\"a\":1,\"b\":\"y\"}", "3"];
         assert_eq!(
             strings,
             expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()

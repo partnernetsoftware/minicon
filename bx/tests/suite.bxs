@@ -975,6 +975,16 @@ if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim(
   casesFail += 1
   failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
 }
+write(artDir + "/wasm-reckeywrite.bxs", 'let r = {a: 1}\nr[env("K", "a")] = 9\nprint(r)\nr[env("K", "a")] = r[env("K", "a")] + 1\nprint(r)\nlet h = {a: 1, b: "x"}\nh[env("K", "b")] = "y"\nprint(h)\n')
+let wasmRecKeyWrite = exec([BX, "build", "--wasm", artDir + "/wasm-reckeywrite.bxs", "-o", artDir + "/wasm-reckeywrite.wasm"])
+let wasmRecKeyWriteRun = exec([BX, "run", artDir + "/wasm-reckeywrite.wasm"])
+let wasmRecKeyWriteVm = exec([BX, "run", artDir + "/wasm-reckeywrite.bxs"])
+if (wasmRecKeyWrite.code == 0 && wasmRecKeyWriteRun.out == wasmRecKeyWriteVm.out && wasmRecKeyWriteRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm record runtime write\n    wasm=" + json(wasmRecKeyWriteRun.out) + " vm=" + json(wasmRecKeyWriteVm.out) + " err=" + json(wasmRecKeyWrite.err))
+}
 write(artDir + "/wasm-indexdyn.bxs", 'let r = {a: 1, b: 2}\nprint(r[env("K", "b")])\nlet h = {a: 1, b: "x"}\nprint(h[env("K", "b")])\nlet a = parse(env("X", "[1,2]"))\nprint(a[env("I", "0")])\nprint(a[env("I", "5")])\n')
 let wasmIndexDyn = exec([BX, "build", "--wasm", artDir + "/wasm-indexdyn.bxs", "-o", artDir + "/wasm-indexdyn.wasm"])
 let wasmIndexDynRun = exec([BX, "run", artDir + "/wasm-indexdyn.wasm"])
@@ -1170,6 +1180,16 @@ if (wasmDynMixed.code == 0 && wasmDynMixedRun.out == wasmDynMixedVm.out && wasmD
   failures.push("wasm mixed dynamic record fields\n    wasm=" + json(wasmDynMixedRun.out) + " vm=" + json(wasmDynMixedVm.out) + " err=" + json(wasmDynMixedRun.err))
 }
 write(artDir + "/dynstr.json", json("abc"))
+write(artDir + "/wasm-reckeywrite.bxs", 'let r = {a: 1}\nr[env("K", "a")] = 9\nprint(r)\nr[env("K", "a")] = r[env("K", "a")] + 1\nprint(r)\nlet h = {a: 1, b: "x"}\nh[env("K", "b")] = "y"\nprint(h)\n')
+let wasmRecKeyWrite = exec([BX, "build", "--wasm", artDir + "/wasm-reckeywrite.bxs", "-o", artDir + "/wasm-reckeywrite.wasm"])
+let wasmRecKeyWriteRun = exec([BX, "run", artDir + "/wasm-reckeywrite.wasm"])
+let wasmRecKeyWriteVm = exec([BX, "run", artDir + "/wasm-reckeywrite.bxs"])
+if (wasmRecKeyWrite.code == 0 && wasmRecKeyWriteRun.out == wasmRecKeyWriteVm.out && wasmRecKeyWriteRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm record runtime write\n    wasm=" + json(wasmRecKeyWriteRun.out) + " vm=" + json(wasmRecKeyWriteVm.out) + " err=" + json(wasmRecKeyWrite.err))
+}
 write(artDir + "/wasm-indexdyn.bxs", 'let r = {a: 1, b: 2}\nprint(r[env("K", "b")])\nlet h = {a: 1, b: "x"}\nprint(h[env("K", "b")])\nlet a = parse(env("X", "[1,2]"))\nprint(a[env("I", "0")])\nprint(a[env("I", "5")])\n')
 let wasmIndexDyn = exec([BX, "build", "--wasm", artDir + "/wasm-indexdyn.bxs", "-o", artDir + "/wasm-indexdyn.wasm"])
 let wasmIndexDynRun = exec([BX, "run", artDir + "/wasm-indexdyn.wasm"])
