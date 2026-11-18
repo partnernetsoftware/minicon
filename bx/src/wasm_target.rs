@@ -1708,6 +1708,12 @@ impl Checker {
                     let _ = self.infer(index)?;
                     return Ok(Ty::Dyn);
                 }
+                if let Ty::Obj(_) = arr_ty {
+                    if self.infer(index)? != Ty::Str {
+                        return Err("wasm target record indexing needs a string key".to_string());
+                    }
+                    return Ok(Ty::Dyn);
+                }
                 if !matches!(
                     arr_ty,
                     Ty::Arr
@@ -10508,11 +10514,34 @@ impl<'a> Emitter<'a> {
             }
             Expr::Index(array, index, _) => {
                 let array_ty = self.type_of(array)?;
+                if let Ty::Obj(shape) = array_ty {
+                    let kinds = self.record_kinds_table(shape)?;
+                    let (table, count) = self.record_table(shape)?;
+                    self.builder
+                        .push(Instr::Const(0x41, WVal::I32(kinds as i32)));
+                    self.builder
+                        .push(Instr::Const(0x41, WVal::I32(table as i32)));
+                    self.builder
+                        .push(Instr::Const(0x41, WVal::I32(count as i32)));
+                    self.emit_expr(array)?;
+                    self.builder.push(Instr::Call(DYN_FROM_RECORD));
+                    let key_ty = self.type_of(index)?;
+                    self.emit_box_dyn(index, key_ty)?;
+                    self.builder.push(Instr::Call(DYN_GET));
+                    return Ok(Ty::Dyn);
+                }
                 if array_ty == Ty::Dyn {
                     self.emit_expr(array)?;
-                    if self.type_of(index)? == Ty::Float {
+                    let index_ty = self.type_of(index)?;
+                    if index_ty == Ty::Float {
                         self.emit_f64(index)?;
                         self.builder.push(Instr::Op(0xb0));
+                    } else if index_ty == Ty::Str {
+                        self.emit_str(index)?;
+                        self.builder.push(Instr::Call(STR_TO_INT));
+                    } else if index_ty == Ty::Bool {
+                        self.emit_expr(index)?;
+                        self.builder.push(Instr::Op(0xad));
                     } else {
                         self.emit_expr(index)?;
                     }
@@ -18808,6 +18837,20 @@ mod tests {
             "a",
             "b",
         ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn record_index_and_dynamic_string_index_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let r = {a: 1, b: 2}\nprint(r[env(\"K\", \"b\")])\nlet h = {a: 1, b: \"x\"}\nprint(h[env(\"K\", \"b\")])\nlet a = parse(env(\"X\", \"[1,2]\"))\nprint(a[env(\"I\", \"0\")])\nprint(a[env(\"I\", \"5\")])\nprint(a[1])",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = ["2", "x", "1", "null", "2"];
         assert_eq!(
             strings,
             expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
