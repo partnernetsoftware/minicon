@@ -1283,6 +1283,7 @@ impl Checker {
                         return Err("wasm target .map() callbacks take one element".to_string());
                     }
                     return match sig.result {
+                        Some(Ty::Dyn) => Ok(Ty::Dyn),
                         Some(Ty::Int) => Ok(Ty::Arr),
                         Some(Ty::Float) => Ok(Ty::ArrF),
                         Some(Ty::Str) => Ok(Ty::ArrStr),
@@ -2125,6 +2126,7 @@ impl Checker {
                         }
                         return match name.as_str() {
                             "map" => match sig.result {
+                                Some(Ty::Dyn) => Ok(Ty::Dyn),
                                 Some(Ty::Int) => Ok(Ty::Arr),
                                 Some(Ty::Float) => Ok(Ty::ArrF),
                                 Some(Ty::Str) => Ok(Ty::ArrStr),
@@ -10298,6 +10300,7 @@ impl<'a> Emitter<'a> {
                     if self.type_of(object)? == Ty::Dyn {
                         return self.emit_dyn_map_filter(key, object, &args[0]);
                     }
+
                     return self.emit_map_filter(key, object, &args[0]);
                 }
                 if key == "slice" && (args.len() == 1 || args.len() == 2) {
@@ -11957,6 +11960,7 @@ impl<'a> Emitter<'a> {
                         if self.type_of(&args[0])? == Ty::Dyn {
                             return self.emit_dyn_map_filter(name, &args[0], &args[1]);
                         }
+
                         return self.emit_map_filter(name, &args[0], &args[1]);
                     }
                     if name == "reduce" && (args.len() == 2 || args.len() == 3) {
@@ -13857,6 +13861,8 @@ impl<'a> Emitter<'a> {
                         let actual = self.emit_expr(expr)?;
                         if expected == Ty::Float && actual == Ty::Int {
                             self.builder.push(Instr::Op(0xb9));
+                        } else if expected == Ty::Dyn && actual != Ty::Dyn {
+                            self.emit_box_dyn(expr, actual)?;
                         } else if actual == Ty::Dyn && expected != Ty::Dyn {
                             match expected {
                                 Ty::Int => {
@@ -14470,11 +14476,12 @@ impl<'a> InferState<'a> {
                 }
                 Ok(false)
             }
-            Some(current) => Err(format!(
-                "wasm target function returns both {} and {} values",
-                ty_name(current),
-                ty_name(ty)
-            )),
+            Some(_) => {
+                // A function returning different kinds becomes dynamically typed:
+                // every return boxes into a cell and callers see Ty::Dyn.
+                self.results[index] = Some(Ty::Dyn);
+                Ok(true)
+            }
         }
     }
     fn walk(
@@ -18152,6 +18159,20 @@ mod tests {
         );
         assert_eq!(numbers, vec![2i64]);
         let expected = ["[1,\"a\"]", "[1,\"a\",[2]]", "[\"z\"]", "[1,\"q\"]"];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn mixed_return_functions_become_dynamic() {
+        let (numbers, strings) = run_with_argv(
+            "fn f(x) {\n  if (x == 1) { return 1 }\n  if (x == 2) { return \"s\" }\n  return [x]\n}\nprint(f(1))\nprint(f(2))\nprint(f(3))\nprint(f(1) + 1)\nprint(f(2) + \"!\")\nfn g(n) {\n  if (n == 0) { return null }\n  if (n == 1) { return true }\n  return 2.5\n}\nprint(g(0))\nprint(g(1))\nprint(g(2) + 0.5)",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = ["1", "s", "[3]", "2", "s!", "null", "true", "3"];
         assert_eq!(
             strings,
             expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()

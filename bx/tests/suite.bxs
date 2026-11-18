@@ -975,6 +975,16 @@ if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim(
   casesFail += 1
   failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
 }
+write(artDir + "/wasm-mixedret.bxs", 'fn f(x) {\n  if (x == 1) { return 1 }\n  if (x == 2) { return "s" }\n  return [x]\n}\nprint(f(1))\nprint(f(2))\nprint(f(3))\nprint(f(1) + 1)\nprint(f(2) + "!")\n')
+let wasmMixedRet = exec([BX, "build", "--wasm", artDir + "/wasm-mixedret.bxs", "-o", artDir + "/wasm-mixedret.wasm"])
+let wasmMixedRetRun = exec([BX, "run", artDir + "/wasm-mixedret.wasm"])
+let wasmMixedRetVm = exec([BX, "run", artDir + "/wasm-mixedret.bxs"])
+if (wasmMixedRet.code == 0 && wasmMixedRetRun.out == wasmMixedRetVm.out && wasmMixedRetRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm mixed return functions\n    wasm=" + json(wasmMixedRetRun.out) + " vm=" + json(wasmMixedRetVm.out) + " err=" + json(wasmMixedRet.err))
+}
 write(artDir + "/cli-legacy.bxs", 'print("hello")\n')
 let buildLegacy = exec([BX, "build", artDir + "/cli-legacy.bxs", "-o", artDir + "/cli-legacy.bxb"])
 let runLegacyDefault = exec([BX, "run", artDir + "/cli-legacy.bxb"], {env: {BX_DEFAULT_TARGET: "wasm"}})
