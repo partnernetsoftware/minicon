@@ -989,8 +989,27 @@ fn dyn_index_cell(
     index: i64,
 ) -> Result<usize, String> {
     let (tag, aux, payload) = dyn_tag(memory, cell);
+    if tag == 4 {
+        let text = memory_text(memory, payload as usize, aux as usize);
+        let chars: Vec<char> = text.chars().collect();
+        let at = if index < 0 {
+            chars.len() as i64 + index
+        } else {
+            index
+        };
+        if at < 0 || at as usize >= chars.len() {
+            return dyn_null_cell(memory, next_dyn, null_slot);
+        }
+        let mut buffer = [0u8; 4];
+        let piece = chars[at as usize].encode_utf8(&mut buffer);
+        let start = alloc_dyn_bytes(next_dyn, piece.len().max(1))?;
+        memory[start..start + piece.len()].copy_from_slice(piece.as_bytes());
+        let boxed = alloc_dyn_cell(next_dyn)?;
+        write_dyn_cell(memory, boxed, 4, piece.len() as u32, start as u64);
+        return Ok(boxed);
+    }
     if tag != 5 {
-        return Err("dynamic index works on dynamic arrays only".to_string());
+        return Err("dynamic index works on dynamic arrays or strings only".to_string());
     }
     let count = aux as i64;
     let mut at = index;
@@ -1142,9 +1161,12 @@ fn dyn_get_cell(
 ) -> Result<usize, String> {
     let (key_tag, key_aux, key_payload) = dyn_tag(memory, key);
     let (tag, aux, payload) = dyn_tag(memory, cell);
+    if tag == 4 {
+        return Err("get() does not index dynamic strings".to_string());
+    }
     if key_tag == 4 {
         if tag != 6 {
-            return dyn_null_cell(memory, next_dyn, null_slot);
+            return Err("get() with a string key needs a dynamic object".to_string());
         }
         let wanted = memory_text(memory, key_payload as usize, key_aux as usize);
         for index in 0..aux as usize {
@@ -1158,6 +1180,7 @@ fn dyn_get_cell(
     }
     let at = dyn_number(memory, key)? as i64;
     match tag {
+        4 => dyn_index_cell(memory, next_dyn, null_slot, cell, at),
         5 => dyn_index_cell(memory, next_dyn, null_slot, cell, at),
         6 => {
             if at < 0 || at >= aux as i64 {
@@ -1185,6 +1208,10 @@ fn dyn_has_cell(memory: &[u8], cell: usize, key: usize) -> Result<bool, String> 
         return Ok(false);
     }
     let at = dyn_number(memory, key)? as i64;
+    if tag == 4 {
+        // The VM's has() works on objects/maps only, so strings report false.
+        return Ok(false);
+    }
     Ok(at >= 0 && at < aux as i64 && (tag == 5 || tag == 6))
 }
 
@@ -1194,8 +1221,21 @@ fn dyn_contains_cell(memory: &[u8], cell: usize, value: usize) -> Result<bool, S
 
 fn dyn_index_of_cell(memory: &[u8], cell: usize, value: usize) -> Result<i64, String> {
     let (tag, aux, payload) = dyn_tag(memory, cell);
+    if tag == 4 {
+        let (_, _, value_payload) = dyn_tag(memory, value);
+        let (value_tag, value_aux, _) = dyn_tag(memory, value);
+        if value_tag != 4 {
+            return Ok(-1);
+        }
+        let haystack = memory_text(memory, payload as usize, aux as usize);
+        let needle = memory_text(memory, value_payload as usize, value_aux as usize);
+        return Ok(match haystack.find(&needle) {
+            Some(byte_index) => haystack[..byte_index].chars().count() as i64,
+            None => -1,
+        });
+    }
     if tag != 5 {
-        return Err("index_of() on a dynamic value needs a dynamic array".to_string());
+        return Err("index_of() on a dynamic value needs a dynamic array or string".to_string());
     }
     for index in 0..aux as usize {
         if dyn_eq_cells(memory, payload as usize + index * 16, value)? {
@@ -1213,8 +1253,26 @@ fn dyn_slice_cell(
     end: i64,
 ) -> Result<usize, String> {
     let (tag, aux, payload) = dyn_tag(memory, cell);
+    if tag == 4 {
+        let text = memory_text(memory, payload as usize, aux as usize);
+        let chars: Vec<char> = text.chars().collect();
+        let count = chars.len() as i64;
+        let clamp = |value: i64| -> i64 {
+            let value = if value < 0 { count + value } else { value };
+            value.clamp(0, count)
+        };
+        let from = clamp(start) as usize;
+        let to = clamp(end).max(from as i64) as usize;
+        let piece: String = chars[from..to].iter().collect();
+        let bytes = piece.as_bytes();
+        let base = alloc_dyn_bytes(next_dyn, bytes.len().max(1))?;
+        memory[base..base + bytes.len()].copy_from_slice(bytes);
+        let out = alloc_dyn_cell(next_dyn)?;
+        write_dyn_cell(memory, out, 4, bytes.len() as u32, base as u64);
+        return Ok(out);
+    }
     if tag != 5 {
-        return Err("slice() on a dynamic value needs a dynamic array".to_string());
+        return Err("slice() on a dynamic value needs a dynamic array or string".to_string());
     }
     let count = aux as i64;
     let clamp = |value: i64| -> i64 {

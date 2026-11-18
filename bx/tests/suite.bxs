@@ -954,6 +954,17 @@ if (wasmBoolGrow.code == 0 && wasmBoolGrowRun.out == wasmBoolGrowVm.out && wasmB
   casesFail += 1
   failures.push("wasm growable bool arrays\n    wasm=" + json(wasmBoolGrowRun.out) + " vm=" + json(wasmBoolGrowVm.out) + " err=" + json(wasmBoolGrowRun.err))
 }
+write(artDir + "/dynstr.json", json("abc"))
+write(artDir + "/wasm-dynstr.bxs", 'let v = parse(read("' + artDir + '/dynstr.json"))\nprint(len(v))\nprint(str(contains(v, "b")))\nprint(str(index_of(v, "b")))\nprint(v.slice(1))\nprint(v[0])\nprint(v[-1])\nprint(v[99])\nprint(str(has(v, 0)))\n')
+let wasmDynStr = exec([BX, "build", "--wasm", artDir + "/wasm-dynstr.bxs", "-o", artDir + "/wasm-dynstr.wasm"])
+let wasmDynStrRun = exec([BX, "run", artDir + "/wasm-dynstr.wasm"])
+let wasmDynStrVm = exec([BX, "run", artDir + "/wasm-dynstr.bxs"])
+if (wasmDynStr.code == 0 && wasmDynStrRun.out == wasmDynStrVm.out && wasmDynStrRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm dynamic strings\n    wasm=" + json(wasmDynStrRun.out) + " vm=" + json(wasmDynStrVm.out) + " err=" + json(wasmDynStrRun.err))
+}
 write(artDir + "/wasm-dynget.bxs", 'let a = parse(env("X", "[1,2,3]"))\nprint(str(contains(a, 2)))\nprint(str(contains(a, 5)))\nprint(str(index_of(a, 2)))\nprint(str(index_of(a, 5)))\nprint(get(a, 0))\nprint(get(a, 9))\nprint(a.slice(1))\nprint(a.slice(1, 2))\nprint(str(a.contains(3)))\nprint(str(a.index_of(3)))\n')
 let wasmDynGet = exec([BX, "build", "--wasm", artDir + "/wasm-dynget.bxs", "-o", artDir + "/wasm-dynget.wasm"])
 let wasmDynGetRun = exec([BX, "run", artDir + "/wasm-dynget.wasm"])
@@ -1303,6 +1314,17 @@ if (wasmInterpField.code == 0 && wasmInterpFieldRun.out == wasmInterpFieldVm.out
 } else {
   casesFail += 1
   failures.push("wasm interpolation with record fields\n    wasm=" + json(wasmInterpFieldRun.out) + " vm=" + json(wasmInterpFieldVm.out) + " err=" + json(wasmInterpFieldRun.err))
+}
+write(artDir + "/dynstr.json", json("abc"))
+write(artDir + "/wasm-dynstr.bxs", 'let v = parse(read("' + artDir + '/dynstr.json"))\nprint(len(v))\nprint(str(contains(v, "b")))\nprint(str(index_of(v, "b")))\nprint(v.slice(1))\nprint(v[0])\nprint(v[-1])\nprint(v[99])\nprint(str(has(v, 0)))\n')
+let wasmDynStr = exec([BX, "build", "--wasm", artDir + "/wasm-dynstr.bxs", "-o", artDir + "/wasm-dynstr.wasm"])
+let wasmDynStrRun = exec([BX, "run", artDir + "/wasm-dynstr.wasm"])
+let wasmDynStrVm = exec([BX, "run", artDir + "/wasm-dynstr.bxs"])
+if (wasmDynStr.code == 0 && wasmDynStrRun.out == wasmDynStrVm.out && wasmDynStrRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm dynamic strings\n    wasm=" + json(wasmDynStrRun.out) + " vm=" + json(wasmDynStrVm.out) + " err=" + json(wasmDynStrRun.err))
 }
 write(artDir + "/wasm-dynget.bxs", 'fn probe() {\n  let o = {a: 1, b: 2}\n  let k = "b"\n  print(get(o, k))\n  let missing = "z"\n  print(get(o, missing, 9))\n  let s = {x: "p", y: "q"}\n  let sk = "y"\n  print(get(s, sk))\n  let f = {m: 1.5, n: 2.5}\n  let fk = "m"\n  print(get(f, fk))\n}\nprobe()\n')
 let wasmDynGet = exec([BX, "build", "--wasm", artDir + "/wasm-dynget.bxs", "-o", artDir + "/wasm-dynget.wasm"])

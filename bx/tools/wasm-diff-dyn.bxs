@@ -216,6 +216,53 @@ fn gen(kind, x_path, y_path) {
     lines.push("let v = parse(" + x + ")")
     nested_ops(lines, "v")
     lines.push("print(len(v))")
+  } else if (kind == 6) {
+    lines.push("let v = parse(" + x + ")")
+    lines.push("print(v)")
+    lines.push("print(str(v))")
+    lines.push("print(json(v))")
+    lines.push("print(type(v))")
+    lines.push("print(len(v))")
+    lines.push("print(v[0])")
+    lines.push("print(v[-1])")
+    lines.push("print(v[99])")
+    lines.push("print(contains(v, \"b\"))")
+    lines.push("print(index_of(v, \"b\"))")
+    lines.push("print(v.slice(1))")
+    lines.push("print(v.slice(0, 2))")
+    lines.push("print(v == v)")
+    lines.push("print(get(v, 0))")
+  } else if (kind == 7) {
+    lines.push("let arr = parse(" + x + ")")
+    lines.push("let r = {xs: arr, n: 7}")
+    lines.push("print(r)")
+    lines.push("print(json(r))")
+    lines.push("print(r.xs)")
+    lines.push("print(len(r.xs))")
+    lines.push("print(r.xs[0])")
+    lines.push("print(get(r.xs, 0))")
+    lines.push("print(join(r.xs, \",\"))")
+    lines.push("print(r.xs + [9])")
+    lines.push("r.xs = parse(" + y + ")")
+    lines.push("print(r.xs)")
+    lines.push("print(r)")
+  } else if (kind == 8) {
+    lines.push("let arr = parse(" + x + ")")
+    lines.push("let xs = [{a: arr, b: 1}, {a: parse(" + y + "), b: 2}]")
+    lines.push("print(xs)")
+    lines.push("print(json(xs))")
+    lines.push("print(len(xs))")
+    lines.push("print(xs[0].a[0])")
+    lines.push("print(join(xs, \";\"))")
+    lines.push("print(xs[1].a)")
+  } else if (kind == 9) {
+    lines.push("let v = parse(" + x + ")")
+    lines.push("let w = parse(" + y + ")")
+    lines.push("print(v)")
+    lines.push("print(type(v))")
+    lines.push("print(v == w)")
+    lines.push("print(has(v, \"a\"))")
+    lines.push("print(get(v, \"a\"))")
   } else {
     lines.push("let v = parse(" + x + ")")
     lines.push("let w = parse(" + y + ")")
@@ -246,15 +293,27 @@ fn payload(kind) {
   if (kind == 3) {
     return obj_json()
   }
+  if (kind == 6) {
+    return json(["abc", "b x", "éà", ""][pick(4)])
+  }
+  if (kind == 7) {
+    return int_json()
+  }
+  if (kind == 8) {
+    return int_json()
+  }
   return nested_json()
 }
 
 let failures = 0
 for (let c = 0; c < cases; c += 1) {
-  let kind = pick(6)
+  let kind = pick(10)
   let payload_kind = kind
-  if (payload_kind == 5) {
+  if (payload_kind == 5 || payload_kind == 7 || payload_kind == 8) {
     payload_kind = 1
+  }
+  if (payload_kind == 9) {
+    payload_kind = 4
   }
   let x_json = payload(payload_kind)
   let y_json = int_json()
