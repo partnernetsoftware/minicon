@@ -11928,11 +11928,15 @@ impl<'a> Emitter<'a> {
                             start: 0,
                         });
                         self.labels.push(0x04);
-                        match args.get(1) {
-                            Some(message) => self.emit_str(message)?,
-                            None => self.emit_str(&Expr::Str("assertion failed".to_string()))?,
+                        let fallback = Expr::Str("assertion failed".to_string());
+                        let message = args.get(1).unwrap_or(&fallback);
+                        self.emit_str(message)?;
+                        if let Some(ctx) = self.attempts.last().copied() {
+                            self.emit_attempt_error_pair(ctx.record);
+                            self.emit_attempt_jump();
+                        } else {
+                            self.builder.push(Instr::Call(ERROR));
                         }
-                        self.builder.push(Instr::Call(ERROR));
                         self.labels.pop();
                         self.builder.push(Instr::Op(0x0b));
                         return Ok(Ty::Int);
@@ -12571,6 +12575,22 @@ impl<'a> Emitter<'a> {
                             Ty::Str => {
                                 self.emit_str(&args[0])?;
                                 self.builder.push(Instr::Call(STR_TO_FLOAT));
+                                let value = self.builder.add_local(ValType::F64);
+                                self.builder.push(Instr::Local(0x21, value));
+                                self.builder.push(Instr::Local(0x20, value));
+                                self.builder.push(Instr::Local(0x20, value));
+                                self.builder.push(Instr::Op(0x62));
+                                self.builder.push(Instr::Block {
+                                    opcode: 0x04,
+                                    end: 0,
+                                    else_at: 0,
+                                    start: 0,
+                                });
+                                self.labels.push(0x04);
+                                self.emit_panic("cannot convert str to float");
+                                self.labels.pop();
+                                self.builder.push(Instr::Op(0x0b));
+                                self.builder.push(Instr::Local(0x20, value));
                             }
                             Ty::Int => {
                                 self.emit_expr(&args[0])?;
@@ -13888,6 +13908,22 @@ impl<'a> Emitter<'a> {
                             Ty::Str => {
                                 self.emit_str(&args[0])?;
                                 self.builder.push(Instr::Call(STR_TO_INT));
+                                let value = self.builder.add_local(ValType::I64);
+                                self.builder.push(Instr::Local(0x21, value));
+                                self.builder.push(Instr::Local(0x20, value));
+                                self.builder.push(Instr::Const(0x42, WVal::I64(i64::MIN)));
+                                self.builder.push(Instr::Op(0x51));
+                                self.builder.push(Instr::Block {
+                                    opcode: 0x04,
+                                    end: 0,
+                                    else_at: 0,
+                                    start: 0,
+                                });
+                                self.labels.push(0x04);
+                                self.emit_panic("cannot convert str to int");
+                                self.labels.pop();
+                                self.builder.push(Instr::Op(0x0b));
+                                self.builder.push(Instr::Local(0x20, value));
                             }
                             Ty::Float => {
                                 self.emit_f64(&args[0])?;
@@ -14634,11 +14670,15 @@ impl<'a> Emitter<'a> {
                             start: 0,
                         });
                         self.labels.push(0x04);
-                        match args.get(1) {
-                            Some(message) => self.emit_str(message)?,
-                            None => self.emit_str(&Expr::Str("assertion failed".to_string()))?,
+                        let fallback = Expr::Str("assertion failed".to_string());
+                        let message = args.get(1).unwrap_or(&fallback);
+                        self.emit_str(message)?;
+                        if let Some(ctx) = self.attempts.last().copied() {
+                            self.emit_attempt_error_pair(ctx.record);
+                            self.emit_attempt_jump();
+                        } else {
+                            self.builder.push(Instr::Call(ERROR));
                         }
-                        self.builder.push(Instr::Call(ERROR));
                         self.labels.pop();
                         self.builder.push(Instr::Op(0x0b));
                         return Ok(());
@@ -19790,6 +19830,28 @@ mod tests {
                 "{\"k\":{\"a\":[1,2],\"b\":\"x\"}}".to_string(),
                 "{\"a\":{\"a\":[1,2],\"b\":\"x\"},\"b\":3}".to_string(),
                 "{\"k\":2}".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn attempt_catches_assert_and_conversion_errors() {
+        let (numbers, strings) = run_with_argv(
+            "let a = attempt(fn() { assert(1 == 2, \"bad\") })\nprint(a.ok)\nprint(a.error)\nlet b = attempt(fn() { return int(\"x\") })\nprint(b.ok)\nprint(b.error)\nlet c = attempt(fn() { return float(\"x\") })\nprint(c.ok)\nprint(c.error)\nlet d = attempt(fn() { return 1 / 0 })\nprint(d.ok)\nprint(d.error)",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec![
+                "false".to_string(),
+                "bad".to_string(),
+                "false".to_string(),
+                "cannot convert str to int".to_string(),
+                "false".to_string(),
+                "cannot convert str to float".to_string(),
+                "false".to_string(),
+                "division by zero".to_string()
             ]
         );
     }

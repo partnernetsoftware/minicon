@@ -985,6 +985,15 @@ if (wasmAliasPush.code == 0 && wasmAliasPushRun.out == wasmAliasPushVm.out && wa
   casesFail += 1
   failures.push("wasm array alias push\n    wasm=" + json(wasmAliasPushRun.out) + " vm=" + json(wasmAliasPushVm.out) + " err=" + json(wasmAliasPush.err))
 }
+write(artDir + "/wasm-attemptcatch.bxs", 'let a = attempt(fn() { assert(1 == 2, "bad") })\nprint(a.ok)\nprint(a.error)\nlet b = attempt(fn() { return int("x") })\nprint(b.ok)\nprint(b.error)\nlet c = attempt(fn() { return float("x") })\nprint(c.ok)\nprint(c.error)\n')
+let wasmAttCatch = exec([BX, "build", "--wasm", artDir + "/wasm-attemptcatch.bxs", "-o", artDir + "/wasm-attemptcatch.wasm"])
+let wasmAttCatchRun = exec([BX, "run", artDir + "/wasm-attemptcatch.wasm"])
+if (wasmAttCatch.code == 0 && wasmAttCatchRun.code == 0 && wasmAttCatchRun.out.contains("bad") && wasmAttCatchRun.out.contains("cannot convert str to int") && wasmAttCatchRun.out.contains("cannot convert str to float")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm attempt catches assert/conversions\n    out=" + json(wasmAttCatchRun.out) + " err=" + json(wasmAttCatchRun.err))
+}
 write(artDir + "/wasm-mergekind.bxs", 'let d = parse("{" + json("a") + ":[1,2]," + json("b") + ":" + json("x") + "}")\nprint(merge({k: d}, {k: 2}))\nprint(merge({k: 1}, {k: d}))\nprint(json(merge({a: d}, {b: 3})))\nprint(merge({k: 1}, {k: 2}))\n')
 let wasmMergeKind = exec([BX, "build", "--wasm", artDir + "/wasm-mergekind.bxs", "-o", artDir + "/wasm-mergekind.wasm"])
 let wasmMergeKindRun = exec([BX, "run", artDir + "/wasm-mergekind.wasm"])
@@ -1325,6 +1334,15 @@ if (wasmAliasPush.code == 0 && wasmAliasPushRun.out == wasmAliasPushVm.out && wa
 } else {
   casesFail += 1
   failures.push("wasm array alias push\n    wasm=" + json(wasmAliasPushRun.out) + " vm=" + json(wasmAliasPushVm.out) + " err=" + json(wasmAliasPush.err))
+}
+write(artDir + "/wasm-attemptcatch.bxs", 'let a = attempt(fn() { assert(1 == 2, "bad") })\nprint(a.ok)\nprint(a.error)\nlet b = attempt(fn() { return int("x") })\nprint(b.ok)\nprint(b.error)\nlet c = attempt(fn() { return float("x") })\nprint(c.ok)\nprint(c.error)\n')
+let wasmAttCatch = exec([BX, "build", "--wasm", artDir + "/wasm-attemptcatch.bxs", "-o", artDir + "/wasm-attemptcatch.wasm"])
+let wasmAttCatchRun = exec([BX, "run", artDir + "/wasm-attemptcatch.wasm"])
+if (wasmAttCatch.code == 0 && wasmAttCatchRun.code == 0 && wasmAttCatchRun.out.contains("bad") && wasmAttCatchRun.out.contains("cannot convert str to int") && wasmAttCatchRun.out.contains("cannot convert str to float")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm attempt catches assert/conversions\n    out=" + json(wasmAttCatchRun.out) + " err=" + json(wasmAttCatchRun.err))
 }
 write(artDir + "/wasm-mergekind.bxs", 'let d = parse("{" + json("a") + ":[1,2]," + json("b") + ":" + json("x") + "}")\nprint(merge({k: d}, {k: 2}))\nprint(merge({k: 1}, {k: d}))\nprint(json(merge({a: d}, {b: 3})))\nprint(merge({k: 1}, {k: 2}))\n')
 let wasmMergeKind = exec([BX, "build", "--wasm", artDir + "/wasm-mergekind.bxs", "-o", artDir + "/wasm-mergekind.wasm"])

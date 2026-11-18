@@ -2777,10 +2777,8 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     .get(ptr..ptr.saturating_add(len))
                     .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
                     .ok_or_else(|| "env.str_to_float string is outside memory".to_string())?;
-                let value = text
-                    .trim()
-                    .parse::<f64>()
-                    .map_err(|_| "cannot convert str to float".to_string())?;
+                // NaN signals a parse failure; the guest raises an attempt-aware error.
+                let value = text.trim().parse::<f64>().unwrap_or(f64::NAN);
                 Ok(vec![WVal::F64(value)])
             }
             ("env", "print_record_typed") => {
@@ -4214,10 +4212,9 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     .ok_or_else(|| "env.str_to_int range is outside memory".to_string())?;
                 let text = String::from_utf8_lossy(bytes);
                 let trimmed = text.trim();
-                match trimmed.parse::<i64>() {
-                    Ok(value) => Ok(vec![WVal::I64(value)]),
-                    Err(_) => Err("cannot convert str to int".to_string()),
-                }
+                // Parse failures return i64::MIN so the guest can route an
+                // attempt-aware error instead of trapping inside the host.
+                Ok(vec![WVal::I64(trimmed.parse::<i64>().unwrap_or(i64::MIN))])
             }
             ("env", "map_new") => {
                 const MAP_CAPACITY: u32 = 64;
