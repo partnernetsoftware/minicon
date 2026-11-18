@@ -42,6 +42,11 @@ index=0
 for script in "${corpus[@]}"; do
   index=$((index + 1))
   name="${script#"$ROOT"/}"
+  if grep -qE '\.ms|now\(\)|performance_now|elapsed' "$script"; then
+    unsupported=$((unsupported + 1))
+    unsupported_list+="  - $name: timing/environment output (skipped)"$'\n'
+    continue
+  fi
   check_output="$("$BIN" check --target wasm --json "$script" 2>&1 || true)"
   if [[ "$check_output" != *'"ok":true'* ]]; then
     unsupported=$((unsupported + 1))
