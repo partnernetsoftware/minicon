@@ -3281,7 +3281,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 123;
+const IMPORT_COUNT: u32 = 124;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -3392,6 +3392,7 @@ const DYN_REVERSE: u32 = 119;
 const DYN_SUM: u32 = 120;
 const DYN_MINMAX: u32 = 121;
 const DYN_JOIN: u32 = 122;
+const DYN_FROM_ARRAY: u32 = 123;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -8533,6 +8534,32 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Local(0x20, out));
         Ok(Ty::Dyn)
     }
+    /// Push a dynamic cell for `expr`, converting a static array through the host.
+    fn emit_box_dyn_or_array(&mut self, expr: &Expr, ty: Ty) -> Result<(), String> {
+        if ty == Ty::Dyn {
+            self.emit_expr(expr)?;
+            return Ok(());
+        }
+        if is_array_ty(ty) {
+            let kind = match ty {
+                Ty::Arr => 4,
+                Ty::ArrStr => 5,
+                Ty::ArrF => 6,
+                Ty::ArrBool => 11,
+                other => {
+                    return Err(format!(
+                        "wasm target cannot concatenate a dynamic array with {} yet",
+                        ty_name(other)
+                    ))
+                }
+            };
+            self.builder.push(Instr::Const(0x41, WVal::I32(kind)));
+            self.emit_expr(expr)?;
+            self.builder.push(Instr::Call(DYN_FROM_ARRAY));
+            return Ok(());
+        }
+        self.emit_box_dyn(expr, ty)
+    }
     fn push_dyn_header(&mut self, cell: u32, tag: u32, aux: u32) {
         self.builder.push(Instr::Local(0x20, cell));
         self.builder.push(Instr::Const(0x41, WVal::I32(tag as i32)));
@@ -9072,6 +9099,13 @@ impl<'a> Emitter<'a> {
                 if lt == Ty::Str || rt == Ty::Str {
                     self.emit_str(expr)?;
                     return Ok(Ty::Str);
+                }
+                if (lt == Ty::Dyn && is_array_ty(rt)) || (rt == Ty::Dyn && is_array_ty(lt)) {
+                    self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                    self.emit_box_dyn_or_array(left, lt)?;
+                    self.emit_box_dyn_or_array(right, rt)?;
+                    self.builder.push(Instr::Call(DYN_ARITH));
+                    return Ok(Ty::Dyn);
                 }
                 if lt == Ty::Dyn || rt == Ty::Dyn {
                     return self.emit_dyn_arith(0, left, right);
@@ -15127,6 +15161,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "dyn_sum", i32_to_i32_ty);
     builder.import_func("env", "dyn_minmax", which_ty);
     builder.import_func("env", "dyn_join", format_container_ty);
+    builder.import_func("env", "dyn_from_array", which_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -16926,6 +16961,28 @@ mod tests {
             "[\"b\",\"a\"]",
             "a",
             "b",
+        ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn dynamic_array_concatenation_matches_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let a = parse(env(\"X\", \"[1,2]\"))\nprint(a + [3])\nprint([0] + a)\nlet b = parse(env(\"Y\", \"[4,5]\"))\nprint(a + b)\nlet s = parse(env(\"Z\", \"[\\\"x\\\"]\"))\nprint(s + [\"y\"])\nprint([\"w\"] + s)\nlet f = parse(env(\"F\", \"[1.5]\"))\nprint(f + [2.5])\nlet bo = parse(env(\"B\", \"[true]\"))\nprint(bo + [false])",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = [
+            "[1,2,3]",
+            "[0,1,2]",
+            "[1,2,4,5]",
+            "[\"x\",\"y\"]",
+            "[\"w\",\"x\"]",
+            "[1.5,2.5]",
+            "[true,false]",
         ];
         assert_eq!(
             strings,

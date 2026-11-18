@@ -954,6 +954,16 @@ if (wasmBoolGrow.code == 0 && wasmBoolGrowRun.out == wasmBoolGrowVm.out && wasmB
   casesFail += 1
   failures.push("wasm growable bool arrays\n    wasm=" + json(wasmBoolGrowRun.out) + " vm=" + json(wasmBoolGrowVm.out) + " err=" + json(wasmBoolGrowRun.err))
 }
+write(artDir + "/wasm-dynconcat.bxs", 'let a = parse(env("X", "[1,2]"))\nprint(a + [3])\nprint([0] + a)\nlet b = parse(env("Y", "[4,5]"))\nprint(a + b)\nlet f = parse(env("F", "[1.5]"))\nprint(f + [2.5])\nlet bo = parse(env("B", "[true]"))\nprint(bo + [false])\n')
+let wasmDynConcat = exec([BX, "build", "--wasm", artDir + "/wasm-dynconcat.bxs", "-o", artDir + "/wasm-dynconcat.wasm"])
+let wasmDynConcatRun = exec([BX, "run", artDir + "/wasm-dynconcat.wasm"])
+let wasmDynConcatVm = exec([BX, "run", artDir + "/wasm-dynconcat.bxs"])
+if (wasmDynConcat.code == 0 && wasmDynConcatRun.out == wasmDynConcatVm.out && wasmDynConcatRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm dynamic concat\n    wasm=" + json(wasmDynConcatRun.out) + " vm=" + json(wasmDynConcatVm.out) + " err=" + json(wasmDynConcatRun.err))
+}
 write(artDir + "/wasm-dynsort.bxs", 'let a = parse(env("X", "[3,1,2]"))\nprint(sort(a))\nprint(a)\nprint(reverse(a))\nlet s = parse(env("X", "[10,20,5]"))\nprint(sum(s))\nprint(min(s))\nprint(max(s))\nprint(join(s, ","))\nprint(s.join("-"))\nprint(s.sort())\nprint(s.sum())\n')
 let wasmDynSort = exec([BX, "build", "--wasm", artDir + "/wasm-dynsort.bxs", "-o", artDir + "/wasm-dynsort.wasm"])
 let wasmDynSortRun = exec([BX, "run", artDir + "/wasm-dynsort.wasm"])

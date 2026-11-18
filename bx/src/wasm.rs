@@ -1142,6 +1142,80 @@ fn dyn_value_at_cell(
     }
 }
 
+/// Concatenate two dynamic arrays into a fresh dynamic array.
+fn dyn_concat_cells(
+    memory: &mut [u8],
+    next_dyn: &mut u32,
+    a: usize,
+    b: usize,
+) -> Result<usize, String> {
+    let (tag_a, count_a, payload_a) = dyn_tag(memory, a);
+    let (tag_b, count_b, payload_b) = dyn_tag(memory, b);
+    if tag_a != 5 || tag_b != 5 {
+        return Err("dynamic concatenation needs two arrays".to_string());
+    }
+    let total = count_a as usize + count_b as usize;
+    let base = alloc_dyn_bytes(next_dyn, total.max(1) * 16)?;
+    for index in 0..count_a as usize {
+        let source = payload_a as usize + index * 16;
+        memory.copy_within(source..source + 16, base + index * 16);
+    }
+    for index in 0..count_b as usize {
+        let source = payload_b as usize + index * 16;
+        memory.copy_within(source..source + 16, base + (count_a as usize + index) * 16);
+    }
+    let cell = alloc_dyn_cell(next_dyn)?;
+    write_dyn_cell(memory, cell, 5, total as u32, base as u64);
+    Ok(cell)
+}
+
+/// Convert a static array (by element kind code) into a dynamic array cell.
+fn dyn_from_static_array(
+    memory: &mut [u8],
+    next_dyn: &mut u32,
+    next_file: &mut u32,
+    kind: u32,
+    ptr: usize,
+) -> Result<usize, String> {
+    if ptr + 4 > memory.len() {
+        return Err("static array pointer out of bounds".to_string());
+    }
+    let count = u32::from_le_bytes(memory[ptr..ptr + 4].try_into().unwrap()) as usize;
+    let base = alloc_dyn_bytes(next_dyn, count.max(1) * 16)?;
+    for index in 0..count {
+        let slot = ptr + 4 + index * 8;
+        let cell = base + index * 16;
+        match kind {
+            4 => {
+                let value = i64::from_le_bytes(memory[slot..slot + 8].try_into().unwrap());
+                write_dyn_cell(memory, cell, 1, 0, value as u64);
+            }
+            5 => {
+                let item_ptr = u32::from_le_bytes(memory[slot..slot + 4].try_into().unwrap());
+                let item_len = u32::from_le_bytes(memory[slot + 4..slot + 8].try_into().unwrap());
+                write_dyn_cell(memory, cell, 4, item_len, u64::from(item_ptr));
+            }
+            6 => {
+                let value = f64::from_le_bytes(memory[slot..slot + 8].try_into().unwrap());
+                write_dyn_cell(memory, cell, 2, 0, value.to_bits());
+            }
+            11 => {
+                let value = i64::from_le_bytes(memory[slot..slot + 8].try_into().unwrap());
+                write_dyn_cell(memory, cell, 3, 0, u64::from(value != 0));
+            }
+            _ => {
+                let _ = next_file;
+                return Err(
+                    "only int/string/float/bool static arrays concatenate with dynamic ones"
+                        .to_string(),
+                );
+            }
+        }
+    }
+    let cell = alloc_dyn_cell(next_dyn)?;
+    write_dyn_cell(memory, cell, 5, count as u32, base as u64);
+    Ok(cell)
+}
 /// Order two numeric-or-string dynamic cells for sort/min/max.
 fn dyn_order(memory: &[u8], a: usize, b: usize) -> Result<std::cmp::Ordering, String> {
     let (tag_a, aux_a, payload_a) = dyn_tag(memory, a);
@@ -1397,6 +1471,11 @@ fn dyn_arith_cells(
     a: usize,
     b: usize,
 ) -> Result<usize, String> {
+    let (tag_a, _, _) = dyn_tag(memory, a);
+    let (tag_b, _, _) = dyn_tag(memory, b);
+    if op == 0 && tag_a == 5 && tag_b == 5 {
+        return dyn_concat_cells(memory, next_dyn, a, b);
+    }
     let text_a = dyn_text(memory, a);
     let text_b = dyn_text(memory, b);
     if op == 0 && (text_a.is_some() || text_b.is_some()) {
@@ -2612,6 +2691,20 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     sep_len,
                 )?;
                 Ok(vec![WVal::I32(start)])
+            }
+            ("env", "dyn_from_array") => {
+                let (kind, ptr) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(kind)), Some(WVal::I32(ptr))) => (*kind as u32, *ptr as usize),
+                    _ => return Err("env.dyn_from_array expects (i32, i32)".to_string()),
+                };
+                let cell = dyn_from_static_array(
+                    memory,
+                    &mut self.next_dyn,
+                    &mut self.next_file,
+                    kind,
+                    ptr,
+                )?;
+                Ok(vec![WVal::I32(cell as i32)])
             }
             ("env", "dyn_parse") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {
