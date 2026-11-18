@@ -1545,18 +1545,11 @@ impl Checker {
                         Ty::Arr => saw_arr = true,
                         Ty::ArrStr => saw_strarr = true,
                         Ty::Obj(shape) => match saw_obj {
-                            Some(known) if known != shape => {
-                                return Err("wasm target records in one array need the same shape"
-                                    .to_string())
-                            }
+                            Some(known) if known != shape => return Ok(Ty::Dyn),
                             _ => saw_obj = Some(shape),
                         },
-                        other => {
-                            return Err(format!(
-                                "wasm target supports arrays of ints, strings or records, got {}",
-                                ty_name(other)
-                            ))
-                        }
+                        Ty::Dyn | Ty::Null => return Ok(Ty::Dyn),
+                        _ => return Ok(Ty::Dyn),
                     }
                 }
                 // `[["a"], []]`: an empty array literal is layout-compatible with
@@ -1579,10 +1572,9 @@ impl Checker {
                     || (kinds > 0 && (saw_int || saw_float))
                     || (saw_bool && (saw_int || saw_float))
                 {
-                    return Err(
-                        "wasm target arrays need one element type (number, string or record)"
-                            .to_string(),
-                    );
+                    // Mixed literal containers lower to dynamic cells (P2), like
+                    // runtime-parsed JSON, instead of being rejected.
+                    return Ok(Ty::Dyn);
                 }
                 Ok(if saw_strarr {
                     Ty::ArrStrArr
@@ -7618,6 +7610,9 @@ impl<'a> Emitter<'a> {
                 if items.is_empty() {
                     return Ok(Ty::Arr);
                 }
+                if self.array_literal_is_dynamic(items)? {
+                    return Ok(Ty::Dyn);
+                }
                 let types: Vec<Ty> = items
                     .iter()
                     .map(|item| self.type_of(item))
@@ -8650,6 +8645,22 @@ impl<'a> Emitter<'a> {
             self.emit_expr(expr)?;
             return Ok(());
         }
+        if is_array_ty(ty) {
+            return self.emit_box_dyn_or_array(expr, ty);
+        }
+        if let Ty::Obj(shape) = ty {
+            let kinds = self.record_kinds_table(shape)?;
+            let (table, count) = self.record_table(shape)?;
+            self.builder
+                .push(Instr::Const(0x41, WVal::I32(kinds as i32)));
+            self.builder
+                .push(Instr::Const(0x41, WVal::I32(table as i32)));
+            self.builder
+                .push(Instr::Const(0x41, WVal::I32(count as i32)));
+            self.emit_expr(expr)?;
+            self.builder.push(Instr::Call(DYN_FROM_RECORD));
+            return Ok(());
+        }
         let cell = self.builder.add_local(ValType::I32);
         self.emit_alloc_const(16);
         self.builder.push(Instr::Local(0x21, cell));
@@ -9031,6 +9042,53 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Local(0x20, out));
         Ok(Ty::Dyn)
     }
+    /// Mirror the checker's array-literal classification without re-inferring
+    /// the expression (function locals are no longer in the checker's scope at
+    /// emit time). Mixed literals lower to dynamic cells.
+    fn array_literal_is_dynamic(&self, items: &[Expr]) -> Result<bool, String> {
+        let mut saw_int = false;
+        let mut saw_float = false;
+        let mut saw_str = false;
+        let mut saw_bool = false;
+        let mut saw_arr = false;
+        let mut saw_strarr = false;
+        let mut saw_obj: Option<u32> = None;
+        let mut mixed = false;
+        for item in items {
+            match self.type_of(item)? {
+                Ty::Int => saw_int = true,
+                Ty::Float => saw_float = true,
+                Ty::Str => saw_str = true,
+                Ty::Bool => saw_bool = true,
+                Ty::Arr => saw_arr = true,
+                Ty::ArrStr => saw_strarr = true,
+                Ty::Obj(shape) => match saw_obj {
+                    Some(known) if known != shape => mixed = true,
+                    _ => saw_obj = Some(shape),
+                },
+                Ty::Dyn | Ty::Null => mixed = true,
+                _ => mixed = true,
+            }
+        }
+        if mixed {
+            return Ok(true);
+        }
+        let empty_rows_only = items.iter().all(|item| match item {
+            Expr::Array(inner) => inner.is_empty() || matches!(self.type_of(item), Ok(Ty::ArrStr)),
+            _ => matches!(self.type_of(item), Ok(Ty::ArrStr)),
+        });
+        let kinds = if saw_strarr && empty_rows_only {
+            1
+        } else {
+            [saw_str, saw_arr, saw_strarr, saw_obj.is_some(), saw_bool]
+                .iter()
+                .filter(|seen| **seen)
+                .count()
+        };
+        Ok(kinds > 1
+            || (kinds > 0 && (saw_int || saw_float))
+            || (saw_bool && (saw_int || saw_float)))
+    }
     /// Box any literal value into a dynamic cell for a record field (kind 8).
     fn emit_box_dyn_value(&mut self, expr: &Expr, ty: Ty) -> Result<(), String> {
         if ty == Ty::Dyn || is_array_ty(ty) {
@@ -9049,8 +9107,11 @@ impl<'a> Emitter<'a> {
             self.builder.push(Instr::Call(DYN_FROM_RECORD));
             return Ok(());
         }
+        if matches!(ty, Ty::Int | Ty::Float | Ty::Bool | Ty::Str | Ty::Null) {
+            return self.emit_box_dyn(expr, ty);
+        }
         Err(format!(
-            "wasm target cannot store {} in a dynamic record field",
+            "wasm target cannot store {} in a dynamic container yet",
             ty_name(ty)
         ))
     }
@@ -9767,6 +9828,21 @@ impl<'a> Emitter<'a> {
             }
             Expr::Array(items) => {
                 let count = items.len() as u32;
+                if !items.is_empty() && self.array_literal_is_dynamic(items)? {
+                    let array = self.builder.add_local(ValType::I32);
+                    self.builder
+                        .push(Instr::Const(0x41, WVal::I32(count as i32)));
+                    self.builder.push(Instr::Call(DYN_ARRAY_ALLOC));
+                    self.builder.push(Instr::Local(0x21, array));
+                    for item in items {
+                        let item_ty = self.type_of(item)?;
+                        self.builder.push(Instr::Local(0x20, array));
+                        self.emit_box_dyn_value(item, item_ty)?;
+                        self.builder.push(Instr::Call(DYN_ARRAY_PUSH));
+                    }
+                    self.builder.push(Instr::Local(0x20, array));
+                    return Ok(Ty::Dyn);
+                }
                 if !items.is_empty() && self.type_of(&items[0])? == Ty::Str {
                     let size = 4 + 8 * count;
                     self.emit_alloc_const(size);
@@ -18025,6 +18101,28 @@ mod tests {
     }
 
     #[test]
+    fn mixed_static_literal_arrays_are_dynamic() {
+        let (numbers, strings) = run_with_argv(
+            "let a = [\"a\", 1]\nprint(a)\nprint(json(a))\nprint(a[1] + 2)\nlet b = [1, \"x\", true, null]\nprint(b)\nprint(len(b))\nlet c = [[1], \"s\"]\nprint(c)\nlet d = [{a: 1}, {b: 2}]\nprint(d)\nlet e = [1, 2.5]\nprint(e)",
+            &[],
+        );
+        assert_eq!(numbers, vec![4i64]);
+        let expected = [
+            "[\"a\",1]",
+            "[\"a\",1]",
+            "3",
+            "[1,\"x\",true,null]",
+            "[[1],\"s\"]",
+            "[{\"a\":1},{\"b\":2}]",
+            "[1,2.5]",
+        ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn comparator_sort_is_stable_and_matches_the_vm() {
         let (numbers, strings) = run_with_argv(
             "print(sort([3, 1, 2], fn(x, y) { return x - y }))\nprint(sort([3, 1, 2], fn(x, y) { return y - x }))\nprint(sort([5], fn(x, y) { return x - y }))\nprint(sort([], fn(x, y) { return x - y }))\nprint(sort([2.5, 1.5, 3.5], fn(x, y) { if (x < y) { return -1 }\n  return 1 }))\nprint(sort([\"bb\", \"a\", \"ccc\"], fn(x, y) { return len(x) - len(y) }))\nlet rows = [[3], [1, 2], [2]]\nprint(sort(rows, fn(x, y) { return len(x) - len(y) }))\nlet rs = [{a: 3}, {a: 1}, {a: 2}, {a: 1}]\nprint(sort(rs, fn(x, y) { return x.a - y.a }))",
@@ -18756,7 +18854,7 @@ mod tests {
     fn unsupported_constructs_are_rejected() {
         assert!(compile_to_wasm("let f = fn() { return 1 }\nprint(f)").is_err());
         assert!(compile_to_wasm("print(unknown)").is_err());
-        assert!(compile_to_wasm("let a = [1, \"x\"]").is_err());
+        assert!(compile_to_wasm("let a = []\na.push(1)\na.push(\"x\")").is_err());
         assert!(compile_to_wasm("print(unknown_name)").is_err());
     }
 }

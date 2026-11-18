@@ -577,7 +577,7 @@ Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
   formatted and joined with single spaces (`print("a", 1, [2,3])` →
   `a 1 [2,3]`; zero arguments print an empty line), which also makes
   `bx check --target wasm` usable as a compile-only gate. `use "file"` is
-  expanded before compilation for `bx build/run/check --target wasm` (paths
+  Mixed static literals (`["a", 1]`, `[1, "x", true, null]`, rows of different record shapes) lower to dynamic cells at construction, so they print/`json`/index/iterate/compare exactly like runtime-parsed JSON; typed homogeneous literals keep their static fast path. `use "file"` is expanded before compilation for `bx build/run/check --target wasm` (paths
   resolve relative to the including file; cycles and >16 nesting levels are
   errors), so shared helper modules compile and run like the VM. Fixed a latent stack imbalance in string
   boxing that these paths exposed.
@@ -754,7 +754,7 @@ boundaries are narrower and produce explicit errors (the CLI adds a
 
 | Boundary | Example | Workaround |
 | --- | --- | --- |
-| heterogeneous **static literal** containers | `["a", 1]`, `let xs = []` pushed with two kinds | one element kind per static literal; runtime `parse` arrays may mix (they become dynamic cells) |
+| static growable variables keep one kind | `let xs = []` followed by `push(1)` and `push("a")` | mixed **literals** lower to dynamic cells (`["a", 1]` works like `parse`); use a runtime-parsed array for a growable mixed container |
 | functions returning different types | `fn f(x) { return x ? 1 : "" }` | split into typed functions or use the VM |
 | VM-only builtins | `test(...)`, `patch(...)`, `spawn(...)`/`spawn_*` handles | run with `--target bxb`; the wasm errors name the replacement (`bx test`, `write_file`/`exec`) |
 | host traps | uncaught `read`/`exec` failures outside `attempt` | wrap in `attempt`, or use the VM |

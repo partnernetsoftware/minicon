@@ -331,6 +331,15 @@ fn gen(kind, x_path, y_path) {
     lines.push("  print(v)")
     lines.push("  print(v[0])")
     lines.push("}")
+  } else if (kind == 16) {
+    lines.push("let a = [\"s\", 1]")
+    lines.push("let b = [true, null, \"x\"]")
+    lines.push("print(a)")
+    lines.push("print(json(a))")
+    lines.push("print(a[1] + 1)")
+    lines.push("print(b)")
+    lines.push("print(str(len(b)))")
+    lines.push("print(a == [\"s\", 1])")
   } else {
     lines.push("let v = parse(" + x + ")")
     lines.push("let w = parse(" + y + ")")
@@ -400,9 +409,9 @@ fn payload(kind) {
 
 let failures = 0
 for (let c = 0; c < cases; c += 1) {
-  let kind = pick(16)
+  let kind = pick(17)
   let payload_kind = kind
-  if (payload_kind == 5 || payload_kind == 7 || payload_kind == 8 || payload_kind == 13 || payload_kind == 14 || payload_kind == 15) {
+  if (payload_kind == 5 || payload_kind == 7 || payload_kind == 8 || payload_kind == 13 || payload_kind == 14 || payload_kind == 15 || payload_kind == 16) {
     payload_kind = 1
   }
   if (payload_kind == 9) {

@@ -975,6 +975,16 @@ if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim(
   casesFail += 1
   failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
 }
+write(artDir + "/wasm-mixlit.bxs", 'let a = ["a", 1]\nprint(a)\nprint(json(a))\nprint(a[1] + 2)\nlet b = [1, "x", true, null]\nprint(b)\nprint(str(len(b)))\nlet d = [{a: 1}, {b: 2}]\nprint(d)\n')
+let wasmMixLit = exec([BX, "build", "--wasm", artDir + "/wasm-mixlit.bxs", "-o", artDir + "/wasm-mixlit.wasm"])
+let wasmMixLitRun = exec([BX, "run", artDir + "/wasm-mixlit.wasm"])
+let wasmMixLitVm = exec([BX, "run", artDir + "/wasm-mixlit.bxs"])
+if (wasmMixLit.code == 0 && wasmMixLitRun.out == wasmMixLitVm.out && wasmMixLitRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm mixed literal arrays\n    wasm=" + json(wasmMixLitRun.out) + " vm=" + json(wasmMixLitVm.out) + " err=" + json(wasmMixLit.err))
+}
 write(artDir + "/wasm-multiprint.bxs", 'let v = parse(env("X", "[1,2]"))\nprint("a", 1, [2, 3])\nprint(v, 2.5, false)\nprint({"k": 1}, "end")\neprint("x", 1, [2])\nprint()\n')
 let wasmMultiPrint = exec([BX, "build", "--wasm", artDir + "/wasm-multiprint.bxs", "-o", artDir + "/wasm-multiprint.wasm"])
 let wasmMultiPrintRun = exec([BX, "run", artDir + "/wasm-multiprint.wasm"])
