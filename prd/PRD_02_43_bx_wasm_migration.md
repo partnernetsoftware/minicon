@@ -26,7 +26,7 @@ flip, never as the long-term default.
 | Gate | Meaning | Evidence required | Status |
 | --- | --- | --- | --- |
 | G0 | Core scripting parity is green | parity matrix "core" rows `[v]`, unit tests + self-hosted suite + verifier + differential all green on four native cells | `[-]` |
-| G1 | Opt-in default | `BX_TARGET=wasm` (and `--target wasm`) accepted by `bx build`/`bx run`; one release of soak with the env override | `[-]` |
+| G1 | Opt-in default | `BX_TARGET=wasm` and `--target wasm` are accepted by both `bx build` and `bx run` (2026-11-18 round 175 closes the `bx run --target` gap); soak with the env override still pending | `[-]` |
 | G2 | Default flip | no env set builds `.wasm`; `.bxb` reachable only via `--target bxb`; docs/CHANGELOG announce the flip | `[_]` |
 | G3 | `.bxb` retirement | chunk container/emitter/cache-key code deleted; `--target bxb` rejected with a migration message | `[_]` |
 
@@ -45,12 +45,12 @@ bx .wasm migration (M6)
 │   ├── [v] native ABI: argv/arg, read/write_file, run/capture, fs/time/cwd/env
 │   │   utilities, `exists()`
 │   ├── [v] budgets: --max-steps / --timeout parity with the VM
-│   ├── [v] evidence: suite (152 checks), verifier (49 tests), differential
+│   ├── [v] evidence: suite (239 checks), verifier (86 tests), differential
 │   │   generator, node/independent-engine cross-checks
 │   └── [-] remaining core gaps: `attempt`, function-value site polymorphism,
 │       `attempt`, method surface beyond push/pop/len, dynamic-object syntax
 ├── G1 opt-in default
-│   └── [-] --target flag + BX_TARGET env accepted by build/run (soak pending)
+│   └── [-] --target flag + BX_TARGET env accepted by build/run, including `bx run --target` (soak pending)
 ├── G2 default flip
 │   ├── [_] docs/CHANGELOG announce; `.bxb` behind --target bxb
 │   └── [_] rollback: one release with BX_TARGET=bxb accepted

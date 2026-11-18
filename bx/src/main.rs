@@ -88,7 +88,7 @@ fn print_help() {
         r#"bx {version} - binary scripting for agents
 
 usage
-  bx run [--wasm] [--max-steps N] [--timeout MS] <script.bxs|.bxb|.wasm> [args...]
+  bx run [--target wasm|bxb] [--wasm] [--max-steps N] [--timeout MS] <script.bxs|.bxb|.wasm> [args...]
   bx build [--target wasm|bxb] <script> [-o out]  compile (default target: bxb)
 bx build --wasm <script.bxs> [-o out.wasm]      alias for --target wasm
   bx build --wasm --html <script> [-o demo.html]  self-contained browser demo (module base64 + glue)
@@ -144,12 +144,15 @@ struct Budget {
     timeout_ms: Option<u64>,
     /// `--wasm` forces the wasm target for a source script (overrides BX_TARGET).
     wasm: bool,
+    /// `--target wasm|bxb` selects the execution target explicitly.
+    target: Option<String>,
 }
 
 fn parse_budget(mut args: Vec<String>) -> Result<Budget, String> {
     let mut max_steps = None;
     let mut timeout_ms = None;
     let mut wasm = false;
+    let mut target: Option<String> = None;
     loop {
         match args.first().map(String::as_str) {
             Some("--max-steps") => {
@@ -170,6 +173,14 @@ fn parse_budget(mut args: Vec<String>) -> Result<Budget, String> {
                 timeout_ms = Some(value);
                 args.drain(0..2);
             }
+            Some("--target") => {
+                let value = args.get(1).ok_or("--target needs wasm or bxb")?.clone();
+                if value != "wasm" && value != "bxb" {
+                    return Err("--target needs wasm or bxb".to_string());
+                }
+                target = Some(value);
+                args.drain(0..2);
+            }
             Some("--wasm") => {
                 wasm = true;
                 args.drain(0..1);
@@ -182,6 +193,7 @@ fn parse_budget(mut args: Vec<String>) -> Result<Budget, String> {
         max_steps,
         timeout_ms,
         wasm,
+        target,
     })
 }
 
@@ -263,12 +275,14 @@ fn cmd_run(args: Vec<String>) -> i32 {
             }
         };
     }
-    let target = match std::env::var("BX_TARGET").as_deref() {
-        _ if budget.wasm => "wasm",
-        Ok("wasm") => "wasm",
-        Ok("bxb") | Err(_) => "bxb",
-        Ok(other) => {
-            eprintln!("bx: unknown BX_TARGET '{}' (expected wasm or bxb)", other);
+    let target = match resolve_target(
+        budget.target.clone(),
+        budget.wasm,
+        std::env::var("BX_TARGET").ok(),
+    ) {
+        Ok(target) => target,
+        Err(message) => {
+            eprintln!("{}", message);
             return 2;
         }
     };
@@ -446,6 +460,32 @@ mod target_tests {
         assert_eq!(budget.args, vec!["x.bxs".to_string()]);
         let plain = parse_budget(vec!["x.bxs".to_string()]).unwrap();
         assert!(!plain.wasm);
+    }
+
+    #[test]
+    fn run_target_flag_selects_the_engine() {
+        let wasm = parse_budget(vec![
+            "--target".to_string(),
+            "wasm".to_string(),
+            "x.bxs".to_string(),
+        ])
+        .unwrap();
+        assert_eq!(wasm.target.as_deref(), Some("wasm"));
+        assert_eq!(wasm.args, vec!["x.bxs".to_string()]);
+        let legacy = parse_budget(vec![
+            "--target".to_string(),
+            "bxb".to_string(),
+            "x.bxs".to_string(),
+        ])
+        .unwrap();
+        assert_eq!(legacy.target.as_deref(), Some("bxb"));
+        assert!(parse_budget(vec![
+            "--target".to_string(),
+            "nope".to_string(),
+            "x.bxs".to_string()
+        ])
+        .is_err());
+        assert!(parse_budget(vec!["--target".to_string(), "x.bxs".to_string()]).is_err());
     }
     use super::cache_key;
     use super::parse_budget;
