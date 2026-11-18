@@ -551,7 +551,12 @@ Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
   `{a: {b: 1}, xs: [1, 2], s: "x"}` prints/`json`s/reads/assigns/nests inside
   record arrays and `merge` exactly like the VM; record printing now sorts keys
   like the VM. Remaining P2c: `get` on dynamic fields and converting a dynamic
-  value back into a static container.
+  value back into a static container. Dynamic `get`/`has` (numeric keys index
+  arrays, string keys read object members, missing values are `null`, the
+  optional default applies when the key is absent), `contains`/`index_of`
+  (structural equality) and `slice` (negative/clamped bounds) work in function
+  and method forms, matching the VM. Fixed a latent stack imbalance in string
+  boxing that these paths exposed.
 - **`null` (static marker)**: `null` is typed `Ty::Null` and covers the VM's
   scalar semantics: printing/`str`/`json`/`type`/interpolation give `null`,
   `null == null`, `null == 0`, `null == 0.0`, `null == false` are true while

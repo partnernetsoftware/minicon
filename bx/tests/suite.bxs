@@ -954,6 +954,16 @@ if (wasmBoolGrow.code == 0 && wasmBoolGrowRun.out == wasmBoolGrowVm.out && wasmB
   casesFail += 1
   failures.push("wasm growable bool arrays\n    wasm=" + json(wasmBoolGrowRun.out) + " vm=" + json(wasmBoolGrowVm.out) + " err=" + json(wasmBoolGrowRun.err))
 }
+write(artDir + "/wasm-dynget.bxs", 'let a = parse(env("X", "[1,2,3]"))\nprint(str(contains(a, 2)))\nprint(str(contains(a, 5)))\nprint(str(index_of(a, 2)))\nprint(str(index_of(a, 5)))\nprint(get(a, 0))\nprint(get(a, 9))\nprint(a.slice(1))\nprint(a.slice(1, 2))\nprint(str(a.contains(3)))\nprint(str(a.index_of(3)))\n')
+let wasmDynGet = exec([BX, "build", "--wasm", artDir + "/wasm-dynget.bxs", "-o", artDir + "/wasm-dynget.wasm"])
+let wasmDynGetRun = exec([BX, "run", artDir + "/wasm-dynget.wasm"])
+let wasmDynGetVm = exec([BX, "run", artDir + "/wasm-dynget.bxs"])
+if (wasmDynGet.code == 0 && wasmDynGetRun.out == wasmDynGetVm.out && wasmDynGetRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm dynamic get/search\n    wasm=" + json(wasmDynGetRun.out) + " vm=" + json(wasmDynGetVm.out) + " err=" + json(wasmDynGetRun.err))
+}
 write(artDir + "/wasm-recnestedlit.bxs", 'let r = {a: {b: 1}, xs: [1, 2], s: "x"}\nprint(r)\nprint(json(r))\nprint(str(r.a.b))\nprint(str(r.xs[0]))\nr.a = {b: 7}\nprint(str(r.a.b))\nlet xs = [{inner: {k: 1}, n: 2}]\nprint(xs)\nprint(str(xs[0].inner.k))\n')
 let wasmRecNested = exec([BX, "build", "--wasm", artDir + "/wasm-recnestedlit.bxs", "-o", artDir + "/wasm-recnestedlit.wasm"])
 let wasmRecNestedRun = exec([BX, "run", artDir + "/wasm-recnestedlit.wasm"])

@@ -1130,6 +1130,14 @@ impl Checker {
                 }
                 if key == "slice" && (args.len() == 1 || args.len() == 2) {
                     let base = self.infer(object)?;
+                    if base == Ty::Dyn {
+                        for arg in args {
+                            if self.infer(arg)? != Ty::Int {
+                                return Err("wasm target .slice() bounds are ints".to_string());
+                            }
+                        }
+                        return Ok(Ty::Dyn);
+                    }
                     if !matches!(
                         base,
                         Ty::Str
@@ -1294,6 +1302,30 @@ impl Checker {
                 };
                 if let Some((argc, result)) = str_method {
                     let base = self.infer(object)?;
+                    if base == Ty::Dyn {
+                        match key.as_str() {
+                            "index_of" => {
+                                self.infer(&args[0])?;
+                                return Ok(Ty::Int);
+                            }
+                            "slice" => {
+                                for arg in args {
+                                    if self.infer(arg)? != Ty::Int {
+                                        return Err(
+                                            "wasm target .slice() bounds are ints".to_string()
+                                        );
+                                    }
+                                }
+                                return Ok(Ty::Dyn);
+                            }
+                            _ => {
+                                return Err(format!(
+                                    "wasm target .{} is not supported on dynamic values",
+                                    key
+                                ))
+                            }
+                        }
+                    }
                     if base != Ty::Str && !(key == "index_of" && is_array_ty(base)) {
                         return Err(format!("wasm target .{} works on strings only", key));
                     }
@@ -1321,6 +1353,15 @@ impl Checker {
                         return Err(format!("wasm target .{} takes one value", key));
                     }
                     let base = self.infer(object)?;
+                    if base == Ty::Dyn {
+                        if key != "contains" {
+                            return Err(
+                                "wasm target dynamic values support .contains only".to_string()
+                            );
+                        }
+                        self.infer(&args[0])?;
+                        return Ok(Ty::Bool);
+                    }
                     match base {
                         Ty::Str => {
                             if self.infer(&args[0])? != Ty::Str {
@@ -1390,6 +1431,10 @@ impl Checker {
                 }
                 if key == "index_of" && args.len() == 1 {
                     let base = self.infer(object)?;
+                    if base == Ty::Dyn {
+                        self.infer(&args[0])?;
+                        return Ok(Ty::Int);
+                    }
                     let element = match base {
                         Ty::Str => Ty::Str,
                         Ty::Arr => Ty::Int,
@@ -1808,6 +1853,10 @@ impl Checker {
                     }
                     if name == "index_of" && args.len() == 2 {
                         let base = self.infer(&args[0])?;
+                        if base == Ty::Dyn {
+                            self.infer(&args[1])?;
+                            return Ok(Ty::Int);
+                        }
                         let element = match base {
                             Ty::Str => Ty::Str,
                             Ty::Arr => Ty::Int,
@@ -1891,6 +1940,14 @@ impl Checker {
                     }
                     if name == "slice" && (args.len() == 2 || args.len() == 3) {
                         let base = self.infer(&args[0])?;
+                        if base == Ty::Dyn {
+                            for arg in &args[1..] {
+                                if self.infer(arg)? != Ty::Int {
+                                    return Err("wasm target slice() bounds are ints".to_string());
+                                }
+                            }
+                            return Ok(Ty::Dyn);
+                        }
                         for arg in &args[1..] {
                             if !is_number(self.infer(arg)?) {
                                 return Err("wasm target slice() needs numeric bounds".to_string());
@@ -2111,6 +2168,10 @@ impl Checker {
                         return Err("wasm target values() takes a record or map".to_string());
                     }
                     if name == "has" && args.len() == 2 {
+                        if self.infer(&args[0])? == Ty::Dyn {
+                            self.infer(&args[1])?;
+                            return Ok(Ty::Bool);
+                        }
                         if !matches!(self.infer(&args[0])?, Ty::Obj(_) | Ty::Map)
                             || self.infer(&args[1])? != Ty::Str
                         {
@@ -2122,6 +2183,13 @@ impl Checker {
                     }
                     if name == "get" && (args.len() == 2 || args.len() == 3) {
                         let base = self.infer(&args[0])?;
+                        if base == Ty::Dyn {
+                            self.infer(&args[1])?;
+                            if let Some(default) = args.get(2) {
+                                self.infer(default)?;
+                            }
+                            return Ok(Ty::Dyn);
+                        }
                         if self.infer(&args[1])? != Ty::Str {
                             return Err("wasm target get() takes a string key".to_string());
                         }
@@ -2442,6 +2510,10 @@ impl Checker {
                     }
                     if name == "contains" && args.len() == 2 {
                         let arr_ty = self.infer(&args[0])?;
+                        if arr_ty == Ty::Dyn {
+                            self.infer(&args[1])?;
+                            return Ok(Ty::Bool);
+                        }
                         match arr_ty {
                             Ty::Str => {
                                 if self.infer(&args[1])? != Ty::Str {
@@ -3343,7 +3415,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 127;
+const IMPORT_COUNT: u32 = 133;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -3458,6 +3530,12 @@ const DYN_FROM_ARRAY: u32 = 123;
 const DYN_CELL_AT: u32 = 124;
 const DYN_SWAP: u32 = 125;
 const DYN_FROM_RECORD: u32 = 126;
+const DYN_GET: u32 = 127;
+const DYN_GET_DEFAULT: u32 = 128;
+const DYN_HAS: u32 = 129;
+const DYN_CONTAINS: u32 = 130;
+const DYN_INDEX_OF: u32 = 131;
+const DYN_SLICE: u32 = 132;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -8397,7 +8475,6 @@ impl<'a> Emitter<'a> {
                 self.builder.push(Instr::Local(0x21, len));
                 self.builder.push(Instr::Local(0x21, ptr));
                 self.builder.push(Instr::Local(0x20, cell));
-                self.builder.push(Instr::Local(0x20, cell));
                 self.builder.push(Instr::Const(0x41, WVal::I32(4)));
                 self.builder.push(Instr::Mem(0x36, 2, 0));
                 self.builder.push(Instr::Local(0x20, cell));
@@ -9894,6 +9971,21 @@ impl<'a> Emitter<'a> {
                 }
                 if key == "slice" && (args.len() == 1 || args.len() == 2) {
                     let base = self.type_of(object)?;
+                    if base == Ty::Dyn {
+                        let source = self.builder.add_local(ValType::I32);
+                        self.emit_expr(object)?;
+                        self.builder.push(Instr::Local(0x21, source));
+                        self.builder.push(Instr::Local(0x20, source));
+                        self.emit_expr(&args[0])?;
+                        if args.len() == 2 {
+                            self.emit_expr(&args[1])?;
+                        } else {
+                            self.builder.push(Instr::Local(0x20, source));
+                            self.builder.push(Instr::Call(DYN_LEN));
+                        }
+                        self.builder.push(Instr::Call(DYN_SLICE));
+                        return Ok(Ty::Dyn);
+                    }
                     match base {
                         Ty::Str => {
                             let ptr_tmp = self.builder.add_local(ValType::I32);
@@ -10167,6 +10259,13 @@ impl<'a> Emitter<'a> {
                     _ => {}
                 }
                 if key == "index_of" && args.len() == 1 {
+                    if self.type_of(object)? == Ty::Dyn {
+                        let value_ty = self.type_of(&args[0])?;
+                        self.emit_expr(object)?;
+                        self.emit_box_dyn(&args[0], value_ty)?;
+                        self.builder.push(Instr::Call(DYN_INDEX_OF));
+                        return Ok(Ty::Int);
+                    }
                     match self.type_of(object)? {
                         Ty::Arr => {
                             self.emit_expr(object)?;
@@ -10218,6 +10317,13 @@ impl<'a> Emitter<'a> {
                         return Err(format!("wasm target .{} takes one string", key));
                     }
                     if key == "contains" {
+                        if self.type_of(object)? == Ty::Dyn {
+                            let value_ty = self.type_of(&args[0])?;
+                            self.emit_expr(object)?;
+                            self.emit_box_dyn(&args[0], value_ty)?;
+                            self.builder.push(Instr::Call(DYN_CONTAINS));
+                            return Ok(Ty::Bool);
+                        }
                         match self.type_of(object)? {
                             Ty::Arr => {
                                 self.emit_expr(object)?;
@@ -10882,6 +10988,13 @@ impl<'a> Emitter<'a> {
                         return self.emit_pop_value(array);
                     }
                     if name == "contains" && args.len() == 2 {
+                        if self.type_of(&args[0])? == Ty::Dyn {
+                            let value_ty = self.type_of(&args[1])?;
+                            self.emit_expr(&args[0])?;
+                            self.emit_box_dyn(&args[1], value_ty)?;
+                            self.builder.push(Instr::Call(DYN_CONTAINS));
+                            return Ok(Ty::Bool);
+                        }
                         match self.type_of(&args[0])? {
                             Ty::Str => {
                                 self.emit_str(&args[0])?;
@@ -11065,6 +11178,13 @@ impl<'a> Emitter<'a> {
                         return Ok(Ty::Str);
                     }
                     if name == "index_of" && args.len() == 2 {
+                        if self.type_of(&args[0])? == Ty::Dyn {
+                            let value_ty = self.type_of(&args[1])?;
+                            self.emit_expr(&args[0])?;
+                            self.emit_box_dyn(&args[1], value_ty)?;
+                            self.builder.push(Instr::Call(DYN_INDEX_OF));
+                            return Ok(Ty::Int);
+                        }
                         match self.type_of(&args[0])? {
                             Ty::Arr => {
                                 self.emit_expr(&args[0])?;
@@ -11287,6 +11407,21 @@ impl<'a> Emitter<'a> {
                     }
                     if name == "slice" && (args.len() == 2 || args.len() == 3) {
                         let base = self.type_of(&args[0])?;
+                        if base == Ty::Dyn {
+                            let source = self.builder.add_local(ValType::I32);
+                            self.emit_expr(&args[0])?;
+                            self.builder.push(Instr::Local(0x21, source));
+                            self.builder.push(Instr::Local(0x20, source));
+                            self.emit_expr(&args[1])?;
+                            if args.len() == 3 {
+                                self.emit_expr(&args[2])?;
+                            } else {
+                                self.builder.push(Instr::Local(0x20, source));
+                                self.builder.push(Instr::Call(DYN_LEN));
+                            }
+                            self.builder.push(Instr::Call(DYN_SLICE));
+                            return Ok(Ty::Dyn);
+                        }
                         match base {
                             Ty::Str => {
                                 let ptr_tmp = self.builder.add_local(ValType::I32);
@@ -11810,6 +11945,13 @@ impl<'a> Emitter<'a> {
                         return Ok(Ty::Bool);
                     }
                     if name == "has" && args.len() == 2 {
+                        if self.type_of(&args[0])? == Ty::Dyn {
+                            let key_ty = self.type_of(&args[1])?;
+                            self.emit_expr(&args[0])?;
+                            self.emit_box_dyn(&args[1], key_ty)?;
+                            self.builder.push(Instr::Call(DYN_HAS));
+                            return Ok(Ty::Bool);
+                        }
                         let Ty::Obj(shape) = self.type_of(&args[0])? else {
                             return Err("wasm target has() takes a record".to_string());
                         };
@@ -11953,6 +12095,21 @@ impl<'a> Emitter<'a> {
                         return Ok(Ty::Int);
                     }
                     if name == "get" && (args.len() == 2 || args.len() == 3) {
+                        if self.type_of(&args[0])? == Ty::Dyn {
+                            let key_ty = self.type_of(&args[1])?;
+                            self.emit_expr(&args[0])?;
+                            self.emit_box_dyn(&args[1], key_ty)?;
+                            match args.get(2) {
+                                Some(default) => {
+                                    self.emit_box_dyn(default, self.type_of(default)?)?;
+                                    self.builder.push(Instr::Call(DYN_GET_DEFAULT));
+                                }
+                                None => {
+                                    self.builder.push(Instr::Call(DYN_GET));
+                                }
+                            }
+                            return Ok(Ty::Dyn);
+                        }
                         let Ty::Obj(shape) = self.type_of(&args[0])? else {
                             return Err("wasm target get() takes a record".to_string());
                         };
@@ -15443,6 +15600,21 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
         vec![ValType::I32],
     );
     builder.import_func("env", "dyn_from_record", four_i32_to_i32_ty);
+    let three_i32_to_i32_ty = builder.add_type(
+        vec![ValType::I32, ValType::I32, ValType::I32],
+        vec![ValType::I32],
+    );
+    let two_i32_to_i64_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I64]);
+    let i32_i64_i64_to_i32_ty = builder.add_type(
+        vec![ValType::I32, ValType::I64, ValType::I64],
+        vec![ValType::I32],
+    );
+    builder.import_func("env", "dyn_get", which_ty);
+    builder.import_func("env", "dyn_get_default", three_i32_to_i32_ty);
+    builder.import_func("env", "dyn_has", which_ty);
+    builder.import_func("env", "dyn_contains", which_ty);
+    builder.import_func("env", "dyn_index_of", two_i32_to_i64_ty);
+    builder.import_func("env", "dyn_slice", i32_i64_i64_to_i32_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -17356,6 +17528,24 @@ mod tests {
             "[{\"inner\":{\"k\":1},\"n\":2}]",
             "1",
             "{\"p\":{\"q\":1},\"z\":2}",
+        ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn dynamic_get_and_search_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let o = parse(env(\"X\", \"{\\\"a\\\":2}\"))\nprint(get(o, \"a\"))\nprint(get(o, \"b\"))\nprint(get(o, \"b\", 9))\nprint(has(o, \"a\"))\nprint(has(o, \"b\"))\nlet a = parse(env(\"X\", \"[1,2,3]\"))\nprint(contains(a, 2))\nprint(contains(a, 5))\nprint(index_of(a, 2))\nprint(index_of(a, 5))\nprint(get(a, 0))\nprint(get(a, 9))\nprint(get(o, \"a\") + 1)\nprint(a.slice(1))\nprint(a.slice(1, 2))\nprint(a.contains(3))\nprint(a.index_of(3))\nprint(reverse(a))\nprint(a)",
+            &[],
+        );
+        // `index_of` is typed int and prints through the numeric sink.
+        assert_eq!(numbers, vec![1i64, -1, 2]);
+        let expected = [
+            "2", "null", "9", "true", "false", "true", "false", "1", "null", "3", "[2,3]", "[2]",
+            "true", "[3,2,1]", "[3,2,1]",
         ];
         assert_eq!(
             strings,
