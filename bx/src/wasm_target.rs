@@ -2661,9 +2661,15 @@ impl Checker {
                         return Ok(Ty::Str);
                     }
                     if name == "parse" && args.len() == 1 {
+                        // Fold a literal JSON argument when the static value model can
+                        // represent it (nulls and heterogeneous shapes fall back to the
+                        // runtime parser, which produces dynamic cells).
                         if let Expr::Str(text) = &args[0] {
-                            let literal = parse_literal(text)?;
-                            return self.infer(&literal);
+                            if let Ok(literal) = parse_literal(text) {
+                                if let Ok(ty) = self.infer(&literal) {
+                                    return Ok(ty);
+                                }
+                            }
                         }
                         return Ok(Ty::Dyn);
                     }
@@ -13761,8 +13767,9 @@ impl<'a> Emitter<'a> {
                     }
                     if name == "parse" && args.len() == 1 {
                         if let Expr::Str(text) = &args[0] {
-                            let literal = parse_literal(text)?;
-                            return self.emit_expr(&literal);
+                            if let Ok(literal) = parse_literal(text) {
+                                return self.emit_expr(&literal);
+                            }
                         }
                         self.emit_str(&args[0])?;
                         self.builder.push(Instr::Call(DYN_PARSE));
@@ -19566,6 +19573,27 @@ mod tests {
                 "falsy".to_string(),
                 "dyn-falsy".to_string(),
                 "int-falsy".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_literals_with_nulls_fall_back_to_runtime() {
+        let (numbers, strings) = run_with_argv(
+            "print(parse(\"{\\\"k\\\": [1, 2.5, \\\"s\\\", true, null]}\"))\nprint(json(parse(\"{\\\"k\\\": [1, null]}\")))\nprint(json(\"a\\\"b\"))\nprint(json(\"a\\nb\"))\nprint(parse(\"[1, null]\")[1])\nprint(type(parse(\"1e3\")))\nprint(parse(\"[1, null]\")[0] + 1)",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec![
+                "{\"k\":[1,2.5,\"s\",true,null]}".to_string(),
+                "{\"k\":[1,null]}".to_string(),
+                "\"a\\\"b\"".to_string(),
+                "\"a\\nb\"".to_string(),
+                "null".to_string(),
+                "float".to_string(),
+                "2".to_string()
             ]
         );
     }

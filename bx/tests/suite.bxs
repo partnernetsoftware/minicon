@@ -975,6 +975,16 @@ if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim(
   casesFail += 1
   failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
 }
+write(artDir + "/wasm-nullparse.bxs", 'print(parse("{" + json("k") + ": [1, 2.5, " + json("s") + ", true, null]}"))\nprint(json(parse("{" + json("k") + ": [1, null]}" )))\nprint(json("a" + json("") + ""))\nprint(parse("[1, null]")[1])\nprint(type(parse("1e3")))\nprint(parse("[1, null]")[0] + 1)\n')
+let wasmNullParse = exec([BX, "build", "--wasm", artDir + "/wasm-nullparse.bxs", "-o", artDir + "/wasm-nullparse.wasm"])
+let wasmNullParseRun = exec([BX, "run", artDir + "/wasm-nullparse.wasm"])
+let wasmNullParseVm = exec([BX, "run", artDir + "/wasm-nullparse.bxs"])
+if (wasmNullParse.code == 0 && wasmNullParseRun.out == wasmNullParseVm.out && wasmNullParseRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm null JSON parse\n    wasm=" + json(wasmNullParseRun.out) + " vm=" + json(wasmNullParseVm.out) + " err=" + json(wasmNullParse.err))
+}
 write(artDir + "/wasm-truthy.bxs", 'let x = 0\nlet f = fn() { x += 1\n  return true }\nprint(false && f())\nprint(x)\nprint(true || f())\nprint(x)\nprint(2 > 1 ? "a" : "b")\nprint(0 ? "y" : "n")\nlet total = 0\nfor i in range(3) {\n  for j in range(3) {\n    if (j == 1) { break }\n    total += 1\n  }\n}\nprint(total)\nlet n = 0\nfor i in range(5) {\n  if (i % 2 == 0) { continue }\n  n += i\n}\nprint(n)\nif ("a") { print("truthy") }\nif ("") { print("no") } else { print("falsy") }\nlet dynv = parse(env("X", "0"))\nif (dynv) { print("bad") } else { print("dyn-falsy") }\nlet ints = [1, 0, 2]\nif (ints[1]) { print("bad") } else { print("int-falsy") }\n')
 let wasmTruthy = exec([BX, "build", "--wasm", artDir + "/wasm-truthy.bxs", "-o", artDir + "/wasm-truthy.wasm"])
 let wasmTruthyRun = exec([BX, "run", artDir + "/wasm-truthy.wasm"])
@@ -1279,6 +1289,16 @@ if (wasmDynMixed.code == 0 && wasmDynMixedRun.out == wasmDynMixedVm.out && wasmD
   failures.push("wasm mixed dynamic record fields\n    wasm=" + json(wasmDynMixedRun.out) + " vm=" + json(wasmDynMixedVm.out) + " err=" + json(wasmDynMixedRun.err))
 }
 write(artDir + "/dynstr.json", json("abc"))
+write(artDir + "/wasm-nullparse.bxs", 'print(parse("{" + json("k") + ": [1, 2.5, " + json("s") + ", true, null]}"))\nprint(json(parse("{" + json("k") + ": [1, null]}" )))\nprint(json("a" + json("") + ""))\nprint(parse("[1, null]")[1])\nprint(type(parse("1e3")))\nprint(parse("[1, null]")[0] + 1)\n')
+let wasmNullParse = exec([BX, "build", "--wasm", artDir + "/wasm-nullparse.bxs", "-o", artDir + "/wasm-nullparse.wasm"])
+let wasmNullParseRun = exec([BX, "run", artDir + "/wasm-nullparse.wasm"])
+let wasmNullParseVm = exec([BX, "run", artDir + "/wasm-nullparse.bxs"])
+if (wasmNullParse.code == 0 && wasmNullParseRun.out == wasmNullParseVm.out && wasmNullParseRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm null JSON parse\n    wasm=" + json(wasmNullParseRun.out) + " vm=" + json(wasmNullParseVm.out) + " err=" + json(wasmNullParse.err))
+}
 write(artDir + "/wasm-truthy.bxs", 'let x = 0\nlet f = fn() { x += 1\n  return true }\nprint(false && f())\nprint(x)\nprint(true || f())\nprint(x)\nprint(2 > 1 ? "a" : "b")\nprint(0 ? "y" : "n")\nlet total = 0\nfor i in range(3) {\n  for j in range(3) {\n    if (j == 1) { break }\n    total += 1\n  }\n}\nprint(total)\nlet n = 0\nfor i in range(5) {\n  if (i % 2 == 0) { continue }\n  n += i\n}\nprint(n)\nif ("a") { print("truthy") }\nif ("") { print("no") } else { print("falsy") }\nlet dynv = parse(env("X", "0"))\nif (dynv) { print("bad") } else { print("dyn-falsy") }\nlet ints = [1, 0, 2]\nif (ints[1]) { print("bad") } else { print("int-falsy") }\n')
 let wasmTruthy = exec([BX, "build", "--wasm", artDir + "/wasm-truthy.bxs", "-o", artDir + "/wasm-truthy.wasm"])
 let wasmTruthyRun = exec([BX, "run", artDir + "/wasm-truthy.wasm"])
