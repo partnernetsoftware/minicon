@@ -2390,13 +2390,12 @@ impl Checker {
                         return Err("wasm target keys() takes a record or map".to_string());
                     }
                     if name == "values" && args.len() == 1 {
-                        if self.infer(&args[0])? == Ty::Dyn {
-                            return Ok(Ty::Dyn);
-                        }
-                        if matches!(self.infer(&args[0])?, Ty::Obj(_) | Ty::Map) {
-                            return Ok(Ty::Arr);
-                        }
-                        return Err("wasm target values() takes a record or map".to_string());
+                        return match self.infer(&args[0])? {
+                            Ty::Dyn => Ok(Ty::Dyn),
+                            Ty::Obj(_) => Ok(Ty::Dyn),
+                            Ty::Map => Ok(Ty::Arr),
+                            _ => Err("wasm target values() takes a record or map".to_string()),
+                        };
                     }
                     if name == "has" && args.len() == 2 {
                         if self.infer(&args[0])? == Ty::Dyn {
@@ -3708,7 +3707,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 141;
+const IMPORT_COUNT: u32 = 142;
 const PRINT_UTF8: u32 = 1;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
@@ -3838,6 +3837,7 @@ const DYN_KEYS: u32 = 137;
 const DYN_VALUES: u32 = 138;
 const DYN_MATH: u32 = 139;
 const DYN_TEXT_BLOCK: u32 = 140;
+const DYN_RECORD_VALUES: u32 = 141;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -12866,78 +12866,26 @@ impl<'a> Emitter<'a> {
                         return Ok(Ty::Arr);
                     }
                     if name == "values" && args.len() == 1 {
-                        if self.type_of(&args[0])? == Ty::Dyn {
+                        let ty = self.type_of(&args[0])?;
+                        if ty == Ty::Dyn {
                             self.emit_expr(&args[0])?;
                             self.builder.push(Instr::Call(DYN_VALUES));
                             return Ok(Ty::Dyn);
                         }
-                        let Ty::Obj(shape) = self.type_of(&args[0])? else {
+                        let Ty::Obj(shape) = ty else {
                             return Err("wasm target values() takes a record".to_string());
                         };
-                        let (_, count) = self.record_table(shape)?;
-                        let record_tmp = self.builder.add_local(ValType::I32);
-                        let out_tmp = self.builder.add_local(ValType::I32);
-                        let index_tmp = self.builder.add_local(ValType::I64);
+                        let kinds = self.record_kinds_table(shape)?;
+                        let (table, count) = self.record_table(shape)?;
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(kinds as i32)));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(table as i32)));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(count as i32)));
                         self.emit_expr(&args[0])?;
-                        self.builder.push(Instr::Local(0x21, record_tmp));
-                        self.builder
-                            .push(Instr::Const(0x41, WVal::I32((4 + 8 * count) as i32)));
-                        self.emit_alloc_dynamic();
-                        self.builder.push(Instr::Local(0x21, out_tmp));
-                        self.builder.push(Instr::Local(0x20, out_tmp));
-                        self.builder
-                            .push(Instr::Const(0x41, WVal::I32(count as i32)));
-                        self.builder.push(Instr::Mem(0x36, 2, 0));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
-                        self.builder.push(Instr::Local(0x21, index_tmp));
-                        self.builder.push(Instr::Block {
-                            opcode: 0x02,
-                            end: 0,
-                            else_at: 0,
-                            start: 0,
-                        });
-                        self.labels.push(0x02);
-                        self.builder.push(Instr::Block {
-                            opcode: 0x03,
-                            end: 0,
-                            else_at: 0,
-                            start: 0,
-                        });
-                        self.labels.push(0x03);
-                        self.builder.push(Instr::Local(0x20, index_tmp));
-                        self.builder.push(Instr::Op(0xa7));
-                        self.builder
-                            .push(Instr::Const(0x41, WVal::I32(count as i32)));
-                        self.builder.push(Instr::Op(0x48));
-                        self.builder.push(Instr::Op(0x45));
-                        self.builder.push(Instr::BrIf(1));
-                        self.builder.push(Instr::Local(0x20, out_tmp));
-                        self.builder.push(Instr::Local(0x20, index_tmp));
-                        self.builder.push(Instr::Op(0xa7));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
-                        self.builder.push(Instr::Op(0x6c));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(4)));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Local(0x20, record_tmp));
-                        self.builder.push(Instr::Local(0x20, index_tmp));
-                        self.builder.push(Instr::Op(0xa7));
-                        self.builder.push(Instr::Const(0x41, WVal::I32(8)));
-                        self.builder.push(Instr::Op(0x6c));
-                        self.builder.push(Instr::Op(0x6a));
-                        self.builder.push(Instr::Mem(0x29, 3, 0));
-                        self.builder.push(Instr::Mem(0x37, 3, 0));
-                        self.builder.push(Instr::Local(0x20, index_tmp));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
-                        self.builder.push(Instr::Op(0x7c));
-                        self.builder.push(Instr::Local(0x21, index_tmp));
-                        self.builder.push(Instr::Br(0));
-                        self.labels.pop();
-                        self.builder.push(Instr::Op(0x0b));
-                        self.labels.pop();
-                        self.builder.push(Instr::Op(0x0b));
-                        self.builder.push(Instr::Local(0x20, out_tmp));
-                        return Ok(Ty::Arr);
+                        self.builder.push(Instr::Call(DYN_RECORD_VALUES));
+                        return Ok(Ty::Dyn);
                     }
                     if name == "has" && args.len() == 2 && self.type_of(&args[0])? == Ty::Map {
                         let map_tmp = self.builder.add_local(ValType::I32);
@@ -16748,6 +16696,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "dyn_values", i32_to_i32_ty);
     builder.import_func("env", "dyn_math", which_ty);
     builder.import_func("env", "dyn_text_block", i32_to_i32_ty);
+    builder.import_func("env", "dyn_record_values", four_i32_to_i32_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -17417,12 +17366,15 @@ mod tests {
             "let o = {a: 1, b: 2}\nfor k in keys(o) {\n  print(k)\n}\nfor v in values(o) {\n  print(v)\n}\nprint(has(o, \"a\"))\nprint(get(o, \"b\"))\nprint(get(o, \"z\", 9))\nprint(join(keys(o), \"+\"))",
             &[],
         );
-        assert_eq!(numbers, vec![1, 2, 2, 9]);
+        // `values()` is a dynamic array now, so its elements print as strings.
+        assert_eq!(numbers, vec![2, 9]);
         assert_eq!(
             strings,
             vec![
                 "a".to_string(),
                 "b".to_string(),
+                "1".to_string(),
+                "2".to_string(),
                 "true".to_string(),
                 "a+b".to_string()
             ]
@@ -18967,6 +18919,20 @@ mod tests {
             "z-b-c",
             "a-b-c",
         ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn record_values_mix_dynamic_fields_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let arr = parse(env(\"X\", \"[1,2]\"))\nlet r = {a: arr, b: 7}\nprint(values(r))\nprint(json(values(r)))\nprint(values({a: 1, b: \"x\"}))\nprint(sum(values({a: 1, b: 2})))\nprint(values(r)[0])",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = ["[[1,2],7]", "[[1,2],7]", "[1,\"x\"]", "3", "[1,2]"];
         assert_eq!(
             strings,
             expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()

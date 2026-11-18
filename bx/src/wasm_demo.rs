@@ -141,6 +141,7 @@ const imports = {
     dyn_values: () => 0,
     dyn_math: () => 0,
     dyn_text_block: () => 0,
+    dyn_record_values: () => 0,
     dyn_get: () => 0,
     dyn_get_default: () => 0,
     dyn_has: () => 0,

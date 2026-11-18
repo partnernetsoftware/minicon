@@ -975,6 +975,16 @@ if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim(
   casesFail += 1
   failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
 }
+write(artDir + "/wasm-recordvalues.bxs", 'let arr = parse(env("X", "[1,2]"))\nlet r = {a: arr, b: 7}\nprint(values(r))\nprint(json(values(r)))\nprint(values({a: 1, b: "x"}))\nprint(sum(values({a: 1, b: 2})))\n')
+let wasmRecordValues = exec([BX, "build", "--wasm", artDir + "/wasm-recordvalues.bxs", "-o", artDir + "/wasm-recordvalues.wasm"])
+let wasmRecordValuesRun = exec([BX, "run", artDir + "/wasm-recordvalues.wasm"])
+let wasmRecordValuesVm = exec([BX, "run", artDir + "/wasm-recordvalues.bxs"])
+if (wasmRecordValues.code == 0 && wasmRecordValuesRun.out == wasmRecordValuesVm.out && wasmRecordValuesRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm record values mixing\n    wasm=" + json(wasmRecordValuesRun.out) + " vm=" + json(wasmRecordValuesVm.out) + " err=" + json(wasmRecordValues.err))
+}
 write(artDir + "/wasm-dynstr.bxs", 'let s = parse(env("X", json("a-b-c")))\nprint(replace(s, "-", "+"))\nprint(split(s, "-"))\nprint(repeat(s, 2))\nprint(str(starts_with(s, "a-")))\nprint(str(ends_with(s, "-c")))\nprint(s.split("-"))\nprint(s.replace("a", "z"))\n')
 let wasmDynStrOps = exec([BX, "build", "--wasm", artDir + "/wasm-dynstr.bxs", "-o", artDir + "/wasm-dynstr.wasm"])
 let wasmDynStrOpsRun = exec([BX, "run", artDir + "/wasm-dynstr.wasm"])
@@ -1130,6 +1140,16 @@ if (wasmDynMixed.code == 0 && wasmDynMixedRun.out == wasmDynMixedVm.out && wasmD
   failures.push("wasm mixed dynamic record fields\n    wasm=" + json(wasmDynMixedRun.out) + " vm=" + json(wasmDynMixedVm.out) + " err=" + json(wasmDynMixedRun.err))
 }
 write(artDir + "/dynstr.json", json("abc"))
+write(artDir + "/wasm-recordvalues.bxs", 'let arr = parse(env("X", "[1,2]"))\nlet r = {a: arr, b: 7}\nprint(values(r))\nprint(json(values(r)))\nprint(values({a: 1, b: "x"}))\nprint(sum(values({a: 1, b: 2})))\n')
+let wasmRecordValues = exec([BX, "build", "--wasm", artDir + "/wasm-recordvalues.bxs", "-o", artDir + "/wasm-recordvalues.wasm"])
+let wasmRecordValuesRun = exec([BX, "run", artDir + "/wasm-recordvalues.wasm"])
+let wasmRecordValuesVm = exec([BX, "run", artDir + "/wasm-recordvalues.bxs"])
+if (wasmRecordValues.code == 0 && wasmRecordValuesRun.out == wasmRecordValuesVm.out && wasmRecordValuesRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm record values mixing\n    wasm=" + json(wasmRecordValuesRun.out) + " vm=" + json(wasmRecordValuesVm.out) + " err=" + json(wasmRecordValues.err))
+}
 write(artDir + "/wasm-dynstr.bxs", 'let v = parse(read(' + json(artDir + "/dynstr.json") + '))\nprint(len(v))\nprint(str(contains(v, "b")))\nprint(str(index_of(v, "b")))\nprint(v.slice(1))\nprint(v[0])\nprint(v[-1])\nprint(v[99])\nprint(str(has(v, 0)))\n')
 let wasmDynStr = exec([BX, "build", "--wasm", artDir + "/wasm-dynstr.bxs", "-o", artDir + "/wasm-dynstr.wasm"])
 let wasmDynStrRun = exec([BX, "run", artDir + "/wasm-dynstr.wasm"])
