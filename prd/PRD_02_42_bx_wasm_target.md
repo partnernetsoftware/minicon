@@ -238,7 +238,7 @@ Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 136 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 137 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -515,8 +515,12 @@ Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
   16-byte `[tag][aux][payload]` cell from `env.dyn_parse`) for every scalar JSON
   kind. `print`, `str`, `json`, `type`, interpolation and `let` bindings of
   such values match the VM (`parse(env("X", "2.5"))` prints `2.5`, `json` of a
-  parsed string keeps the quotes). Remaining P2a work: containers (P2b),
-  arithmetic/comparisons/conversions on dynamic values, and truthiness.
+  parsed string keeps the quotes). Dynamic values also support the VM's scalar
+  operations: `+ - * / %` (string concat when either side is text, `null` as 0,
+  `%` on integers), ordering and equality (`null == 0`/`false`, numeric
+  cross-type), `int()`/`float()`, unary `-`, `!`, if/ternary truthiness and the
+  operand-returning `&&`/`||`. Remaining P2a work: containers (P2b) and
+  converting a dynamic value back into a static container type.
 - **`null` (static marker)**: `null` is typed `Ty::Null` and covers the VM's
   scalar semantics: printing/`str`/`json`/`type`/interpolation give `null`,
   `null == null`, `null == 0`, `null == 0.0`, `null == false` are true while

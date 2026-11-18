@@ -761,6 +761,7 @@ impl Checker {
                 match ty {
                     Ty::Int => Ok(Ty::Int),
                     Ty::Null => Ok(Ty::Int),
+                    Ty::Dyn => Ok(Ty::Dyn),
                     Ty::Float => Ok(Ty::Float),
                     other => Err(format!(
                         "wasm target negates numbers only, got {}",
@@ -769,13 +770,15 @@ impl Checker {
                 }
             }
             Expr::Not(inner) => match self.infer(inner)? {
-                Ty::Bool => Ok(Ty::Bool),
-                Ty::Null => Ok(Ty::Bool),
+                Ty::Bool | Ty::Null | Ty::Dyn => Ok(Ty::Bool),
                 _ => Err("wasm target negates bools only".to_string()),
             },
             Expr::And(left, right) => {
                 let lt = self.infer(left)?;
                 let rt = self.infer(right)?;
+                if lt == Ty::Dyn || rt == Ty::Dyn {
+                    return Ok(Ty::Dyn);
+                }
                 if lt == Ty::Bool && rt == Ty::Bool {
                     return Ok(Ty::Bool);
                 }
@@ -787,6 +790,9 @@ impl Checker {
             Expr::Or(left, right) => {
                 let lt = self.infer(left)?;
                 let rt = self.infer(right)?;
+                if lt == Ty::Dyn || rt == Ty::Dyn {
+                    return Ok(Ty::Dyn);
+                }
                 if lt == Ty::Bool && rt == Ty::Bool {
                     return Ok(Ty::Bool);
                 }
@@ -800,7 +806,7 @@ impl Checker {
             }
             Expr::Ternary(cond, then, other, _) => {
                 let cond_ty = self.infer(cond)?;
-                if cond_ty != Ty::Bool && cond_ty != Ty::Null {
+                if cond_ty != Ty::Bool && cond_ty != Ty::Null && cond_ty != Ty::Dyn {
                     return Err("wasm target ternaries need a bool condition".to_string());
                 }
                 let lt = self.infer(then)?;
@@ -868,11 +874,17 @@ impl Checker {
                         if lt == Ty::Null { rt } else { lt },
                         Ty::Null | Ty::Int | Ty::Float | Ty::Bool | Ty::Str
                     );
+                let dyn_cmp = (lt == Ty::Dyn || rt == Ty::Dyn)
+                    && matches!(
+                        if lt == Ty::Dyn { rt } else { lt },
+                        Ty::Dyn | Ty::Null | Ty::Int | Ty::Float | Ty::Bool | Ty::Str
+                    );
                 let comparable = structural
                     || (is_number(lt) && is_number(rt))
                     || (lt == Ty::Str && rt == Ty::Str)
                     || (lt == Ty::Bool && rt == Ty::Bool)
-                    || null_cmp;
+                    || null_cmp
+                    || dyn_cmp;
                 if !comparable {
                     return Err(format!(
                         "wasm target compares two numbers, strings or bools, got {} and {}",
@@ -938,6 +950,9 @@ impl Checker {
                         return Ok(Ty::Str);
                     }
                 }
+                if lt == Ty::Dyn || rt == Ty::Dyn {
+                    return Ok(Ty::Dyn);
+                }
                 match (lt, rt) {
                     (Ty::Int, Ty::Int) | (Ty::Int, Ty::Null) | (Ty::Null, Ty::Int) => Ok(Ty::Int),
                     (Ty::Null, Ty::Null) => Ok(Ty::Int),
@@ -959,6 +974,9 @@ impl Checker {
             Expr::Bin(BinOp::Div, left, right) => {
                 let lt = self.infer(left)?;
                 let rt = self.infer(right)?;
+                if lt == Ty::Dyn || rt == Ty::Dyn {
+                    return Ok(Ty::Dyn);
+                }
                 if !is_number(lt) && lt != Ty::Null || !is_number(rt) && rt != Ty::Null {
                     return Err("wasm target divides numbers only".to_string());
                 }
@@ -967,6 +985,9 @@ impl Checker {
             Expr::Bin(BinOp::Mod, left, right) => {
                 let lt = self.infer(left)?;
                 let rt = self.infer(right)?;
+                if lt == Ty::Dyn || rt == Ty::Dyn {
+                    return Ok(Ty::Dyn);
+                }
                 if !is_number(lt) && lt != Ty::Null || !is_number(rt) && rt != Ty::Null {
                     return Err("wasm target takes % of numbers only".to_string());
                 }
@@ -1669,7 +1690,7 @@ impl Checker {
                     if name == "float" && args.len() == 1 {
                         if !matches!(
                             self.infer(&args[0])?,
-                            Ty::Int | Ty::Float | Ty::Str | Ty::Null
+                            Ty::Int | Ty::Float | Ty::Str | Ty::Null | Ty::Dyn
                         ) {
                             return Err(
                                 "wasm target float() takes a number or a string".to_string()
@@ -2114,7 +2135,12 @@ impl Checker {
                     }
                     if name == "int" && args.len() == 1 {
                         let ty = self.infer(&args[0])?;
-                        if !is_number(ty) && ty != Ty::Str && ty != Ty::Bool && ty != Ty::Null {
+                        if !is_number(ty)
+                            && ty != Ty::Str
+                            && ty != Ty::Bool
+                            && ty != Ty::Null
+                            && ty != Ty::Dyn
+                        {
                             return Err(
                                 "wasm target int() takes a number, string or bool".to_string()
                             );
@@ -2485,7 +2511,7 @@ impl Checker {
 
     fn check_cond(&self, expr: &Expr) -> Result<(), String> {
         match self.infer(expr)? {
-            Ty::Bool | Ty::Null => Ok(()),
+            Ty::Bool | Ty::Null | Ty::Dyn => Ok(()),
             other => Err(format!(
                 "wasm target conditions must be bool, got {}",
                 ty_name(other)
@@ -3137,7 +3163,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 103;
+const IMPORT_COUNT: u32 = 110;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -3228,6 +3254,13 @@ const JOIN_BOOL: u32 = 99;
 const DYN_PARSE: u32 = 100;
 const DYN_STR: u32 = 101;
 const DYN_TYPE: u32 = 102;
+const DYN_EQ: u32 = 103;
+const DYN_CMP: u32 = 104;
+const DYN_ARITH: u32 = 105;
+const DYN_NEG: u32 = 106;
+const DYN_TO_INT: u32 = 107;
+const DYN_TO_FLOAT: u32 = 108;
+const DYN_TRUTHY: u32 = 109;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -6857,6 +6890,7 @@ impl<'a> Emitter<'a> {
             Expr::Neg(inner) => match self.type_of(inner)? {
                 Ty::Int => Ok(Ty::Int),
                 Ty::Null => Ok(Ty::Int),
+                Ty::Dyn => Ok(Ty::Dyn),
                 Ty::Float => Ok(Ty::Float),
                 other => Err(format!(
                     "wasm target negates numbers only, got {}",
@@ -6881,10 +6915,16 @@ impl<'a> Emitter<'a> {
                                 if lt == Ty::Null { rt } else { lt },
                                 Ty::Null | Ty::Int | Ty::Float
                             ));
+                    let dyn_cmp = (lt == Ty::Dyn || rt == Ty::Dyn)
+                        && matches!(
+                            if lt == Ty::Dyn { rt } else { lt },
+                            Ty::Dyn | Ty::Null | Ty::Int | Ty::Float | Ty::Bool | Ty::Str
+                        );
                     let comparable = (is_number(lt) && is_number(rt))
                         || (lt == Ty::Str && rt == Ty::Str)
                         || (lt == Ty::Bool && rt == Ty::Bool)
                         || null_cmp
+                        || dyn_cmp
                         || (lt == rt
                             && matches!(op, BinOp::Eq | BinOp::Ne)
                             && (is_array_ty(lt) || matches!(lt, Ty::Obj(_))));
@@ -6916,6 +6956,9 @@ impl<'a> Emitter<'a> {
                         return Ok(Ty::Str);
                     }
                 }
+                if lt == Ty::Dyn || rt == Ty::Dyn {
+                    return Ok(Ty::Dyn);
+                }
                 if (!is_number(lt) && lt != Ty::Null) || (!is_number(rt) && rt != Ty::Null) {
                     return Err(format!(
                         "wasm target does not support {:?} on {} yet",
@@ -6926,6 +6969,9 @@ impl<'a> Emitter<'a> {
                             rt
                         })
                     ));
+                }
+                if lt == Ty::Dyn || rt == Ty::Dyn {
+                    return Ok(Ty::Dyn);
                 }
                 match op {
                     BinOp::Div => Ok(Ty::Float),
@@ -6945,6 +6991,9 @@ impl<'a> Emitter<'a> {
             Expr::And(left, right) => {
                 let lt = self.type_of(left)?;
                 let rt = self.type_of(right)?;
+                if lt == Ty::Dyn || rt == Ty::Dyn {
+                    return Ok(Ty::Dyn);
+                }
                 if lt == Ty::Bool && rt == Ty::Bool {
                     return Ok(Ty::Bool);
                 }
@@ -6956,6 +7005,9 @@ impl<'a> Emitter<'a> {
             Expr::Or(left, right) => {
                 let lt = self.type_of(left)?;
                 let rt = self.type_of(right)?;
+                if lt == Ty::Dyn || rt == Ty::Dyn {
+                    return Ok(Ty::Dyn);
+                }
                 if lt == Ty::Bool && rt == Ty::Bool {
                     return Ok(Ty::Bool);
                 }
@@ -6969,7 +7021,7 @@ impl<'a> Emitter<'a> {
             }
             Expr::Ternary(cond, then, other, _) => {
                 let cond_ty = self.type_of(cond)?;
-                if cond_ty != Ty::Bool && cond_ty != Ty::Null {
+                if cond_ty != Ty::Bool && cond_ty != Ty::Null && cond_ty != Ty::Dyn {
                     return Err("wasm target ternaries need a bool condition".to_string());
                 }
                 let lt = self.type_of(then)?;
@@ -7164,6 +7216,17 @@ impl<'a> Emitter<'a> {
         Ok(())
     }
 
+    /// Dynamic (P2a) arithmetic: both operands become cells, the host returns a cell.
+    fn emit_dyn_arith(&mut self, opcode: u32, left: &Expr, right: &Expr) -> Result<Ty, String> {
+        let lt = self.type_of(left)?;
+        let rt = self.type_of(right)?;
+        self.builder
+            .push(Instr::Const(0x41, WVal::I32(opcode as i32)));
+        self.emit_box_dyn(left, lt)?;
+        self.emit_box_dyn(right, rt)?;
+        self.builder.push(Instr::Call(DYN_ARITH));
+        Ok(Ty::Dyn)
+    }
     fn emit_numeric(&mut self, op: BinOp, left: &Expr, right: &Expr) -> Result<Ty, String> {
         let lt = self.type_of(left)?;
         let rt = self.type_of(right)?;
@@ -7300,6 +7363,11 @@ impl<'a> Emitter<'a> {
                 }
                 Ty::Null => {
                     self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                    Ok(())
+                }
+                Ty::Dyn => {
+                    self.emit_expr(other)?;
+                    self.builder.push(Instr::Call(DYN_TRUTHY));
                     Ok(())
                 }
                 _ => Err(format!(
@@ -7673,6 +7741,29 @@ impl<'a> Emitter<'a> {
     fn emit_cmp(&mut self, op: BinOp, left: &Expr, right: &Expr) -> Result<(), String> {
         let lt = self.type_of(left)?;
         let rt = self.type_of(right)?;
+        if lt == Ty::Dyn || rt == Ty::Dyn {
+            self.emit_box_dyn(left, lt)?;
+            self.emit_box_dyn(right, rt)?;
+            match op {
+                BinOp::Eq => self.builder.push(Instr::Call(DYN_EQ)),
+                BinOp::Ne => {
+                    self.builder.push(Instr::Call(DYN_EQ));
+                    self.builder.push(Instr::Op(0x45));
+                }
+                other => {
+                    self.builder.push(Instr::Call(DYN_CMP));
+                    self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                    let opcode = match other {
+                        BinOp::Lt => 0x53,
+                        BinOp::Gt => 0x55,
+                        BinOp::Le => 0x57,
+                        _ => 0x59,
+                    };
+                    self.builder.push(Instr::Op(opcode));
+                }
+            }
+            return Ok(());
+        }
         if lt == rt
             && matches!(
                 lt,
@@ -7934,6 +8025,92 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Mem(0x28, 2, 0));
     }
     /// Push a constant string as a `(ptr, len)` pair.
+    /// Push a dynamic (P2a) cell pointer for `expr` of static type `ty`.
+    fn emit_box_dyn(&mut self, expr: &Expr, ty: Ty) -> Result<(), String> {
+        if ty == Ty::Dyn {
+            self.emit_expr(expr)?;
+            return Ok(());
+        }
+        let cell = self.builder.add_local(ValType::I32);
+        self.emit_alloc_const(16);
+        self.builder.push(Instr::Local(0x21, cell));
+        match ty {
+            Ty::Null => {
+                self.builder.push(Instr::Local(0x20, cell));
+                self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                self.builder.push(Instr::Mem(0x36, 2, 0));
+                self.builder.push(Instr::Local(0x20, cell));
+                self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                self.builder.push(Instr::Mem(0x36, 2, 4));
+                self.builder.push(Instr::Local(0x20, cell));
+                self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                self.builder.push(Instr::Mem(0x37, 3, 8));
+            }
+            Ty::Int => {
+                let value = self.builder.add_local(ValType::I64);
+                self.emit_expr(expr)?;
+                self.builder.push(Instr::Local(0x21, value));
+                self.push_dyn_header(cell, 1, 0);
+                self.builder.push(Instr::Local(0x20, cell));
+                self.builder.push(Instr::Local(0x20, value));
+                self.builder.push(Instr::Mem(0x37, 3, 8));
+            }
+            Ty::Float => {
+                let value = self.builder.add_local(ValType::F64);
+                self.emit_f64(expr)?;
+                self.builder.push(Instr::Local(0x21, value));
+                self.push_dyn_header(cell, 2, 0);
+                self.builder.push(Instr::Local(0x20, cell));
+                self.builder.push(Instr::Local(0x20, value));
+                self.builder.push(Instr::Mem(0x39, 3, 8));
+            }
+            Ty::Bool => {
+                let value = self.builder.add_local(ValType::I32);
+                self.emit_expr(expr)?;
+                self.builder.push(Instr::Local(0x21, value));
+                self.push_dyn_header(cell, 3, 0);
+                self.builder.push(Instr::Local(0x20, cell));
+                self.builder.push(Instr::Local(0x20, value));
+                self.builder.push(Instr::Op(0xad));
+                self.builder.push(Instr::Mem(0x37, 3, 8));
+            }
+            Ty::Str => {
+                let ptr = self.builder.add_local(ValType::I32);
+                let len = self.builder.add_local(ValType::I32);
+                self.emit_str(expr)?;
+                self.builder.push(Instr::Local(0x21, len));
+                self.builder.push(Instr::Local(0x21, ptr));
+                self.builder.push(Instr::Local(0x20, cell));
+                self.builder.push(Instr::Local(0x20, cell));
+                self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                self.builder.push(Instr::Mem(0x36, 2, 0));
+                self.builder.push(Instr::Local(0x20, cell));
+                self.builder.push(Instr::Local(0x20, len));
+                self.builder.push(Instr::Mem(0x36, 2, 4));
+                self.builder.push(Instr::Local(0x20, cell));
+                self.builder.push(Instr::Local(0x20, ptr));
+                self.builder.push(Instr::Op(0xad));
+                self.builder.push(Instr::Mem(0x37, 3, 8));
+            }
+            other => {
+                return Err(format!(
+                    "wasm target cannot box {} into a dynamic value",
+                    ty_name(other)
+                ))
+            }
+        }
+        self.builder.push(Instr::Local(0x20, cell));
+        Ok(())
+    }
+
+    fn push_dyn_header(&mut self, cell: u32, tag: u32, aux: u32) {
+        self.builder.push(Instr::Local(0x20, cell));
+        self.builder.push(Instr::Const(0x41, WVal::I32(tag as i32)));
+        self.builder.push(Instr::Mem(0x36, 2, 0));
+        self.builder.push(Instr::Local(0x20, cell));
+        self.builder.push(Instr::Const(0x41, WVal::I32(aux as i32)));
+        self.builder.push(Instr::Mem(0x36, 2, 4));
+    }
     fn emit_text_literal(&mut self, text: &str) {
         let offset = self.builder.add_data(text.as_bytes());
         self.builder
@@ -8277,11 +8454,40 @@ impl<'a> Emitter<'a> {
             }
             Expr::Not(inner) => {
                 self.emit_expr(inner)?;
+                if self.type_of(inner)? == Ty::Dyn {
+                    self.builder.push(Instr::Call(DYN_TRUTHY));
+                }
                 self.builder.push(Instr::Op(0x45));
                 Ok(Ty::Bool)
             }
             Expr::And(left, right) => {
-                if self.type_of(left)? == Ty::Null {
+                let lt = self.type_of(left)?;
+                let rt = self.type_of(right)?;
+                if lt == Ty::Dyn || rt == Ty::Dyn {
+                    let left_cell = self.builder.add_local(ValType::I32);
+                    let result = self.builder.add_local(ValType::I32);
+                    self.emit_box_dyn(left, lt)?;
+                    self.builder.push(Instr::Local(0x21, left_cell));
+                    self.builder.push(Instr::Local(0x20, left_cell));
+                    self.builder.push(Instr::Call(DYN_TRUTHY));
+                    self.builder.push(Instr::Block {
+                        opcode: 0x04,
+                        end: 0,
+                        else_at: 0,
+                        start: 0,
+                    });
+                    self.labels.push(0x04);
+                    self.emit_box_dyn(right, rt)?;
+                    self.builder.push(Instr::Local(0x21, result));
+                    self.builder.push(Instr::Else { end: 0 });
+                    self.builder.push(Instr::Local(0x20, left_cell));
+                    self.builder.push(Instr::Local(0x21, result));
+                    self.labels.pop();
+                    self.builder.push(Instr::Op(0x0b));
+                    self.builder.push(Instr::Local(0x20, result));
+                    return Ok(Ty::Dyn);
+                }
+                if lt == Ty::Null {
                     self.builder.push(Instr::Const(0x41, WVal::I32(0)));
                     return Ok(Ty::Null);
                 }
@@ -8305,7 +8511,33 @@ impl<'a> Emitter<'a> {
                 Ok(Ty::Bool)
             }
             Expr::Or(left, right) => {
-                if self.type_of(left)? == Ty::Null {
+                let lt = self.type_of(left)?;
+                let rt = self.type_of(right)?;
+                if lt == Ty::Dyn || rt == Ty::Dyn {
+                    let left_cell = self.builder.add_local(ValType::I32);
+                    let result = self.builder.add_local(ValType::I32);
+                    self.emit_box_dyn(left, lt)?;
+                    self.builder.push(Instr::Local(0x21, left_cell));
+                    self.builder.push(Instr::Local(0x20, left_cell));
+                    self.builder.push(Instr::Call(DYN_TRUTHY));
+                    self.builder.push(Instr::Block {
+                        opcode: 0x04,
+                        end: 0,
+                        else_at: 0,
+                        start: 0,
+                    });
+                    self.labels.push(0x04);
+                    self.builder.push(Instr::Local(0x20, left_cell));
+                    self.builder.push(Instr::Local(0x21, result));
+                    self.builder.push(Instr::Else { end: 0 });
+                    self.emit_box_dyn(right, rt)?;
+                    self.builder.push(Instr::Local(0x21, result));
+                    self.labels.pop();
+                    self.builder.push(Instr::Op(0x0b));
+                    self.builder.push(Instr::Local(0x20, result));
+                    return Ok(Ty::Dyn);
+                }
+                if lt == Ty::Null {
                     return self.emit_expr(right);
                 }
                 let slot = self.builder.add_local(ValType::I32);
@@ -8386,6 +8618,11 @@ impl<'a> Emitter<'a> {
                 Ok(ty)
             }
             Expr::Neg(inner) => {
+                if self.type_of(inner)? == Ty::Dyn {
+                    self.emit_expr(inner)?;
+                    self.builder.push(Instr::Call(DYN_NEG));
+                    return Ok(Ty::Dyn);
+                }
                 if self.type_of(inner)? == Ty::Float {
                     self.emit_f64(inner)?;
                     self.builder.push(Instr::Op(0x9a));
@@ -8402,9 +8639,12 @@ impl<'a> Emitter<'a> {
                 if lt != Ty::Str && rt != Ty::Str && is_array_ty(lt) && is_array_ty(rt) {
                     return self.emit_array_concat(left, right);
                 }
-                if self.type_of(left)? == Ty::Str || self.type_of(right)? == Ty::Str {
+                if lt == Ty::Str || rt == Ty::Str {
                     self.emit_str(expr)?;
                     return Ok(Ty::Str);
+                }
+                if lt == Ty::Dyn || rt == Ty::Dyn {
+                    return self.emit_dyn_arith(0, left, right);
                 }
                 self.emit_numeric(BinOp::Add, left, right)
             }
@@ -8415,6 +8655,17 @@ impl<'a> Emitter<'a> {
                 ) {
                     self.emit_cond(expr)?;
                     return Ok(Ty::Bool);
+                }
+                let lt = self.type_of(left)?;
+                let rt = self.type_of(right)?;
+                if lt == Ty::Dyn || rt == Ty::Dyn {
+                    let code = match op {
+                        BinOp::Sub => 1,
+                        BinOp::Mul => 2,
+                        BinOp::Div => 3,
+                        _ => 4,
+                    };
+                    return self.emit_dyn_arith(code, left, right);
                 }
                 self.emit_numeric(*op, left, right)
             }
@@ -9940,6 +10191,11 @@ impl<'a> Emitter<'a> {
                         return Ok(Ty::Bool);
                     }
                     if name == "float" && args.len() == 1 {
+                        if self.type_of(&args[0])? == Ty::Dyn {
+                            self.emit_expr(&args[0])?;
+                            self.builder.push(Instr::Call(DYN_TO_FLOAT));
+                            return Ok(Ty::Float);
+                        }
                         match self.type_of(&args[0])? {
                             Ty::Str => {
                                 self.emit_str(&args[0])?;
@@ -11272,6 +11528,10 @@ impl<'a> Emitter<'a> {
                         match self.type_of(&args[0])? {
                             Ty::Null => {
                                 self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                            }
+                            Ty::Dyn => {
+                                self.emit_expr(&args[0])?;
+                                self.builder.push(Instr::Call(DYN_TO_INT));
                             }
                             Ty::Str => {
                                 self.emit_str(&args[0])?;
@@ -14031,6 +14291,9 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let empty_ty = builder.add_type(vec![], vec![]);
     let one_i32_ty = builder.add_type(vec![ValType::I32], vec![]);
     let i32_to_i32_ty = builder.add_type(vec![ValType::I32], vec![ValType::I32]);
+    let i32_to_i64_ty = builder.add_type(vec![ValType::I32], vec![ValType::I64]);
+    let i32_to_f64_ty = builder.add_type(vec![ValType::I32], vec![ValType::F64]);
+    let two_i32_to_i64_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I64]);
     let env_add_ty = builder.add_type(
         vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
         vec![],
@@ -14217,6 +14480,13 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "dyn_parse", which_ty);
     builder.import_func("env", "dyn_str", which_ty);
     builder.import_func("env", "dyn_type", i32_to_i32_ty);
+    builder.import_func("env", "dyn_eq", which_ty);
+    builder.import_func("env", "dyn_cmp", two_i32_to_i64_ty);
+    builder.import_func("env", "dyn_arith", format_container_ty);
+    builder.import_func("env", "dyn_neg", i32_to_i32_ty);
+    builder.import_func("env", "dyn_to_int", i32_to_i64_ty);
+    builder.import_func("env", "dyn_to_float", i32_to_f64_ty);
+    builder.import_func("env", "dyn_truthy", i32_to_i32_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -15877,6 +16147,23 @@ mod tests {
         assert!(numbers.is_empty());
         let expected = [
             "42", "int", "42", "42", "hi", "\"hi\"", "v=hi", "null", "null", "true",
+        ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn dynamic_operations_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let a = parse(env(\"BX_X\", \"42\"))\nlet f = parse(env(\"BX_Y\", \"2.5\"))\nlet t = parse(env(\"BX_Z\", \"true\"))\nlet n = parse(env(\"BX_W\", \"null\"))\nprint(a + 8)\nprint(a * 2)\nprint(f / 2)\nprint(a % 4)\nprint(a == 42)\nprint(n == 0)\nprint(n == null)\nprint(t == true)\nprint(a < 50)\nprint(f > 2)\nprint(str(int(f)))\nprint(str(float(a)))\nprint(str(int(n)))\nprint(!t)\nif (a > 40) { print(\"big\") } else { print(\"small\") }\nprint(a + \"x\")\nprint(\"x\" + a)\nprint(\"${a}!\")\nprint(-a)\nprint(a && t)\nprint(n || a)\nprint(n && a)\nprint(t && a)",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = [
+            "50", "84", "1.25", "2", "true", "true", "true", "true", "true", "true", "2", "42",
+            "0", "false", "big", "42x", "x42", "42!", "-42", "true", "42", "null", "42",
         ];
         assert_eq!(
             strings,

@@ -825,6 +825,185 @@ fn format_dyn_cell(memory: &[u8], cell: usize, json: bool) -> Result<String, Str
     })
 }
 
+fn dyn_tag(memory: &[u8], cell: usize) -> (u32, u32, u64) {
+    let tag = u32::from_le_bytes(memory[cell..cell + 4].try_into().unwrap());
+    let aux = u32::from_le_bytes(memory[cell + 4..cell + 8].try_into().unwrap());
+    let payload = u64::from_le_bytes(memory[cell + 8..cell + 16].try_into().unwrap());
+    (tag, aux, payload)
+}
+
+fn dyn_number(memory: &[u8], cell: usize) -> Result<f64, String> {
+    let (tag, _, payload) = dyn_tag(memory, cell);
+    match tag {
+        0 => Ok(0.0),
+        1 => Ok(payload as i64 as f64),
+        2 => Ok(f64::from_bits(payload)),
+        3 => Ok(if payload != 0 { 1.0 } else { 0.0 }),
+        _ => Err("cannot use a dynamic string as a number".to_string()),
+    }
+}
+
+fn dyn_text(memory: &[u8], cell: usize) -> Option<(u32, u64)> {
+    let (tag, aux, payload) = dyn_tag(memory, cell);
+    if tag == 4 {
+        Some((aux, payload))
+    } else {
+        None
+    }
+}
+
+fn dyn_eq_cells(memory: &[u8], a: usize, b: usize) -> Result<bool, String> {
+    let (tag_a, _, _) = dyn_tag(memory, a);
+    let (tag_b, _, _) = dyn_tag(memory, b);
+    if let (Some((len_a, ptr_a)), Some((len_b, ptr_b))) = (dyn_text(memory, a), dyn_text(memory, b))
+    {
+        return Ok(memory_text(memory, ptr_a as usize, len_a as usize)
+            == memory_text(memory, ptr_b as usize, len_b as usize));
+    }
+    if tag_a == 4 || tag_b == 4 {
+        return Ok(false);
+    }
+    Ok(dyn_number(memory, a)? == dyn_number(memory, b)?)
+}
+
+fn dyn_cmp_cells(memory: &[u8], a: usize, b: usize) -> Result<i64, String> {
+    let text_a = dyn_text(memory, a);
+    let text_b = dyn_text(memory, b);
+    match (text_a, text_b) {
+        (Some((len_a, ptr_a)), Some((len_b, ptr_b))) => {
+            let left = memory_text(memory, ptr_a as usize, len_a as usize);
+            let right = memory_text(memory, ptr_b as usize, len_b as usize);
+            Ok(match left.cmp(&right) {
+                std::cmp::Ordering::Less => -1,
+                std::cmp::Ordering::Equal => 0,
+                std::cmp::Ordering::Greater => 1,
+            })
+        }
+        (None, None) => {
+            let left = dyn_number(memory, a)?;
+            let right = dyn_number(memory, b)?;
+            Ok(if left < right {
+                -1
+            } else if left > right {
+                1
+            } else {
+                0
+            })
+        }
+        _ => Err("cannot compare a dynamic string with a number".to_string()),
+    }
+}
+
+fn dyn_arith_cells(
+    memory: &mut [u8],
+    next_dyn: &mut u32,
+    next_file: &mut u32,
+    op: u32,
+    a: usize,
+    b: usize,
+) -> Result<usize, String> {
+    let text_a = dyn_text(memory, a);
+    let text_b = dyn_text(memory, b);
+    if op == 0 && (text_a.is_some() || text_b.is_some()) {
+        let left = format_dyn_cell(memory, a, false)?;
+        let right = format_dyn_cell(memory, b, false)?;
+        let joined = format!("{left}{right}");
+        let cell = alloc_dyn_cell(next_dyn)?;
+        let start = store_text_block(memory, next_file, joined.as_bytes())
+            .ok_or_else(|| "dynamic string does not fit the file region".to_string())?;
+        let len = u32::from_le_bytes(
+            memory[start as usize..start as usize + 4]
+                .try_into()
+                .unwrap(),
+        );
+        write_dyn_cell(memory, cell, 4, len, u64::from(start) + 4);
+        return Ok(cell);
+    }
+    let left = dyn_number(memory, a)?;
+    let right = dyn_number(memory, b)?;
+    let both_int =
+        matches!(dyn_tag(memory, a).0, 0 | 1 | 3) && matches!(dyn_tag(memory, b).0, 0 | 1 | 3);
+    let cell = alloc_dyn_cell(next_dyn)?;
+    match op {
+        0..=2 if both_int => {
+            let value = match op {
+                0 => left as i64 + right as i64,
+                1 => left as i64 - right as i64,
+                _ => left as i64 * right as i64,
+            };
+            write_dyn_cell(memory, cell, 1, 0, value as u64);
+        }
+        0 => write_dyn_cell(memory, cell, 2, 0, (left + right).to_bits()),
+        1 => write_dyn_cell(memory, cell, 2, 0, (left - right).to_bits()),
+        2 => write_dyn_cell(memory, cell, 2, 0, (left * right).to_bits()),
+        3 => {
+            if right == 0.0 {
+                return Err("division by zero".to_string());
+            }
+            write_dyn_cell(memory, cell, 2, 0, (left / right).to_bits());
+        }
+        4 => {
+            if right == 0.0 {
+                return Err("modulo by zero".to_string());
+            }
+            if both_int {
+                write_dyn_cell(memory, cell, 1, 0, ((left as i64) % (right as i64)) as u64);
+            } else {
+                write_dyn_cell(memory, cell, 2, 0, (left % right).to_bits());
+            }
+        }
+        _ => return Err("unknown dynamic arithmetic op".to_string()),
+    }
+    Ok(cell)
+}
+
+fn dyn_to_int_cell(memory: &[u8], cell: usize) -> Result<i64, String> {
+    let (tag, aux, payload) = dyn_tag(memory, cell);
+    Ok(match tag {
+        0 => 0,
+        1 => payload as i64,
+        2 => f64::from_bits(payload) as i64,
+        3 => i64::from(payload != 0),
+        4 => memory_text(memory, payload as usize, aux as usize)
+            .trim()
+            .parse::<i64>()
+            .map_err(|_| "cannot convert string to int".to_string())?,
+        _ => return Err("cannot convert dynamic value to int".to_string()),
+    })
+}
+
+fn dyn_to_float_cell(memory: &[u8], cell: usize) -> Result<f64, String> {
+    let (tag, aux, payload) = dyn_tag(memory, cell);
+    Ok(match tag {
+        0 => 0.0,
+        1 => payload as i64 as f64,
+        2 => f64::from_bits(payload),
+        3 => {
+            if payload != 0 {
+                1.0
+            } else {
+                0.0
+            }
+        }
+        4 => memory_text(memory, payload as usize, aux as usize)
+            .trim()
+            .parse::<f64>()
+            .map_err(|_| "cannot convert string to float".to_string())?,
+        _ => return Err("cannot convert dynamic value to float".to_string()),
+    })
+}
+
+fn dyn_truthy_cell(memory: &[u8], cell: usize) -> Result<bool, String> {
+    let (tag, aux, payload) = dyn_tag(memory, cell);
+    Ok(match tag {
+        0 => false,
+        1 => payload as i64 != 0,
+        2 => f64::from_bits(payload) != 0.0,
+        3 => payload != 0,
+        4 => aux != 0,
+        _ => return Err("cannot test a dynamic container for truthiness".to_string()),
+    })
+}
 /// Store a scalar JSON value as a dynamic cell (P2a).
 fn store_dyn_scalar(
     memory: &mut [u8],
@@ -1750,6 +1929,70 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     Some(start) => Ok(vec![WVal::I32(start as i32)]),
                     None => Err("json_str result does not fit the file region".to_string()),
                 }
+            }
+            ("env", "dyn_eq") => {
+                let (a, b) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(a)), Some(WVal::I32(b))) => (*a as usize, *b as usize),
+                    _ => return Err("env.dyn_eq expects (i32, i32)".to_string()),
+                };
+                let equal = dyn_eq_cells(memory, a, b)?;
+                Ok(vec![WVal::I32(i32::from(equal))])
+            }
+            ("env", "dyn_cmp") => {
+                let (a, b) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(a)), Some(WVal::I32(b))) => (*a as usize, *b as usize),
+                    _ => return Err("env.dyn_cmp expects (i32, i32)".to_string()),
+                };
+                let order = dyn_cmp_cells(memory, a, b)?;
+                Ok(vec![WVal::I64(order)])
+            }
+            ("env", "dyn_arith") => {
+                let (op, a, b) = match (args.first(), args.get(1), args.get(2)) {
+                    (Some(WVal::I32(op)), Some(WVal::I32(a)), Some(WVal::I32(b))) => {
+                        (*op as u32, *a as usize, *b as usize)
+                    }
+                    _ => return Err("env.dyn_arith expects (i32 op, i32, i32)".to_string()),
+                };
+                let cell =
+                    dyn_arith_cells(memory, &mut self.next_dyn, &mut self.next_file, op, a, b)?;
+                Ok(vec![WVal::I32(cell as i32)])
+            }
+            ("env", "dyn_neg") => {
+                let cell_in = match args.first() {
+                    Some(WVal::I32(cell)) => *cell as usize,
+                    _ => return Err("env.dyn_neg expects one i32".to_string()),
+                };
+                let (tag, _, payload) = dyn_tag(memory, cell_in);
+                let cell = alloc_dyn_cell(&mut self.next_dyn)?;
+                match tag {
+                    0 | 1 | 3 => {
+                        write_dyn_cell(memory, cell, 1, 0, (0i64 - payload as i64) as u64);
+                    }
+                    2 => write_dyn_cell(memory, cell, 2, 0, (-f64::from_bits(payload)).to_bits()),
+                    _ => return Err("cannot negate a dynamic string".to_string()),
+                }
+                Ok(vec![WVal::I32(cell as i32)])
+            }
+            ("env", "dyn_to_int") => {
+                let cell = match args.first() {
+                    Some(WVal::I32(cell)) => *cell as usize,
+                    _ => return Err("env.dyn_to_int expects one i32".to_string()),
+                };
+                Ok(vec![WVal::I64(dyn_to_int_cell(memory, cell)?)])
+            }
+            ("env", "dyn_to_float") => {
+                let cell = match args.first() {
+                    Some(WVal::I32(cell)) => *cell as usize,
+                    _ => return Err("env.dyn_to_float expects one i32".to_string()),
+                };
+                Ok(vec![WVal::F64(dyn_to_float_cell(memory, cell)?)])
+            }
+            ("env", "dyn_truthy") => {
+                let cell = match args.first() {
+                    Some(WVal::I32(cell)) => *cell as usize,
+                    _ => return Err("env.dyn_truthy expects one i32".to_string()),
+                };
+                Ok(vec![WVal::I32(i32::from(dyn_truthy_cell(memory, cell)?))])
             }
             ("env", "dyn_parse") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {

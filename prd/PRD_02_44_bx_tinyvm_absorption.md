@@ -286,7 +286,7 @@ number/string coercion).
 
 | step | scope | gate |
 | --- | --- | --- |
-| P2a | `Ty::Dyn` scalars + `null`, `dyn_*` conversions, `parse(exec.out)` for 1/1.5/"a"/true | `null` static marker (2026-11-18) plus dynamic cells: runtime `parse` of scalar JSON returns `Ty::Dyn` and prints/`str`/`json`/`type`/interpolates like the VM (136 unit, 224 suite); dynamic arithmetic/comparisons/conversions and P2b containers remain |
+| P2a | `Ty::Dyn` scalars + `null`, `dyn_*` conversions, `parse(exec.out)` for 1/1.5/"a"/true | `null` static marker (2026-11-18) plus dynamic cells: runtime `parse` of scalar JSON returns `Ty::Dyn`, prints/`str`/`json`/`type`/interpolates and supports scalar arithmetic/comparisons/conversions/truthiness/`&&`/`||` like the VM (137 unit, 225 suite); P2b containers remain |
 | P2b | dynamic arrays/maps/records, heterogeneous containers, `dyn_index`/`dyn_member`/`dyn_set_*` | `parse` over `exec(...).out` with arrays of records matches VM; collection differential extended with mixed fixtures |
 | P2c | record field kind 8 (pointer to cell) + `get`/`merge` on heterogeneous shapes | `{a:{b:1}}`, `{xs:[1,2]}` round-trip (construct, read, print, json) match VM |
 | P2d | front-end simplification: delete element-kind matrix arms/imports that Dyn makes redundant, flip `.bxb` default (PRD_02_43) | one shared value path; import count and emitter arm count drop; suite/verify/both differentials green |
