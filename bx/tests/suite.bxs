@@ -975,6 +975,16 @@ if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim(
   casesFail += 1
   failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
 }
+write(artDir + "/wasm-mixedmap.bxs", 'fn pick(x) {\n  if (x) { return 1 }\n  return "s"\n}\nprint(json(map([true, false], fn(v) { return pick(v) })))\nprint(map([1, 2], fn(v) { return pick(v > 1) }))\nprint(map([], fn(v) { return pick(v > 0) }))\nprint([true, false].map(fn(v) { return pick(v) }))\n')
+let wasmMixedMap = exec([BX, "build", "--wasm", artDir + "/wasm-mixedmap.bxs", "-o", artDir + "/wasm-mixedmap.wasm"])
+let wasmMixedMapRun = exec([BX, "run", artDir + "/wasm-mixedmap.wasm"])
+let wasmMixedMapVm = exec([BX, "run", artDir + "/wasm-mixedmap.bxs"])
+if (wasmMixedMap.code == 0 && wasmMixedMapRun.out == wasmMixedMapVm.out && wasmMixedMapRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm mixed callback map\n    wasm=" + json(wasmMixedMapRun.out) + " vm=" + json(wasmMixedMapVm.out) + " err=" + json(wasmMixedMap.err))
+}
 write(artDir + "/wasm-mixedret.bxs", 'fn f(x) {\n  if (x == 1) { return 1 }\n  if (x == 2) { return "s" }\n  return [x]\n}\nprint(f(1))\nprint(f(2))\nprint(f(3))\nprint(f(1) + 1)\nprint(f(2) + "!")\n')
 let wasmMixedRet = exec([BX, "build", "--wasm", artDir + "/wasm-mixedret.bxs", "-o", artDir + "/wasm-mixedret.wasm"])
 let wasmMixedRetRun = exec([BX, "run", artDir + "/wasm-mixedret.wasm"])

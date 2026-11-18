@@ -8920,6 +8920,95 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Local(0x20, arr));
         Ok(())
     }
+    /// Result type of a function-literal callback, if it is known.
+    fn map_callback_result(&self, callback: &Expr) -> Result<Option<Ty>, String> {
+        let Ty::Func(id) = self.type_of(callback)? else {
+            return Err("wasm target map() needs a function literal callback".to_string());
+        };
+        Ok(self
+            .checker
+            .lit_sigs
+            .get(id as usize)
+            .and_then(|sig| sig.result))
+    }
+
+    /// `map(staticArray, cb)` where the callback returns Dynamically typed
+    /// values: build a dynamic array from the callback cells.
+    fn emit_map_static_to_dyn(&mut self, array: &Expr, callback: &Expr) -> Result<Ty, String> {
+        let Ty::Func(id) = self.type_of(callback)? else {
+            return Err("wasm target map() needs a function literal callback".to_string());
+        };
+        let sig = self
+            .checker
+            .lit_sigs
+            .get(id as usize)
+            .cloned()
+            .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+        let input_ty = self.type_of(array)?;
+        let elem = element_ty(input_ty).ok_or_else(|| {
+            format!(
+                "wasm target map() takes an array, got {}",
+                ty_name(input_ty)
+            )
+        })?;
+
+        let source = self.builder.add_local(ValType::I32);
+        let count = self.builder.add_local(ValType::I64);
+        let index = self.builder.add_local(ValType::I64);
+        let out = self.builder.add_local(ValType::I32);
+        let cb_env = self.builder.add_local(ValType::I32);
+        let value = self.builder.add_local(ValType::I32);
+        self.emit_expr(array)?;
+        self.builder.push(Instr::Local(0x21, source));
+        self.emit_expr(callback)?;
+        self.builder.push(Instr::Local(0x21, cb_env));
+        self.builder.push(Instr::Local(0x20, source));
+        self.builder.push(Instr::Mem(0x28, 2, 0));
+        self.builder.push(Instr::Op(0xad));
+        self.builder.push(Instr::Local(0x21, count));
+        self.builder.push(Instr::Local(0x20, count));
+        self.builder.push(Instr::Op(0xa7));
+        self.builder.push(Instr::Call(DYN_ARRAY_ALLOC));
+        self.builder.push(Instr::Local(0x21, out));
+        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+        self.builder.push(Instr::Local(0x21, index));
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x02);
+        self.builder.push(Instr::Block {
+            opcode: 0x03,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x03);
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Local(0x20, count));
+        self.builder.push(Instr::Op(0x59));
+        self.builder.push(Instr::BrIf(1));
+        self.builder.push(Instr::Local(0x20, cb_env));
+        Self::emit_load_slot(self, source, index, elem);
+        self.builder.push(Instr::Call(sig.index));
+        self.builder.push(Instr::Local(0x21, value));
+        self.builder.push(Instr::Local(0x20, out));
+        self.builder.push(Instr::Local(0x20, value));
+        self.builder.push(Instr::Call(DYN_ARRAY_PUSH));
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+        self.builder.push(Instr::Op(0x7c));
+        self.builder.push(Instr::Local(0x21, index));
+        self.builder.push(Instr::Br(0));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.builder.push(Instr::Local(0x20, out));
+        Ok(Ty::Dyn)
+    }
     /// `map(dynArray, cb)` / `filter(dynArray, cb)`: iterate dynamic elements,
     /// box callback results and build a new dynamic array (P2b).
     fn emit_dyn_map_filter(
@@ -10300,7 +10389,9 @@ impl<'a> Emitter<'a> {
                     if self.type_of(object)? == Ty::Dyn {
                         return self.emit_dyn_map_filter(key, object, &args[0]);
                     }
-
+                    if key == "map" && self.map_callback_result(&args[0])? == Some(Ty::Dyn) {
+                        return self.emit_map_static_to_dyn(object, &args[0]);
+                    }
                     return self.emit_map_filter(key, object, &args[0]);
                 }
                 if key == "slice" && (args.len() == 1 || args.len() == 2) {
@@ -11960,7 +12051,9 @@ impl<'a> Emitter<'a> {
                         if self.type_of(&args[0])? == Ty::Dyn {
                             return self.emit_dyn_map_filter(name, &args[0], &args[1]);
                         }
-
+                        if name == "map" && self.map_callback_result(&args[1])? == Some(Ty::Dyn) {
+                            return self.emit_map_static_to_dyn(&args[0], &args[1]);
+                        }
                         return self.emit_map_filter(name, &args[0], &args[1]);
                     }
                     if name == "reduce" && (args.len() == 2 || args.len() == 3) {
@@ -18168,11 +18261,25 @@ mod tests {
     #[test]
     fn mixed_return_functions_become_dynamic() {
         let (numbers, strings) = run_with_argv(
-            "fn f(x) {\n  if (x == 1) { return 1 }\n  if (x == 2) { return \"s\" }\n  return [x]\n}\nprint(f(1))\nprint(f(2))\nprint(f(3))\nprint(f(1) + 1)\nprint(f(2) + \"!\")\nfn g(n) {\n  if (n == 0) { return null }\n  if (n == 1) { return true }\n  return 2.5\n}\nprint(g(0))\nprint(g(1))\nprint(g(2) + 0.5)",
+            "fn f(x) {\n  if (x == 1) { return 1 }\n  if (x == 2) { return \"s\" }\n  return [x]\n}\nprint(f(1))\nprint(f(2))\nprint(f(3))\nprint(f(1) + 1)\nprint(f(2) + \"!\")\nfn g(n) {\n  if (n == 0) { return null }\n  if (n == 1) { return true }\n  return 2.5\n}\nprint(g(0))\nprint(g(1))\nprint(g(2) + 0.5)\nfn pick(x) { if (x) { return 1 }\n  return \"s\" }\nprint(json(map([true, false], fn(v) { return pick(v) })))\nprint(map([1, 2], fn(v) { return pick(v > 1) }))\nprint(map([], fn(v) { return pick(v > 0) }))\nprint([true, false].map(fn(v) { return pick(v) }))\nprint(json(map([\"a\", \"bb\"], fn(v) { if (len(v) > 1) { return v }\n  return len(v) })))",
             &[],
         );
         assert!(numbers.is_empty());
-        let expected = ["1", "s", "[3]", "2", "s!", "null", "true", "3"];
+        let expected = [
+            "1",
+            "s",
+            "[3]",
+            "2",
+            "s!",
+            "null",
+            "true",
+            "3",
+            "[1,\"s\"]",
+            "[\"s\",1]",
+            "[]",
+            "[1,\"s\"]",
+            "[1,\"bb\"]",
+        ];
         assert_eq!(
             strings,
             expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
