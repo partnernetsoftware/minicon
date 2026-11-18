@@ -954,6 +954,16 @@ if (wasmBoolGrow.code == 0 && wasmBoolGrowRun.out == wasmBoolGrowVm.out && wasmB
   casesFail += 1
   failures.push("wasm growable bool arrays\n    wasm=" + json(wasmBoolGrowRun.out) + " vm=" + json(wasmBoolGrowVm.out) + " err=" + json(wasmBoolGrowRun.err))
 }
+write(artDir + "/wasm-dynmap.bxs", 'let arr = parse(env("BX_M", "[1,2,3]"))\nprint(map(arr, fn(v) { return v + 1 }))\nprint(filter(arr, fn(v) { return v > 1 }))\nprint(arr.map(fn(v) { return v * 2 }))\nprint(arr.filter(fn(v) { return v == 2 }))\nlet m = arr.map(fn(v) { return v + 10 })\nprint(str(len(m)))\nprint(str(m[0]))\nprint(map(arr, fn(v) { return str(v) + "!" }))\nprint(filter(arr, fn(v) { return v != 3 }))\n')
+let wasmDynMap = exec([BX, "build", "--wasm", artDir + "/wasm-dynmap.bxs", "-o", artDir + "/wasm-dynmap.wasm"])
+let wasmDynMapRun = exec([BX, "run", artDir + "/wasm-dynmap.wasm"])
+let wasmDynMapVm = exec([BX, "run", artDir + "/wasm-dynmap.bxs"])
+if (wasmDynMap.code == 0 && wasmDynMapRun.out == wasmDynMapVm.out && wasmDynMapRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm dynamic map/filter\n    wasm=" + json(wasmDynMapRun.out) + " vm=" + json(wasmDynMapVm.out) + " err=" + json(wasmDynMapRun.err))
+}
 write(artDir + "/wasm-dyniter.bxs", 'let a = parse(env("BX_A", "[1,2,3]"))\nlet b = parse(env("BX_B", "[1,2,3]"))\nprint(a == b)\nlet c = parse(env("BX_C", "[1,2,4]"))\nprint(a == c)\nfor v in a { print(v) }\nlet obj = parse("{" + json("x") + ":1}")\nprint(obj)\nprint(str(obj.x))\nfor v in obj { print(v) }\nlet nested = parse(env("BX_F", "[[1,2],[3]]"))\nfor v in nested { print(v) }\n')
 let wasmDynIter = exec([BX, "build", "--wasm", artDir + "/wasm-dyniter.bxs", "-o", artDir + "/wasm-dyniter.wasm"])
 let wasmDynIterRun = exec([BX, "run", artDir + "/wasm-dyniter.wasm"])

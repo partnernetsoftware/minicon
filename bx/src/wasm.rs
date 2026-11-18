@@ -1289,6 +1289,34 @@ fn dyn_truthy_cell(memory: &[u8], cell: usize) -> Result<bool, String> {
         _ => return Err("cannot test a dynamic value for truthiness".to_string()),
     })
 }
+/// Allocate a dynamic array cell with `capacity` zeroed element cells.
+fn dyn_array_alloc(
+    memory: &mut [u8],
+    next_dyn: &mut u32,
+    capacity: usize,
+) -> Result<usize, String> {
+    let base = alloc_dyn_bytes(next_dyn, capacity.max(1) * 16)?;
+    for index in 0..capacity.max(1) {
+        write_dyn_cell(memory, base + index * 16, 0, 0, 0);
+    }
+    let cell = alloc_dyn_cell(next_dyn)?;
+    write_dyn_cell(memory, cell, 5, 0, base as u64);
+    Ok(cell)
+}
+
+fn dyn_array_push(memory: &mut [u8], cell: usize, value: usize) -> Result<(), String> {
+    let (tag, aux, payload) = dyn_tag(memory, cell);
+    if tag != 5 {
+        return Err("dynamic array push needs a dynamic array".to_string());
+    }
+    let slot = payload as usize + aux as usize * 16;
+    if slot + 16 > memory.len() {
+        return Err("dynamic array push out of bounds".to_string());
+    }
+    memory.copy_within(value..value + 16, slot);
+    memory[cell + 4..cell + 8].copy_from_slice(&(aux + 1).to_le_bytes());
+    Ok(())
+}
 /// Store a `[status][len][data]` block for the soft file imports: status 0 is
 /// success, 1 carries an error message in `data`.
 fn store_soft_block(
@@ -2286,6 +2314,24 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 let slot =
                     dyn_iter_at_cell(memory, &mut self.next_dyn, &mut self.dyn_null, cell, index)?;
                 Ok(vec![WVal::I32(slot as i32)])
+            }
+            ("env", "dyn_array_alloc") => {
+                let capacity = match args.first() {
+                    Some(WVal::I32(capacity)) => *capacity as usize,
+                    _ => return Err("env.dyn_array_alloc expects one i32".to_string()),
+                };
+                let cell = dyn_array_alloc(memory, &mut self.next_dyn, capacity)?;
+                Ok(vec![WVal::I32(cell as i32)])
+            }
+            ("env", "dyn_array_push") => {
+                let (cell, value) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(cell)), Some(WVal::I32(value))) => {
+                        (*cell as usize, *value as usize)
+                    }
+                    _ => return Err("env.dyn_array_push expects (i32, i32)".to_string()),
+                };
+                dyn_array_push(memory, cell, value)?;
+                Ok(vec![])
             }
             ("env", "dyn_parse") => {
                 let (ptr, len) = match (args.first(), args.get(1)) {

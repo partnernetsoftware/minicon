@@ -1137,6 +1137,29 @@ impl Checker {
                 }
                 if matches!(key.as_str(), "map" | "filter") && args.len() == 1 {
                     let base = self.infer(object)?;
+                    if base == Ty::Dyn {
+                        let Ty::Func(id) = self.infer(&args[0])? else {
+                            return Err(format!(
+                                "wasm target .{}() needs a function literal callback",
+                                key
+                            ));
+                        };
+                        let sig = self
+                            .lit_sigs
+                            .get(id as usize)
+                            .cloned()
+                            .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+                        if sig.params != vec![Ty::Dyn] {
+                            return Err("wasm target dynamic callbacks take one dynamic element"
+                                .to_string());
+                        }
+                        if key == "filter" && sig.result != Some(Ty::Bool) {
+                            return Err(
+                                "wasm target dynamic filter callbacks return bool".to_string()
+                            );
+                        }
+                        return Ok(Ty::Dyn);
+                    }
                     let element = element_ty(base).ok_or_else(|| {
                         format!(
                             "wasm target .{}() takes an array, got {}",
@@ -1876,6 +1899,36 @@ impl Checker {
                     }
                     if matches!(name.as_str(), "map" | "filter" | "each") && args.len() == 2 {
                         let input = self.infer(&args[0])?;
+                        if input == Ty::Dyn {
+                            if name == "each" {
+                                return Err(
+                                    "wasm target each() over dynamic arrays is not supported yet"
+                                        .to_string(),
+                                );
+                            }
+                            let Ty::Func(id) = self.infer(&args[1])? else {
+                                return Err(format!(
+                                    "wasm target {}() needs a function literal callback",
+                                    name
+                                ));
+                            };
+                            let sig =
+                                self.lit_sigs.get(id as usize).cloned().ok_or_else(|| {
+                                    "wasm target lost a function literal".to_string()
+                                })?;
+                            if sig.params != vec![Ty::Dyn] {
+                                return Err(
+                                    "wasm target dynamic callbacks take one dynamic element"
+                                        .to_string(),
+                                );
+                            }
+                            if name == "filter" && sig.result != Some(Ty::Bool) {
+                                return Err(
+                                    "wasm target dynamic filter callbacks return bool".to_string()
+                                );
+                            }
+                            return Ok(Ty::Dyn);
+                        }
                         let elem = match input {
                             Ty::Arr => Ty::Int,
                             Ty::ArrF => Ty::Float,
@@ -3181,7 +3234,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 114;
+const IMPORT_COUNT: u32 = 116;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -3283,6 +3336,8 @@ const DYN_LEN: u32 = 110;
 const DYN_INDEX: u32 = 111;
 const DYN_MEMBER: u32 = 112;
 const DYN_ITER_AT: u32 = 113;
+const DYN_ARRAY_ALLOC: u32 = 114;
+const DYN_ARRAY_PUSH: u32 = 115;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -8211,6 +8266,193 @@ impl<'a> Emitter<'a> {
         Ok(())
     }
 
+    /// Box a value already stored in locals into a fresh dynamic cell (map over
+    /// dynamic arrays). Locals are consumed: caller passes the slot ids.
+    fn emit_dyn_box_local(&mut self, ty: Ty, value: u32, ptr: u32, len: u32) -> Result<(), String> {
+        if ty == Ty::Dyn {
+            self.builder.push(Instr::Local(0x20, value));
+            return Ok(());
+        }
+        let cell = self.builder.add_local(ValType::I32);
+        self.emit_alloc_const(16);
+        self.builder.push(Instr::Local(0x21, cell));
+        match ty {
+            Ty::Int => {
+                self.push_dyn_header(cell, 1, 0);
+                self.builder.push(Instr::Local(0x20, cell));
+                self.builder.push(Instr::Local(0x20, value));
+                self.builder.push(Instr::Mem(0x37, 3, 8));
+            }
+            Ty::Float => {
+                self.push_dyn_header(cell, 2, 0);
+                self.builder.push(Instr::Local(0x20, cell));
+                self.builder.push(Instr::Local(0x20, value));
+                self.builder.push(Instr::Mem(0x39, 3, 8));
+            }
+            Ty::Bool => {
+                self.push_dyn_header(cell, 3, 0);
+                self.builder.push(Instr::Local(0x20, cell));
+                self.builder.push(Instr::Local(0x20, value));
+                self.builder.push(Instr::Op(0xad));
+                self.builder.push(Instr::Mem(0x37, 3, 8));
+            }
+            Ty::Str => {
+                self.push_dyn_header(cell, 4, 0);
+                self.builder.push(Instr::Local(0x20, cell));
+                self.builder.push(Instr::Local(0x20, len));
+                self.builder.push(Instr::Mem(0x36, 2, 4));
+                self.builder.push(Instr::Local(0x20, cell));
+                self.builder.push(Instr::Local(0x20, ptr));
+                self.builder.push(Instr::Op(0xad));
+                self.builder.push(Instr::Mem(0x37, 3, 8));
+            }
+            other => {
+                return Err(format!(
+                    "wasm target cannot box {} from a dynamic map callback",
+                    ty_name(other)
+                ))
+            }
+        }
+        self.builder.push(Instr::Local(0x20, cell));
+        Ok(())
+    }
+
+    /// `map(dynArray, cb)` / `filter(dynArray, cb)`: iterate dynamic elements,
+    /// box callback results and build a new dynamic array (P2b).
+    fn emit_dyn_map_filter(
+        &mut self,
+        kind: &str,
+        array: &Expr,
+        callback: &Expr,
+    ) -> Result<Ty, String> {
+        let Ty::Func(id) = self.type_of(callback)? else {
+            return Err(format!(
+                "wasm target {}() needs a function literal callback",
+                kind
+            ));
+        };
+        if self.boxed.iter().any(|_| false) {
+            // placeholder to keep clippy quiet about unused field access
+        }
+        let sig = self
+            .checker
+            .lit_sigs
+            .get(id as usize)
+            .cloned()
+            .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+        if sig.params != vec![Ty::Dyn] {
+            return Err("wasm target dynamic callbacks take one dynamic element".to_string());
+        }
+        let result_ty = if kind == "map" {
+            sig.result.unwrap_or(Ty::Dyn)
+        } else {
+            Ty::Bool
+        };
+        if kind == "map"
+            && !matches!(
+                result_ty,
+                Ty::Int | Ty::Float | Ty::Bool | Ty::Str | Ty::Dyn
+            )
+        {
+            return Err(
+                "wasm target dynamic map callbacks return int/float/bool/string/dynamic values"
+                    .to_string(),
+            );
+        }
+        let source = self.builder.add_local(ValType::I32);
+        let count = self.builder.add_local(ValType::I64);
+        let index = self.builder.add_local(ValType::I64);
+        let element = self.builder.add_local(ValType::I32);
+        let out = self.builder.add_local(ValType::I32);
+        let cb_env = self.builder.add_local(ValType::I32);
+        let value_i64 = self.builder.add_local(ValType::I64);
+        let value_f64 = self.builder.add_local(ValType::F64);
+        let value_i32 = self.builder.add_local(ValType::I32);
+        let value_ptr = self.builder.add_local(ValType::I32);
+        let value_len = self.builder.add_local(ValType::I32);
+        self.emit_expr(array)?;
+        self.builder.push(Instr::Local(0x21, source));
+        self.emit_expr(callback)?;
+        self.builder.push(Instr::Local(0x21, cb_env));
+        self.builder.push(Instr::Local(0x20, source));
+        self.builder.push(Instr::Call(DYN_LEN));
+        self.builder.push(Instr::Local(0x21, count));
+        self.builder.push(Instr::Local(0x20, count));
+        self.builder.push(Instr::Op(0xa7));
+        self.builder.push(Instr::Call(DYN_ARRAY_ALLOC));
+        self.builder.push(Instr::Local(0x21, out));
+        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+        self.builder.push(Instr::Local(0x21, index));
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x02);
+        self.builder.push(Instr::Block {
+            opcode: 0x03,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x03);
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Local(0x20, count));
+        self.builder.push(Instr::Op(0x59));
+        self.builder.push(Instr::BrIf(1));
+        self.builder.push(Instr::Local(0x20, source));
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Call(DYN_ITER_AT));
+        self.builder.push(Instr::Local(0x21, element));
+        self.builder.push(Instr::Local(0x20, cb_env));
+        self.builder.push(Instr::Local(0x20, element));
+        self.builder.push(Instr::Call(sig.index));
+        if kind == "map" {
+            match result_ty {
+                Ty::Int => self.builder.push(Instr::Local(0x21, value_i64)),
+                Ty::Float => self.builder.push(Instr::Local(0x21, value_f64)),
+                Ty::Bool => self.builder.push(Instr::Local(0x21, value_i32)),
+                Ty::Str => {
+                    self.builder.push(Instr::Local(0x21, value_len));
+                    self.builder.push(Instr::Local(0x21, value_ptr));
+                }
+                _ => self.builder.push(Instr::Local(0x21, value_i32)),
+            }
+            self.builder.push(Instr::Local(0x20, out));
+            let value_slot = match result_ty {
+                Ty::Int => value_i64,
+                Ty::Float => value_f64,
+                _ => value_i32,
+            };
+            self.emit_dyn_box_local(result_ty, value_slot, value_ptr, value_len)?;
+            self.builder.push(Instr::Call(DYN_ARRAY_PUSH));
+        } else {
+            self.builder.push(Instr::Block {
+                opcode: 0x04,
+                end: 0,
+                else_at: 0,
+                start: 0,
+            });
+            self.labels.push(0x04);
+            self.builder.push(Instr::Local(0x20, out));
+            self.builder.push(Instr::Local(0x20, element));
+            self.builder.push(Instr::Call(DYN_ARRAY_PUSH));
+            self.labels.pop();
+            self.builder.push(Instr::Op(0x0b));
+        }
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+        self.builder.push(Instr::Op(0x7c));
+        self.builder.push(Instr::Local(0x21, index));
+        self.builder.push(Instr::Br(0));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.builder.push(Instr::Local(0x20, out));
+        Ok(Ty::Dyn)
+    }
     fn push_dyn_header(&mut self, cell: u32, tag: u32, aux: u32) {
         self.builder.push(Instr::Local(0x20, cell));
         self.builder.push(Instr::Const(0x41, WVal::I32(tag as i32)));
@@ -9289,6 +9531,9 @@ impl<'a> Emitter<'a> {
                     return self.emit_reduce(object, &args[0], args.get(1));
                 }
                 if matches!(key.as_str(), "map" | "filter") && args.len() == 1 {
+                    if self.type_of(object)? == Ty::Dyn {
+                        return self.emit_dyn_map_filter(key, object, &args[0]);
+                    }
                     return self.emit_map_filter(key, object, &args[0]);
                 }
                 if key == "slice" && (args.len() == 1 || args.len() == 2) {
@@ -10813,6 +11058,9 @@ impl<'a> Emitter<'a> {
                         return Ok(ty);
                     }
                     if matches!(name.as_str(), "map" | "filter") && args.len() == 2 {
+                        if self.type_of(&args[0])? == Ty::Dyn {
+                            return self.emit_dyn_map_filter(name, &args[0], &args[1]);
+                        }
                         return self.emit_map_filter(name, &args[0], &args[1]);
                     }
                     if name == "reduce" && (args.len() == 2 || args.len() == 3) {
@@ -12770,6 +13018,9 @@ impl<'a> InferState<'a> {
                 if *op == BinOp::Add && lt == Ty::Str && rt == Ty::Str {
                     return Some(Ty::Str);
                 }
+                if lt == Ty::Dyn || rt == Ty::Dyn {
+                    return Some(Ty::Dyn);
+                }
                 if !is_number(lt) || !is_number(rt) {
                     return Some(Ty::Int);
                 }
@@ -12828,6 +13079,9 @@ impl<'a> InferState<'a> {
                 Some(Ty::Obj(self.shape_id(&keys, &kinds)))
             }
             Expr::Member(object, key, _) => {
+                if self.soft(object, locals) == Some(Ty::Dyn) {
+                    return Some(Ty::Dyn);
+                }
                 if let Some(Ty::Obj(shape)) = self.soft(object, locals) {
                     if let Ok(ty) = self.field_ty(shape, key) {
                         return Some(ty);
@@ -12839,6 +13093,7 @@ impl<'a> InferState<'a> {
                 let base = self.soft(array, locals)?;
                 self.soft(index, locals)?;
                 Some(match base {
+                    Ty::Dyn => Ty::Dyn,
                     Ty::ArrStr => Ty::Str,
                     Ty::ArrBool => Ty::Bool,
                     Ty::ArrObj(shape) => Ty::Obj(shape),
@@ -12915,6 +13170,16 @@ impl<'a> InferState<'a> {
                                     _ => Ty::Int,
                                 })
                         }),
+                    "parse" => {
+                        if let Some(Expr::Str(text)) = args.first() {
+                            if let Ok(value) = crate::json::parse(text) {
+                                if let Ok(literal) = json_value_expr(&value) {
+                                    return self.soft(&literal, locals);
+                                }
+                            }
+                        }
+                        Some(Ty::Dyn)
+                    }
                     "str" | "type" | "arg" | "read_file" | "read" | "which" | "capture" | "cwd"
                     | "env" | "join" | "slice" | "trim" | "upper" | "lower" | "replace"
                     | "basename" | "dirname" | "repeat" => Some(Ty::Str),
@@ -13038,6 +13303,13 @@ impl<'a> InferState<'a> {
                 if *current == ty {
                     return Ok(false);
                 }
+                if *current == Ty::Dyn {
+                    return Ok(false);
+                }
+                if ty == Ty::Dyn {
+                    *current = Ty::Dyn;
+                    return Ok(true);
+                }
                 if is_number(*current) && is_number(ty) {
                     if ty == Ty::Float && *current == Ty::Int {
                         *current = Ty::Float;
@@ -13073,6 +13345,11 @@ impl<'a> InferState<'a> {
                 Ok(true)
             }
             Some(current) if current == ty => Ok(false),
+            Some(Ty::Dyn) => Ok(false),
+            Some(_) if ty == Ty::Dyn => {
+                self.results[index] = Some(Ty::Dyn);
+                Ok(true)
+            }
             Some(current) if is_number(current) && is_number(ty) => {
                 if ty == Ty::Float && current == Ty::Int {
                     self.results[index] = Some(Ty::Float);
@@ -13224,6 +13501,7 @@ impl<'a> InferState<'a> {
                                 Some(Ty::ArrObj(shape)) => Ty::Obj(shape),
                                 Some(Ty::ArrArr) => Ty::Arr,
                                 Some(Ty::ArrStrArr) => Ty::ArrStr,
+                                Some(Ty::Dyn) => Ty::Dyn,
                                 _ => Ty::Int,
                             };
                             match name.as_str() {
@@ -13321,6 +13599,7 @@ impl<'a> InferState<'a> {
                             Some(Ty::ArrObj(shape)) => Ty::Obj(shape),
                             Some(Ty::ArrArr) => Ty::Arr,
                             Some(Ty::ArrStrArr) => Ty::ArrStr,
+                            Some(Ty::Dyn) => Ty::Dyn,
                             _ => Ty::Int,
                         };
                         let acc = args
@@ -13347,6 +13626,7 @@ impl<'a> InferState<'a> {
                             Some(Ty::ArrObj(shape)) => Ty::Obj(shape),
                             Some(Ty::ArrArr) => Ty::Arr,
                             Some(Ty::ArrStrArr) => Ty::ArrStr,
+                            Some(Ty::Dyn) => Ty::Dyn,
                             _ => Ty::Int,
                         };
                         changed |= self.unify_param(index, 0, elem)?;
@@ -13370,6 +13650,7 @@ impl<'a> InferState<'a> {
                             Some(Ty::ArrObj(shape)) => Ty::Obj(shape),
                             Some(Ty::ArrArr) => Ty::Arr,
                             Some(Ty::ArrStrArr) => Ty::ArrStr,
+                            Some(Ty::Dyn) => Ty::Dyn,
                             _ => Ty::Int,
                         };
                         changed |= self.unify_param(index, 0, elem)?;
@@ -14431,6 +14712,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     let i32_to_f64_ty = builder.add_type(vec![ValType::I32], vec![ValType::F64]);
     let two_i32_to_i64_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![ValType::I64]);
     let i32_i64_to_i32_ty = builder.add_type(vec![ValType::I32, ValType::I64], vec![ValType::I32]);
+    let two_i32_void_ty = builder.add_type(vec![ValType::I32, ValType::I32], vec![]);
     let env_add_ty = builder.add_type(
         vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
         vec![],
@@ -14628,6 +14910,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "dyn_index", i32_i64_to_i32_ty);
     builder.import_func("env", "dyn_member", format_container_ty);
     builder.import_func("env", "dyn_iter_at", i32_i64_to_i32_ty);
+    builder.import_func("env", "dyn_array_alloc", i32_to_i32_ty);
+    builder.import_func("env", "dyn_array_push", two_i32_void_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -16353,6 +16637,32 @@ mod tests {
         assert!(numbers.is_empty());
         let expected = [
             "true", "false", "true", "true", "true", "1", "2", "3", "a", "x", "y", "[1,2]", "[3]",
+        ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn dynamic_map_filter_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let arr = parse(env(\"BX_M\", \"[1,2,3]\"))\nprint(map(arr, fn(v) { return v + 1 }))\nprint(filter(arr, fn(v) { return v > 1 }))\nprint(arr.map(fn(v) { return v * 2 }))\nprint(arr.filter(fn(v) { return v == 2 }))\nlet m = arr.map(fn(v) { return v + 10 })\nprint(m)\nprint(str(len(m)))\nprint(str(m[0]))\nprint(map(arr, fn(v) { return str(v) + \"!\" }))\nprint(filter(arr, fn(v) { return v != 3 }))\nlet objs = parse(env(\"BX_OBJ\", \"[{\\\"a\\\":1},{\\\"a\\\":2}]\"))\nprint(map(objs, fn(o) { return o.a }))\nprint(filter(objs, fn(o) { return o.a > 1 }))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = [
+            "[2,3,4]",
+            "[2,3]",
+            "[2,4,6]",
+            "[2]",
+            "[11,12,13]",
+            "3",
+            "11",
+            "[\"1!\",\"2!\",\"3!\"]",
+            "[1,2]",
+            "[1,2]",
+            "[{\"a\":2}]",
         ];
         assert_eq!(
             strings,
