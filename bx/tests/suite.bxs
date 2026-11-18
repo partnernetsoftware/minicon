@@ -587,6 +587,16 @@ if (wasmExecAll.code == 0 && wasmExecAllRun.out == wasmExecAllVm.out && wasmExec
   casesFail += 1
   failures.push("wasm exec_all\n    wasm=" + json(wasmExecAllRun.out) + " vm=" + json(wasmExecAllVm.out) + " err=" + json(wasmExecAllRun.err))
 }
+write(artDir + "/wasm-boolgrow.bxs", 'let xs = []\nfor (let i = 0; i < 5; i += 1) { push(xs, i % 2 == 0) }\nprint(xs)\nprint(contains(xs, true))\nprint(index_of(xs, false))\nprint(sort(xs))\nprint(sum(xs))\n')
+let wasmBoolGrow = exec([BX, "build", "--wasm", artDir + "/wasm-boolgrow.bxs", "-o", artDir + "/wasm-boolgrow.wasm"])
+let wasmBoolGrowRun = exec([BX, "run", artDir + "/wasm-boolgrow.wasm"])
+let wasmBoolGrowVm = exec([BX, "run", artDir + "/wasm-boolgrow.bxs"])
+if (wasmBoolGrow.code == 0 && wasmBoolGrowRun.out == wasmBoolGrowVm.out && wasmBoolGrowRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm growable bool arrays\n    wasm=" + json(wasmBoolGrowRun.out) + " vm=" + json(wasmBoolGrowVm.out) + " err=" + json(wasmBoolGrowRun.err))
+}
 write(artDir + "/wasm-mfr.bxs", 'print(str([1, 2].map(fn(x) { return x * 2 })))\nprint(str([1, 2].filter(fn(x) { return x > 1 })))\nprint(str([1, 2].reduce(fn(acc, x) { return acc + x }, 0)))\nprint(str([true, false].map(fn(x) { return !x })))\nprint(str(["a", "bb"].map(fn(x) { return len(x) })))\nprint(str([{a: 1}].map(fn(r) { return r.a + 1 })))\nprint(str([1, 2].reduce(fn(acc, x) { return acc + x })))\n')
 let wasmMfr = exec([BX, "build", "--wasm", artDir + "/wasm-mfr.bxs", "-o", artDir + "/wasm-mfr.wasm"])
 let wasmMfrRun = exec([BX, "run", artDir + "/wasm-mfr.wasm"])
@@ -1308,6 +1318,16 @@ if (wasmExecAll.code == 0 && wasmExecAllRun.out == wasmExecAllVm.out && wasmExec
 } else {
   casesFail += 1
   failures.push("wasm exec_all\n    wasm=" + json(wasmExecAllRun.out) + " vm=" + json(wasmExecAllVm.out) + " err=" + json(wasmExecAllRun.err))
+}
+write(artDir + "/wasm-boolgrow.bxs", 'let xs = []\nfor (let i = 0; i < 5; i += 1) { push(xs, i % 2 == 0) }\nprint(xs)\nprint(contains(xs, true))\nprint(index_of(xs, false))\nprint(sort(xs))\nprint(sum(xs))\n')
+let wasmBoolGrow = exec([BX, "build", "--wasm", artDir + "/wasm-boolgrow.bxs", "-o", artDir + "/wasm-boolgrow.wasm"])
+let wasmBoolGrowRun = exec([BX, "run", artDir + "/wasm-boolgrow.wasm"])
+let wasmBoolGrowVm = exec([BX, "run", artDir + "/wasm-boolgrow.bxs"])
+if (wasmBoolGrow.code == 0 && wasmBoolGrowRun.out == wasmBoolGrowVm.out && wasmBoolGrowRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm growable bool arrays\n    wasm=" + json(wasmBoolGrowRun.out) + " vm=" + json(wasmBoolGrowVm.out) + " err=" + json(wasmBoolGrowRun.err))
 }
 write(artDir + "/wasm-mfr.bxs", 'print(str([1, 2].map(fn(x) { return x * 2 })))\nprint(str([1, 2].filter(fn(x) { return x > 1 })))\nprint(str([1, 2].reduce(fn(acc, x) { return acc + x }, 0)))\nprint(str([true, false].map(fn(x) { return !x })))\nprint(str(["a", "bb"].map(fn(x) { return len(x) })))\nprint(str([{a: 1}].map(fn(r) { return r.a + 1 })))\nprint(str([1, 2].reduce(fn(acc, x) { return acc + x })))\n')
 let wasmMfr = exec([BX, "build", "--wasm", artDir + "/wasm-mfr.bxs", "-o", artDir + "/wasm-mfr.wasm"])

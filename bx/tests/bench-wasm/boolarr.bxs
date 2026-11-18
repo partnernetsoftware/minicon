@@ -1,0 +1,17 @@
+// Bool-array / higher-order method workload for the wasm-vs-VM benchmark.
+let base = [true, false, true, false, true, false, true, false]
+let total = 0
+for (let r = 0; r < 300; r += 1) {
+  let ys = map(base, fn(v) { return !v })
+  let zs = filter(base, fn(v) { return v })
+  sort(ys)
+  reverse(zs)
+  if (contains(zs, true)) {
+    total = total + len(zs)
+  }
+  if (index_of(ys, false) >= 0) {
+    total = total + 1
+  }
+  total = total + sum(ys)
+}
+print(total)

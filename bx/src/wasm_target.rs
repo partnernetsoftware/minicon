@@ -140,6 +140,10 @@ fn literal_element_ty(expr: &Expr) -> Option<Ty> {
                 Some(Ty::Int)
             }
         }
+        Expr::Bin(BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge, _, _) => {
+            Some(Ty::Bool)
+        }
+        Expr::And(_, _) | Expr::Or(_, _) | Expr::Not(_) => Some(Ty::Bool),
         Expr::Call(callee, _, _) => match &**callee {
             Expr::Ident(name)
                 if matches!(
@@ -167,8 +171,21 @@ fn literal_element_ty(expr: &Expr) -> Option<Ty> {
             {
                 Some(Ty::Str)
             }
-            Expr::Ident(name) if matches!(name.as_str(), "len" | "int" | "argc" | "sum") => {
+            Expr::Ident(name)
+                if matches!(
+                    name.as_str(),
+                    "len" | "int" | "argc" | "sum" | "index_of" | "run" | "write_file"
+                ) =>
+            {
                 Some(Ty::Int)
+            }
+            Expr::Ident(name)
+                if matches!(
+                    name.as_str(),
+                    "contains" | "exists" | "file_exists" | "starts_with" | "ends_with" | "has"
+                ) =>
+            {
+                Some(Ty::Bool)
             }
             Expr::Ident(name) if matches!(name.as_str(), "float" | "sqrt") => Some(Ty::Float),
             _ => None,
@@ -15750,6 +15767,26 @@ mod tests {
         assert_eq!(
             strings,
             expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn growable_bool_arrays_from_comparisons_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let xs = []\nfor (let i = 0; i < 5; i += 1) { push(xs, i % 2 == 0) }\nprint(xs)\nprint(contains(xs, true))\nprint(index_of(xs, false))\nprint(sort(xs))\nprint(sum(xs))",
+            &[],
+        );
+        assert_eq!(numbers, vec![1, 3]);
+        assert_eq!(
+            strings,
+            vec![
+                "[true,false,true,false,true]",
+                "true",
+                "[false,false,true,true,true]"
+            ]
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
         );
     }
 

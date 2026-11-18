@@ -29,18 +29,19 @@ glue.
 - Host imports are **web-shaped**, not WASI: the ABI mirrors browser surface
   names so one module can serve both native and browser hosts.
 
-## Engine performance (measured 2026-11-17)
+## Engine performance (measured 2026-11-18)
 
-`bx/scripts/bench.sh` (`BX_BENCH_RUNS=9`, wall clock, process start included,
-re-measured 2026-11-17 after the feature rounds):
+`bx/scripts/bench.sh` (`BX_BENCH_RUNS=5`, wall clock, process start included,
+re-measured 2026-11-18 after the array/bool/null feature rounds):
 
 | benchmark | VM (`.bxb` source) | wasm target (core) |
 | --- | --- | --- |
-| fib | 132 ms | 223 ms |
-| loop | 328 ms | 238 ms |
-| calls | 159 ms | 255 ms |
-| coll (`map`/`filter`/`reduce`/`sort` over 2000 ints) | 92 ms | 99 ms |
-| recs (`map`/comparator-`sort`/`reduce` over 500 records) | 94 ms | 178 ms |
+| fib | 131 ms | 227 ms |
+| loop | 327 ms | 243 ms |
+| calls | 166 ms | 258 ms |
+| coll (`map`/`filter`/`reduce`/`sort` over 2000 ints) | 94 ms | 100 ms |
+| recs (`map`/comparator-`sort`/`reduce` over 500 records) | 96 ms | 100 ms |
+| boolarr (`map`/`filter`/`sort`/`reverse`/`contains`/`index_of`/`sum` over bool arrays) | 93 ms | 100 ms |
 
 So the absorbed core is ~1.6–1.7× slower on call-heavy code, ~0.75× on tight
 numeric loops and about equal on collection/record-heavy work; the table is the
@@ -237,7 +238,7 @@ Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 133 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 134 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -695,6 +696,12 @@ points when built for wasm. How these boundaries get removed is owned by
 hybrid"), which stages a 16-byte tagged cell behind static/dynamic boundary
 conversions rather than rewriting the static fast path.
 
+- **Inference convergence edge**: a growable `[]` declared **inside a loop**
+  and later fed to a higher-order callback (`map`/`filter`) can still fail with
+  `function returns both bool and int values`, because the provisional parameter
+  type of the callback changes between inference passes. Workaround: hoist the
+  array to top level or use an explicit typed literal. The top-level form and
+  explicit literals are covered by tests and the differential tools.
 ## Non-goals
 
 - No WASI: the ABI is web-shaped on purpose.
