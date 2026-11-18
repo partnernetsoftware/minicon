@@ -460,6 +460,14 @@ fn field_kind_for_ty(ty: Ty) -> Option<u8> {
     }
     None
 }
+/// Field kind for the `attempt()` record's value slot: null becomes a dynamic
+/// null cell so `r.value` prints and compares like the VM.
+fn attempt_value_kind(ty: Ty) -> Option<u8> {
+    if ty == Ty::Null {
+        return Some(8);
+    }
+    field_kind(ty)
+}
 /// Keys and field kinds of the record `exec()`/`sh()` return.
 fn exec_result_keys() -> (Vec<String>, Vec<u8>) {
     (
@@ -702,7 +710,7 @@ impl Checker {
 
     /// Shape of the `attempt()` record for a callback returning `result_ty`.
     fn attempt_shape(&self, result_ty: Ty) -> Result<u32, String> {
-        let kind = field_kind(result_ty).ok_or_else(|| {
+        let kind = attempt_value_kind(result_ty).ok_or_else(|| {
             "wasm target attempt() callbacks return a number, string or bool".to_string()
         })?;
         Ok(self.shape_id(
@@ -4592,6 +4600,11 @@ impl<'a> Emitter<'a> {
             | Ty::ArrStrArr => {
                 self.builder.push(Instr::Local(0x20, record));
                 self.emit_expr(value)?;
+                self.builder.push(Instr::Mem(0x36, 2, 16));
+            }
+            Ty::Null => {
+                self.builder.push(Instr::Local(0x20, record));
+                self.emit_box_dyn(value, Ty::Null)?;
                 self.builder.push(Instr::Mem(0x36, 2, 16));
             }
             _ => {
@@ -15027,6 +15040,7 @@ impl<'a> InferState<'a> {
                 Some(Ty::Bool)
             }
 
+            Expr::Null => Some(Ty::Null),
             Expr::Int(_) => Some(Ty::Int),
             Expr::Float(_) => Some(Ty::Float),
             Expr::Str(_) => Some(Ty::Str),
@@ -15159,9 +15173,9 @@ impl<'a> InferState<'a> {
                                     .flatten()
                                     .unwrap_or(Ty::Int),
                             )
-                            .filter(|ty| field_kind(*ty).is_some())
+                            .filter(|ty| attempt_value_kind(*ty).is_some())
                             {
-                                let kind = field_kind(result_ty).unwrap();
+                                let kind = attempt_value_kind(result_ty).unwrap();
                                 return Some(Ty::Obj(self.shape_id(
                                     &["error".to_string(), "ok".to_string(), "value".to_string()],
                                     &[1, 3, kind],
@@ -16040,9 +16054,9 @@ impl<'a> CaptureWalker<'a> {
                             .lit_sigs
                             .get(id as usize)
                             .and_then(|sig| sig.result)
-                            .filter(|ty| field_kind(*ty).is_some())
+                            .filter(|ty| attempt_value_kind(*ty).is_some())
                         {
-                            let kind = field_kind(result_ty).unwrap();
+                            let kind = attempt_value_kind(result_ty).unwrap();
                             return Ty::Obj(self.shape_id(
                                 &["error".to_string(), "ok".to_string(), "value".to_string()],
                                 &[1, 3, kind],
@@ -19474,6 +19488,26 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(numbers, vec![0, 0]);
         assert_eq!(strings, vec!["true".to_string(), "false".to_string()]);
+    }
+
+    #[test]
+    fn attempt_null_value_uses_a_dynamic_cell() {
+        let (numbers, strings) = run_with_argv(
+            "let r = attempt(fn() { return null })\nprint(r.ok)\nprint(r.value)\nprint(type(r.value))\nprint(r.error)",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        // The VM prints `null` for both the value and the (null) error field;
+        // the wasm target keeps the error as an empty string for now.
+        assert_eq!(
+            strings,
+            vec![
+                "true".to_string(),
+                "null".to_string(),
+                "null".to_string(),
+                String::new()
+            ]
+        );
     }
 
     #[test]
