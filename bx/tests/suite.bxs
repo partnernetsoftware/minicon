@@ -954,6 +954,16 @@ if (wasmBoolGrow.code == 0 && wasmBoolGrowRun.out == wasmBoolGrowVm.out && wasmB
   casesFail += 1
   failures.push("wasm growable bool arrays\n    wasm=" + json(wasmBoolGrowRun.out) + " vm=" + json(wasmBoolGrowVm.out) + " err=" + json(wasmBoolGrowRun.err))
 }
+write(artDir + "/wasm-dynkv.bxs", 'let arr = parse(env("BX_A", "[10,20]"))\nfor i, v in arr { print(i); print(v); print(i + 1) }\neach(arr, fn(v) { print(v) })\neach(arr, fn(v) { print(v * 2) })\n')
+let wasmDynKv = exec([BX, "build", "--wasm", artDir + "/wasm-dynkv.bxs", "-o", artDir + "/wasm-dynkv.wasm"])
+let wasmDynKvRun = exec([BX, "run", artDir + "/wasm-dynkv.wasm"])
+let wasmDynKvVm = exec([BX, "run", artDir + "/wasm-dynkv.bxs"])
+if (wasmDynKv.code == 0 && wasmDynKvRun.out == wasmDynKvVm.out && wasmDynKvRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm dynamic key/value loops\n    wasm=" + json(wasmDynKvRun.out) + " vm=" + json(wasmDynKvVm.out) + " err=" + json(wasmDynKvRun.err))
+}
 write(artDir + "/wasm-dynmap.bxs", 'let arr = parse(env("BX_M", "[1,2,3]"))\nprint(map(arr, fn(v) { return v + 1 }))\nprint(filter(arr, fn(v) { return v > 1 }))\nprint(arr.map(fn(v) { return v * 2 }))\nprint(arr.filter(fn(v) { return v == 2 }))\nlet m = arr.map(fn(v) { return v + 10 })\nprint(str(len(m)))\nprint(str(m[0]))\nprint(map(arr, fn(v) { return str(v) + "!" }))\nprint(filter(arr, fn(v) { return v != 3 }))\n')
 let wasmDynMap = exec([BX, "build", "--wasm", artDir + "/wasm-dynmap.bxs", "-o", artDir + "/wasm-dynmap.wasm"])
 let wasmDynMapRun = exec([BX, "run", artDir + "/wasm-dynmap.wasm"])

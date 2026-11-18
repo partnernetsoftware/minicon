@@ -238,7 +238,7 @@ Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
   (an independent engine), which proves the bytes are standard WebAssembly rather
   than a bx-private format. String scripts are executed by node too, reading the
   exported linear memory (`Buffer.from(instance.exports.memory.buffer, ptr, len)`).
-- 140 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
+- 141 in-tree unit tests (plus the self-hosted differential tools) cover the encoder and the core host; the interpreter tests retired with the engine
   round-trip, memory/data decoding, UTF-8
   imports, operator precedence, control flow, user functions/recursion, argv,
   file I/O, process execution, operator spec mappings and rejection of
@@ -529,8 +529,9 @@ Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
   the VM; `map`/`filter` over dynamic arrays also work (callback receives a
   dynamic element; results are boxed back into a fresh dynamic array, so
   `arr.map(fn(v) { return v + 1 })` and record fields like `o.a` compose).
-  Two-variable dynamic loops, `each` over dynamic arrays and ordering
-  containers remain explicit errors.
+  `for k, v in <dynamic>` binds both slots as dynamic cells (array index ints
+  and object keys boxed, values via `dyn_value_at`), and `each(dynArray, cb)`
+  works; ordering containers remain an explicit error.
 - **`null` (static marker)**: `null` is typed `Ty::Null` and covers the VM's
   scalar semantics: printing/`str`/`json`/`type`/interpolation give `null`,
   `null == null`, `null == 0`, `null == 0.0`, `null == false` are true while

@@ -1120,6 +1120,63 @@ fn dyn_entry_value(memory: &[u8], entry: usize) -> Result<usize, String> {
     Ok(u32::from_le_bytes(memory[entry + 8..entry + 12].try_into().unwrap()) as usize)
 }
 
+/// Dynamic for-loop value: array element or object entry value.
+fn dyn_value_at_cell(
+    memory: &mut [u8],
+    next_dyn: &mut u32,
+    null_slot: &mut u32,
+    cell: usize,
+    index: i64,
+) -> Result<usize, String> {
+    let (tag, aux, payload) = dyn_tag(memory, cell);
+    match tag {
+        5 => dyn_index_cell(memory, next_dyn, null_slot, cell, index),
+        6 => {
+            let count = aux as i64;
+            if index < 0 || index >= count {
+                return dyn_null_cell(memory, next_dyn, null_slot);
+            }
+            dyn_entry_value(memory, payload as usize + index as usize * 12)
+        }
+        _ => Err("dynamic for-loops need a dynamic array or object".to_string()),
+    }
+}
+
+/// Dynamic for-loop key: boxed int index for arrays, boxed string key for objects.
+fn dyn_key_at_cell(
+    memory: &mut [u8],
+    next_dyn: &mut u32,
+    null_slot: &mut u32,
+    cell: usize,
+    index: i64,
+) -> Result<usize, String> {
+    let (tag, aux, payload) = dyn_tag(memory, cell);
+    if tag == 5 {
+        let count = aux as i64;
+        if index < 0 || index >= count {
+            return dyn_null_cell(memory, next_dyn, null_slot);
+        }
+        let boxed = alloc_dyn_cell(next_dyn)?;
+        write_dyn_cell(memory, boxed, 1, 0, index as u64);
+        return Ok(boxed);
+    }
+    if tag != 6 {
+        return Err("dynamic for-loops need a dynamic array or object".to_string());
+    }
+    let count = aux as i64;
+    if index < 0 || index >= count {
+        return dyn_null_cell(memory, next_dyn, null_slot);
+    }
+    let entry = payload as usize + index as usize * 12;
+    if entry + 12 > memory.len() {
+        return dyn_null_cell(memory, next_dyn, null_slot);
+    }
+    let key_ptr = u32::from_le_bytes(memory[entry..entry + 4].try_into().unwrap());
+    let key_len = u32::from_le_bytes(memory[entry + 4..entry + 8].try_into().unwrap());
+    let boxed = alloc_dyn_cell(next_dyn)?;
+    write_dyn_cell(memory, boxed, 4, key_len, u64::from(key_ptr));
+    Ok(boxed)
+}
 /// Dynamic for-loop element: array elements, or object keys (the VM's single
 /// loop variable yields keys for objects).
 fn dyn_iter_at_cell(
@@ -2304,6 +2361,24 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 let key = memory_text(memory, ptr, len);
                 let slot =
                     dyn_member_cell(memory, &mut self.next_dyn, &mut self.dyn_null, cell, &key)?;
+                Ok(vec![WVal::I32(slot as i32)])
+            }
+            ("env", "dyn_value_at") => {
+                let (cell, index) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(cell)), Some(WVal::I64(index))) => (*cell as usize, *index),
+                    _ => return Err("env.dyn_value_at expects (i32, i64)".to_string()),
+                };
+                let slot =
+                    dyn_value_at_cell(memory, &mut self.next_dyn, &mut self.dyn_null, cell, index)?;
+                Ok(vec![WVal::I32(slot as i32)])
+            }
+            ("env", "dyn_key_at") => {
+                let (cell, index) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(cell)), Some(WVal::I64(index))) => (*cell as usize, *index),
+                    _ => return Err("env.dyn_key_at expects (i32, i64)".to_string()),
+                };
+                let slot =
+                    dyn_key_at_cell(memory, &mut self.next_dyn, &mut self.dyn_null, cell, index)?;
                 Ok(vec![WVal::I32(slot as i32)])
             }
             ("env", "dyn_iter_at") => {

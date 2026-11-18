@@ -1901,10 +1901,22 @@ impl Checker {
                         let input = self.infer(&args[0])?;
                         if input == Ty::Dyn {
                             if name == "each" {
-                                return Err(
-                                    "wasm target each() over dynamic arrays is not supported yet"
-                                        .to_string(),
-                                );
+                                let Ty::Func(id) = self.infer(&args[1])? else {
+                                    return Err(
+                                        "wasm target each() needs a function literal callback"
+                                            .to_string(),
+                                    );
+                                };
+                                let sig = self.lit_sigs.get(id as usize).ok_or_else(|| {
+                                    "wasm target lost a function literal".to_string()
+                                })?;
+                                if sig.params != vec![Ty::Dyn] {
+                                    return Err(
+                                        "wasm target dynamic callbacks take one dynamic element"
+                                            .to_string(),
+                                    );
+                                }
+                                return Ok(Ty::Int);
                             }
                             let Ty::Func(id) = self.infer(&args[1])? else {
                                 return Err(format!(
@@ -2762,6 +2774,24 @@ impl Checker {
                                 "wasm target each() takes an array and a callback".to_string()
                             );
                         }
+                        if self.infer(&args[0])? == Ty::Dyn {
+                            let Ty::Func(id) = self.infer(&args[1])? else {
+                                return Err(
+                                    "wasm target each() needs a function literal callback"
+                                        .to_string(),
+                                );
+                            };
+                            let sig = self.lit_sigs.get(id as usize).ok_or_else(|| {
+                                "wasm target lost a function literal".to_string()
+                            })?;
+                            if sig.params != vec![Ty::Dyn] {
+                                return Err(
+                                    "wasm target dynamic callbacks take one dynamic element"
+                                        .to_string(),
+                                );
+                            }
+                            return Ok(());
+                        }
                         let elem = match self.infer(&args[0])? {
                             Ty::Arr => Ty::Int,
                             Ty::ArrF => Ty::Float,
@@ -3151,13 +3181,15 @@ impl Checker {
                         }
                         scope.insert(value_name, Ty::Bool);
                     }                    Ty::Dyn => {
-                        if value.is_some() {
-                            return Err(
-                                "wasm target dynamic for-loops do not bind the index yet"
-                                    .to_string(),
-                            );
+                        match value {
+                            Some(value_name) => {
+                                scope.insert(key.clone(), Ty::Dyn);
+                                scope.insert(value_name.clone(), Ty::Dyn);
+                            }
+                            None => {
+                                scope.insert(key.clone(), Ty::Dyn);
+                            }
                         }
-                        scope.insert(key.clone(), Ty::Dyn);
                     }
                     other => {
                         return Err(format!(
@@ -3234,7 +3266,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 116;
+const IMPORT_COUNT: u32 = 118;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -3338,6 +3370,8 @@ const DYN_MEMBER: u32 = 112;
 const DYN_ITER_AT: u32 = 113;
 const DYN_ARRAY_ALLOC: u32 = 114;
 const DYN_ARRAY_PUSH: u32 = 115;
+const DYN_VALUE_AT: u32 = 116;
+const DYN_KEY_AT: u32 = 117;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -4349,8 +4383,7 @@ impl<'a> Emitter<'a> {
         Ok(())
     }
     /// `for i, x in floats { .. }`: index (int) / element (float) locals.
-    /// `for v in dynValue { .. }`: elements of a dynamic array or values of a
-    /// dynamic object, one dynamic cell per iteration.
+    /// `for v in dynValue` / `for k, v in dynValue`: dynamic elements and keys.
     fn emit_for_in_dyn(
         &mut self,
         key: &str,
@@ -4358,17 +4391,22 @@ impl<'a> Emitter<'a> {
         iter: &Expr,
         body: &[Stmt],
     ) -> Result<(), String> {
-        if let Some(second) = value {
-            let _ = second;
-            return Err("wasm target dynamic for-loops do not bind the index yet".to_string());
-        }
-        if self.boxed.contains(key) {
+        let (key_name, value_name) = match value {
+            Some(value) => (Some(key), value),
+            None => (None, key),
+        };
+        if let Some(name) = key_name {
+            if self.boxed.contains(name) || self.boxed.contains(value_name) {
+                return Err("wasm target cannot capture a dynamic loop variable yet".to_string());
+            }
+        } else if self.boxed.contains(value_name) {
             return Err("wasm target cannot capture a dynamic loop variable yet".to_string());
         }
         let source = self.builder.add_local(ValType::I32);
         let count = self.builder.add_local(ValType::I64);
         let index = self.builder.add_local(ValType::I64);
         let element = self.builder.add_local(ValType::I32);
+        let key_slot = self.builder.add_local(ValType::I32);
         self.emit_expr(iter)?;
         self.builder.push(Instr::Local(0x21, source));
         self.builder.push(Instr::Local(0x20, source));
@@ -4377,8 +4415,19 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Const(0x42, WVal::I64(0)));
         self.builder.push(Instr::Local(0x21, index));
         let mut scope = HashMap::new();
+        if key_name.is_some() {
+            scope.insert(
+                key.to_string(),
+                LocalSlot {
+                    ty: Ty::Dyn,
+                    slot: key_slot,
+                    boxed: false,
+                    capture: None,
+                },
+            );
+        }
         scope.insert(
-            key.to_string(),
+            value_name.to_string(),
             LocalSlot {
                 ty: Ty::Dyn,
                 slot: element,
@@ -4405,10 +4454,21 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Local(0x20, count));
         self.builder.push(Instr::Op(0x59));
         self.builder.push(Instr::BrIf(1));
-        self.builder.push(Instr::Local(0x20, source));
-        self.builder.push(Instr::Local(0x20, index));
-        self.builder.push(Instr::Call(DYN_ITER_AT));
-        self.builder.push(Instr::Local(0x21, element));
+        if key_name.is_some() {
+            self.builder.push(Instr::Local(0x20, source));
+            self.builder.push(Instr::Local(0x20, index));
+            self.builder.push(Instr::Call(DYN_KEY_AT));
+            self.builder.push(Instr::Local(0x21, key_slot));
+            self.builder.push(Instr::Local(0x20, source));
+            self.builder.push(Instr::Local(0x20, index));
+            self.builder.push(Instr::Call(DYN_VALUE_AT));
+            self.builder.push(Instr::Local(0x21, element));
+        } else {
+            self.builder.push(Instr::Local(0x20, source));
+            self.builder.push(Instr::Local(0x20, index));
+            self.builder.push(Instr::Call(DYN_ITER_AT));
+            self.builder.push(Instr::Local(0x21, element));
+        }
         self.push_continue_block();
         for stmt in body {
             self.emit_stmt(stmt)?;
@@ -12324,6 +12384,65 @@ impl<'a> Emitter<'a> {
                             .get(id as usize)
                             .cloned()
                             .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+                        if self.type_of(&args[0])? == Ty::Dyn {
+                            let cb_env = self.builder.add_local(ValType::I32);
+                            let source = self.builder.add_local(ValType::I32);
+                            let count = self.builder.add_local(ValType::I64);
+                            let index = self.builder.add_local(ValType::I64);
+                            let element = self.builder.add_local(ValType::I32);
+                            self.emit_expr(&args[1])?;
+                            self.builder.push(Instr::Local(0x21, cb_env));
+                            self.emit_expr(&args[0])?;
+                            self.builder.push(Instr::Local(0x21, source));
+                            self.builder.push(Instr::Local(0x20, source));
+                            self.builder.push(Instr::Call(DYN_LEN));
+                            self.builder.push(Instr::Local(0x21, count));
+                            self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                            self.builder.push(Instr::Local(0x21, index));
+                            self.builder.push(Instr::Block {
+                                opcode: 0x02,
+                                end: 0,
+                                else_at: 0,
+                                start: 0,
+                            });
+                            self.labels.push(0x02);
+                            self.builder.push(Instr::Block {
+                                opcode: 0x03,
+                                end: 0,
+                                else_at: 0,
+                                start: 0,
+                            });
+                            self.labels.push(0x03);
+                            self.builder.push(Instr::Local(0x20, index));
+                            self.builder.push(Instr::Local(0x20, count));
+                            self.builder.push(Instr::Op(0x59));
+                            self.builder.push(Instr::BrIf(1));
+                            self.builder.push(Instr::Local(0x20, source));
+                            self.builder.push(Instr::Local(0x20, index));
+                            self.builder.push(Instr::Call(DYN_ITER_AT));
+                            self.builder.push(Instr::Local(0x21, element));
+                            self.builder.push(Instr::Local(0x20, cb_env));
+                            self.builder.push(Instr::Local(0x20, element));
+                            self.builder.push(Instr::Call(sig.index));
+                            match sig.result {
+                                Some(Ty::Str) => {
+                                    self.builder.push(Instr::Op(0x1a));
+                                    self.builder.push(Instr::Op(0x1a));
+                                }
+                                Some(_) => self.builder.push(Instr::Op(0x1a)),
+                                None => {}
+                            }
+                            self.builder.push(Instr::Local(0x20, index));
+                            self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+                            self.builder.push(Instr::Op(0x7c));
+                            self.builder.push(Instr::Local(0x21, index));
+                            self.builder.push(Instr::Br(0));
+                            self.labels.pop();
+                            self.builder.push(Instr::Op(0x0b));
+                            self.labels.pop();
+                            self.builder.push(Instr::Op(0x0b));
+                            return Ok(());
+                        }
                         let cb_env = self.builder.add_local(ValType::I32);
                         self.emit_expr(&args[1])?;
                         self.builder.push(Instr::Local(0x21, cb_env));
@@ -14912,6 +15031,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "dyn_iter_at", i32_i64_to_i32_ty);
     builder.import_func("env", "dyn_array_alloc", i32_to_i32_ty);
     builder.import_func("env", "dyn_array_push", two_i32_void_ty);
+    builder.import_func("env", "dyn_value_at", i32_i64_to_i32_ty);
+    builder.import_func("env", "dyn_key_at", i32_i64_to_i32_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -16663,6 +16784,23 @@ mod tests {
             "[1,2]",
             "[1,2]",
             "[{\"a\":2}]",
+        ];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn dynamic_key_value_loops_and_each_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let arr = parse(env(\"BX_A\", \"[10,20]\"))\nfor i, v in arr { print(i); print(v); print(i + 1) }\nlet obj = parse(env(\"BX_O\", \"{\\\"a\\\":1,\\\"b\\\":2}\"))\nfor k, v in obj { print(k); print(v); print(k + \"!\") }\neach(arr, fn(v) { print(v) })\neach(arr, fn(v) { print(v * 2) })\nlet objs = parse(env(\"BX_OBJ\", \"[{\\\"a\\\":1},{\\\"a\\\":2}]\"))\neach(objs, fn(o) { print(o.a) })",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = [
+            "0", "10", "1", "1", "20", "2", "a", "1", "a!", "b", "2", "b!", "10", "20", "20", "40",
+            "1", "2",
         ];
         assert_eq!(
             strings,
