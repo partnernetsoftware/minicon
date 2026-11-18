@@ -1380,9 +1380,10 @@ impl Checker {
                     } else {
                         element
                     };
-                    if args.len() == 2
-                        && sig.result == Some(Ty::Dyn)
+                    if sig.result == Some(Ty::Dyn)
                         && sig.params == vec![Ty::Dyn, element]
+                        && (args.len() == 2
+                            || matches!(element, Ty::Int | Ty::Float | Ty::Str | Ty::Bool))
                     {
                         return Ok(Ty::Dyn);
                     }
@@ -2366,9 +2367,10 @@ impl Checker {
                         } else {
                             elem
                         };
-                        if args.len() == 3
-                            && sig.result == Some(Ty::Dyn)
+                        if sig.result == Some(Ty::Dyn)
                             && sig.params == vec![Ty::Dyn, elem]
+                            && (args.len() == 3
+                                || matches!(elem, Ty::Int | Ty::Float | Ty::Str | Ty::Bool))
                         {
                             return Ok(Ty::Dyn);
                         }
@@ -7468,7 +7470,7 @@ impl<'a> Emitter<'a> {
         &mut self,
         array: &Expr,
         callback: &Expr,
-        init: &Expr,
+        init: Option<&Expr>,
     ) -> Result<Ty, String> {
         let Ty::Func(id) = self.type_of(callback)? else {
             return Err("wasm target reduce() needs a function literal callback".to_string());
@@ -7495,13 +7497,53 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Local(0x21, source));
         self.emit_expr(callback)?;
         self.builder.push(Instr::Local(0x21, cb_env));
-        let init_ty = self.type_of(init)?;
-        self.emit_box_dyn(init, init_ty)?;
-        self.builder.push(Instr::Local(0x21, acc));
         self.builder.push(Instr::Local(0x20, source));
         self.builder.push(Instr::Mem(0x28, 2, 0));
         self.builder.push(Instr::Local(0x21, count));
-        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+        match init {
+            Some(init) => {
+                let init_ty = self.type_of(init)?;
+                self.emit_box_dyn(init, init_ty)?;
+                self.builder.push(Instr::Local(0x21, acc));
+                self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+            }
+            None => {
+                // The VM seeds the accumulator with the first element and needs
+                // at least one element when no init value is given.
+                self.builder.push(Instr::Local(0x20, count));
+                self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                self.builder.push(Instr::Op(0x46));
+                self.builder.push(Instr::Block {
+                    opcode: 0x04,
+                    end: 0,
+                    else_at: 0,
+                    start: 0,
+                });
+                self.labels.push(0x04);
+                self.emit_panic("reduce() of an empty array needs an initial value");
+                self.labels.pop();
+                self.builder.push(Instr::Op(0x0b));
+                let kind = match elem {
+                    Ty::Int => 4,
+                    Ty::Str => 5,
+                    Ty::Float => 6,
+                    Ty::Bool => 11,
+                    other => {
+                        return Err(format!(
+                            "wasm target dynamic reduce needs scalar elements, got {}",
+                            ty_name(other)
+                        ))
+                    }
+                };
+                self.builder.push(Instr::Const(0x41, WVal::I32(kind)));
+                self.builder.push(Instr::Local(0x20, source));
+                self.builder.push(Instr::Call(DYN_FROM_ARRAY));
+                self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                self.builder.push(Instr::Call(DYN_INDEX));
+                self.builder.push(Instr::Local(0x21, acc));
+                self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+            }
+        }
         self.builder.push(Instr::Local(0x21, index));
         self.builder.push(Instr::Block {
             opcode: 0x02,
@@ -10860,12 +10902,16 @@ impl<'a> Emitter<'a> {
                     if self.type_of(object)? == Ty::Dyn {
                         return self.emit_dyn_reduce(object, &args[0], args.get(1));
                     }
-                    if let Some(init) = args.get(1) {
-                        let dynamic_acc = self.type_of(init)? == Ty::Dyn
-                            || self.map_callback_result(&args[0])? == Some(Ty::Dyn);
-                        if dynamic_acc {
-                            return self.emit_reduce_static_dyn_init(object, &args[0], init);
-                        }
+                    let dynamic_acc = self
+                        .map_callback_result(&args[0])?
+                        .map(|result| result == Ty::Dyn)
+                        .unwrap_or(false)
+                        || match args.get(1) {
+                            Some(init) => self.type_of(init)? == Ty::Dyn,
+                            None => false,
+                        };
+                    if dynamic_acc {
+                        return self.emit_reduce_static_dyn_init(object, &args[0], args.get(1));
                     }
                     return self.emit_reduce(object, &args[0], args.get(1));
                 }
@@ -12657,12 +12703,20 @@ impl<'a> Emitter<'a> {
                         if self.type_of(&args[0])? == Ty::Dyn {
                             return self.emit_dyn_reduce(&args[0], &args[1], args.get(2));
                         }
-                        if let Some(init) = args.get(2) {
-                            let dynamic_acc = self.type_of(init)? == Ty::Dyn
-                                || self.map_callback_result(&args[1])? == Some(Ty::Dyn);
-                            if dynamic_acc {
-                                return self.emit_reduce_static_dyn_init(&args[0], &args[1], init);
-                            }
+                        let dynamic_acc = self
+                            .map_callback_result(&args[1])?
+                            .map(|result| result == Ty::Dyn)
+                            .unwrap_or(false)
+                            || match args.get(2) {
+                                Some(init) => self.type_of(init)? == Ty::Dyn,
+                                None => false,
+                            };
+                        if dynamic_acc {
+                            return self.emit_reduce_static_dyn_init(
+                                &args[0],
+                                &args[1],
+                                args.get(2),
+                            );
                         }
                         return self.emit_reduce(&args[0], &args[1], args.get(2));
                     }
@@ -18980,6 +19034,20 @@ mod tests {
         );
         assert!(numbers.is_empty());
         let expected = ["x2", "0x2", "[0,2]", "x2"];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn no_init_mixed_reduce_matches_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "print(reduce([1, 2], fn(a, b) { if (b == 2) { return a + \"y\" }\n  return a + b }))\nprint([1, 2].reduce(fn(a, b) { if (b == 2) { return a + \"y\" }\n  return a + b }))\nprint(reduce([1.5, 2], fn(a, b) { if (b == 2) { return a + \"f\" }\n  return a + b }))\nprint(reduce([\"a\", \"b\"], fn(a, b) { if (b == \"b\") { return a }\n  return [a, b] }))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = ["1y", "1y", "1.5f", "a"];
         assert_eq!(
             strings,
             expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
