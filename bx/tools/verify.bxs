@@ -228,7 +228,7 @@ test("wasm read/write/which aliases", fn() {
   let built3 = exec([bin, "build", "--wasm", dir + "/wasm-alias3.bxs", "-o", dir + "/wasm-alias3.wasm"])
   assert(built3.code == 0, "build failed: " + built3.err)
   let ran3 = exec([bin, "run", dir + "/wasm-alias3.wasm"])
-  assert(ran3.code == 0 && ran3.out.trim() == "0\np", "out=" + json(ran3.out))
+  assert(ran3.code == 0 && ran3.out.trim() == "null\np", "out=" + json(ran3.out))
 })
 test("wasm collection builtins", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-builtins2.bxs", "-o", dir + "/wasm-builtins2.wasm"])
@@ -627,7 +627,7 @@ test("wasm filesystem ABI round-trips", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-fs.bxs", "-o", dir + "/wasm-fs.wasm"])
   assert(built.code == 0, "build failed: " + built.err)
   let ran = exec([bin, "run", dir + "/wasm-fs.wasm"], { cwd: dir })
-  assert(ran.code == 0 && ran.out.trim() == "0\npayload", "got " + ran.out + " " + ran.err)
+  assert(ran.code == 0 && ran.out.trim() == "null\npayload", "got " + ran.out + " " + ran.err)
 })
 test("wasm modules receive argv", fn() {
   let built = exec([bin, "build", "--wasm", dir + "/wasm-args.bxs", "-o", dir + "/wasm-args.wasm"])

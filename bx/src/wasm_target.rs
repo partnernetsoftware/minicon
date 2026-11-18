@@ -1882,20 +1882,20 @@ impl Checker {
                         if self.infer(&args[0])? != Ty::Str || self.infer(&args[1])? != Ty::Str {
                             return Err("wasm target write(path, data) needs strings".to_string());
                         }
-                        return Ok(Ty::Int);
+                        return Ok(Ty::Null);
                     }
 
                     if name == "append" && args.len() == 2 {
                         if self.infer(&args[0])? != Ty::Str || self.infer(&args[1])? != Ty::Str {
                             return Err("wasm target append(path, text) needs strings".to_string());
                         }
-                        return Ok(Ty::Int);
+                        return Ok(Ty::Null);
                     }
                     if name == "remove" && args.len() == 1 {
                         if self.infer(&args[0])? != Ty::Str {
                             return Err("wasm target remove(path) needs a string".to_string());
                         }
-                        return Ok(Ty::Int);
+                        return Ok(Ty::Null);
                     }
                     if name == "list" && args.len() == 1 {
                         if self.infer(&args[0])? != Ty::Str {
@@ -1921,7 +1921,7 @@ impl Checker {
                                 "wasm target write_file(path, data) needs strings".to_string()
                             );
                         }
-                        return Ok(Ty::Int);
+                        return Ok(Ty::Null);
                     }
                     if name == "performance_now" && args.is_empty() {
                         return Ok(Ty::Float);
@@ -2925,7 +2925,7 @@ impl Checker {
                         if self.infer(&args[0])? != Ty::Str {
                             return Err("wasm target mkdir(path) takes a string".to_string());
                         }
-                        return Ok(Ty::Int);
+                        return Ok(Ty::Null);
                     }
 
                     if matches!(name.as_str(), "starts_with" | "ends_with") && args.len() == 2 {
@@ -4656,7 +4656,11 @@ impl<'a> Emitter<'a> {
                 self.builder.push(Instr::Mem(0x36, 2, 16));
             }
             Ty::Null => {
+                // Evaluate the expression for its side effects, then store a null
+                // cell (emit_box_dyn does not evaluate null literals itself).
                 self.builder.push(Instr::Local(0x20, record));
+                self.emit_expr(value)?;
+                self.builder.push(Instr::Op(0x1a));
                 self.emit_box_dyn(value, Ty::Null)?;
                 self.builder.push(Instr::Mem(0x36, 2, 16));
             }
@@ -8417,15 +8421,14 @@ impl<'a> Emitter<'a> {
                         "str" | "json" => Some(Ty::Str),
                         "int" => Some(Ty::Int),
                         "len" => Some(Ty::Int),
-                        "argc" | "run" | "capture" | "write_file" | "append" | "remove" => {
-                            Some(Ty::Int)
-                        }
+                        "argc" | "run" | "capture" => Some(Ty::Int),
+                        "write" | "write_file" | "append" | "remove" | "mkdir" => Some(Ty::Null),
                         "arg" | "read_file" | "basename" | "dirname" => Some(Ty::Str),
                         "map_new" => Some(Ty::Map),
                         "map_get" | "map_has" | "map_len" | "file_exists" => Some(Ty::Int),
                         "exists" | "starts_with" | "ends_with" | "contains" => Some(Ty::Bool),
                         "list" => Some(Ty::ArrStr),
-                        "now" | "mkdir" | "eprint" => Some(Ty::Int),
+                        "now" | "eprint" => Some(Ty::Int),
                         "cwd" | "env" => Some(Ty::Str),
                         "performance_now" => Some(Ty::Float),
                         "gl_create" | "gl_pixel" | "gl_png" => Some(Ty::Int),
@@ -12050,14 +12053,15 @@ impl<'a> Emitter<'a> {
                             self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
                             self.emit_soft_io_check(self.temp(ARG_TMP));
                             self.builder.push(Instr::Const(0x41, WVal::I32(0)));
-                            self.builder.push(Instr::Op(0xac));
-                            return Ok(Ty::Int);
+                            return Ok(Ty::Null);
                         }
                         self.emit_str(&args[0])?;
                         self.emit_str(&args[1])?;
-                        self.builder.push(Instr::Call(5));
-                        self.builder.push(Instr::Op(0xac));
-                        return Ok(Ty::Int);
+                        self.builder.push(Instr::Call(WRITE_FILE_SOFT));
+                        self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
+                        self.emit_soft_io_panic(self.temp(ARG_TMP));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                        return Ok(Ty::Null);
                     }
 
                     if name == "which" && args.len() == 1 {
@@ -12098,14 +12102,15 @@ impl<'a> Emitter<'a> {
                             self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
                             self.emit_soft_io_check(self.temp(ARG_TMP));
                             self.builder.push(Instr::Const(0x41, WVal::I32(0)));
-                            self.builder.push(Instr::Op(0xac));
-                            return Ok(Ty::Int);
+                            return Ok(Ty::Null);
                         }
                         self.emit_str(&args[0])?;
                         self.emit_str(&args[1])?;
-                        self.builder.push(Instr::Call(5));
-                        self.builder.push(Instr::Op(0xac));
-                        return Ok(Ty::Int);
+                        self.builder.push(Instr::Call(WRITE_FILE_SOFT));
+                        self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
+                        self.emit_soft_io_panic(self.temp(ARG_TMP));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                        return Ok(Ty::Null);
                     }
                     if name == "eprint" && !args.is_empty() {
                         self.emit_joined_display(args)?;
@@ -12122,28 +12127,30 @@ impl<'a> Emitter<'a> {
                             self.builder.push(Instr::Call(MKDIR_SOFT));
                             self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
                             self.emit_soft_io_check(self.temp(ARG_TMP));
-                            self.builder.push(Instr::Const(0x42, WVal::I64(0)));
-                            return Ok(Ty::Int);
+                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                            return Ok(Ty::Null);
                         }
                         self.emit_str(&args[0])?;
                         self.builder.push(Instr::Call(MKDIR_SOFT));
                         self.builder.push(Instr::Local(0x21, self.temp(ARG_TMP)));
                         self.emit_soft_io_panic(self.temp(ARG_TMP));
-                        self.builder.push(Instr::Const(0x42, WVal::I64(0)));
-                        return Ok(Ty::Int);
+                        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                        return Ok(Ty::Null);
                     }
                     if name == "append" && args.len() == 2 {
                         self.emit_str(&args[0])?;
                         self.emit_str(&args[1])?;
                         self.builder.push(Instr::Call(APPEND_FILE));
-                        self.builder.push(Instr::Op(0xac));
-                        return Ok(Ty::Int);
+                        self.builder.push(Instr::Op(0x1a));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                        return Ok(Ty::Null);
                     }
                     if name == "remove" && args.len() == 1 {
                         self.emit_str(&args[0])?;
                         self.builder.push(Instr::Call(REMOVE_FILE));
-                        self.builder.push(Instr::Op(0xac));
-                        return Ok(Ty::Int);
+                        self.builder.push(Instr::Op(0x1a));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                        return Ok(Ty::Null);
                     }
                     if name == "list" && args.len() == 1 {
                         if self.type_of(&args[0])? != Ty::Str {
@@ -12233,8 +12240,9 @@ impl<'a> Emitter<'a> {
                     if name == "remove" && args.len() == 1 {
                         self.emit_str(&args[0])?;
                         self.builder.push(Instr::Call(REMOVE_FILE));
-                        self.builder.push(Instr::Op(0xac));
-                        return Ok(Ty::Int);
+                        self.builder.push(Instr::Op(0x1a));
+                        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                        return Ok(Ty::Null);
                     }
                     if name == "list" && args.len() == 1 {
                         if self.type_of(&args[0])? != Ty::Str {
@@ -15382,9 +15390,11 @@ impl<'a> InferState<'a> {
                     return self.results.get(*index).copied().flatten();
                 }
                 match name.as_str() {
-                    "len" | "argc" | "write_file" | "write" | "run" | "gl_pixel" | "gl_png"
-                    | "int" | "abs" | "floor" | "ceil" | "round" | "sum" | "get" | "now"
-                    | "sleep" | "mkdir" | "eprint" => Some(Ty::Int),
+                    "len" | "argc" | "run" | "gl_pixel" | "gl_png" | "int" | "abs" | "floor"
+                    | "ceil" | "round" | "sum" | "get" | "now" | "sleep" | "eprint" => {
+                        Some(Ty::Int)
+                    }
+                    "write" | "write_file" | "append" | "remove" | "mkdir" => Some(Ty::Null),
                     "reduce" => args
                         .get(2)
                         .and_then(|init| self.soft(init, locals))
@@ -16239,8 +16249,8 @@ impl<'a> CaptureWalker<'a> {
                 "str" => Ty::Str,
                 "int" => Ty::Int,
                 "float" => Ty::Float,
-                "len" | "argc" | "write_file" | "run" | "now" | "sleep" | "mkdir" | "eprint"
-                | "get" | "sum" => Ty::Int,
+                "len" | "argc" | "run" | "now" | "sleep" | "eprint" | "get" | "sum" => Ty::Int,
+                "write" | "write_file" | "append" | "remove" | "mkdir" => Ty::Null,
                 "reduce" => args
                     .get(2)
                     .map(|init| self.ty_of(init))
@@ -17770,8 +17780,8 @@ mod tests {
         );
         let (numbers, strings) = run_with_argv(&source, &[]);
         let _ = std::fs::remove_file(&path);
-        assert_eq!(numbers, vec![0]);
-        assert_eq!(strings, vec!["payload".to_string()]);
+        assert!(numbers.is_empty());
+        assert_eq!(strings, vec!["null".to_string(), "payload".to_string()]);
     }
 
     #[test]
@@ -17889,10 +17899,14 @@ mod tests {
             .join("child.txt")
             .to_string_lossy()
             .replace('\\', "/");
-        let source = format!("print(write_file(\"{}\", \"d\"))", bad_path);
-        let (numbers, _) = run_with_argv(&source, &[]);
+        let source = format!(
+            "let r = attempt(fn() {{ return write_file(\"{}\", \"d\") }})\nprint(r.ok)",
+            bad_path
+        );
+        let (numbers, strings) = run_with_argv(&source, &[]);
         let _ = std::fs::remove_file(&blocker);
-        assert_eq!(numbers, vec![-1]);
+        assert!(numbers.is_empty());
+        assert_eq!(strings, vec!["false".to_string()]);
     }
 
     #[test]
@@ -19664,8 +19678,16 @@ mod tests {
         );
         let (numbers, strings) = run_with_argv(&source, &[]);
         let _ = std::fs::remove_dir_all(&dir);
-        assert_eq!(numbers, vec![0, 0]);
-        assert_eq!(strings, vec!["true".to_string(), "false".to_string()]);
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec![
+                "null".to_string(),
+                "true".to_string(),
+                "null".to_string(),
+                "false".to_string()
+            ]
+        );
     }
 
     #[test]
@@ -19899,8 +19921,11 @@ mod tests {
         );
         let (numbers, strings) = run_with_argv(&source, &[]);
         let _ = std::fs::remove_file(&path);
-        assert_eq!(numbers, vec![0, 0]);
-        assert_eq!(strings, vec!["payload".to_string(), "str".to_string()]);
+        assert_eq!(numbers, vec![0]);
+        assert_eq!(
+            strings,
+            vec!["null".to_string(), "payload".to_string(), "str".to_string()]
+        );
     }
 
     #[test]
