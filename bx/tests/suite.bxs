@@ -975,7 +975,7 @@ if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim(
   casesFail += 1
   failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
 }
-write(artDir + "/wasm-aliaspush.bxs", 'let a = [1, 2]\nlet b = a\npush(b, 3)\nprint(a)\nprint(b)\nlet r = {x: 1}\nlet r2 = r\nr2.x = 5\nprint(r)\nprint(r2)\n')
+write(artDir + "/wasm-aliaspush.bxs", 'let a = [1, 2]\nlet b = a\npush(b, 3)\nprint(a)\nprint(b)\nlet r = {x: 1}\nlet r2 = r\nr2.x = 5\nprint(r)\nprint(r2)\nlet a2 = [1, 2]\nlet b2 = a2\nlet c = [9]\npush(a2, 3)\nprint(a2)\nprint(b2)\nprint(c)\n')
 let wasmAliasPush = exec([BX, "build", "--wasm", artDir + "/wasm-aliaspush.bxs", "-o", artDir + "/wasm-aliaspush.wasm"])
 let wasmAliasPushRun = exec([BX, "run", artDir + "/wasm-aliaspush.wasm"])
 let wasmAliasPushVm = exec([BX, "run", artDir + "/wasm-aliaspush.bxs"])
@@ -1299,7 +1299,7 @@ if (wasmDynMixed.code == 0 && wasmDynMixedRun.out == wasmDynMixedVm.out && wasmD
   failures.push("wasm mixed dynamic record fields\n    wasm=" + json(wasmDynMixedRun.out) + " vm=" + json(wasmDynMixedVm.out) + " err=" + json(wasmDynMixedRun.err))
 }
 write(artDir + "/dynstr.json", json("abc"))
-write(artDir + "/wasm-aliaspush.bxs", 'let a = [1, 2]\nlet b = a\npush(b, 3)\nprint(a)\nprint(b)\nlet r = {x: 1}\nlet r2 = r\nr2.x = 5\nprint(r)\nprint(r2)\n')
+write(artDir + "/wasm-aliaspush.bxs", 'let a = [1, 2]\nlet b = a\npush(b, 3)\nprint(a)\nprint(b)\nlet r = {x: 1}\nlet r2 = r\nr2.x = 5\nprint(r)\nprint(r2)\nlet a2 = [1, 2]\nlet b2 = a2\nlet c = [9]\npush(a2, 3)\nprint(a2)\nprint(b2)\nprint(c)\n')
 let wasmAliasPush = exec([BX, "build", "--wasm", artDir + "/wasm-aliaspush.bxs", "-o", artDir + "/wasm-aliaspush.wasm"])
 let wasmAliasPushRun = exec([BX, "run", artDir + "/wasm-aliaspush.wasm"])
 let wasmAliasPushVm = exec([BX, "run", artDir + "/wasm-aliaspush.bxs"])

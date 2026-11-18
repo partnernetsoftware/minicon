@@ -4000,11 +4000,47 @@ struct Emitter<'a> {
     boxed: std::collections::HashSet<String>,
     /// Capture analysis shared by all emission (literal creation needs it).
     analysis: &'a CaptureAnalysis,
+    /// Compile-time alias groups for array/record pointer bindings.
+    alias_groups: Vec<Vec<String>>,
+    alias_of: HashMap<String, usize>,
 }
 
 impl Emitter<'_> {
     fn temp(&self, offset: u32) -> u32 {
         self.temp_base + offset
+    }
+
+    /// Track that `name` now refers to the same storage as `source` (or a fresh
+    /// storage). Used to keep aliases in sync when an array is reallocated.
+    fn alias_attach(&mut self, name: &str, source: Option<&str>) {
+        self.alias_detach(name);
+        let existing = source.and_then(|src| self.alias_of.get(src).copied());
+        match existing {
+            Some(group) => {
+                if !self.alias_groups[group].iter().any(|known| known == name) {
+                    self.alias_groups[group].push(name.to_string());
+                }
+                self.alias_of.insert(name.to_string(), group);
+            }
+            None => {
+                self.alias_groups.push(vec![name.to_string()]);
+                let group = self.alias_groups.len() - 1;
+                self.alias_of.insert(name.to_string(), group);
+            }
+        }
+    }
+
+    fn alias_detach(&mut self, name: &str) {
+        if let Some(group) = self.alias_of.remove(name) {
+            self.alias_groups[group].retain(|known| known != name);
+        }
+    }
+
+    fn alias_names(&self, name: &str) -> Vec<String> {
+        match self.alias_of.get(name).copied() {
+            Some(group) => self.alias_groups[group].clone(),
+            None => vec![name.to_string()],
+        }
     }
 }
 
@@ -7422,8 +7458,10 @@ impl<'a> Emitter<'a> {
         Self::emit_push_store(
             self, element, addr_tmp, value_ptr, value_len, value_f, value_i64,
         );
-        self.builder.push(Instr::Local(0x20, new_tmp));
-        self.emit_store(name)?;
+        for alias in self.alias_names(name) {
+            self.builder.push(Instr::Local(0x20, new_tmp));
+            self.emit_store(&alias)?;
+        }
         self.labels.pop();
         self.builder.push(Instr::Op(0x0b));
         Ok(())
@@ -13946,6 +13984,24 @@ impl<'a> Emitter<'a> {
                         }
                     }
                 };
+                let alias_src = match init {
+                    Some(Expr::Ident(src)) => Some(src.clone()),
+                    _ => None,
+                };
+                if matches!(
+                    ty,
+                    Ty::Arr
+                        | Ty::ArrStr
+                        | Ty::ArrBool
+                        | Ty::ArrObj(_)
+                        | Ty::ArrArr
+                        | Ty::ArrF
+                        | Ty::ArrStrArr
+                ) {
+                    self.alias_attach(name, alias_src.as_deref());
+                } else {
+                    self.alias_detach(name);
+                }
                 if self.fn_mode {
                     let slot = match ty {
                         Ty::Int => self.builder.add_local(ValType::I64),
@@ -14173,7 +14229,25 @@ impl<'a> Emitter<'a> {
                 let Expr::Ident(name) = &**target else {
                     return Err("wasm target supports assignment to a global name only".to_string());
                 };
+                let alias_src = match &**value {
+                    Expr::Ident(src) => Some(src.clone()),
+                    _ => None,
+                };
                 let ty = self.emit_expr(value)?;
+                if matches!(
+                    ty,
+                    Ty::Arr
+                        | Ty::ArrStr
+                        | Ty::ArrBool
+                        | Ty::ArrObj(_)
+                        | Ty::ArrArr
+                        | Ty::ArrF
+                        | Ty::ArrStrArr
+                ) {
+                    self.alias_attach(name, alias_src.as_deref());
+                } else {
+                    self.alias_detach(name);
+                }
                 if self.local_of(name).is_some() {
                     self.emit_store(name)?;
                     return Ok(());
@@ -17220,6 +17294,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             env_slot: None,
             boxed: analysis.start_boxed.clone(),
             analysis: &analysis,
+            alias_groups: Vec::new(),
+            alias_of: HashMap::new(),
         };
         for stmt in &stmts {
             emitter.emit_stmt(stmt)?;
@@ -17259,6 +17335,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                 env_slot: None,
                 boxed: analysis.fn_boxed.get(&slot).cloned().unwrap_or_default(),
                 analysis: &analysis,
+                alias_groups: Vec::new(),
+                alias_of: HashMap::new(),
             };
             let mut used = 0u32;
             for (param, ty) in decl.params.iter().zip(sig.params.iter()) {
@@ -17349,6 +17427,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                     .cloned()
                     .unwrap_or_default(),
                 analysis: &analysis,
+                alias_groups: Vec::new(),
+                alias_of: HashMap::new(),
             };
             let mut used = 1u32;
             for (param, ty) in decl.params.iter().zip(sig.params.iter()) {
@@ -19653,7 +19733,7 @@ mod tests {
     #[test]
     fn array_push_grows_aliases_in_place_when_possible() {
         let (numbers, strings) = run_with_argv(
-            "let a = [1, 2]\nlet b = a\npush(b, 3)\nprint(a)\nprint(b)\nlet r = {x: 1}\nlet r2 = r\nr2.x = 5\nprint(r)\nprint(r2)",
+            "let a = [1, 2]\nlet b = a\npush(b, 3)\nprint(a)\nprint(b)\nlet r = {x: 1}\nlet r2 = r\nr2.x = 5\nprint(r)\nprint(r2)\nlet a2 = [1, 2]\nlet b2 = a2\nlet c = [9]\npush(a2, 3)\nprint(a2)\nprint(b2)\nprint(c)",
             &[],
         );
         assert!(numbers.is_empty());
@@ -19663,7 +19743,10 @@ mod tests {
                 "[1,2,3]".to_string(),
                 "[1,2,3]".to_string(),
                 "{\"x\":5}".to_string(),
-                "{\"x\":5}".to_string()
+                "{\"x\":5}".to_string(),
+                "[1,2,3]".to_string(),
+                "[1,2,3]".to_string(),
+                "[9]".to_string()
             ]
         );
     }
