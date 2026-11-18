@@ -1278,6 +1278,41 @@ fn dyn_set_member_cell(
     write_dyn_cell(memory, object, 6, count + 1, base as u64);
     Ok(())
 }
+/// Dynamic `keys(object)`: a dynamic array of boxed key strings.
+fn dyn_keys_cell(memory: &mut [u8], next_dyn: &mut u32, cell: usize) -> Result<usize, String> {
+    let (tag, count, payload) = dyn_tag(memory, cell);
+    if tag != 6 {
+        return Err("keys() on a dynamic value needs a dynamic object".to_string());
+    }
+    let base = alloc_dyn_bytes(next_dyn, (count as usize).max(1) * 16)?;
+    for index in 0..count as usize {
+        let entry = payload as usize + index * 12;
+        let key_ptr = u32::from_le_bytes(memory[entry..entry + 4].try_into().unwrap());
+        let key_len = u32::from_le_bytes(memory[entry + 4..entry + 8].try_into().unwrap());
+        let slot = base + index * 16;
+        write_dyn_cell(memory, slot, 4, key_len, u64::from(key_ptr));
+    }
+    let out = alloc_dyn_cell(next_dyn)?;
+    write_dyn_cell(memory, out, 5, count, base as u64);
+    Ok(out)
+}
+
+/// Dynamic `values(object)`: a dynamic array of the entry value cells.
+fn dyn_values_cell(memory: &mut [u8], next_dyn: &mut u32, cell: usize) -> Result<usize, String> {
+    let (tag, count, payload) = dyn_tag(memory, cell);
+    if tag != 6 {
+        return Err("values() on a dynamic value needs a dynamic object".to_string());
+    }
+    let base = alloc_dyn_bytes(next_dyn, (count as usize).max(1) * 16)?;
+    for index in 0..count as usize {
+        let entry = payload as usize + index * 12;
+        let value = u32::from_le_bytes(memory[entry + 8..entry + 12].try_into().unwrap());
+        memory.copy_within(value as usize..value as usize + 16, base + index * 16);
+    }
+    let out = alloc_dyn_cell(next_dyn)?;
+    write_dyn_cell(memory, out, 5, count, base as u64);
+    Ok(out)
+}
 /// Dynamic `get(value, key)`: array index for numeric keys, object member for
 /// string keys; missing entries return the shared null cell.
 fn dyn_get_cell(
@@ -3229,6 +3264,22 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     _ => return Err("env.dyn_slice expects (i32, i64, i64)".to_string()),
                 };
                 let out = dyn_slice_cell(memory, &mut self.next_dyn, cell, start, end)?;
+                Ok(vec![WVal::I32(out as i32)])
+            }
+            ("env", "dyn_keys") => {
+                let cell = match args.first() {
+                    Some(WVal::I32(cell)) => *cell as usize,
+                    _ => return Err("env.dyn_keys expects one i32".to_string()),
+                };
+                let out = dyn_keys_cell(memory, &mut self.next_dyn, cell)?;
+                Ok(vec![WVal::I32(out as i32)])
+            }
+            ("env", "dyn_values") => {
+                let cell = match args.first() {
+                    Some(WVal::I32(cell)) => *cell as usize,
+                    _ => return Err("env.dyn_values expects one i32".to_string()),
+                };
+                let out = dyn_values_cell(memory, &mut self.next_dyn, cell)?;
                 Ok(vec![WVal::I32(out as i32)])
             }
             ("env", "dyn_parse") => {

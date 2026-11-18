@@ -1072,6 +1072,25 @@ impl Checker {
                     }
                     return Ok(Ty::Dyn);
                 }
+                if matches!(key.as_str(), "keys" | "values")
+                    && args.is_empty()
+                    && self.infer(object)? == Ty::Dyn
+                {
+                    return Ok(Ty::Dyn);
+                }
+                if key == "has" && args.len() == 1 && self.infer(object)? == Ty::Dyn {
+                    self.infer(&args[0])?;
+                    return Ok(Ty::Bool);
+                }
+                if key == "get"
+                    && (args.len() == 1 || args.len() == 2)
+                    && self.infer(object)? == Ty::Dyn
+                {
+                    for arg in args {
+                        self.infer(arg)?;
+                    }
+                    return Ok(Ty::Dyn);
+                }
                 if key == "pop" && args.is_empty() {
                     let base = self.infer(object)?;
                     if base == Ty::Dyn {
@@ -2298,12 +2317,18 @@ impl Checker {
                         return Ok(acc);
                     }
                     if name == "keys" && args.len() == 1 {
+                        if self.infer(&args[0])? == Ty::Dyn {
+                            return Ok(Ty::Dyn);
+                        }
                         if matches!(self.infer(&args[0])?, Ty::Obj(_) | Ty::Map) {
                             return Ok(Ty::ArrStr);
                         }
                         return Err("wasm target keys() takes a record or map".to_string());
                     }
                     if name == "values" && args.len() == 1 {
+                        if self.infer(&args[0])? == Ty::Dyn {
+                            return Ok(Ty::Dyn);
+                        }
                         if matches!(self.infer(&args[0])?, Ty::Obj(_) | Ty::Map) {
                             return Ok(Ty::Arr);
                         }
@@ -3610,7 +3635,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 137;
+const IMPORT_COUNT: u32 = 139;
 const PRINT_UTF8: u32 = 1;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
@@ -3736,6 +3761,8 @@ const DYN_SET_AT: u32 = 133;
 const DYN_PUSH: u32 = 134;
 const DYN_POP: u32 = 135;
 const DYN_SET_MEMBER: u32 = 136;
+const DYN_KEYS: u32 = 137;
+const DYN_VALUES: u32 = 138;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -10631,6 +10658,40 @@ impl<'a> Emitter<'a> {
                     self.builder.push(Instr::Call(DYN_POP));
                     return Ok(Ty::Dyn);
                 }
+                if matches!(key.as_str(), "keys" | "values")
+                    && args.is_empty()
+                    && self.type_of(object)? == Ty::Dyn
+                {
+                    self.emit_expr(object)?;
+                    let import = if key == "keys" { DYN_KEYS } else { DYN_VALUES };
+                    self.builder.push(Instr::Call(import));
+                    return Ok(Ty::Dyn);
+                }
+                if key == "has" && args.len() == 1 && self.type_of(object)? == Ty::Dyn {
+                    let key_ty = self.type_of(&args[0])?;
+                    self.emit_expr(object)?;
+                    self.emit_box_dyn(&args[0], key_ty)?;
+                    self.builder.push(Instr::Call(DYN_HAS));
+                    return Ok(Ty::Bool);
+                }
+                if key == "get"
+                    && (args.len() == 1 || args.len() == 2)
+                    && self.type_of(object)? == Ty::Dyn
+                {
+                    let key_ty = self.type_of(&args[0])?;
+                    self.emit_expr(object)?;
+                    self.emit_box_dyn(&args[0], key_ty)?;
+                    match args.get(1) {
+                        Some(default) => {
+                            self.emit_box_dyn(default, self.type_of(default)?)?;
+                            self.builder.push(Instr::Call(DYN_GET_DEFAULT));
+                        }
+                        None => {
+                            self.builder.push(Instr::Call(DYN_GET));
+                        }
+                    }
+                    return Ok(Ty::Dyn);
+                }
                 if key == "pop" && args.is_empty() {
                     let Expr::Ident(array) = &**object else {
                         return Err("wasm target pops a named array variable only".to_string());
@@ -12455,6 +12516,11 @@ impl<'a> Emitter<'a> {
                         return Ok(Ty::ArrStr);
                     }
                     if name == "keys" && args.len() == 1 {
+                        if self.type_of(&args[0])? == Ty::Dyn {
+                            self.emit_expr(&args[0])?;
+                            self.builder.push(Instr::Call(DYN_KEYS));
+                            return Ok(Ty::Dyn);
+                        }
                         let Ty::Obj(shape) = self.type_of(&args[0])? else {
                             return Err("wasm target keys() takes a record".to_string());
                         };
@@ -12612,6 +12678,11 @@ impl<'a> Emitter<'a> {
                         return Ok(Ty::Arr);
                     }
                     if name == "values" && args.len() == 1 {
+                        if self.type_of(&args[0])? == Ty::Dyn {
+                            self.emit_expr(&args[0])?;
+                            self.builder.push(Instr::Call(DYN_VALUES));
+                            return Ok(Ty::Dyn);
+                        }
                         let Ty::Obj(shape) = self.type_of(&args[0])? else {
                             return Err("wasm target values() takes a record".to_string());
                         };
@@ -16485,6 +16556,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "dyn_push", which_ty);
     builder.import_func("env", "dyn_pop", i32_to_i32_ty);
     builder.import_func("env", "dyn_set_member", three_i32_void_ty);
+    builder.import_func("env", "dyn_keys", i32_to_i32_ty);
+    builder.import_func("env", "dyn_values", i32_to_i32_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -18637,6 +18710,31 @@ mod tests {
         );
         assert!(numbers.is_empty());
         let expected = ["6", "6", "6", "13", "13", "13", "3"];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn dynamic_object_keys_values_has_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let o = parse(env(\"X\", \"{\\\"a\\\":1,\\\"b\\\":2}\"))\nprint(keys(o))\nprint(values(o))\nprint(join(keys(o), \",\"))\nprint(reverse(keys(o)))\nprint(json(values(o)))\nlet v = parse(env(\"X\", \"{\\\"a\\\":1}\"))\nprint(v.get(\"a\"))\nprint(v.get(\"b\", 7))\nprint(v.has(\"a\"))\nprint(v.len())\nprint(v.keys())\nprint(json(v.values()))",
+            &[],
+        );
+        assert_eq!(numbers, vec![1i64]);
+        let expected = [
+            "[\"a\",\"b\"]",
+            "[1,2]",
+            "a,b",
+            "[\"b\",\"a\"]",
+            "[1,2]",
+            "1",
+            "7",
+            "true",
+            "[\"a\"]",
+            "[1]",
+        ];
         assert_eq!(
             strings,
             expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()

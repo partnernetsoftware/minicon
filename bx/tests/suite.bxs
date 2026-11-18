@@ -975,6 +975,16 @@ if (wasmUse.code == 0 && wasmUseRun.out == wasmUseVm.out && wasmUseRun.out.trim(
   casesFail += 1
   failures.push("wasm use expansion\n    wasm=" + json(wasmUseRun.out) + " vm=" + json(wasmUseVm.out) + " err=" + json(wasmUse.err))
 }
+write(artDir + "/wasm-dynkeys.bxs", 'let o = parse("{" + json("a") + ":1," + json("b") + ":2}")\nprint(keys(o))\nprint(values(o))\nprint(join(keys(o), ","))\nprint(reverse(keys(o)))\nlet v = parse("{" + json("a") + ":1}")\nprint(v.get("a"))\nprint(v.get("b", 7))\nprint(str(v.has("a")))\nprint(v.keys())\nprint(json(v.values()))\n')
+let wasmDynKeys = exec([BX, "build", "--wasm", artDir + "/wasm-dynkeys.bxs", "-o", artDir + "/wasm-dynkeys.wasm"])
+let wasmDynKeysRun = exec([BX, "run", artDir + "/wasm-dynkeys.wasm"])
+let wasmDynKeysVm = exec([BX, "run", artDir + "/wasm-dynkeys.bxs"])
+if (wasmDynKeys.code == 0 && wasmDynKeysRun.out == wasmDynKeysVm.out && wasmDynKeysRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm dynamic keys/values\n    wasm=" + json(wasmDynKeysRun.out) + " vm=" + json(wasmDynKeysVm.out) + " err=" + json(wasmDynKeys.err))
+}
 write(artDir + "/wasm-dynreduce.bxs", 'let v = parse(env("X", "[1,2,3]"))\nprint(reduce(v, fn(a, b) { return a + b }, 0))\nprint(reduce(v, fn(a, b) { return a + b }))\nprint(v.reduce(fn(a, b) { return a + b }, 0))\nlet init = parse(env("X", "10"))\nprint(reduce(parse(env("X", "[1,2]")), fn(a, b) { return a + b }, init))\nprint(reduce([1, 2], fn(a, b) { return a + b }, init))\nprint([1, 2].reduce(fn(a, b) { return a + b }, init))\n')
 let wasmDynReduce = exec([BX, "build", "--wasm", artDir + "/wasm-dynreduce.bxs", "-o", artDir + "/wasm-dynreduce.wasm"])
 let wasmDynReduceRun = exec([BX, "run", artDir + "/wasm-dynreduce.wasm"])
