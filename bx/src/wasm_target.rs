@@ -857,7 +857,10 @@ impl Checker {
             }
             Expr::Ternary(cond, then, other, _) => {
                 let cond_ty = self.infer(cond)?;
-                if cond_ty != Ty::Bool && cond_ty != Ty::Null && cond_ty != Ty::Dyn {
+                if !matches!(
+                    cond_ty,
+                    Ty::Bool | Ty::Null | Ty::Dyn | Ty::Int | Ty::Float | Ty::Str
+                ) {
                     return Err("wasm target ternaries need a bool condition".to_string());
                 }
                 let lt = self.infer(then)?;
@@ -3062,8 +3065,9 @@ impl Checker {
     }
 
     fn check_cond(&self, expr: &Expr) -> Result<(), String> {
+        // The VM treats numbers, strings and dynamic cells as truthy/falsy.
         match self.infer(expr)? {
-            Ty::Bool | Ty::Null | Ty::Dyn => Ok(()),
+            Ty::Bool | Ty::Null | Ty::Dyn | Ty::Int | Ty::Float | Ty::Str => Ok(()),
             other => Err(format!(
                 "wasm target conditions must be bool, got {}",
                 ty_name(other)
@@ -8233,7 +8237,10 @@ impl<'a> Emitter<'a> {
             }
             Expr::Ternary(cond, then, other, _) => {
                 let cond_ty = self.type_of(cond)?;
-                if cond_ty != Ty::Bool && cond_ty != Ty::Null && cond_ty != Ty::Dyn {
+                if !matches!(
+                    cond_ty,
+                    Ty::Bool | Ty::Null | Ty::Dyn | Ty::Int | Ty::Float | Ty::Str
+                ) {
                     return Err("wasm target ternaries need a bool condition".to_string());
                 }
                 let lt = self.type_of(then)?;
@@ -8666,6 +8673,28 @@ impl<'a> Emitter<'a> {
                 Ty::Dyn => {
                     self.emit_expr(other)?;
                     self.builder.push(Instr::Call(DYN_TRUTHY));
+                    Ok(())
+                }
+                Ty::Int => {
+                    self.emit_expr(other)?;
+                    self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                    self.builder.push(Instr::Op(0x52));
+                    Ok(())
+                }
+                Ty::Float => {
+                    self.emit_expr(other)?;
+                    self.builder.push(Instr::Const(0x44, WVal::F64(0.0)));
+                    self.builder.push(Instr::Op(0x62));
+                    Ok(())
+                }
+                Ty::Str => {
+                    self.emit_str(other)?;
+                    let len = self.builder.add_local(ValType::I32);
+                    self.builder.push(Instr::Local(0x21, len));
+                    self.builder.push(Instr::Op(0x1a));
+                    self.builder.push(Instr::Local(0x20, len));
+                    self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                    self.builder.push(Instr::Op(0x47));
                     Ok(())
                 }
                 _ => Err(format!(
@@ -19520,6 +19549,28 @@ mod tests {
     }
 
     #[test]
+    fn conditions_use_vm_truthiness() {
+        let (numbers, strings) = run_with_argv(
+            "let x = 0\nlet f = fn() { x += 1\n  return true }\nprint(false && f())\nprint(x)\nprint(true || f())\nprint(x)\nprint(2 > 1 ? \"a\" : \"b\")\nprint(0 ? \"y\" : \"n\")\nlet total = 0\nfor i in range(3) {\n  for j in range(3) {\n    if (j == 1) { break }\n    total += 1\n  }\n}\nprint(total)\nlet n = 0\nfor i in range(5) {\n  if (i % 2 == 0) { continue }\n  n += i\n}\nprint(n)\nfn fact(k) { if (k <= 1) { return 1 }\n  return k * fact(k - 1) }\nprint(fact(10))\nlet word = \"a\"\nif (word) { print(\"truthy\") }\nif (\"\") { print(\"no\") } else { print(\"falsy\") }\nlet dynv = parse(env(\"X\", \"0\"))\nif (dynv) { print(\"bad\") } else { print(\"dyn-falsy\") }\nlet ints = [1, 0, 2]\nif (ints[1]) { print(\"bad\") } else { print(\"int-falsy\") }",
+            &[],
+        );
+        assert_eq!(numbers, vec![0, 0, 3, 4, 3628800]);
+        assert_eq!(
+            strings,
+            vec![
+                "false".to_string(),
+                "true".to_string(),
+                "a".to_string(),
+                "n".to_string(),
+                "truthy".to_string(),
+                "falsy".to_string(),
+                "dyn-falsy".to_string(),
+                "int-falsy".to_string()
+            ]
+        );
+    }
+
+    #[test]
     fn comparator_sort_is_stable_and_matches_the_vm() {
         let (numbers, strings) = run_with_argv(
             "print(sort([3, 1, 2], fn(x, y) { return x - y }))\nprint(sort([3, 1, 2], fn(x, y) { return y - x }))\nprint(sort([5], fn(x, y) { return x - y }))\nprint(sort([], fn(x, y) { return x - y }))\nprint(sort([2.5, 1.5, 3.5], fn(x, y) { if (x < y) { return -1 }\n  return 1 }))\nprint(sort([\"bb\", \"a\", \"ccc\"], fn(x, y) { return len(x) - len(y) }))\nlet rows = [[3], [1, 2], [2]]\nprint(sort(rows, fn(x, y) { return len(x) - len(y) }))\nlet rs = [{a: 3}, {a: 1}, {a: 2}, {a: 1}]\nprint(sort(rs, fn(x, y) { return x.a - y.a }))",
@@ -20258,10 +20309,10 @@ mod tests {
     fn unsupported_constructs_are_rejected() {
         assert!(compile_to_wasm("let f = fn() { return 1 }\nprint(f)").is_err());
         assert!(compile_to_wasm("print(unknown)").is_err());
-        assert!(
-            compile_to_wasm("fn f(x) { if (x) { return 1 }\n  return \"s\" }\nprint(f(1))")
-                .is_err()
-        );
+        assert!(compile_to_wasm(
+            "fn outer() { fn inner() { return 1 }\n  return 1 }\nprint(outer())"
+        )
+        .is_err());
         assert!(compile_to_wasm("print(unknown_name)").is_err());
     }
 }
