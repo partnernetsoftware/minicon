@@ -25,6 +25,8 @@ enum Ty {
     ArrBool,
     /// The VM null value (P2a static marker: comparisons/printing only).
     Null,
+    /// Pointer to a 16-byte dynamic (P2a) value cell: runtime `parse` results.
+    Dyn,
     /// Array of records of one fixed shape; entries hold record pointers.
     ArrObj(u32),
     /// Array of int arrays; entries hold inner-array pointers.
@@ -53,6 +55,7 @@ fn ty_name(ty: Ty) -> &'static str {
         Ty::ArrStr => "array",
         Ty::ArrBool => "array",
         Ty::Null => "null",
+        Ty::Dyn => "dynamic",
         Ty::ArrObj(_) => "array",
         Ty::ArrArr => "array",
         Ty::ArrF => "array",
@@ -360,7 +363,8 @@ fn wasm_types(ty: Ty) -> Vec<ValType> {
         | Ty::Map
         | Ty::Func(_)
         | Ty::Bool
-        | Ty::Null => {
+        | Ty::Null
+        | Ty::Dyn => {
             vec![ValType::I32]
         }
     }
@@ -894,8 +898,10 @@ impl Checker {
                         return Ok(lt);
                     }
                     let stringifies = |ty: Ty| {
-                        matches!(ty, Ty::Int | Ty::Float | Ty::Bool | Ty::Str | Ty::Null)
-                            || is_array_ty(ty)
+                        matches!(
+                            ty,
+                            Ty::Int | Ty::Float | Ty::Bool | Ty::Str | Ty::Null | Ty::Dyn
+                        ) || is_array_ty(ty)
                             || matches!(ty, Ty::Obj(_))
                     };
                     if lt == Ty::Str && stringifies(rt) || rt == Ty::Str && stringifies(lt) {
@@ -925,7 +931,10 @@ impl Checker {
                 }
                 if op == &BinOp::Add && (lt == Ty::Str || rt == Ty::Str) {
                     let other = if lt == Ty::Str { rt } else { lt };
-                    if matches!(other, Ty::Str | Ty::Int | Ty::Float | Ty::Bool | Ty::Null) {
+                    if matches!(
+                        other,
+                        Ty::Str | Ty::Int | Ty::Float | Ty::Bool | Ty::Null | Ty::Dyn
+                    ) {
                         return Ok(Ty::Str);
                     }
                 }
@@ -2066,6 +2075,7 @@ impl Checker {
                         if !is_number(ty)
                             && ty != Ty::Bool
                             && ty != Ty::Null
+                            && ty != Ty::Dyn
                             && ty != Ty::Str
                             && !is_array_ty(ty)
                             && !matches!(ty, Ty::Obj(_))
@@ -2083,6 +2093,7 @@ impl Checker {
                         if !is_number(ty)
                             && ty != Ty::Bool
                             && ty != Ty::Null
+                            && ty != Ty::Dyn
                             && ty != Ty::Str
                             && !is_array_ty(ty)
                             && !matches!(ty, Ty::Obj(_))
@@ -2095,14 +2106,11 @@ impl Checker {
                         return Ok(Ty::Str);
                     }
                     if name == "parse" && args.len() == 1 {
-                        let Expr::Str(text) = &args[0] else {
-                            return Err(
-                                "wasm target parse() needs a compile-time JSON string literal"
-                                    .to_string(),
-                            );
-                        };
-                        let literal = parse_literal(text)?;
-                        return self.infer(&literal);
+                        if let Expr::Str(text) = &args[0] {
+                            let literal = parse_literal(text)?;
+                            return self.infer(&literal);
+                        }
+                        return Ok(Ty::Dyn);
                     }
                     if name == "int" && args.len() == 1 {
                         let ty = self.infer(&args[0])?;
@@ -3129,7 +3137,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 100;
+const IMPORT_COUNT: u32 = 103;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
 const WEB_CONSOLE_UTF8: u32 = 12;
@@ -3217,6 +3225,9 @@ const DIR_COUNT: u32 = 96;
 const DIR_ENTRY: u32 = 97;
 const PRINT_ARR_BOOL: u32 = 98;
 const JOIN_BOOL: u32 = 99;
+const DYN_PARSE: u32 = 100;
+const DYN_STR: u32 = 101;
+const DYN_TYPE: u32 = 102;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -6898,7 +6909,10 @@ impl<'a> Emitter<'a> {
                 }
                 if op == &BinOp::Add && (lt == Ty::Str || rt == Ty::Str) {
                     let other = if lt == Ty::Str { rt } else { lt };
-                    if matches!(other, Ty::Str | Ty::Int | Ty::Float | Ty::Bool | Ty::Null) {
+                    if matches!(
+                        other,
+                        Ty::Str | Ty::Int | Ty::Float | Ty::Bool | Ty::Null | Ty::Dyn
+                    ) {
                         return Ok(Ty::Str);
                     }
                 }
@@ -7895,6 +7909,13 @@ impl<'a> Emitter<'a> {
                 self.emit_text_literal("null");
                 Ok(())
             }
+            Ty::Dyn => {
+                self.emit_expr(expr)?;
+                self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                self.builder.push(Instr::Call(DYN_STR));
+                self.push_block_as_pair();
+                Ok(())
+            }
             ty if is_array_ty(ty) || matches!(ty, Ty::Obj(_)) => self.emit_container_string(expr),
             other => Err(format!(
                 "wasm target cannot use {} in a string concatenation",
@@ -8233,7 +8254,8 @@ impl<'a> Emitter<'a> {
                     | Ty::ArrF
                     | Ty::ArrStrArr
                     | Ty::ArrBool
-                    | Ty::Null => {
+                    | Ty::Null
+                    | Ty::Dyn => {
                         let base = self.checker.binding(name)?.base;
                         self.builder.push(Instr::Global(0x23, base));
                     }
@@ -10164,12 +10186,19 @@ impl<'a> Emitter<'a> {
                     }
                     if name == "type" && args.len() == 1 {
                         let ty = self.type_of(&args[0])?;
+                        if ty == Ty::Dyn {
+                            self.emit_expr(&args[0])?;
+                            self.builder.push(Instr::Call(DYN_TYPE));
+                            self.push_block_as_pair();
+                            return Ok(Ty::Str);
+                        }
                         let label = match ty {
                             Ty::Int => "int",
                             Ty::Float => "float",
                             Ty::Str => "str",
                             Ty::Bool => "bool",
                             Ty::Null => "null",
+                            Ty::Dyn => "dynamic",
                             Ty::Arr
                             | Ty::ArrStr
                             | Ty::ArrBool
@@ -11134,6 +11163,13 @@ impl<'a> Emitter<'a> {
                             self.emit_container_string(&args[0])?;
                             return Ok(Ty::Str);
                         }
+                        if ty == Ty::Dyn {
+                            self.emit_expr(&args[0])?;
+                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                            self.builder.push(Instr::Call(DYN_STR));
+                            self.push_block_as_pair();
+                            return Ok(Ty::Str);
+                        }
                         if ty == Ty::Null {
                             self.emit_text_literal("null");
                             return Ok(Ty::Str);
@@ -11173,6 +11209,13 @@ impl<'a> Emitter<'a> {
                         let ty = self.type_of(&args[0])?;
                         if is_array_ty(ty) || matches!(ty, Ty::Obj(_)) {
                             self.emit_container_string(&args[0])?;
+                            return Ok(Ty::Str);
+                        }
+                        if ty == Ty::Dyn {
+                            self.emit_expr(&args[0])?;
+                            self.builder.push(Instr::Const(0x41, WVal::I32(1)));
+                            self.builder.push(Instr::Call(DYN_STR));
+                            self.push_block_as_pair();
                             return Ok(Ty::Str);
                         }
                         match ty {
@@ -11217,14 +11260,13 @@ impl<'a> Emitter<'a> {
                         return Ok(Ty::Str);
                     }
                     if name == "parse" && args.len() == 1 {
-                        let Expr::Str(text) = &args[0] else {
-                            return Err(
-                                "wasm target parse() needs a compile-time JSON string literal"
-                                    .to_string(),
-                            );
-                        };
-                        let literal = parse_literal(text)?;
-                        return self.emit_expr(&literal);
+                        if let Expr::Str(text) = &args[0] {
+                            let literal = parse_literal(text)?;
+                            return self.emit_expr(&literal);
+                        }
+                        self.emit_str(&args[0])?;
+                        self.builder.push(Instr::Call(DYN_PARSE));
+                        return Ok(Ty::Dyn);
                     }
                     if name == "int" && args.len() == 1 {
                         match self.type_of(&args[0])? {
@@ -11329,7 +11371,7 @@ impl<'a> Emitter<'a> {
                 if self.fn_mode {
                     let slot = match ty {
                         Ty::Int => self.builder.add_local(ValType::I64),
-                        Ty::Null => self.builder.add_local(ValType::I32),
+                        Ty::Null | Ty::Dyn => self.builder.add_local(ValType::I32),
                         Ty::Float => self.builder.add_local(ValType::F64),
                         Ty::Str => {
                             let slot = self.builder.add_local(ValType::I32);
@@ -11917,6 +11959,15 @@ impl<'a> Emitter<'a> {
                         self.builder
                             .push(Instr::Call(if web { WEB_CONSOLE_UTF8 } else { 1 }));
                     }
+                    Ty::Dyn => {
+                        if web {
+                            return Err("wasm target console_log prints scalars only".to_string());
+                        }
+                        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                        self.builder.push(Instr::Call(DYN_STR));
+                        self.push_block_as_pair();
+                        self.builder.push(Instr::Call(1));
+                    }
                     Ty::Float => {
                         self.builder
                             .push(Instr::Call(if web { WEB_CONSOLE_F64 } else { 8 }));
@@ -12001,7 +12052,8 @@ impl<'a> Emitter<'a> {
                     | Ty::ArrF
                     | Ty::ArrStrArr
                     | Ty::ArrBool
-                    | Ty::Null => {
+                    | Ty::Null
+                    | Ty::Dyn => {
                         self.builder.push(Instr::Op(0x1a));
                     }
                     Ty::Str => {
@@ -13978,6 +14030,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     );
     let empty_ty = builder.add_type(vec![], vec![]);
     let one_i32_ty = builder.add_type(vec![ValType::I32], vec![]);
+    let i32_to_i32_ty = builder.add_type(vec![ValType::I32], vec![ValType::I32]);
     let env_add_ty = builder.add_type(
         vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
         vec![],
@@ -14161,6 +14214,9 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
     builder.import_func("env", "dir_entry", format_container_ty);
     builder.import_func("env", "print_arr_bool", one_i32_ty);
     builder.import_func("env", "join_bool", format_container_ty);
+    builder.import_func("env", "dyn_parse", which_ty);
+    builder.import_func("env", "dyn_str", which_ty);
+    builder.import_func("env", "dyn_type", i32_to_i32_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -14173,7 +14229,8 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
             | Ty::ArrF
             | Ty::ArrStrArr
             | Ty::ArrBool
-            | Ty::Null => builder.add_global(ValType::I32, true, WVal::I32(0)),
+            | Ty::Null
+            | Ty::Dyn => builder.add_global(ValType::I32, true, WVal::I32(0)),
             Ty::Str => {
                 builder.add_global(ValType::I32, true, WVal::I32(0));
                 builder.add_global(ValType::I32, true, WVal::I32(0));
@@ -14280,7 +14337,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                     emitter.builder.push(Instr::Const(0x41, WVal::I32(0)));
                     emitter.builder.push(Instr::Const(0x41, WVal::I32(0)));
                 }
-                Some(Ty::ArrBool) | Some(Ty::Null) => {
+                Some(Ty::ArrBool) | Some(Ty::Null) | Some(Ty::Dyn) => {
                     emitter.builder.push(Instr::Const(0x41, WVal::I32(0)))
                 }
                 Some(
@@ -14370,7 +14427,7 @@ pub fn compile_to_wasm(source: &str) -> Result<Vec<u8>, String> {
                     emitter.builder.push(Instr::Const(0x41, WVal::I32(0)));
                     emitter.builder.push(Instr::Const(0x41, WVal::I32(0)));
                 }
-                Some(Ty::ArrBool) | Some(Ty::Null) => {
+                Some(Ty::ArrBool) | Some(Ty::Null) | Some(Ty::Dyn) => {
                     emitter.builder.push(Instr::Const(0x41, WVal::I32(0)))
                 }
                 Some(
@@ -15805,6 +15862,22 @@ mod tests {
         );
         assert_eq!(numbers, vec![12]);
         let expected = ["[1,3,5,7]", "[4,6]", "[false,true,false]", "[true,true]"];
+        assert_eq!(
+            strings,
+            expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn runtime_parse_scalars_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let a = parse(env(\"BX_P2A_A\", \"42\"))\nprint(a)\nprint(type(a))\nprint(str(a))\nprint(json(a))\nlet s = parse(env(\"BX_P2A_S\", \"\\\"hi\\\"\"))\nprint(s)\nprint(json(s))\nprint(\"v=${s}\")\nlet n = parse(env(\"BX_P2A_N\", \"null\"))\nprint(n)\nprint(type(n))\nlet b = parse(env(\"BX_P2A_B\", \"true\"))\nprint(b)",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        let expected = [
+            "42", "int", "42", "42", "hi", "\"hi\"", "v=hi", "null", "null", "true",
+        ];
         assert_eq!(
             strings,
             expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()

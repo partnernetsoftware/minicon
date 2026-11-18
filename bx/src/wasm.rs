@@ -758,6 +758,7 @@ pub(crate) fn core_print_host(
         next_file: 131_072,
         next_map: 327_680,
         next_proc: 196_608,
+        next_dyn: 262_144,
         started: std::time::Instant::now(),
         gl: GlBackend::new(),
     }
@@ -775,6 +776,86 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> PrintHost<'a, F, G> {
     }
 }
 /// Run one command line through the platform shell, mirroring bx `sh`.
+/// Allocate one 16-byte dynamic value cell: `[tag u32][aux u32][payload u64]`.
+fn alloc_dyn_cell(next_dyn: &mut u32) -> Result<usize, String> {
+    let ptr = *next_dyn as usize;
+    if ptr + 16 > 327_680 {
+        return Err("dynamic value region exhausted".to_string());
+    }
+    *next_dyn += 16;
+    Ok(ptr)
+}
+
+fn write_dyn_cell(memory: &mut [u8], ptr: usize, tag: u32, aux: u32, payload: u64) {
+    memory[ptr..ptr + 4].copy_from_slice(&tag.to_le_bytes());
+    memory[ptr + 4..ptr + 8].copy_from_slice(&aux.to_le_bytes());
+    memory[ptr + 8..ptr + 16].copy_from_slice(&payload.to_le_bytes());
+}
+
+/// Format a dynamic scalar cell (P2a: null/int/float/bool/string).
+fn format_dyn_cell(memory: &[u8], cell: usize, json: bool) -> Result<String, String> {
+    if cell + 16 > memory.len() {
+        return Err("dynamic cell out of bounds".to_string());
+    }
+    let tag = u32::from_le_bytes(memory[cell..cell + 4].try_into().unwrap());
+    let aux = u32::from_le_bytes(memory[cell + 4..cell + 8].try_into().unwrap()) as usize;
+    let payload = u64::from_le_bytes(memory[cell + 8..cell + 16].try_into().unwrap());
+    Ok(match tag {
+        0 => "null".to_string(),
+        1 => (payload as i64).to_string(),
+        2 => crate::value::fmt_float(f64::from_bits(payload)),
+        3 => {
+            if payload != 0 {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            }
+        }
+        4 => {
+            let text = memory_text(memory, payload as usize, aux);
+            if json {
+                let mut rendered = String::new();
+                crate::value::write_json_str(&mut rendered, &text);
+                rendered
+            } else {
+                text
+            }
+        }
+        _ => return Err("unknown dynamic value tag".to_string()),
+    })
+}
+
+/// Store a scalar JSON value as a dynamic cell (P2a).
+fn store_dyn_scalar(
+    memory: &mut [u8],
+    next_dyn: &mut u32,
+    next_file: &mut u32,
+    value: &crate::value::Value,
+) -> Result<usize, String> {
+    use crate::value::Value;
+    let cell = alloc_dyn_cell(next_dyn)?;
+    match value {
+        Value::Null => write_dyn_cell(memory, cell, 0, 0, 0),
+        Value::Bool(v) => write_dyn_cell(memory, cell, 3, 0, u64::from(*v)),
+        Value::Int(v) => write_dyn_cell(memory, cell, 1, 0, *v as u64),
+        Value::Float(v) => write_dyn_cell(memory, cell, 2, 0, v.to_bits()),
+        Value::Str(text) => {
+            let start = store_text_block(memory, next_file, text.as_bytes())
+                .ok_or_else(|| "dynamic string does not fit the file region".to_string())?;
+            let len = u32::from_le_bytes(
+                memory[start as usize..start as usize + 4]
+                    .try_into()
+                    .unwrap(),
+            );
+            write_dyn_cell(memory, cell, 4, len, u64::from(start) + 4);
+        }
+        _ => return Err(
+            "parse() of runtime text only supports scalar JSON values yet (P2b adds containers)"
+                .to_string(),
+        ),
+    }
+    Ok(cell)
+}
 /// Store a `[status][len][data]` block for the soft file imports: status 0 is
 /// success, 1 carries an error message in `data`.
 fn store_soft_block(
@@ -935,6 +1016,8 @@ pub(crate) struct PrintHost<'a, F: FnMut(i64), G: FnMut(&str)> {
     next_map: u32,
     /// `bx.capture` result blocks live in the fourth page.
     next_proc: u32,
+    /// Dynamic (P2a) 16-byte value cells live between the capture and map regions.
+    next_dyn: u32,
     /// Clock origin for `web.performance_now`.
     started: std::time::Instant,
     /// Software framebuffer for the `webgl.*` namespace.
@@ -1666,6 +1749,50 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                 match store_text_block(memory, &mut self.next_file, rendered.as_bytes()) {
                     Some(start) => Ok(vec![WVal::I32(start as i32)]),
                     None => Err("json_str result does not fit the file region".to_string()),
+                }
+            }
+            ("env", "dyn_parse") => {
+                let (ptr, len) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(ptr)), Some(WVal::I32(len))) => (*ptr as usize, *len as usize),
+                    _ => return Err("env.dyn_parse expects (i32 ptr, i32 len)".to_string()),
+                };
+                let text = memory_text(memory, ptr, len);
+                let value = crate::json::parse(&text)?;
+                let cell =
+                    store_dyn_scalar(memory, &mut self.next_dyn, &mut self.next_file, &value)?;
+                Ok(vec![WVal::I32(cell as i32)])
+            }
+            ("env", "dyn_str") => {
+                let (cell, json) = match (args.first(), args.get(1)) {
+                    (Some(WVal::I32(cell)), Some(WVal::I32(mode))) => (*cell as usize, *mode != 0),
+                    _ => return Err("env.dyn_str expects (i32 cell, i32 mode)".to_string()),
+                };
+                let text = format_dyn_cell(memory, cell, json)?;
+                match store_text_block(memory, &mut self.next_file, text.as_bytes()) {
+                    Some(start) => Ok(vec![WVal::I32(start as i32)]),
+                    None => Err("dyn_str result does not fit the file region".to_string()),
+                }
+            }
+            ("env", "dyn_type") => {
+                let cell = match args.first() {
+                    Some(WVal::I32(cell)) => *cell as usize,
+                    _ => return Err("env.dyn_type expects one i32".to_string()),
+                };
+                if cell + 16 > memory.len() {
+                    return Err("dynamic cell out of bounds".to_string());
+                }
+                let tag = u32::from_le_bytes(memory[cell..cell + 4].try_into().unwrap());
+                let name = match tag {
+                    0 => "null",
+                    1 => "int",
+                    2 => "float",
+                    3 => "bool",
+                    4 => "str",
+                    _ => "dynamic",
+                };
+                match store_text_block(memory, &mut self.next_file, name.as_bytes()) {
+                    Some(start) => Ok(vec![WVal::I32(start as i32)]),
+                    None => Err("dyn_type result does not fit the file region".to_string()),
                 }
             }
             ("env", "print_map") => {

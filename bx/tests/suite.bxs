@@ -954,6 +954,16 @@ if (wasmBoolGrow.code == 0 && wasmBoolGrowRun.out == wasmBoolGrowVm.out && wasmB
   casesFail += 1
   failures.push("wasm growable bool arrays\n    wasm=" + json(wasmBoolGrowRun.out) + " vm=" + json(wasmBoolGrowVm.out) + " err=" + json(wasmBoolGrowRun.err))
 }
+write(artDir + "/wasm-dynparse.bxs", 'let a = parse(env("BX_P2A_A", "42"))\nprint(a)\nprint(type(a))\nprint(str(a))\nprint(json(a))\nlet f = parse(env("BX_P2A_F", "2.5"))\nprint(f)\nprint(json(f))\nlet n = parse(env("BX_P2A_N", "null"))\nprint(n)\nprint(type(n))\nlet b = parse(env("BX_P2A_B", "true"))\nprint(b)\n')
+let wasmDynParse = exec([BX, "build", "--wasm", artDir + "/wasm-dynparse.bxs", "-o", artDir + "/wasm-dynparse.wasm"])
+let wasmDynParseRun = exec([BX, "run", artDir + "/wasm-dynparse.wasm"])
+let wasmDynParseVm = exec([BX, "run", artDir + "/wasm-dynparse.bxs"])
+if (wasmDynParse.code == 0 && wasmDynParseRun.out == wasmDynParseVm.out && wasmDynParseRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm runtime parse scalars\n    wasm=" + json(wasmDynParseRun.out) + " vm=" + json(wasmDynParseVm.out) + " err=" + json(wasmDynParseRun.err))
+}
 write(artDir + "/wasm-mfr.bxs", 'print(str([1, 2].map(fn(x) { return x * 2 })))\nprint(str([1, 2].filter(fn(x) { return x > 1 })))\nprint(str([1, 2].reduce(fn(acc, x) { return acc + x }, 0)))\nprint(str([true, false].map(fn(x) { return !x })))\nprint(str(["a", "bb"].map(fn(x) { return len(x) })))\nprint(str([{a: 1}].map(fn(r) { return r.a + 1 })))\nprint(str([1, 2].reduce(fn(acc, x) { return acc + x })))\n')
 let wasmMfr = exec([BX, "build", "--wasm", artDir + "/wasm-mfr.bxs", "-o", artDir + "/wasm-mfr.wasm"])
 let wasmMfrRun = exec([BX, "run", artDir + "/wasm-mfr.wasm"])

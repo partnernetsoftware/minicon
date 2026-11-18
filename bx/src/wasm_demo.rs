@@ -109,6 +109,9 @@ const imports = {
     },
     print_f64: (value) => { emit(formatFloat(value)); },
     join_bool: () => 0,
+    dyn_parse: () => { throw new Error("runtime parse is not available in the browser demo"); },
+    dyn_str: () => 0,
+    dyn_type: () => 0,
     print_arr_bool: (ptr) => {
       const view = new DataView(instance.exports.memory.buffer);
       const count = view.getUint32(ptr, true);
