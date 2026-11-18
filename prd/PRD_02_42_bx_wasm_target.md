@@ -746,33 +746,33 @@ Sweep on 2026-11-17: six seeds at 50 cases each, all pass; the suite runs 12
 
 ## Compatibility boundary
 
-The wasm target models values statically; the VM is dynamically typed. These
-boundaries are intentional and produce explicit errors (with a `BX_TARGET=bxb`
-hint from the CLI), not silent behaviour changes:
+The wasm target models values statically; the VM is dynamically typed. Runtime
+JSON and null are already handled through the P2 dynamic-cell layer
+(`void`-free `Ty::Dyn` values over `parse()` results), so the remaining
+boundaries are narrower and produce explicit errors (the CLI adds a
+`BX_TARGET=bxb` hint), not silent behaviour changes:
 
 | Boundary | Example | Workaround |
 | --- | --- | --- |
-| no `null` value | `env("UNSET") == null`, `null` literals | use `""`/`0` sentinels, or run with `BX_TARGET=bxb` |
-| runtime JSON | `parse(exec(...).out)` | `parse("literal")` is folded at compile time; runtime JSON needs the VM |
-| heterogeneous containers | `["a", 1]`, `let xs = []` pushed with two kinds | one element kind per array/record (failures lists etc. take the first pushed kind) |
+| heterogeneous **static literal** containers | `["a", 1]`, `let xs = []` pushed with two kinds | one element kind per static literal; runtime `parse` arrays may mix (they become dynamic cells) |
 | functions returning different types | `fn f(x) { return x ? 1 : "" }` | split into typed functions or use the VM |
-| record fields are scalars | `{a: {b: 1}}`, `{xs: [1]}` | flatten fields, or `str()`/`json()` a nested container into a string field |
-| dynamic record shapes | `merge` of shapes known only at runtime, heterogeneous `get` | literal shapes / `get` on homogeneous records |
+| VM-only builtins | `test(...)`, `patch(...)`, `spawn(...)`/`spawn_*` handles | run with `--target bxb`; the wasm errors name the replacement (`bx test`, `write_file`/`exec`) |
 | host traps | uncaught `read`/`exec` failures outside `attempt` | wrap in `attempt`, or use the VM |
+| static typing across the dynamic boundary | passing a runtime-parsed `Dyn` array into a user function whose parameter was inferred as a static array | keep such helpers dynamic-agnostic (`len`, `for`, dynamic methods) or use the VM |
 
 `bx/tools/wasm-diff*.bxs` deliberately avoid these boundaries so a differential
 failure always means a real divergence; `bx/tools/verify.bxs` stops at the same
 points when built for wasm. How these boundaries get removed is owned by
 `prd/PRD_02_44_bx_tinyvm_absorption.md` ("P2 design: uniform tagged values,
 hybrid"), which stages a 16-byte tagged cell behind static/dynamic boundary
-conversions rather than rewriting the static fast path.
-
+conversions rather than rewriting the static fast path (`P2a`/`P2b` shipped
+2026-11-18).
 - **Inference convergence (fixed 2026-11-18)**: `InferState` now seeds the type
   of an empty-array `let` from the same push-hint map the checker uses, so a
   growable `[]` declared inside a loop or function can feed `map`/`filter`/
   `reduce` callbacks without the old `function returns both bool and int values`
   error. Both the hint walker and the inference pass descend into function
-  bodies; unit 135 and suite 223 pin the loop and function-local forms.
+  bodies; unit 156 and suite 241 pin the loop and function-local forms.
 ## Non-goals
 
 - No WASI: the ABI is web-shaped on purpose.
@@ -787,8 +787,8 @@ conversions rather than rewriting the static fast path.
 |---|---|---|
 | M0 | this spec + decision record | `[v]` |
 | M1 | numeric vertical slice: emit → run → `check`, node cross-check | `[v]` |
-| M2 | data model: strings, arrays, objects in linear memory | `[-]` (strings incl. runtime concat, int arrays, fixed-layout records, in-module bump heap done; dynamic keys, mixed-type fields and growable arrays next) |
-| M3 | functions, closures, control flow compiled to wasm | `[-]` (control flow, user functions/recursion and float values done; closures next) |
-| M4 | builtins + native process ABI (`bx.*`), default target flip | `[-]` (argv, file and process imports done; default target flip next) |
+| M2 | data model: strings, arrays, objects in linear memory | `[v]` — strings (incl. runtime concat/chars), int/float/bool/string/record/nested arrays, growable arrays, records with dynamic-cell fields (kind 8), and dynamic containers over runtime JSON |
+| M3 | functions, closures, control flow compiled to wasm | `[v]` — control flow, recursion, literals with captures (boxed cells), `use` module expansion, higher-order callbacks and dynamic comparator sorts |
+| M4 | builtins + native process ABI (`bx.*`), default target flip | `[-]` (argv/file/process/env/time/dir imports, multi-arg print/eprint and `bx check --target` done; default target flip next) |
 | M5 | `web.*` + `webgl.*` ABI, software backend, browser demo | `[-]` (demo, `web.console_log*`/`web.performance_now`, and a `webgl.*` clear/read/PNG slice done; shader/buffer surface next) |
 | M6 | remove `.bxb` + legacy code paths, six-cell wasm evidence | `[_]` |

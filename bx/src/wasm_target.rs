@@ -473,6 +473,24 @@ fn kind_ty(kind: u8) -> Ty {
     }
 }
 
+/// Builtins that exist only in the VM (process handles, file patching, the test
+/// harness). The wasm target rejects them with an actionable message.
+fn vm_only_hint(name: &str) -> Option<&'static str> {
+    match name {
+        "test" => Some(
+            "test() is VM-only; `bx test <file>` runs the suite on the VM (pass --target bxb)",
+        ),
+        "patch" => Some(
+            "patch() is VM-only (it rewrites files at runtime); use write_file()/exec() on wasm or --target bxb",
+        ),
+        "spawn" | "spawn_poll" | "spawn_wait" | "spawn_write" | "spawn_kill" | "spawn_close" => {
+            Some(
+                "interactive process handles are VM-only; use exec()/exec_all() on wasm or --target bxb",
+            )
+        }
+        _ => None,
+    }
+}
 #[derive(Clone, Copy)]
 struct AttemptCtx {
     /// Record being filled: error (str at 0/4), ok (bool at 8), value at 16.
@@ -1618,6 +1636,9 @@ impl Checker {
 
             Expr::Call(callee, args, _) => {
                 if let Expr::Ident(name) = &**callee {
+                    if let Some(hint) = vm_only_hint(name) {
+                        return Err(format!("wasm target: {}", hint));
+                    }
                     if name == "exit" && args.len() == 1 {
                         if !is_number(self.infer(&args[0])?) {
                             return Err("wasm target exit() needs a numeric code".to_string());
@@ -17983,6 +18004,24 @@ mod tests {
             strings,
             expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn vm_only_builtins_get_actionable_errors() {
+        for (source, expected) in [
+            ("test(\"x\", fn() { return true })", "VM-only"),
+            ("patch(\"a.txt\", \"\")", "VM-only"),
+            ("let h = spawn(\"cmd\", [])", "VM-only"),
+        ] {
+            let error = match compile_to_wasm(source) {
+                Ok(_) => panic!("unexpected wasm build for {source}"),
+                Err(error) => error,
+            };
+            assert!(
+                error.contains(expected),
+                "{source}: unexpected error {error}"
+            );
+        }
     }
 
     #[test]
