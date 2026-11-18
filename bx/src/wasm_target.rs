@@ -1132,13 +1132,18 @@ impl Checker {
                             .lit_sigs
                             .get(id as usize)
                             .ok_or_else(|| "wasm target lost a function literal".to_string())?;
-                        if sig.params != vec![Ty::Dyn, Ty::Dyn] {
+                        let numeric_params = sig.params.len() == 2
+                            && sig
+                                .params
+                                .iter()
+                                .all(|param| matches!(param, Ty::Int | Ty::Float));
+                        if sig.params != vec![Ty::Dyn, Ty::Dyn] && !numeric_params {
                             return Err(
                                 "wasm target dynamic sort comparators take two dynamic values"
                                     .to_string(),
                             );
                         }
-                        if !matches!(sig.result, Some(Ty::Int) | Some(Ty::Dyn)) {
+                        if !matches!(sig.result, Some(Ty::Int) | Some(Ty::Dyn) | Some(Ty::Float)) {
                             return Err(
                                 "wasm target dynamic sort comparators return an int".to_string()
                             );
@@ -1346,6 +1351,32 @@ impl Checker {
                             .get(id as usize)
                             .cloned()
                             .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+                        let numeric = sig.params.len() == 2
+                            && sig
+                                .params
+                                .iter()
+                                .all(|param| matches!(param, Ty::Int | Ty::Float));
+                        if numeric {
+                            let Some(result) = sig.result else {
+                                return Err(
+                                    "wasm target reduce() callbacks return a value".to_string()
+                                );
+                            };
+                            if !matches!(result, Ty::Int | Ty::Float) {
+                                return Err(
+                                    "wasm target numeric reduce() callbacks return a number"
+                                        .to_string(),
+                                );
+                            }
+                            if let Some(init) = args.get(1) {
+                                if !is_number(self.infer(init)?) {
+                                    return Err(
+                                        "wasm target numeric reduce() init is a number".to_string()
+                                    );
+                                }
+                            }
+                            return Ok(result);
+                        }
                         if sig.params != vec![Ty::Dyn, Ty::Dyn] {
                             return Err(
                                 format!(
@@ -2325,6 +2356,33 @@ impl Checker {
                                 self.lit_sigs.get(id as usize).cloned().ok_or_else(|| {
                                     "wasm target lost a function literal".to_string()
                                 })?;
+                            let numeric = sig.params.len() == 2
+                                && sig
+                                    .params
+                                    .iter()
+                                    .all(|param| matches!(param, Ty::Int | Ty::Float));
+                            if numeric {
+                                let Some(result) = sig.result else {
+                                    return Err(
+                                        "wasm target reduce() callbacks return a value".to_string()
+                                    );
+                                };
+                                if !matches!(result, Ty::Int | Ty::Float) {
+                                    return Err(
+                                        "wasm target numeric reduce() callbacks return a number"
+                                            .to_string(),
+                                    );
+                                }
+                                if let Some(init) = args.get(2) {
+                                    if !is_number(self.infer(init)?) {
+                                        return Err(
+                                            "wasm target numeric reduce() init is a number"
+                                                .to_string(),
+                                        );
+                                    }
+                                }
+                                return Ok(result);
+                            }
                             if sig.params != vec![Ty::Dyn, Ty::Dyn] {
                                 return Err(
                                     format!(
@@ -2505,13 +2563,21 @@ impl Checker {
                                 .lit_sigs
                                 .get(id as usize)
                                 .ok_or_else(|| "wasm target lost a function literal".to_string())?;
-                            if sig.params != vec![Ty::Dyn, Ty::Dyn] {
+                            let numeric_params = sig.params.len() == 2
+                                && sig
+                                    .params
+                                    .iter()
+                                    .all(|param| matches!(param, Ty::Int | Ty::Float));
+                            if sig.params != vec![Ty::Dyn, Ty::Dyn] && !numeric_params {
                                 return Err(
                                     "wasm target dynamic sort comparators take two dynamic values"
                                         .to_string(),
                                 );
                             }
-                            if !matches!(sig.result, Some(Ty::Int) | Some(Ty::Dyn)) {
+                            if !matches!(
+                                sig.result,
+                                Some(Ty::Int) | Some(Ty::Dyn) | Some(Ty::Float)
+                            ) {
                                 return Err("wasm target dynamic sort comparators return an int"
                                     .to_string());
                             }
@@ -7709,6 +7775,169 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Local(0x20, acc));
         Ok(Ty::Dyn)
     }
+    /// `reduce(dynamicArray, numericCallback[, init])`: elements are unboxed
+    /// from their cells before the call. `dyn_len` returns i64.
+    fn emit_dyn_reduce_numeric(
+        &mut self,
+        array: &Expr,
+        callback: &Expr,
+        init: Option<&Expr>,
+    ) -> Result<Ty, String> {
+        let Ty::Func(id) = self.type_of(callback)? else {
+            return Err("wasm target reduce() needs a function literal callback".to_string());
+        };
+        let sig = self
+            .checker
+            .lit_sigs
+            .get(id as usize)
+            .cloned()
+            .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+        let Some(acc_ty) = sig.params.first().copied() else {
+            return Err("wasm target numeric reduce() needs two params".to_string());
+        };
+        let Some(elem_ty) = sig.params.get(1).copied() else {
+            return Err("wasm target numeric reduce() needs two params".to_string());
+        };
+        let Some(result_ty) = sig.result else {
+            return Err("wasm target numeric reduce() needs a result".to_string());
+        };
+        let source = self.builder.add_local(ValType::I32);
+        let count = self.builder.add_local(ValType::I64);
+        let index = self.builder.add_local(ValType::I64);
+        let acc_i64 = self.builder.add_local(ValType::I64);
+        let acc_f64 = self.builder.add_local(ValType::F64);
+        let cb_env = self.builder.add_local(ValType::I32);
+        self.emit_expr(array)?;
+        self.builder.push(Instr::Local(0x21, source));
+        self.emit_expr(callback)?;
+        self.builder.push(Instr::Local(0x21, cb_env));
+        self.builder.push(Instr::Local(0x20, source));
+        self.builder.push(Instr::Call(DYN_LEN));
+        self.builder.push(Instr::Local(0x21, count));
+        match init {
+            Some(init) => {
+                let init_ty = self.type_of(init)?;
+                self.emit_expr(init)?;
+                self.coerce_arg(acc_ty, init_ty)?;
+                if acc_ty == Ty::Int {
+                    self.builder.push(Instr::Local(0x21, acc_i64));
+                } else {
+                    self.builder.push(Instr::Local(0x21, acc_f64));
+                }
+                self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+            }
+            None => {
+                self.builder.push(Instr::Local(0x20, count));
+                self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                self.builder.push(Instr::Op(0x51));
+                self.builder.push(Instr::Block {
+                    opcode: 0x04,
+                    end: 0,
+                    else_at: 0,
+                    start: 0,
+                });
+                self.labels.push(0x04);
+                self.emit_panic("reduce() of an empty array needs an initial value");
+                self.labels.pop();
+                self.builder.push(Instr::Op(0x0b));
+                self.builder.push(Instr::Local(0x20, source));
+                self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+                self.builder.push(Instr::Call(DYN_ITER_AT));
+                self.emit_unbox_number(acc_ty)?;
+                if acc_ty == Ty::Int {
+                    self.builder.push(Instr::Local(0x21, acc_i64));
+                } else {
+                    self.builder.push(Instr::Local(0x21, acc_f64));
+                }
+                self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+            }
+        }
+        self.builder.push(Instr::Local(0x21, index));
+        self.builder.push(Instr::Block {
+            opcode: 0x02,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x02);
+        self.builder.push(Instr::Block {
+            opcode: 0x03,
+            end: 0,
+            else_at: 0,
+            start: 0,
+        });
+        self.labels.push(0x03);
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Local(0x20, count));
+        self.builder.push(Instr::Op(0x59));
+        self.builder.push(Instr::BrIf(1));
+        self.builder.push(Instr::Local(0x20, cb_env));
+        if acc_ty == Ty::Int {
+            self.builder.push(Instr::Local(0x20, acc_i64));
+        } else {
+            self.builder.push(Instr::Local(0x20, acc_f64));
+        }
+        self.builder.push(Instr::Local(0x20, source));
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Call(DYN_ITER_AT));
+        self.emit_unbox_number(elem_ty)?;
+        self.builder.push(Instr::Call(sig.index));
+        if result_ty == Ty::Int {
+            self.builder.push(Instr::Local(0x21, acc_i64));
+        } else {
+            self.builder.push(Instr::Local(0x21, acc_f64));
+        }
+        self.builder.push(Instr::Local(0x20, index));
+        self.builder.push(Instr::Const(0x42, WVal::I64(1)));
+        self.builder.push(Instr::Op(0x7c));
+        self.builder.push(Instr::Local(0x21, index));
+        self.builder.push(Instr::Br(0));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        self.labels.pop();
+        self.builder.push(Instr::Op(0x0b));
+        if result_ty == Ty::Int {
+            self.builder.push(Instr::Local(0x20, acc_i64));
+        } else {
+            self.builder.push(Instr::Local(0x20, acc_f64));
+        }
+        Ok(result_ty)
+    }
+
+    fn emit_unbox_number(&mut self, ty: Ty) -> Result<(), String> {
+        match ty {
+            Ty::Int => {
+                self.builder.push(Instr::Call(DYN_TO_INT));
+                Ok(())
+            }
+            Ty::Float => {
+                self.builder.push(Instr::Call(DYN_TO_FLOAT));
+                Ok(())
+            }
+            other => Err(format!(
+                "wasm target numeric reduce() needs number params, got {}",
+                ty_name(other)
+            )),
+        }
+    }
+
+    fn reduce_callback_is_numeric(&self, callback: &Expr) -> Result<bool, String> {
+        let Ty::Func(id) = self.type_of(callback)? else {
+            return Ok(false);
+        };
+        let sig = self
+            .checker
+            .lit_sigs
+            .get(id as usize)
+            .cloned()
+            .ok_or_else(|| "wasm target lost a function literal".to_string())?;
+        Ok(sig.params.len() == 2
+            && sig
+                .params
+                .iter()
+                .all(|param| matches!(param, Ty::Int | Ty::Float))
+            && matches!(sig.result, Some(Ty::Int) | Some(Ty::Float)))
+    }
     fn emit_reduce(
         &mut self,
         array: &Expr,
@@ -9291,13 +9520,19 @@ impl<'a> Emitter<'a> {
             .get(id as usize)
             .cloned()
             .ok_or_else(|| "wasm target lost a function literal".to_string())?;
-        if sig.params != vec![Ty::Dyn, Ty::Dyn] {
+        let numeric_params = sig.params.len() == 2
+            && sig
+                .params
+                .iter()
+                .all(|param| matches!(param, Ty::Int | Ty::Float));
+        if sig.params != vec![Ty::Dyn, Ty::Dyn] && !numeric_params {
             return Err("wasm target dynamic sort comparators take two dynamic values".to_string());
         }
         let result_ty = sig.result.unwrap_or(Ty::Int);
-        if !matches!(result_ty, Ty::Int | Ty::Dyn) {
+        if !matches!(result_ty, Ty::Int | Ty::Dyn | Ty::Float) {
             return Err("wasm target dynamic sort comparators return an int".to_string());
         }
+        let param_ints: Vec<bool> = sig.params.iter().map(|param| *param == Ty::Int).collect();
         let arr = self.builder.add_local(ValType::I32);
         let cb_env = self.builder.add_local(ValType::I32);
         let count = self.builder.add_local(ValType::I64);
@@ -9362,9 +9597,27 @@ impl<'a> Emitter<'a> {
             self.builder.push(Instr::Local(0x21, slot));
         }
         self.builder.push(Instr::Local(0x20, cb_env));
-        self.builder.push(Instr::Local(0x20, a));
-        self.builder.push(Instr::Local(0x20, b));
+        if numeric_params {
+            self.builder.push(Instr::Local(0x20, a));
+            if param_ints.first().copied().unwrap_or(true) {
+                self.builder.push(Instr::Call(DYN_TO_INT));
+            } else {
+                self.builder.push(Instr::Call(DYN_TO_FLOAT));
+            }
+            self.builder.push(Instr::Local(0x20, b));
+            if param_ints.get(1).copied().unwrap_or(true) {
+                self.builder.push(Instr::Call(DYN_TO_INT));
+            } else {
+                self.builder.push(Instr::Call(DYN_TO_FLOAT));
+            }
+        } else {
+            self.builder.push(Instr::Local(0x20, a));
+            self.builder.push(Instr::Local(0x20, b));
+        }
         self.builder.push(Instr::Call(sig.index));
+        if result_ty == Ty::Float {
+            self.builder.push(Instr::Op(0xb0));
+        }
         if result_ty == Ty::Dyn {
             self.builder.push(Instr::Local(0x21, a));
             self.builder.push(Instr::Local(0x20, a));
@@ -10961,6 +11214,9 @@ impl<'a> Emitter<'a> {
                 }
                 if key == "reduce" && (args.len() == 1 || args.len() == 2) {
                     if self.type_of(object)? == Ty::Dyn {
+                        if self.reduce_callback_is_numeric(&args[0])? {
+                            return self.emit_dyn_reduce_numeric(object, &args[0], args.get(1));
+                        }
                         return self.emit_dyn_reduce(object, &args[0], args.get(1));
                     }
                     let dynamic_acc = self
@@ -12762,6 +13018,13 @@ impl<'a> Emitter<'a> {
                     }
                     if name == "reduce" && (args.len() == 2 || args.len() == 3) {
                         if self.type_of(&args[0])? == Ty::Dyn {
+                            if self.reduce_callback_is_numeric(&args[1])? {
+                                return self.emit_dyn_reduce_numeric(
+                                    &args[0],
+                                    &args[1],
+                                    args.get(2),
+                                );
+                            }
                             return self.emit_dyn_reduce(&args[0], &args[1], args.get(2));
                         }
                         let dynamic_acc = self
@@ -19158,6 +19421,16 @@ mod tests {
                 "2.5".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn map_produced_dynamic_reduce_and_sort_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let v = parse(env(\"X\", \"[3,1,2]\"))\nlet xs = map(v, fn(it) { return it })\nprint(sort(xs, fn(a, b) { return a - b }))\nprint(reduce(xs, fn(a, b) { return a + b }, 0))\nprint(min(xs))",
+            &[],
+        );
+        assert_eq!(numbers, vec![6i64]);
+        assert_eq!(strings, vec!["[1,2,3]".to_string(), "1".to_string()]);
     }
 
     #[test]
