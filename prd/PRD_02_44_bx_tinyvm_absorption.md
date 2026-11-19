@@ -202,7 +202,7 @@ Findings that change the plan:
 | --- | --- | --- | --- |
 | G0 | absorption is worth it | 300-case differential and a 7-case feature matrix run byte-identically through the core with a shim host; the core's validator caught one real emitter bug (int-array `push` local types) | `[v]` |
 | G1 | one engine | `bx/src/wasm.rs` interpreter deleted; no dual semantics in the product | `[_]` |
-| G2 | no matrix tax | a new container kind is added by one representation change, no per-operation host imports | `[_]` |
+| G2 | no matrix tax | a new container kind is added by one representation change, no per-operation host imports | `[-]` 2026-11-19: `Ty::Dyn` added one 16-byte cell representation shared by null/int/float/bool/string/array/map/record/function, and the hybrid path emits `dyn_*` host calls only for non-local operations (formatting, keyed lookup, coercion); import count is bounded at 146 and every dynamic operation that can be a plain memory access stays guest-side. The remaining tax is the static element-kind matrix, which P2d removes |
 | G3 | embeddable parity | static lib + C ABI passes `tinyvm`'s C-ABI smoke shapes; XCFramework + Swift smoke exit 0 in CI | `[_]` |
 | G4 | downstream cutover | `agenterm` and the TinyArcade app consume `minicon-bx` artifacts, both suites green | `[_]` |
 | G5 | retirement | `tinyvm` repo archived; any remaining feature is explicitly dropped with a recorded reason | `[_]` |
@@ -287,8 +287,8 @@ number/string coercion).
 | step | scope | gate |
 | --- | --- | --- |
 | P2a | `Ty::Dyn` scalars + `null`, `dyn_*` conversions, `parse(exec.out)` for 1/1.5/"a"/true | `[v]` 2026-11-18 — runtime `parse` of scalar JSON returns `Ty::Dyn`; print/`str`/`json`/`type`/interpolation, arithmetic, equality/ordering, `int`/`float`, `!`, truthiness, operand-returning `&&`/`||` all match the VM |
-| P2b | dynamic arrays/maps/records, heterogeneous containers, `dyn_index`/`dyn_member`/`dyn_set_*` | `[v]` 2026-11-18 — arrays/objects parse to nested cells; len/index (negative, OOB→null)/member (missing→null)/nested chains, structural equality, `for`/`for k,v` iteration, `each`/`map`/`filter`, `sort`/comparator-sort/reverse/`sum`/`min`/`max`/`join` and dynamic↔static concatenation match the VM (200 unit, 322 suite; numeric/coll/method/attempt/dynamic differentials and benchmarks re-run). mixed static literal containers (`["a", 1]`, differing record shapes) also lower to dynamic cells, and dynamic-object methods/`reduce`/truthy filters landed (2026-11-18; differential 3x80 + 2x150 + 3x80 + 2x200 cases PASS (including member-callback reduce), and a whole-repo `.bxs` scan (25 scripts: 10 matched, 10 timing-skipped, 4 target-unsupported of which 2 are intentional VM-only error cases) found 0 invalid artifacts after round 203); remaining: record/nested-array concatenation and Dyn→static container conversion |
-| P2c | record field kind 8 (pointer to cell) + `get`/`merge` on heterogeneous shapes | `[-]` 2026-11-18 — field kind 8 holds dynamic cell pointers: `{a: parse(...), b: 7}` constructs/prints/`json`s/reads/assigns/compares, and works in record arrays, `join` and `merge` (146 unit, 233 suite). nested static literal fields are boxed through `env.dyn_from_record`/`dyn_from_array` (2026-11-18), so `{a:{b:1}}`, `{xs:[1,2]}` round-trip too; dynamic `get`/`has`/`contains`/`index_of`/`slice` and dynamic mutation (index/member assignment with key insertion, `push`/`pop`, compound assignment) also landed (2026-11-18) and `bx/tools/wasm-diff-dyn.bxs` randomly diffs the dynamic paths (scalars, arrays, objects, records with dynamic fields, nested values, dynamic strings; 5 seeds x 40 plus 4 seeds x 200 cases PASS (mixed record fields, heterogeneous arrays, arrays of parsed objects included); 12 cases run in `test.sh`); remaining: Dyn→static container conversion |
+| P2b | dynamic arrays/maps/records, heterogeneous containers, `dyn_index`/`dyn_member`/`dyn_set_*` | `[v]` 2026-11-18 — arrays/objects parse to nested cells; len/index (negative, OOB→null)/member (missing→null)/nested chains, structural equality, `for`/`for k,v` iteration, `each`/`map`/`filter`, `sort`/comparator-sort/reverse/`sum`/`min`/`max`/`join` and dynamic↔static concatenation match the VM (200 unit, 322 suite; numeric/coll/method/attempt/dynamic differentials and benchmarks re-run). mixed static literal containers (`["a", 1]`, differing record shapes) also lower to dynamic cells, and dynamic-object methods/`reduce`/truthy filters landed (2026-11-18; differential 3x80 + 2x150 + 3x80 + 2x200 cases PASS (including member-callback reduce), and a whole-repo `.bxs` scan (25 scripts: 10 matched, 10 timing-skipped, 4 target-unsupported of which 2 are intentional VM-only error cases) found 0 invalid artifacts after round 203); record and nested-array concatenation now run through the shared array path (`[{...}] + [{...}]`, `[[1],[2]] + [[3]]`, parsed arrays + static arrays all match the VM) |
+| P2c | record field kind 8 (pointer to cell) + `get`/`merge` on heterogeneous shapes | `[-]` 2026-11-18 — field kind 8 holds dynamic cell pointers: `{a: parse(...), b: 7}` constructs/prints/`json`s/reads/assigns/compares, and works in record arrays, `join` and `merge` (146 unit, 233 suite). nested static literal fields are boxed through `env.dyn_from_record`/`dyn_from_array` (2026-11-18), so `{a:{b:1}}`, `{xs:[1,2]}` round-trip too; dynamic `get`/`has`/`contains`/`index_of`/`slice` and dynamic mutation (index/member assignment with key insertion, `push`/`pop`, compound assignment) also landed (2026-11-18) and `bx/tools/wasm-diff-dyn.bxs` randomly diffs the dynamic paths (scalars, arrays, objects, records with dynamic fields, nested values, dynamic strings; 5 seeds x 40 plus 4 seeds x 200 cases PASS (mixed record fields, heterogeneous arrays, arrays of parsed objects included); 12 cases run in `test.sh`); `Dyn` scalars unbox into static containers, while whole-container narrowing (dynamic array -> static array) stays impossible by design |
 | P2d | front-end simplification: delete element-kind matrix arms/imports that Dyn makes redundant, flip `.bxb` default (PRD_02_43) — `[_]` not started | one shared value path; import count and emitter arm count drop; suite/verify/both differentials green |
 
 Rollout (updated 2026-11-18): no feature flag was needed — `Ty::Dyn` only
@@ -309,6 +309,37 @@ Risks and rollback: the 16-byte cell doubles container memory for dynamic data
 stable across the checker and host; mixing static and dynamic records needs a
 conversion audit (P2c). If P2a/P2b fail their gates the Dyn arm remains behind
 `BX_WASM_DYN`, and the static matrix stays the shipped path exactly as today.
+
+## Current evidence (2026-11-19)
+
+| Evidence | Result |
+| --- | --- |
+| in-tree unit tests | 200 |
+| `bx` suite | 322 checks |
+| `.com` suite | 322 checks (packed APE) |
+| verifier (`.com`) | 86 tests |
+| differential tools | `wasm-diff` 24, `wasm-diff-dyn` 24, `wasm-diff-methods` 20, `wasm-diff-coll` 24, `wasm-diff-attempt` 12 — PASS |
+| corpus soak | 10 scripts: 9 matched, 1 timing/environment skip, 0 diverged |
+| selftest | PASS |
+| real scripts vs VM | `tests/cases/data.bxs`, `tests/cases/loops.bxs`, `examples/{hello,use-lib}.bxs`, `tests/bench-wasm/*` all byte-identical output |
+| gates | `cargo fmt`, `cargo clippy --release -- -D warnings`, `test.sh` green |
+
+Benchmark timings (release build, Windows x64, 3 runs averaged; `bx run` for
+both the script and the emitted `.wasm`, so this compares the two engines):
+
+| Script | VM (ms) | wasm (ms) |
+| --- | --- | --- |
+| loop | 295 | 205 |
+| fib | 61 | 160 |
+| calls | 102 | 192 |
+| coll | 21 | 27 |
+| recs | 20 | 25 |
+| boolarr | 21 | 34 |
+
+The static hot loop is faster through the absorbed engine; call-heavy scripts
+are slower because recursion and closure calls dominate interpreter overhead.
+The performance-budget comparison for `minicon-bx.com` (wasm subset) should be
+read against the VM's own `bx run`, not against a native build.
 
 ## Open decision
 
