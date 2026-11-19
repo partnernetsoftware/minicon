@@ -3763,7 +3763,8 @@ impl Checker {
                     if !matches!(_op, BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Mod) {
                         return Err("wasm target compound-assigns with + - * % only".to_string());
                     }
-                    if self.infer(value)? != Ty::Int {
+                    let value_ty = self.infer(value)?;
+                    if value_ty != Ty::Int && value_ty != Ty::Dyn {
                         return Err("wasm target records and arrays hold ints".to_string());
                     }
                     return Ok(());
@@ -3776,6 +3777,9 @@ impl Checker {
                 let target_ty = self.lookup(name)?;
                 let value_ty = self.infer(value)?;
                 if *_op == BinOp::Add && is_array_ty(target_ty) && target_ty == value_ty {
+                    return Ok(());
+                }
+                if value_ty == Ty::Dyn && is_number(target_ty) {
                     return Ok(());
                 }
                 if !is_number(target_ty) || !is_number(value_ty) {
@@ -4885,7 +4889,16 @@ impl<'a> Emitter<'a> {
             ));
         }
         self.emit_load(name)?;
-        let value_ty = self.emit_expr(value)?;
+        let mut value_ty = self.emit_expr(value)?;
+        if value_ty == Ty::Dyn {
+            if target_ty == Ty::Int {
+                self.builder.push(Instr::Call(DYN_TO_INT));
+                value_ty = Ty::Int;
+            } else if target_ty == Ty::Float {
+                self.builder.push(Instr::Call(DYN_TO_FLOAT));
+                value_ty = Ty::Float;
+            }
+        }
         let value_ty = if target_ty == Ty::Float && value_ty == Ty::Int {
             self.builder.push(Instr::Op(0xb9));
             Ty::Float
@@ -15884,7 +15897,9 @@ impl<'a> Emitter<'a> {
                     self.builder.push(Instr::Local(0x20, address));
                     self.builder.push(Instr::Mem(0x29, 3, 0));
                     let ty = self.emit_expr(value)?;
-                    if ty != Ty::Int {
+                    if ty == Ty::Dyn {
+                        self.builder.push(Instr::Call(DYN_TO_INT));
+                    } else if ty != Ty::Int {
                         return Err("wasm target records and arrays hold ints".to_string());
                     }
                     let opcode = match op {
@@ -21094,6 +21109,16 @@ mod tests {
                 "[1,7]".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn compound_assignment_unboxes_dynamic_values() {
+        let (numbers, strings) = run_with_argv(
+            "let v = parse(env(\"X\", \"[2,3]\"))\nlet total = 0\nfor x in v {\n  total += x\n}\nprint(total)\nlet fs = 0.0\nfor x in v {\n  fs += x\n}\nprint(fs)\nlet rc = {n: 1}\nlet q = parse(env(\"Q\", \"5\"))\nrc.n += q\nprint(rc.n)\nlet arr = [10, 20]\narr[0] += q\nprint(arr)\nlet prod = 1\nfor x in v {\n  prod *= x\n}\nprint(prod)",
+            &[],
+        );
+        assert_eq!(numbers, vec![5, 6, 6]);
+        assert_eq!(strings, vec!["5".to_string(), "[15,20]".to_string()]);
     }
 
     #[test]

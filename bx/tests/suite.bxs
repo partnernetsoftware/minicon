@@ -199,6 +199,16 @@ check("hello example", "hello from bx\n7\n{\"bytes\":2,\"fast\":true}", ["run", 
 
 print("bytecode")
 let artDir = __dir__ + "/../target/bx-tests"
+write(artDir + "/wasm-compound-dyn.bxs", 'let v = parse(env("X", "[2,3]"))\nlet total = 0\nfor x in v {\n  total += x\n}\nprint(total)\nlet fs = 0.0\nfor x in v {\n  fs += x\n}\nprint(fs)\nlet rc = {n: 1}\nlet q = parse(env("Q", "5"))\nrc.n += q\nprint(rc.n)\nlet arr = [10, 20]\narr[0] += q\nprint(arr)\nlet prod = 1\nfor x in v {\n  prod *= x\n}\nprint(prod)\n')
+let wasmCompoundDyn = exec([BX, "build", "--wasm", artDir + "/wasm-compound-dyn.bxs", "-o", artDir + "/wasm-compound-dyn.wasm"])
+let wasmCompoundDynRun = exec([BX, "run", artDir + "/wasm-compound-dyn.wasm"])
+let wasmCompoundDynVm = exec([BX, "run", artDir + "/wasm-compound-dyn.bxs"])
+if (wasmCompoundDyn.code == 0 && wasmCompoundDynRun.out == wasmCompoundDynVm.out && wasmCompoundDynRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm compound assignment with dynamic values\n    wasm=" + json(wasmCompoundDynRun.out) + " vm=" + json(wasmCompoundDynVm.out) + " err=" + json(wasmCompoundDyn.err))
+}
 write(artDir + "/wasm-push-promote.bxs", 'let x = parse(env("D", "7"))\nlet bs = [true]\npush(bs, x)\nprint(bs)\nprint(bs.len())\nbs.push(x)\nprint(bs)\nlet ss = ["a"]\npush(ss, x)\nprint(ss)\nprint(ss[1])\nlet is = [1]\npush(is, x)\nprint(is)\n')
 let wasmPushPromote = exec([BX, "build", "--wasm", artDir + "/wasm-push-promote.bxs", "-o", artDir + "/wasm-push-promote.wasm"])
 let wasmPushPromoteRun = exec([BX, "run", artDir + "/wasm-push-promote.wasm"])
