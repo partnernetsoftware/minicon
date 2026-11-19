@@ -1068,6 +1068,39 @@ if (wasmMergeKind.code == 0 && wasmMergeKindRun.out == wasmMergeKindVm.out && wa
   casesFail += 1
   failures.push("wasm merge kind override\n    wasm=" + json(wasmMergeKindRun.out) + " vm=" + json(wasmMergeKindVm.out) + " err=" + json(wasmMergeKind.err))
 }
+write(artDir + "/wasm-grow.bxs", 'let o = {a: 1}\no.b = 2\nprint(o.b)\n')
+let wasmGrow = exec([BX, "build", "--wasm", artDir + "/wasm-grow.bxs", "-o", artDir + "/wasm-grow.wasm"])
+if (wasmGrow.code == 1 && wasmGrow.err.contains("cannot add a new field") && wasmGrow.err.contains("declare it in the record literal")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm static record growth is rejected clearly\n    code=" + str(wasmGrow.code) + " err=" + json(wasmGrow.err))
+}
+let benchNames = ["boolarr", "calls", "coll", "fib", "loop", "recs"]
+let benchOk = true
+let benchNote = ""
+for benchName in benchNames {
+  let benchSrc = __dir__ + "/bench-wasm/" + benchName + ".bxs"
+  let benchOut = artDir + "/bench-" + benchName + ".wasm"
+  let benchBuild = exec([BX, "build", "--wasm", benchSrc, "-o", benchOut])
+  if (benchBuild.code != 0) {
+    benchOk = false
+    benchNote = benchNote + " " + benchName + ":build:" + benchBuild.err
+  } else {
+    let benchVm = exec([BX, "run", benchSrc])
+    let benchWasm = exec([BX, "run", benchOut])
+    if (benchVm.out != benchWasm.out) {
+      benchOk = false
+      benchNote = benchNote + " " + benchName + ":diff"
+    }
+  }
+}
+if (benchOk) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm bench-wasm scripts match the VM\n   " + benchNote)
+}
 write(artDir + "/wasm-data.bxs", read(__dir__ + "/cases/data.bxs"))
 write(artDir + "/sample.json", read(__dir__ + "/cases/sample.json"))
 let wasmDataCase = exec([BX, "build", "--wasm", artDir + "/wasm-data.bxs", "-o", artDir + "/wasm-data.wasm"])
@@ -1485,6 +1518,39 @@ if (wasmMergeKind.code == 0 && wasmMergeKindRun.out == wasmMergeKindVm.out && wa
 } else {
   casesFail += 1
   failures.push("wasm merge kind override\n    wasm=" + json(wasmMergeKindRun.out) + " vm=" + json(wasmMergeKindVm.out) + " err=" + json(wasmMergeKind.err))
+}
+write(artDir + "/wasm-grow.bxs", 'let o = {a: 1}\no.b = 2\nprint(o.b)\n')
+let wasmGrow = exec([BX, "build", "--wasm", artDir + "/wasm-grow.bxs", "-o", artDir + "/wasm-grow.wasm"])
+if (wasmGrow.code == 1 && wasmGrow.err.contains("cannot add a new field") && wasmGrow.err.contains("declare it in the record literal")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm static record growth is rejected clearly\n    code=" + str(wasmGrow.code) + " err=" + json(wasmGrow.err))
+}
+let benchNames = ["boolarr", "calls", "coll", "fib", "loop", "recs"]
+let benchOk = true
+let benchNote = ""
+for benchName in benchNames {
+  let benchSrc = __dir__ + "/bench-wasm/" + benchName + ".bxs"
+  let benchOut = artDir + "/bench-" + benchName + ".wasm"
+  let benchBuild = exec([BX, "build", "--wasm", benchSrc, "-o", benchOut])
+  if (benchBuild.code != 0) {
+    benchOk = false
+    benchNote = benchNote + " " + benchName + ":build:" + benchBuild.err
+  } else {
+    let benchVm = exec([BX, "run", benchSrc])
+    let benchWasm = exec([BX, "run", benchOut])
+    if (benchVm.out != benchWasm.out) {
+      benchOk = false
+      benchNote = benchNote + " " + benchName + ":diff"
+    }
+  }
+}
+if (benchOk) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm bench-wasm scripts match the VM\n   " + benchNote)
 }
 write(artDir + "/wasm-data.bxs", read(__dir__ + "/cases/data.bxs"))
 write(artDir + "/sample.json", read(__dir__ + "/cases/sample.json"))

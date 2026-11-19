@@ -3220,7 +3220,15 @@ impl Checker {
                                 "wasm target writes record fields only".to_string()
                             );
                         };
-                        let expected = self.field_ty(shape, key)?;
+                        let expected = match self.field_ty(shape, key) {
+                            Ok(ty) => ty,
+                            Err(_) => {
+                                return Err(format!(
+                                    "wasm target cannot add a new field '{}' to a static record; declare it in the record literal (the VM grows records at runtime)",
+                                    key
+                                ))
+                            }
+                        };
                         let actual = self.infer(value)?;
                            let ok = expected == actual
                                || (expected == Ty::Float && actual == Ty::Int)
