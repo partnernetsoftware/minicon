@@ -199,6 +199,16 @@ check("hello example", "hello from bx\n7\n{\"bytes\":2,\"fast\":true}", ["run", 
 
 print("bytecode")
 let artDir = __dir__ + "/../target/bx-tests"
+write(artDir + "/wasm-mixed-callbacks.bxs", 'print(map([1, 2], fn(v) { if (v > 1) { return "s" }\n  return v }))\nprint(filter([1, 2, 3], fn(v) { if (v == 2) { return "yes" }\n  return 0 }))\nprint(reduce([1, 2, 3], fn(a, b) { if (b == 3) { return a + "x" }\n  return a + b }, ""))\nprint(reduce([1, 2], fn(a, b) { if (b == 2) { return a + "y" }\n  return a + b }))\n')
+let wasmMixedCb = exec([BX, "build", "--wasm", artDir + "/wasm-mixed-callbacks.bxs", "-o", artDir + "/wasm-mixed-callbacks.wasm"])
+let wasmMixedCbRun = exec([BX, "run", artDir + "/wasm-mixed-callbacks.wasm"])
+let wasmMixedCbVm = exec([BX, "run", artDir + "/wasm-mixed-callbacks.bxs"])
+if (wasmMixedCb.code == 0 && wasmMixedCbRun.out == wasmMixedCbVm.out && wasmMixedCbRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm mixed-return callbacks\n    wasm=" + json(wasmMixedCbRun.out) + " vm=" + json(wasmMixedCbVm.out) + " err=" + json(wasmMixedCb.err))
+}
 write(artDir + "/wasm-closure-param.bxs", 'fn apply(xs, f) {\n  return map(xs, f)\n}\nprint(apply([1], fn(x) { return x + 1 }))\nprint(apply([2], fn(x) { return x * 2 }))\n')
 let wasmClosureParam = exec([BX, "build", "--wasm", artDir + "/wasm-closure-param.bxs", "-o", artDir + "/wasm-closure-param.wasm"])
 if (wasmClosureParam.code == 1 && wasmClosureParam.err.contains("different function literals")) {

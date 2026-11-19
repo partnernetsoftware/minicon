@@ -75,7 +75,7 @@ minicon-bx owns a standard wasm core and one language skin      [-]
 │   └── core vendored as a workspace member                      [v]  `bx/vendor/tinyvm` (no crates.io wasm crate)
 │
 ├── P2 language front end simplification                        [-]  hybrid tagged-value P2a/P2b/P2c shipped (P2c 2026-11-19); P2d pending
-│   ├── uniform tagged value ABI (containers hold values)        [v]  16-byte cells; runtime parse, scalar ops, arrays/objects, iteration/map/filter/sort/join/concat (203 unit, 324 suite)
+│   ├── uniform tagged value ABI (containers hold values)        [v]  16-byte cells; runtime parse, scalar ops, arrays/objects, iteration/map/filter/sort/join/concat (204 unit, 325 suite)
 │   ├── element-kind matrix and its host imports deleted         [_]
 │   ├── `.bxb` default flip and retirement (PRD_02_43)           [_]
 │   └── float/nested/mixed containers from the uniform layout    [v]  scalar/array/object dynamic values, record field kind 8 (dynamic cells in records) and static↔dynamic boxing landed; whole-container narrowing is a recorded boundary
@@ -315,9 +315,9 @@ conversion audit (landed with P2c: scalar unboxing and record/array promotion). 
 
 | Evidence | Result |
 | --- | --- |
-| in-tree unit tests | 203 |
-| `bx` suite | 324 checks |
-| `.com` suite | 324 checks (packed APE) |
+| in-tree unit tests | 204 |
+| `bx` suite | 325 checks |
+| `.com` suite | 325 checks (packed APE) |
 | verifier (`.com`) | 86 tests |
 | differential tools | `wasm-diff` 24, `wasm-diff-dyn` 24, `wasm-diff-methods` 20, `wasm-diff-coll` 24, `wasm-diff-attempt` 12 — PASS; 2026-11-19 stress sweep: `wasm-diff` 120 (seed 7), `wasm-diff-dyn` 150×2 (seeds 11/12), `wasm-diff-coll` 100 (seed 13), `wasm-diff-methods` 100 (seed 14), `wasm-diff-attempt` 30 (seed 15) — all PASS |
 | corpus soak | 10 scripts: 9 matched, 1 timing/environment skip, 0 diverged |

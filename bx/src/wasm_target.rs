@@ -21430,6 +21430,24 @@ mod tests {
     }
 
     #[test]
+    fn mixed_return_callbacks_build_dynamic_results() {
+        let (numbers, strings) = run_with_argv(
+            "print(map([1, 2], fn(v) { if (v > 1) { return \"s\" }\n  return v }))\nprint(filter([1, 2, 3], fn(v) { if (v == 2) { return \"yes\" }\n  return 0 }))\nprint(reduce([1, 2, 3], fn(a, b) { if (b == 3) { return a + \"x\" }\n  return a + b }, \"\"))\nprint(reduce([1, 2], fn(a, b) { if (b == 2) { return a + \"y\" }\n  return a + b }))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec![
+                "[1,\"s\"]".to_string(),
+                "[2]".to_string(),
+                "12x".to_string(),
+                "1y".to_string()
+            ]
+        );
+    }
+
+    #[test]
     fn comparator_sort_is_stable_and_matches_the_vm() {
         let (numbers, strings) = run_with_argv(
             "print(sort([3, 1, 2], fn(x, y) { return x - y }))\nprint(sort([3, 1, 2], fn(x, y) { return y - x }))\nprint(sort([5], fn(x, y) { return x - y }))\nprint(sort([], fn(x, y) { return x - y }))\nprint(sort([2.5, 1.5, 3.5], fn(x, y) { if (x < y) { return -1 }\n  return 1 }))\nprint(sort([\"bb\", \"a\", \"ccc\"], fn(x, y) { return len(x) - len(y) }))\nlet rows = [[3], [1, 2], [2]]\nprint(sort(rows, fn(x, y) { return len(x) - len(y) }))\nlet rs = [{a: 3}, {a: 1}, {a: 2}, {a: 1}]\nprint(sort(rs, fn(x, y) { return x.a - y.a }))",
