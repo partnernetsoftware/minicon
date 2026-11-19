@@ -647,6 +647,9 @@ struct Checker {
     /// AST site -> old static array type promoted to a dynamic array because a
     /// dynamic value replaces a bool/string element.
     dyn_array_sites: HashMap<usize, Ty>,
+    /// AST site (pushed array expression) -> old underlying static array type
+    /// promoted because a dynamic value is pushed.
+    dyn_array_push_sites: HashMap<usize, Ty>,
     /// Variables that already received a static array element write.
     array_write_log: std::collections::HashSet<String>,
 }
@@ -669,6 +672,7 @@ impl Checker {
             dyn_record_sites: HashMap::new(),
             record_write_log: HashMap::new(),
             dyn_array_sites: HashMap::new(),
+            dyn_array_push_sites: HashMap::new(),
             array_write_log: std::collections::HashSet::new(),
         }
     }
@@ -3504,6 +3508,24 @@ impl Checker {
                             }
                         };
                         let pushed = self.infer(&args[1])?;
+                        if pushed == Ty::Dyn
+                            && matches!(element, Ty::Bool | Ty::Str)
+                            && matches!(arr_ty, Ty::ArrBool | Ty::ArrStr)
+                        {
+                            let Expr::Ident(name) = &args[0] else {
+                                return Err("wasm target promotes array variables only".to_string());
+                            };
+                            if self.array_write_log.contains(name) {
+                                return Err(format!(
+                                    "wasm target cannot push a dynamic element into '{}' after earlier element writes",
+                                    name
+                                ));
+                            }
+                            let site = &args[0] as *const Expr as usize;
+                            self.dyn_array_push_sites.insert(site, arr_ty);
+                            self.update_binding_ty(name, Ty::Dyn)?;
+                            return Ok(());
+                        }
                         let convert = pushed == Ty::Dyn && matches!(element, Ty::Int | Ty::Float);
                         if pushed != element
                             && !(element == Ty::Float && pushed == Ty::Int)
@@ -3815,6 +3837,24 @@ impl Checker {
                     return Err("wasm target .push takes one value".to_string());
                 }
                 let pushed = self.infer(&args[0])?;
+                if pushed == Ty::Dyn
+                    && matches!(element, Ty::Bool | Ty::Str)
+                    && matches!(base, Ty::ArrBool | Ty::ArrStr)
+                {
+                    let Expr::Ident(name) = &**object else {
+                        return Err("wasm target promotes array variables only".to_string());
+                    };
+                    if self.array_write_log.contains(name) {
+                        return Err(format!(
+                            "wasm target cannot push a dynamic element into '{}' after earlier element writes",
+                            name
+                        ));
+                    }
+                    let site = &**object as *const Expr as usize;
+                    self.dyn_array_push_sites.insert(site, base);
+                    self.update_binding_ty(name, Ty::Dyn)?;
+                    return Ok(());
+                }
                 let convert = pushed == Ty::Dyn && matches!(element, Ty::Int | Ty::Float);
                 if pushed != element && !convert {
                     return Err(format!(
@@ -7732,6 +7772,56 @@ impl<'a> Emitter<'a> {
 
     /// `arr.push(value)`: allocate a larger block, copy the old one, append and
     /// write the new pointer back into the array variable.
+    /// Promote a static array to a dynamic array and push one dynamic value.
+    fn emit_promote_array_push(
+        &mut self,
+        name: &str,
+        array: &Expr,
+        value: &Expr,
+        old_ty: Ty,
+    ) -> Result<(), String> {
+        if self.boxed.contains(name) {
+            return Err(format!(
+                "wasm target cannot promote the captured array '{}'",
+                name
+            ));
+        }
+        if self.alias_names(name).len() > 1 {
+            return Err(format!(
+                "wasm target cannot promote the aliased array '{}'",
+                name
+            ));
+        }
+        let kind = match old_ty {
+            Ty::Arr => 4,
+            Ty::ArrStr => 5,
+            Ty::ArrF => 6,
+            Ty::ArrBool => 11,
+            other => {
+                return Err(format!(
+                    "wasm target cannot promote {} arrays",
+                    ty_name(other)
+                ))
+            }
+        };
+        let cell = self.builder.add_local(ValType::I32);
+        self.builder
+            .push(Instr::Const(0x41, WVal::I32(kind as i32)));
+        self.emit_expr(array)?;
+        self.builder.push(Instr::Call(DYN_FROM_ARRAY));
+        self.builder.push(Instr::Local(0x21, cell));
+        let value_ty = self.type_of(value)?;
+        self.builder.push(Instr::Local(0x20, cell));
+        self.emit_box_dyn(value, value_ty)?;
+        self.builder.push(Instr::Call(DYN_PUSH));
+        self.builder.push(Instr::Op(0x1a));
+        for alias in self.alias_names(name) {
+            self.builder.push(Instr::Local(0x20, cell));
+            self.emit_store(&alias)?;
+        }
+        Ok(())
+    }
+
     fn emit_push(&mut self, name: &str, value: &Expr) -> Result<(), String> {
         let arr_ty = match self.local_of(name) {
             Some(slot) => slot.ty,
@@ -12922,7 +13012,13 @@ impl<'a> Emitter<'a> {
                         return self.emit_exec_record(args, true);
                     }
                     if name == "push" && args.len() == 2 {
-                        if self.type_of(&args[0])? == Ty::Dyn {
+                        let push_site_early = &args[0] as *const Expr as usize;
+                        if self.type_of(&args[0])? == Ty::Dyn
+                            && !self
+                                .checker
+                                .dyn_array_push_sites
+                                .contains_key(&push_site_early)
+                        {
                             let value_ty = self.type_of(&args[1])?;
                             self.emit_expr(&args[0])?;
                             self.emit_box_dyn(&args[1], value_ty)?;
@@ -12934,6 +13030,14 @@ impl<'a> Emitter<'a> {
                                 "wasm target pushes into a named array variable only".to_string()
                             );
                         };
+                        let push_site = &args[0] as *const Expr as usize;
+                        if let Some(old_ty) =
+                            self.checker.dyn_array_push_sites.get(&push_site).copied()
+                        {
+                            self.emit_promote_array_push(array, &args[0], &args[1], old_ty)?;
+                            self.emit_load(array)?;
+                            return Ok(Ty::Dyn);
+                        }
                         self.emit_push(array, &args[1])?;
                         let ty = self.checker.binding(array)?.ty;
                         self.emit_load(array)?;
@@ -15210,7 +15314,13 @@ impl<'a> Emitter<'a> {
                         return Ok(());
                     }
                     "push" => {
-                        if self.type_of(&args[0])? == Ty::Dyn {
+                        let push_site_early = &args[0] as *const Expr as usize;
+                        if self.type_of(&args[0])? == Ty::Dyn
+                            && !self
+                                .checker
+                                .dyn_array_push_sites
+                                .contains_key(&push_site_early)
+                        {
                             let value_ty = self.type_of(&args[1])?;
                             self.emit_expr(&args[0])?;
                             self.emit_box_dyn(&args[1], value_ty)?;
@@ -15223,6 +15333,13 @@ impl<'a> Emitter<'a> {
                                 "wasm target pushes into a named array variable only".to_string()
                             );
                         };
+                        let push_site = &args[0] as *const Expr as usize;
+                        if let Some(old_ty) =
+                            self.checker.dyn_array_push_sites.get(&push_site).copied()
+                        {
+                            self.emit_promote_array_push(array, &args[0], &args[1], old_ty)?;
+                            return Ok(());
+                        }
                         self.emit_push(array, &args[1])?;
                         return Ok(());
                     }
@@ -15691,7 +15808,13 @@ impl<'a> Emitter<'a> {
                     }
                     return self.emit_pop(array);
                 }
-                if self.type_of(object)? == Ty::Dyn {
+                let method_push_site = &**object as *const Expr as usize;
+                if self.type_of(object)? == Ty::Dyn
+                    && !self
+                        .checker
+                        .dyn_array_push_sites
+                        .contains_key(&method_push_site)
+                {
                     match name.as_str() {
                         "pop" if args.is_empty() => {
                             self.emit_expr(object)?;
@@ -15720,6 +15843,11 @@ impl<'a> Emitter<'a> {
                         "wasm target does not support the .{} method yet",
                         name
                     ));
+                }
+                let push_site = &**object as *const Expr as usize;
+                if let Some(old_ty) = self.checker.dyn_array_push_sites.get(&push_site).copied() {
+                    self.emit_promote_array_push(array, object, &args[0], old_ty)?;
+                    return Ok(());
                 }
                 self.emit_push(array, &args[0])?;
                 Ok(())
@@ -20945,6 +21073,25 @@ mod tests {
                 "7".to_string(),
                 "[7]".to_string(),
                 "[7]".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn dynamic_pushes_promote_static_arrays() {
+        let (numbers, strings) = run_with_argv(
+            "let x = parse(env(\"D\", \"7\"))\nlet bs = [true]\npush(bs, x)\nprint(bs)\nprint(bs.len())\nbs.push(x)\nprint(bs)\nlet ss = [\"a\"]\npush(ss, x)\nprint(ss)\nprint(ss[1])\nlet is = [1]\npush(is, x)\nprint(is)",
+            &[],
+        );
+        assert_eq!(numbers, vec![2]);
+        assert_eq!(
+            strings,
+            vec![
+                "[true,7]".to_string(),
+                "[true,7,7]".to_string(),
+                "[\"a\",7]".to_string(),
+                "7".to_string(),
+                "[1,7]".to_string()
             ]
         );
     }
