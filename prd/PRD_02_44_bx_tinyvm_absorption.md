@@ -74,11 +74,11 @@ minicon-bx owns a standard wasm core and one language skin      [-]
 │   ├── step/memory budgets owned by the core                    [v]  steps, interrupt, memory pages
 │   └── core vendored as a workspace member                      [v]  `bx/vendor/tinyvm` (no crates.io wasm crate)
 │
-├── P2 language front end simplification                        [-]  hybrid tagged-value P2a/P2b shipped 2026-11-18; P2c/P2d pending
-│   ├── uniform tagged value ABI (containers hold values)        [v]  16-byte cells; runtime parse, scalar ops, arrays/objects, iteration/map/filter/sort/join/concat (144 unit, 232 suite)
+├── P2 language front end simplification                        [-]  hybrid tagged-value P2a/P2b/P2c shipped (P2c 2026-11-19); P2d pending
+│   ├── uniform tagged value ABI (containers hold values)        [v]  16-byte cells; runtime parse, scalar ops, arrays/objects, iteration/map/filter/sort/join/concat (203 unit, 324 suite)
 │   ├── element-kind matrix and its host imports deleted         [_]
 │   ├── `.bxb` default flip and retirement (PRD_02_43)           [_]
-│   └── float/nested/mixed containers from the uniform layout    [-]  scalar/array/object dynamic values done; record field kind 8 (dynamic cells in records) landed, nested static literal fields pending
+│   └── float/nested/mixed containers from the uniform layout    [v]  scalar/array/object dynamic values, record field kind 8 (dynamic cells in records) and static↔dynamic boxing landed; whole-container narrowing is a recorded boundary
 │
 ├── P3 embeddable product face                                  [_]
 │   ├── static lib + C ABI built in the minicon repo             [_]
@@ -288,17 +288,18 @@ number/string coercion).
 | --- | --- | --- |
 | P2a | `Ty::Dyn` scalars + `null`, `dyn_*` conversions, `parse(exec.out)` for 1/1.5/"a"/true | `[v]` 2026-11-18 — runtime `parse` of scalar JSON returns `Ty::Dyn`; print/`str`/`json`/`type`/interpolation, arithmetic, equality/ordering, `int`/`float`, `!`, truthiness, operand-returning `&&`/`||` all match the VM |
 | P2b | dynamic arrays/maps/records, heterogeneous containers, `dyn_index`/`dyn_member`/`dyn_set_*` | `[v]` 2026-11-18 — arrays/objects parse to nested cells; len/index (negative, OOB→null)/member (missing→null)/nested chains, structural equality, `for`/`for k,v` iteration, `each`/`map`/`filter`, `sort`/comparator-sort/reverse/`sum`/`min`/`max`/`join` and dynamic↔static concatenation match the VM (200 unit, 322 suite; numeric/coll/method/attempt/dynamic differentials and benchmarks re-run). mixed static literal containers (`["a", 1]`, differing record shapes) also lower to dynamic cells, and dynamic-object methods/`reduce`/truthy filters landed (2026-11-18; differential 3x80 + 2x150 + 3x80 + 2x200 cases PASS (including member-callback reduce), and a whole-repo `.bxs` scan (25 scripts: 10 matched, 10 timing-skipped, 4 target-unsupported of which 2 are intentional VM-only error cases) found 0 invalid artifacts after round 203); record and nested-array concatenation now run through the shared array path (`[{...}] + [{...}]`, `[[1],[2]] + [[3]]`, parsed arrays + static arrays all match the VM) |
-| P2c | record field kind 8 (pointer to cell) + `get`/`merge` on heterogeneous shapes | `[-]` 2026-11-18 — field kind 8 holds dynamic cell pointers: `{a: parse(...), b: 7}` constructs/prints/`json`s/reads/assigns/compares, and works in record arrays, `join` and `merge` (146 unit, 233 suite). nested static literal fields are boxed through `env.dyn_from_record`/`dyn_from_array` (2026-11-18), so `{a:{b:1}}`, `{xs:[1,2]}` round-trip too; dynamic `get`/`has`/`contains`/`index_of`/`slice` and dynamic mutation (index/member assignment with key insertion, `push`/`pop`, compound assignment) also landed (2026-11-18) and `bx/tools/wasm-diff-dyn.bxs` randomly diffs the dynamic paths (scalars, arrays, objects, records with dynamic fields, nested values, dynamic strings; 5 seeds x 40 plus 4 seeds x 200 cases PASS (mixed record fields, heterogeneous arrays, arrays of parsed objects included); 12 cases run in `test.sh`); `Dyn` scalars unbox into static containers, while whole-container narrowing (dynamic array -> static array) stays impossible by design |
+| P2c | record field kind 8 (pointer to cell) + `get`/`merge` on heterogeneous shapes | `[v]` 2026-11-19 — field kind 8 holds dynamic cell pointers: `{a: parse(...), b: 7}` constructs/prints/`json`s/reads/assigns/compares, and works in record arrays, `join` and `merge` (146 unit, 233 suite). nested static literal fields are boxed through `env.dyn_from_record`/`dyn_from_array` (2026-11-18), so `{a:{b:1}}`, `{xs:[1,2]}` round-trip too; dynamic `get`/`has`/`contains`/`index_of`/`slice` and dynamic mutation (index/member assignment with key insertion, `push`/`pop`, compound assignment) also landed (2026-11-18) and `bx/tools/wasm-diff-dyn.bxs` randomly diffs the dynamic paths (scalars, arrays, objects, records with dynamic fields, nested values, dynamic strings; 5 seeds x 40 plus 4 seeds x 200 cases PASS (mixed record fields, heterogeneous arrays, arrays of parsed objects included); 12 cases run in `test.sh`); `Dyn` scalars unbox into static containers, while whole-container narrowing (dynamic array -> static array) stays impossible by design |
 | P2d | front-end simplification: delete element-kind matrix arms/imports that Dyn makes redundant, flip `.bxb` default (PRD_02_43) — `[_]` not started | one shared value path; import count and emitter arm count drop; suite/verify/both differentials green |
 
-Rollout (updated 2026-11-18): no feature flag was needed — `Ty::Dyn` only
+Rollout (updated 2026-11-19): no feature flag was needed — `Ty::Dyn` only
 appears for values whose kind the checker cannot prove statically (runtime
-`parse` results), so the static fast path keeps its exact code shapes and the
-dynamic path is opt-in by data, not by a build switch. P2a/P2b are shipped and
-`verify`/the four differential tools stay green (numeric/coll/method diffs
-3 seeds × 20 cases each, attempt 3 × 12, re-run 2026-11-18); P2c (record-field
-containers) and P2d (delete the now-redundant element-kind matrix, flip `.bxb`
-default) are still open.
+`parse`/`exec` results, dynamic containers), so the static fast path keeps its
+exact code shapes and the dynamic path is opt-in by data, not by a build switch.
+P2a, P2b and P2c are shipped; `verify` and the five differential tools stay
+green (`wasm-diff` 24, `wasm-diff-dyn` 24, `wasm-diff-methods` 20,
+`wasm-diff-coll` 24, `wasm-diff-attempt` 12, plus a 650-case stress sweep on
+2026-11-19), and `bx/scripts/evidence.sh` reproduces the bundle. P2d (delete
+the now-redundant element-kind matrix, flip `.bxb` default) is still open.
 Performance budget: static benchmarks (`fib`, `loop`, `calls`, `coll`, `recs`)
 must not regress more than 5%; dynamic-heavy workloads (parse/exec output
 pipelines) target at least 0.5x VM time. The hybrid design is what keeps that
@@ -307,7 +308,7 @@ promise: the hot static path never touches a tagged cell.
 Risks and rollback: the 16-byte cell doubles container memory for dynamic data
 (acceptable: dynamic data is I/O-sized, not hot loops); shape ids must stay
 stable across the checker and host; mixing static and dynamic records needs a
-conversion audit (P2c). If P2a/P2b fail their gates the Dyn arm remains behind
+conversion audit (landed with P2c: scalar unboxing and record/array promotion). If P2a/P2b fail their gates the Dyn arm remains behind
 `BX_WASM_DYN`, and the static matrix stays the shipped path exactly as today.
 
 ## Current evidence (2026-11-19)
