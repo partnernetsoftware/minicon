@@ -15660,6 +15660,7 @@ impl<'a> InferState<'a> {
                 let mut saw_float = false;
                 let mut saw_int = false;
                 let mut obj_shape: Option<u32> = None;
+                let mut saw_dyn = false;
                 for item in items {
                     match self.soft(item, locals)? {
                         Ty::Str => saw_str = true,
@@ -15669,10 +15670,14 @@ impl<'a> InferState<'a> {
                         Ty::Float => saw_float = true,
                         Ty::Int => saw_int = true,
                         Ty::Obj(shape) => obj_shape = Some(shape),
+                        Ty::Dyn => saw_dyn = true,
                         _ => {}
                     }
                 }
                 let _ = saw_int;
+                if saw_dyn {
+                    return Some(Ty::Dyn);
+                }
                 Some(if saw_strarr {
                     Ty::ArrStrArr
                 } else {

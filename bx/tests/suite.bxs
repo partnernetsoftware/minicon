@@ -1068,12 +1068,16 @@ if (wasmMergeKind.code == 0 && wasmMergeKindRun.out == wasmMergeKindVm.out && wa
   casesFail += 1
   failures.push("wasm merge kind override\n    wasm=" + json(wasmMergeKindRun.out) + " vm=" + json(wasmMergeKindVm.out) + " err=" + json(wasmMergeKind.err))
 }
+write(artDir + "/wasm-data.bxs", read(__dir__ + "/cases/data.bxs"))
+write(artDir + "/sample.json", read(__dir__ + "/cases/sample.json"))
 let wasmDataCase = exec([BX, "build", "--wasm", artDir + "/wasm-data.bxs", "-o", artDir + "/wasm-data.wasm"])
-if (wasmDataCase.code == 1 && wasmDataCase.err.contains("dynamic sort comparators")) {
+let wasmDataRun = exec([BX, "run", artDir + "/wasm-data.wasm"], { cwd: artDir })
+let wasmDataVm = exec([BX, "run", artDir + "/wasm-data.bxs"], { cwd: artDir })
+if (wasmDataCase.code == 0 && wasmDataRun.code == 0 && wasmDataRun.out == wasmDataVm.out && wasmDataRun.out.trim() != "") {
   casesOk += 1
 } else {
   casesFail += 1
-  failures.push("wasm nested-array comparator is rejected cleanly\n    code=" + str(wasmDataCase.code) + " err=" + json(wasmDataCase.err))
+  failures.push("wasm data.bxs differential\n    wasm=" + json(wasmDataRun.out) + " vm=" + json(wasmDataVm.out) + " err=" + json(wasmDataCase.err) + json(wasmDataRun.err))
 }
 write(artDir + "/wasm-nullparse.bxs", 'print(parse("{" + json("k") + ": [1, 2.5, " + json("s") + ", true, null]}"))\nprint(json(parse("{" + json("k") + ": [1, null]}" )))\nprint(json("a" + json("") + ""))\nprint(parse("[1, null]")[1])\nprint(type(parse("1e3")))\nprint(parse("[1, null]")[0] + 1)\n')
 let wasmNullParse = exec([BX, "build", "--wasm", artDir + "/wasm-nullparse.bxs", "-o", artDir + "/wasm-nullparse.wasm"])
@@ -1482,12 +1486,16 @@ if (wasmMergeKind.code == 0 && wasmMergeKindRun.out == wasmMergeKindVm.out && wa
   casesFail += 1
   failures.push("wasm merge kind override\n    wasm=" + json(wasmMergeKindRun.out) + " vm=" + json(wasmMergeKindVm.out) + " err=" + json(wasmMergeKind.err))
 }
+write(artDir + "/wasm-data.bxs", read(__dir__ + "/cases/data.bxs"))
+write(artDir + "/sample.json", read(__dir__ + "/cases/sample.json"))
 let wasmDataCase = exec([BX, "build", "--wasm", artDir + "/wasm-data.bxs", "-o", artDir + "/wasm-data.wasm"])
-if (wasmDataCase.code == 1 && wasmDataCase.err.contains("dynamic sort comparators")) {
+let wasmDataRun = exec([BX, "run", artDir + "/wasm-data.wasm"], { cwd: artDir })
+let wasmDataVm = exec([BX, "run", artDir + "/wasm-data.bxs"], { cwd: artDir })
+if (wasmDataCase.code == 0 && wasmDataRun.code == 0 && wasmDataRun.out == wasmDataVm.out && wasmDataRun.out.trim() != "") {
   casesOk += 1
 } else {
   casesFail += 1
-  failures.push("wasm nested-array comparator is rejected cleanly\n    code=" + str(wasmDataCase.code) + " err=" + json(wasmDataCase.err))
+  failures.push("wasm data.bxs differential\n    wasm=" + json(wasmDataRun.out) + " vm=" + json(wasmDataVm.out) + " err=" + json(wasmDataCase.err) + json(wasmDataRun.err))
 }
 write(artDir + "/wasm-nullparse.bxs", 'print(parse("{" + json("k") + ": [1, 2.5, " + json("s") + ", true, null]}"))\nprint(json(parse("{" + json("k") + ": [1, null]}" )))\nprint(json("a" + json("") + ""))\nprint(parse("[1, null]")[1])\nprint(type(parse("1e3")))\nprint(parse("[1, null]")[0] + 1)\n')
 let wasmNullParse = exec([BX, "build", "--wasm", artDir + "/wasm-nullparse.bxs", "-o", artDir + "/wasm-nullparse.wasm"])
