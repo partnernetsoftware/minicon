@@ -369,7 +369,7 @@ fn is_number(ty: Ty) -> bool {
 
 /// A call-site argument may promote an int to a float parameter.
 fn arg_ok(expected: Ty, actual: Ty) -> bool {
-    expected == actual || (expected == Ty::Float && actual == Ty::Int)
+    expected == actual || (expected == Ty::Float && actual == Ty::Int) || expected == Ty::Dyn
 }
 
 /// Wasm value types used to represent one bx value.
@@ -4966,6 +4966,70 @@ impl<'a> Emitter<'a> {
         self.emit_store(name)
     }
 
+    /// Box a value already on the stack into a dynamic cell.
+    fn emit_box_dyn_stack(&mut self, ty: Ty) -> Result<(), String> {
+        if ty == Ty::Dyn {
+            return Ok(());
+        }
+        if ty == Ty::Str {
+            let len = self.builder.add_local(ValType::I32);
+            let ptr = self.builder.add_local(ValType::I32);
+            self.builder.push(Instr::Local(0x21, len));
+            self.builder.push(Instr::Local(0x21, ptr));
+            self.builder.push(Instr::Local(0x20, ptr));
+            self.builder.push(Instr::Local(0x20, len));
+            self.builder.push(Instr::Call(DYN_TEXT_CELL));
+            return Ok(());
+        }
+        if let Ty::Obj(shape) = ty {
+            let kinds = self.record_kinds_table(shape)?;
+            let (table, count) = self.record_table(shape)?;
+            let rec = self.builder.add_local(ValType::I32);
+            self.builder.push(Instr::Local(0x21, rec));
+            self.builder
+                .push(Instr::Const(0x41, WVal::I32(kinds as i32)));
+            self.builder
+                .push(Instr::Const(0x41, WVal::I32(table as i32)));
+            self.builder
+                .push(Instr::Const(0x41, WVal::I32(count as i32)));
+            self.builder.push(Instr::Local(0x20, rec));
+            self.builder.push(Instr::Call(DYN_FROM_RECORD));
+            return Ok(());
+        }
+        if is_array_ty(ty) {
+            let kind = match ty {
+                Ty::Arr => 4,
+                Ty::ArrStr => 5,
+                Ty::ArrF => 6,
+                Ty::ArrBool => 11,
+                other => {
+                    return Err(format!(
+                        "wasm target cannot box {} as an argument",
+                        ty_name(other)
+                    ))
+                }
+            };
+            let ptr = self.builder.add_local(ValType::I32);
+            self.builder.push(Instr::Local(0x21, ptr));
+            self.builder
+                .push(Instr::Const(0x41, WVal::I32(kind as i32)));
+            self.builder.push(Instr::Local(0x20, ptr));
+            self.builder.push(Instr::Call(DYN_FROM_ARRAY));
+            return Ok(());
+        }
+        let slot = match ty {
+            Ty::Int => self.builder.add_local(ValType::I64),
+            Ty::Float => self.builder.add_local(ValType::F64),
+            _ => self.builder.add_local(ValType::I32),
+        };
+        self.builder.push(Instr::Local(0x21, slot));
+        if ty == Ty::Null {
+            self.builder.push(Instr::Op(0x1a));
+        }
+        self.emit_dyn_box_local(ty, slot, slot, slot)?;
+        Ok(())
+    }
+
     fn coerce_arg(&mut self, expected: Ty, actual: Ty) -> Result<(), String> {
         if expected == actual {
             return Ok(());
@@ -4973,6 +5037,9 @@ impl<'a> Emitter<'a> {
         if expected == Ty::Float && actual == Ty::Int {
             self.builder.push(Instr::Op(0xb9));
             return Ok(());
+        }
+        if expected == Ty::Dyn {
+            return self.emit_box_dyn_stack(actual);
         }
         if actual == Ty::Dyn {
             match expected {
@@ -16686,7 +16753,11 @@ impl<'a> InferState<'a> {
             // A dynamic result is sticky: mixed returns must not be reverted by
             // a later pass that only sees one concrete type.
             Some(Ty::Dyn) => Ok(false),
-            Some(_) if ty == Ty::Dyn => Ok(false),
+            Some(_) if ty == Ty::Dyn => {
+                // A dynamic return widens a concrete result so callers see Dyn.
+                self.results[index] = Some(Ty::Dyn);
+                Ok(true)
+            }
             Some(current) if is_number(current) && is_number(ty) => {
                 if ty == Ty::Float && current == Ty::Int {
                     self.results[index] = Some(Ty::Float);
@@ -21211,6 +21282,25 @@ mod tests {
                 "[1,2]".to_string(),
                 "a1".to_string(),
                 "[1,2,3,9]".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn static_values_box_into_dynamic_parameters() {
+        let (numbers, strings) = run_with_argv(
+            "let dyn = parse(env(\"N\", \"[3,1,2]\"))\nfn twice(xs) {\n  return map(xs, fn(x) { return x * 2 })\n}\nprint(twice(dyn))\nfn pick(o, k) {\n  return o[k]\n}\nprint(pick({\"a\": 5}, \"a\"))\nprint(pick(parse(env(\"O\", \"{\\\"z\\\":9}\")), \"z\"))\nlet items = parse(env(\"I\", \"[{\\\"qty\\\":2,\\\"price\\\":10},{\\\"qty\\\":1,\\\"price\\\":3}]\"))\nfn lineTotal(it) {\n  return it[\"qty\"] * it[\"price\"]\n}\nprint(map(items, fn(it) { return lineTotal(it) }))\nprint(reduce(map(items, fn(it) { return lineTotal(it) }), fn(a, b) { return a + b }, 0))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec![
+                "[6,2,4]".to_string(),
+                "5".to_string(),
+                "9".to_string(),
+                "[20,3]".to_string(),
+                "23".to_string()
             ]
         );
     }
