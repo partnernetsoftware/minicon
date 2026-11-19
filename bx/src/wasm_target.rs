@@ -4027,6 +4027,8 @@ struct Emitter<'a> {
     file_name: Option<String>,
     /// Line of the statement currently being emitted (0 = unknown).
     current_line: u32,
+    /// Display name of the function being emitted (None at top level).
+    fn_label: Option<String>,
 }
 
 impl Emitter<'_> {
@@ -4045,6 +4047,32 @@ impl Emitter<'_> {
                 format!("{}({}): ", name, line)
             }
             _ => String::new(),
+        }
+    }
+
+    /// VM-style panic prefix: top-level frames use `file(line): `, functions add
+    /// ` in name() [absolute path]` like the VM.
+    fn panic_prefix(&self) -> String {
+        let plain = self.message_prefix();
+        if plain.is_empty() {
+            return plain;
+        }
+        let file = match &self.file_name {
+            Some(file) => file,
+            None => return plain,
+        };
+        match &self.fn_label {
+            Some(label) => {
+                let name = std::path::Path::new(file)
+                    .file_name()
+                    .map(|value| value.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| file.clone());
+                format!(
+                    "{}({}) in {}() [{}]: ",
+                    name, self.current_line, label, file
+                )
+            }
+            None => plain,
         }
     }
 
@@ -4600,6 +4628,24 @@ impl<'a> Emitter<'a> {
 
     /// Abort the module with `message` (host `env.panic`), mirroring VM aborts.
     fn emit_panic(&mut self, message: &str) {
+        let text = format!("{}{}", self.panic_prefix(), message);
+        if let Some(ctx) = self.attempts.last().copied() {
+            let base = self.builder.add_data(text.as_bytes());
+            self.emit_attempt_error_constant(ctx.record, base, text.len() as u32);
+            self.emit_attempt_jump();
+            return;
+        }
+        let base = self.builder.add_data(text.as_bytes());
+        self.builder
+            .push(Instr::Const(0x41, WVal::I32(base as i32)));
+        self.builder
+            .push(Instr::Const(0x41, WVal::I32(text.len() as i32)));
+        self.builder.push(Instr::Call(PANIC));
+    }
+
+    /// Abort with a VM "error" message (plain `file(line): ` prefix, no function
+    /// descriptor), for conversion failures and `assert`/`error()` style errors.
+    fn emit_error(&mut self, message: &str) {
         let text = format!("{}{}", self.message_prefix(), message);
         if let Some(ctx) = self.attempts.last().copied() {
             let base = self.builder.add_data(text.as_bytes());
@@ -7116,6 +7162,8 @@ impl<'a> Emitter<'a> {
         self.labels.push(0x05);
         self.attempts.push(AttemptCtx { record, result_ty });
         self.scoped.push(HashMap::new());
+        let saved_label = self.fn_label.clone();
+        self.fn_label = Some("<lambda>".to_string());
         let Expr::Func(_, body, _) = callback else {
             return Err("wasm target attempt() needs a function literal".to_string());
         };
@@ -7142,6 +7190,7 @@ impl<'a> Emitter<'a> {
         outcome?;
         self.scoped.pop();
         self.attempts.pop();
+        self.fn_label = saved_label;
         self.labels.pop();
         self.builder.push(Instr::Op(0x0b));
         self.builder.push(Instr::Local(0x20, record));
@@ -12644,7 +12693,7 @@ impl<'a> Emitter<'a> {
                                     start: 0,
                                 });
                                 self.labels.push(0x04);
-                                self.emit_panic("cannot convert str to float");
+                                self.emit_error("cannot convert str to float");
                                 self.labels.pop();
                                 self.builder.push(Instr::Op(0x0b));
                                 self.builder.push(Instr::Local(0x20, value));
@@ -17461,6 +17510,7 @@ pub fn compile_to_wasm_named(source: &str, file: Option<&str>) -> Result<Vec<u8>
             alias_of: HashMap::new(),
             file_name: file_name.clone(),
             current_line: 0,
+            fn_label: None,
         };
         for stmt in &stmts {
             emitter.emit_stmt(stmt)?;
@@ -17504,6 +17554,7 @@ pub fn compile_to_wasm_named(source: &str, file: Option<&str>) -> Result<Vec<u8>
                 alias_of: HashMap::new(),
                 file_name: file_name.clone(),
                 current_line: 0,
+                fn_label: Some(decl.name.clone()),
             };
             let mut used = 0u32;
             for (param, ty) in decl.params.iter().zip(sig.params.iter()) {
@@ -17598,6 +17649,7 @@ pub fn compile_to_wasm_named(source: &str, file: Option<&str>) -> Result<Vec<u8>
                 alias_of: HashMap::new(),
                 file_name: file_name.clone(),
                 current_line: 0,
+                fn_label: Some("<lambda>".to_string()),
             };
             let mut used = 1u32;
             for (param, ty) in decl.params.iter().zip(sig.params.iter()) {

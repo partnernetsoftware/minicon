@@ -985,6 +985,21 @@ if (wasmAliasPush.code == 0 && wasmAliasPushRun.out == wasmAliasPushVm.out && wa
   casesFail += 1
   failures.push("wasm array alias push\n    wasm=" + json(wasmAliasPushRun.out) + " vm=" + json(wasmAliasPushVm.out) + " err=" + json(wasmAliasPush.err))
 }
+write(artDir + "/wasm-panicmsg.bxs", 'fn div(x) {\n  return x / 0\n}\nprint(div(1))\n')
+let wasmPanicMsg = exec([BX, "build", "--wasm", artDir + "/wasm-panicmsg.bxs", "-o", artDir + "/wasm-panicmsg.wasm"])
+let wasmPanicMsgRun = exec([BX, "run", artDir + "/wasm-panicmsg.wasm"])
+let wasmPanicMsgVm = exec([BX, "run", artDir + "/wasm-panicmsg.bxs"])
+let wasmLambdaMsg = exec([BX, "run", artDir + "/wasm-panicmsg.wasm"])
+write(artDir + "/wasm-lambdamsg.bxs", 'let f = fn(x) { return x / 0 }\nprint(f(1))\n')
+let wasmLambdaBuild = exec([BX, "build", "--wasm", artDir + "/wasm-lambdamsg.bxs", "-o", artDir + "/wasm-lambdamsg.wasm"])
+let wasmLambdaRun = exec([BX, "run", artDir + "/wasm-lambdamsg.wasm"])
+let wasmLambdaVm = exec([BX, "run", artDir + "/wasm-lambdamsg.bxs"])
+if (wasmPanicMsg.code == 0 && wasmPanicMsgRun.err == wasmPanicMsgVm.err && wasmLambdaBuild.code == 0 && wasmLambdaRun.err == wasmLambdaVm.err) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm panic message format\n    named wasm=" + json(wasmPanicMsgRun.err) + " vm=" + json(wasmPanicMsgVm.err) + " lambda wasm=" + json(wasmLambdaRun.err) + " vm=" + json(wasmLambdaVm.err))
+}
 write(artDir + "/wasm-attemptcatch.bxs", 'let a = attempt(fn() { assert(1 == 2, "bad") })\nprint(a.ok)\nprint(a.error)\nlet b = attempt(fn() { return int("x") })\nprint(b.ok)\nprint(b.error)\nlet c = attempt(fn() { return float("x") })\nprint(c.ok)\nprint(c.error)\n')
 let wasmAttCatch = exec([BX, "build", "--wasm", artDir + "/wasm-attemptcatch.bxs", "-o", artDir + "/wasm-attemptcatch.wasm"])
 let wasmAttCatchRun = exec([BX, "run", artDir + "/wasm-attemptcatch.wasm"])
@@ -1334,6 +1349,21 @@ if (wasmAliasPush.code == 0 && wasmAliasPushRun.out == wasmAliasPushVm.out && wa
 } else {
   casesFail += 1
   failures.push("wasm array alias push\n    wasm=" + json(wasmAliasPushRun.out) + " vm=" + json(wasmAliasPushVm.out) + " err=" + json(wasmAliasPush.err))
+}
+write(artDir + "/wasm-panicmsg.bxs", 'fn div(x) {\n  return x / 0\n}\nprint(div(1))\n')
+let wasmPanicMsg = exec([BX, "build", "--wasm", artDir + "/wasm-panicmsg.bxs", "-o", artDir + "/wasm-panicmsg.wasm"])
+let wasmPanicMsgRun = exec([BX, "run", artDir + "/wasm-panicmsg.wasm"])
+let wasmPanicMsgVm = exec([BX, "run", artDir + "/wasm-panicmsg.bxs"])
+let wasmLambdaMsg = exec([BX, "run", artDir + "/wasm-panicmsg.wasm"])
+write(artDir + "/wasm-lambdamsg.bxs", 'let f = fn(x) { return x / 0 }\nprint(f(1))\n')
+let wasmLambdaBuild = exec([BX, "build", "--wasm", artDir + "/wasm-lambdamsg.bxs", "-o", artDir + "/wasm-lambdamsg.wasm"])
+let wasmLambdaRun = exec([BX, "run", artDir + "/wasm-lambdamsg.wasm"])
+let wasmLambdaVm = exec([BX, "run", artDir + "/wasm-lambdamsg.bxs"])
+if (wasmPanicMsg.code == 0 && wasmPanicMsgRun.err == wasmPanicMsgVm.err && wasmLambdaBuild.code == 0 && wasmLambdaRun.err == wasmLambdaVm.err) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm panic message format\n    named wasm=" + json(wasmPanicMsgRun.err) + " vm=" + json(wasmPanicMsgVm.err) + " lambda wasm=" + json(wasmLambdaRun.err) + " vm=" + json(wasmLambdaVm.err))
 }
 write(artDir + "/wasm-attemptcatch.bxs", 'let a = attempt(fn() { assert(1 == 2, "bad") })\nprint(a.ok)\nprint(a.error)\nlet b = attempt(fn() { return int("x") })\nprint(b.ok)\nprint(b.error)\nlet c = attempt(fn() { return float("x") })\nprint(c.ok)\nprint(c.error)\n')
 let wasmAttCatch = exec([BX, "build", "--wasm", artDir + "/wasm-attemptcatch.bxs", "-o", artDir + "/wasm-attemptcatch.wasm"])

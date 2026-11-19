@@ -24,6 +24,11 @@ use vm::Vm;
 /// cannot drift apart.
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Path text used in VM-style error prefixes: the input path exactly as the
+/// caller passed it (the VM does not canonicalize either).
+fn display_path(input: &str) -> String {
+    input.to_string()
+}
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     if args.is_empty() {
@@ -321,6 +326,7 @@ fn cmd_run(args: Vec<String>) -> i32 {
         };
         let wasm_argv: Vec<String> = args[1..].to_vec();
         let cache_path = wasm_cache_path(Path::new(path), &src);
+        let display_path = display_path(path);
         let expanded = match expand_use_source(Path::new(path), &src) {
             Ok(expanded) => expanded,
             Err(e) => {
@@ -330,7 +336,7 @@ fn cmd_run(args: Vec<String>) -> i32 {
         };
         let bytes = match cache_path.as_ref().and_then(|p| fs::read(p).ok()) {
             Some(bytes) if wasm_target::validate(&bytes).is_ok() => bytes,
-            _ => match wasm_target::compile_to_wasm_named(&expanded, Some(path)) {
+            _ => match wasm_target::compile_to_wasm_named(&expanded, Some(&display_path)) {
                 Ok(bytes) => {
                     if wasm_target::validate(&bytes).is_ok() {
                         if let Some(cache_path) = &cache_path {
@@ -754,7 +760,8 @@ fn cmd_build(args: Vec<String>) -> i32 {
                 return 1;
             }
         };
-        let bytes = match wasm_target::compile_to_wasm_named(&src, Some(&input)) {
+        let display_path = display_path(&input);
+        let bytes = match wasm_target::compile_to_wasm_named(&src, Some(&display_path)) {
             Ok(bytes) => bytes,
             Err(e) => {
                 eprintln!("bx: {}", e);
@@ -948,7 +955,8 @@ fn cmd_check(args: Vec<String>) -> i32 {
                 return 1;
             }
         };
-        let outcome = wasm_target::compile_to_wasm_named(&source, Some(&rest[0]))
+        let display_path = display_path(&rest[0]);
+        let outcome = wasm_target::compile_to_wasm_named(&source, Some(&display_path))
             .and_then(|bytes| wasm_target::inspect(&bytes).map(|info| (bytes.len(), info)));
         return match outcome {
             Ok((bytes, info)) => {
