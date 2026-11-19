@@ -324,7 +324,8 @@ conversion audit (landed with P2c: scalar unboxing and record/array promotion). 
 | selftest | PASS |
 | real scripts vs VM | `tests/cases/data.bxs`, `tests/cases/loops.bxs`, `examples/{hello,use-lib}.bxs`, `tests/bench-wasm/*` all byte-identical output |
 | gates | `cargo fmt`, `cargo clippy --release -- -D warnings`, `test.sh` green |
-| reproduction | `bash bx/scripts/evidence.sh [bx-binary]` runs the suite, verifier, five differential tools and the wasm soak and prints one PASS/FAIL line per stage (exit non-zero on failure) |
+| reproduction | `bash bx/scripts/evidence.sh [bx-binary]`
+| `.com` acceptance (2026-11-19) | `evidence.sh` against `loader/dist/rust/minicon-bx-win-x86_64.com` passes every stage (324 suite, 86 verifier, 60+80+60+60+24 differential, soak 9+1); `tests/cases/{data,loops}.bxs`, `examples/{hello,use-lib}.bxs` and all six `tests/bench-wasm` scripts produce byte-identical VM/wasm output through the packed `.com` (data.bxs runs beside its `sample.json` because `__dir__` follows the output directory) | runs the suite, verifier, five differential tools and the wasm soak and prints one PASS/FAIL line per stage (exit non-zero on failure) |
 
 Benchmark timings (release build, Windows x64, 3 runs averaged; `bx run` for
 both the script and the emitted `.wasm`, so this compares the two engines):
