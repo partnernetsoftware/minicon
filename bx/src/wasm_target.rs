@@ -8481,6 +8481,21 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Local(0x20, source));
         self.builder.push(Instr::Call(DYN_LEN));
         self.builder.push(Instr::Local(0x21, count));
+        if init.is_none() {
+            self.builder.push(Instr::Local(0x20, count));
+            self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+            self.builder.push(Instr::Op(0x51));
+            self.builder.push(Instr::Block {
+                opcode: 0x04,
+                end: 0,
+                else_at: 0,
+                start: 0,
+            });
+            self.labels.push(0x04);
+            self.emit_error("reduce() of an empty array needs an initial value");
+            self.labels.pop();
+            self.builder.push(Instr::Op(0x0b));
+        }
         match init {
             Some(init) => {
                 let init_ty = self.type_of(init)?;
@@ -8608,6 +8623,21 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Local(0x20, source));
         self.builder.push(Instr::Call(DYN_LEN));
         self.builder.push(Instr::Local(0x21, count));
+        if init.is_none() {
+            self.builder.push(Instr::Local(0x20, count));
+            self.builder.push(Instr::Const(0x42, WVal::I64(0)));
+            self.builder.push(Instr::Op(0x51));
+            self.builder.push(Instr::Block {
+                opcode: 0x04,
+                end: 0,
+                else_at: 0,
+                start: 0,
+            });
+            self.labels.push(0x04);
+            self.emit_error("reduce() of an empty array needs an initial value");
+            self.labels.pop();
+            self.builder.push(Instr::Op(0x0b));
+        }
         match init {
             Some(init) => {
                 let init_ty = self.type_of(init)?;
