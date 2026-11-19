@@ -318,7 +318,7 @@ conversion audit (P2c). If P2a/P2b fail their gates the Dyn arm remains behind
 | `bx` suite | 322 checks |
 | `.com` suite | 322 checks (packed APE) |
 | verifier (`.com`) | 86 tests |
-| differential tools | `wasm-diff` 24, `wasm-diff-dyn` 24, `wasm-diff-methods` 20, `wasm-diff-coll` 24, `wasm-diff-attempt` 12 — PASS |
+| differential tools | `wasm-diff` 24, `wasm-diff-dyn` 24, `wasm-diff-methods` 20, `wasm-diff-coll` 24, `wasm-diff-attempt` 12 — PASS; 2026-11-19 stress sweep: `wasm-diff` 120 (seed 7), `wasm-diff-dyn` 150×2 (seeds 11/12), `wasm-diff-coll` 100 (seed 13), `wasm-diff-methods` 100 (seed 14), `wasm-diff-attempt` 30 (seed 15) — all PASS |
 | corpus soak | 10 scripts: 9 matched, 1 timing/environment skip, 0 diverged |
 | selftest | PASS |
 | real scripts vs VM | `tests/cases/data.bxs`, `tests/cases/loops.bxs`, `examples/{hello,use-lib}.bxs`, `tests/bench-wasm/*` all byte-identical output |
