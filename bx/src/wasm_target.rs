@@ -2963,7 +2963,11 @@ impl Checker {
                             )
                         })?;
                         let pushed = self.infer(&args[1])?;
-                        if pushed != element && !(element == Ty::Float && pushed == Ty::Int) {
+                        let convert = pushed == Ty::Dyn && matches!(element, Ty::Int | Ty::Float);
+                        if pushed != element
+                            && !(element == Ty::Float && pushed == Ty::Int)
+                            && !convert
+                        {
                             return Err(format!(
                                 "wasm target array elements hold {}",
                                 ty_name(element)
@@ -3306,7 +3310,9 @@ impl Checker {
                            let ok = expected == actual
                                || (expected == Ty::Float && actual == Ty::Int)
                                || (expected == Ty::Dyn
-                                   && (is_array_ty(actual) || matches!(actual, Ty::Obj(_))));
+                                   && (is_array_ty(actual) || matches!(actual, Ty::Obj(_))))
+                               || (actual == Ty::Dyn
+                                   && matches!(expected, Ty::Int | Ty::Float));
                            if !ok {
                                return Err(format!(
                                 "wasm target record field '{}' holds {}, assigned {}",
@@ -3391,7 +3397,9 @@ impl Checker {
                         };
                         let actual = self.infer(value)?;
                         let fits = actual == expected
-                            || (expected == Ty::Float && actual == Ty::Int);
+                            || (expected == Ty::Float && actual == Ty::Int)
+                            || (actual == Ty::Dyn
+                                && matches!(expected, Ty::Int | Ty::Float));
                         if !fits {
                             return Err(format!(
                                 "wasm target array elements hold {}",
@@ -3444,7 +3452,11 @@ impl Checker {
                             }
                         };
                         let pushed = self.infer(&args[1])?;
-                        if pushed != element && !(element == Ty::Float && pushed == Ty::Int) {
+                        let convert = pushed == Ty::Dyn && matches!(element, Ty::Int | Ty::Float);
+                        if pushed != element
+                            && !(element == Ty::Float && pushed == Ty::Int)
+                            && !convert
+                        {
                             return Err(format!(
                                 "wasm target array elements hold {}",
                                 ty_name(element)
@@ -3750,7 +3762,9 @@ impl Checker {
                 if args.len() != 1 {
                     return Err("wasm target .push takes one value".to_string());
                 }
-                if self.infer(&args[0])? != element {
+                let pushed = self.infer(&args[0])?;
+                let convert = pushed == Ty::Dyn && matches!(element, Ty::Int | Ty::Float);
+                if pushed != element && !convert {
                     return Err(format!(
                         "wasm target array elements hold {}",
                         ty_name(element)
@@ -7697,13 +7711,22 @@ impl<'a> Emitter<'a> {
         match element {
             Ty::Int => {
                 let actual = self.emit_expr(value)?;
-                if actual != Ty::Int {
+                if actual == Ty::Dyn {
+                    self.builder.push(Instr::Call(DYN_TO_INT));
+                } else if actual != Ty::Int {
                     return Err("wasm target arrays hold ints only".to_string());
                 }
                 self.builder.push(Instr::Local(0x21, value_i64));
             }
             Ty::Str => {
-                self.emit_str(value)?;
+                if self.type_of(value)? == Ty::Dyn {
+                    self.emit_expr(value)?;
+                    self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                    self.builder.push(Instr::Call(DYN_STR));
+                    self.push_block_as_pair();
+                } else {
+                    self.emit_str(value)?;
+                }
                 self.builder.push(Instr::Local(0x21, value_len));
                 self.builder.push(Instr::Local(0x21, value_ptr));
             }
@@ -7730,7 +7753,9 @@ impl<'a> Emitter<'a> {
             }
             Ty::Bool => {
                 let actual = self.emit_expr(value)?;
-                if actual != Ty::Bool {
+                if actual == Ty::Dyn {
+                    self.builder.push(Instr::Call(DYN_TRUTHY));
+                } else if actual != Ty::Bool {
                     return Err("wasm target bool arrays hold bools only".to_string());
                 }
                 self.builder.push(Instr::Op(0xad));
@@ -8909,6 +8934,10 @@ impl<'a> Emitter<'a> {
                 Ok(())
             }
             Ty::Float => Ok(()),
+            Ty::Dyn => {
+                self.builder.push(Instr::Call(DYN_TO_FLOAT));
+                Ok(())
+            }
             other => Err(format!(
                 "wasm target needs a number here, got {}",
                 ty_name(other)
@@ -14681,7 +14710,14 @@ impl<'a> Emitter<'a> {
                         1 => {
                             let ptr_tmp = self.builder.add_local(ValType::I32);
                             let len_tmp = self.builder.add_local(ValType::I32);
-                            self.emit_str(value)?;
+                            if self.type_of(value)? == Ty::Dyn {
+                                self.emit_expr(value)?;
+                                self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                                self.builder.push(Instr::Call(DYN_STR));
+                                self.push_block_as_pair();
+                            } else {
+                                self.emit_str(value)?;
+                            }
                             self.builder.push(Instr::Local(0x21, len_tmp));
                             self.builder.push(Instr::Local(0x21, ptr_tmp));
                             self.builder.push(Instr::Local(0x20, rec_tmp));
@@ -14698,7 +14734,10 @@ impl<'a> Emitter<'a> {
                         }
                         3 => {
                             self.builder.push(Instr::Local(0x20, rec_tmp));
-                            self.emit_expr(value)?;
+                            let actual = self.emit_expr(value)?;
+                            if actual == Ty::Dyn {
+                                self.builder.push(Instr::Call(DYN_TRUTHY));
+                            }
                             self.builder.push(Instr::Op(0xad));
                             self.builder.push(Instr::Mem(0x37, 3, offset));
                         }
@@ -14709,7 +14748,10 @@ impl<'a> Emitter<'a> {
                         }
                         _ => {
                             self.builder.push(Instr::Local(0x20, rec_tmp));
-                            self.emit_expr(value)?;
+                            let actual = self.emit_expr(value)?;
+                            if actual == Ty::Dyn {
+                                self.builder.push(Instr::Call(DYN_TO_INT));
+                            }
                             self.builder.push(Instr::Mem(0x37, 3, offset));
                         }
                     }
@@ -14874,7 +14916,9 @@ impl<'a> Emitter<'a> {
                     }
                     self.emit_target_address(target)?;
                     let ty = self.emit_expr(value)?;
-                    if ty != Ty::Int {
+                    if ty == Ty::Dyn {
+                        self.builder.push(Instr::Call(DYN_TO_INT));
+                    } else if ty != Ty::Int {
                         return Err("wasm target records and arrays hold ints".to_string());
                     }
                     self.builder.push(Instr::Mem(0x37, 3, 0));
@@ -20701,6 +20745,23 @@ mod tests {
                 "[1,2,3]".to_string(),
                 "1-2-3".to_string(),
                 "[2,4,6]".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn dynamic_values_unbox_into_static_containers() {
+        let (numbers, strings) = run_with_argv(
+            "let x = parse(env(\"D\", \"7\"))\nlet xs = [0, 0]\nxs[1] = x\nprint(xs)\nlet r = {n: 1, f: 1.5}\nr.n = x\nr.f = x\nprint(r)\nlet ys = [1]\npush(ys, x)\nprint(ys)",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec![
+                "[0,7]".to_string(),
+                "{\"f\":7,\"n\":7}".to_string(),
+                "[1,7]".to_string()
             ]
         );
     }

@@ -199,6 +199,16 @@ check("hello example", "hello from bx\n7\n{\"bytes\":2,\"fast\":true}", ["run", 
 
 print("bytecode")
 let artDir = __dir__ + "/../target/bx-tests"
+write(artDir + "/wasm-unbox-container.bxs", 'let x = parse(env("D", "7"))\nlet xs = [0, 0]\nxs[1] = x\nprint(xs)\nlet r = {n: 1, f: 1.5}\nr.n = x\nr.f = x\nprint(r)\nlet ys = [1]\npush(ys, x)\nprint(ys)\n')
+let wasmUnboxCont = exec([BX, "build", "--wasm", artDir + "/wasm-unbox-container.bxs", "-o", artDir + "/wasm-unbox-container.wasm"])
+let wasmUnboxContRun = exec([BX, "run", artDir + "/wasm-unbox-container.wasm"])
+let wasmUnboxContVm = exec([BX, "run", artDir + "/wasm-unbox-container.bxs"])
+if (wasmUnboxCont.code == 0 && wasmUnboxContRun.out == wasmUnboxContVm.out && wasmUnboxContRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm dynamic values into static containers\n    wasm=" + json(wasmUnboxContRun.out) + " vm=" + json(wasmUnboxContVm.out) + " err=" + json(wasmUnboxCont.err))
+}
 write(artDir + "/wasm-dynaccum.bxs", 'let v = parse(env("X", "[3,1,2]"))\nv.sort()\nprint(v)\nprint(v.len())\nprint(v.join("-"))\nprint(v.map(fn(x) { return x * 2 }))\nlet total = 0\nfor x in v { if (x == 2) { continue }\n  total = total + x }\nprint(total)\n')
 let wasmDynAccum = exec([BX, "build", "--wasm", artDir + "/wasm-dynaccum.bxs", "-o", artDir + "/wasm-dynaccum.wasm"])
 let wasmDynAccumRun = exec([BX, "run", artDir + "/wasm-dynaccum.wasm"])
