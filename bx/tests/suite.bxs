@@ -199,6 +199,16 @@ check("hello example", "hello from bx\n7\n{\"bytes\":2,\"fast\":true}", ["run", 
 
 print("bytecode")
 let artDir = __dir__ + "/../target/bx-tests"
+write(artDir + "/wasm-attempt-container.bxs", 'let a = attempt(fn() { return [1, 2] })\nprint(a.ok)\nprint(a.value)\nprint(type(a.value))\nlet c = attempt(fn() {\n  let b = attempt(fn() { return parse(env("X", "[1]"))[9] })\n  return b.value.err\n})\nprint(c.ok)\nprint(c.error)\n')
+let wasmAttCont = exec([BX, "build", "--wasm", artDir + "/wasm-attempt-container.bxs", "-o", artDir + "/wasm-attempt-container.wasm"])
+let wasmAttContRun = exec([BX, "run", artDir + "/wasm-attempt-container.wasm"])
+let wasmAttContVm = exec([BX, "run", artDir + "/wasm-attempt-container.bxs"])
+if (wasmAttCont.code == 0 && wasmAttContRun.out == wasmAttContVm.out && wasmAttContRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm attempt container results\n    wasm=" + json(wasmAttContRun.out) + " vm=" + json(wasmAttContVm.out) + " err=" + json(wasmAttCont.err))
+}
 write(artDir + "/wasm-fns.bxs", 'let dyn = parse(env("N", "[3,1,2]"))\nfn twice(xs) {\n  return map(xs, fn(x) { return x * 2 })\n}\nprint(twice(dyn))\nfn pick(o, k) {\n  return o[k]\n}\nprint(pick({"a": 5}, "a"))\nprint(pick(parse(env("O", "{" + json("z") + ":9}")), "z"))\nlet items = parse(env("I", "[" + "{" + json("qty") + ":2," + json("price") + ":10}," + "{" + json("qty") + ":1," + json("price") + ":3}]"))\nfn lineTotal(it) {\n  return it["qty"] * it["price"]\n}\nprint(map(items, fn(it) { return lineTotal(it) }))\nprint(reduce(map(items, fn(it) { return lineTotal(it) }), fn(a, b) { return a + b }, 0))\n')
 let wasmFns = exec([BX, "build", "--wasm", artDir + "/wasm-fns.bxs", "-o", artDir + "/wasm-fns.wasm"])
 let wasmFnsRun = exec([BX, "run", artDir + "/wasm-fns.wasm"])

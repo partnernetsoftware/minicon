@@ -559,7 +559,7 @@ fn field_kind_for_ty(ty: Ty) -> Option<u8> {
 /// Field kind for the `attempt()` record's value slot: null becomes a dynamic
 /// null cell so `r.value` prints and compares like the VM.
 fn attempt_value_kind(ty: Ty) -> Option<u8> {
-    if ty == Ty::Null {
+    if ty == Ty::Null || is_array_ty(ty) || matches!(ty, Ty::Obj(_)) {
         return Some(8);
     }
     field_kind(ty)
@@ -5202,11 +5202,13 @@ impl<'a> Emitter<'a> {
             | Ty::Arr
             | Ty::ArrStr
             | Ty::ArrF
+            | Ty::ArrBool
             | Ty::ArrObj(_)
             | Ty::ArrArr
             | Ty::ArrStrArr => {
                 self.builder.push(Instr::Local(0x20, record));
-                self.emit_expr(value)?;
+                let actual = self.emit_expr(value)?;
+                self.emit_box_dyn_stack(actual)?;
                 self.builder.push(Instr::Mem(0x36, 2, 16));
             }
             Ty::Null => {
@@ -7605,6 +7607,18 @@ impl<'a> Emitter<'a> {
                 self.builder.push(Instr::Local(0x20, record));
                 self.builder.push(Instr::Const(0x44, WVal::F64(0.0)));
                 self.builder.push(Instr::Mem(0x39, 3, 16));
+            }
+            Ty::Obj(_)
+            | Ty::Arr
+            | Ty::ArrStr
+            | Ty::ArrF
+            | Ty::ArrBool
+            | Ty::ArrObj(_)
+            | Ty::ArrArr
+            | Ty::ArrStrArr => {
+                self.builder.push(Instr::Local(0x20, record));
+                self.emit_box_dyn(&Expr::Null, Ty::Null)?;
+                self.builder.push(Instr::Mem(0x36, 2, 16));
             }
             _ => {
                 self.builder.push(Instr::Local(0x20, record));
@@ -11515,7 +11529,24 @@ impl<'a> Emitter<'a> {
             Expr::Member(object, key, _) => {
                 let ty = self.type_of(object)?;
                 if ty == Ty::Dyn {
+                    let container = self.builder.add_local(ValType::I32);
                     self.emit_expr(object)?;
+                    self.builder.push(Instr::Local(0x21, container));
+                    self.builder.push(Instr::Local(0x20, container));
+                    self.builder.push(Instr::Call(DYN_TAG));
+                    self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                    self.builder.push(Instr::Op(0x46));
+                    self.builder.push(Instr::Block {
+                        opcode: 0x04,
+                        end: 0,
+                        else_at: 0,
+                        start: 0,
+                    });
+                    self.labels.push(0x04);
+                    self.emit_panic("cannot index null (missing value?)");
+                    self.labels.pop();
+                    self.builder.push(Instr::Op(0x0b));
+                    self.builder.push(Instr::Local(0x20, container));
                     self.emit_text_literal(key);
                     self.builder.push(Instr::Call(DYN_MEMBER));
                     return Ok(Ty::Dyn);
@@ -21362,6 +21393,25 @@ mod tests {
                 compile_to_wasm(source).unwrap_or_else(|e| panic!("compile failed: {e}\n{source}"));
             validate(&bytes).unwrap_or_else(|e| panic!("invalid module: {e}\n{source}"));
         }
+    }
+
+    #[test]
+    fn attempt_returns_containers_as_dynamic_values() {
+        let (numbers, strings) = run_with_argv(
+            "let a = attempt(fn() { return [1, 2] })\nprint(a.ok)\nprint(a.value)\nprint(type(a.value))\nlet c = attempt(fn() {\n  let b = attempt(fn() { return parse(env(\"X\", \"[1]\"))[9] })\n  return b.value.err\n})\nprint(c.ok)\nprint(c.error)",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec![
+                "true".to_string(),
+                "[1,2]".to_string(),
+                "array".to_string(),
+                "false".to_string(),
+                "cannot index null (missing value?)".to_string()
+            ]
+        );
     }
 
     #[test]
