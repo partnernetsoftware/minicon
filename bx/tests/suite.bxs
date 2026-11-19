@@ -199,6 +199,14 @@ check("hello example", "hello from bx\n7\n{\"bytes\":2,\"fast\":true}", ["run", 
 
 print("bytecode")
 let artDir = __dir__ + "/../target/bx-tests"
+write(artDir + "/wasm-closure-param.bxs", 'fn apply(xs, f) {\n  return map(xs, f)\n}\nprint(apply([1], fn(x) { return x + 1 }))\nprint(apply([2], fn(x) { return x * 2 }))\n')
+let wasmClosureParam = exec([BX, "build", "--wasm", artDir + "/wasm-closure-param.bxs", "-o", artDir + "/wasm-closure-param.wasm"])
+if (wasmClosureParam.code == 1 && wasmClosureParam.err.contains("different function literals")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm closure parameter boundary is clear\n    code=" + str(wasmClosureParam.code) + " err=" + json(wasmClosureParam.err))
+}
 write(artDir + "/wasm-attempt-container.bxs", 'let a = attempt(fn() { return [1, 2] })\nprint(a.ok)\nprint(a.value)\nprint(type(a.value))\nlet c = attempt(fn() {\n  let b = attempt(fn() { return parse(env("X", "[1]"))[9] })\n  return b.value.err\n})\nprint(c.ok)\nprint(c.error)\n')
 let wasmAttCont = exec([BX, "build", "--wasm", artDir + "/wasm-attempt-container.bxs", "-o", artDir + "/wasm-attempt-container.wasm"])
 let wasmAttContRun = exec([BX, "run", artDir + "/wasm-attempt-container.wasm"])

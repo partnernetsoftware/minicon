@@ -16795,6 +16795,12 @@ impl<'a> InferState<'a> {
                 if ty == Ty::Int && !is_number(*current) {
                     return Ok(false);
                 }
+                if matches!(*current, Ty::Func(_)) && matches!(ty, Ty::Func(_)) {
+                    return Err(
+                        "wasm target parameters cannot receive different function literals; first-class closures stay static, so pass one concrete closure, return the closure instead, or use BX_TARGET=bxb"
+                            .to_string(),
+                    );
+                }
                 Err(format!(
                     "wasm target function parameter is called with both {} and {} values",
                     ty_name(*current),
@@ -21412,6 +21418,15 @@ mod tests {
                 "cannot index null (missing value?)".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn multiple_closure_arguments_are_rejected_clearly() {
+        let error = compile_to_wasm(
+            "fn apply(xs, f) {\n  return map(xs, f)\n}\nprint(apply([1], fn(x) { return x + 1 }))\nprint(apply([2], fn(x) { return x * 2 }))",
+        )
+        .unwrap_err();
+        assert!(error.contains("different function literals"), "{error}");
     }
 
     #[test]
