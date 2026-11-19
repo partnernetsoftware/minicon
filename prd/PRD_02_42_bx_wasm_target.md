@@ -49,6 +49,11 @@ price of validation, budgets and one engine, not a regression from the feature
 work. The machine is noisy run to run (the `calls` VM figure moved between 164
 and 199 ms across sessions), so compare within one row rather than across runs.
 
+Re-measured 2026-11-19 after the dynamic/record/closure rounds (`BX_BENCH_RUNS=5`,
+same machine): fib 127/217, loop 319/245, calls 158/257, coll 91/97, recs 93/98,
+boolarr 93/98 (VM/wasm ms) — every row stays within noise of the 2026-11-18
+table, so the feature rounds did not regress the static hot path.
+
 Split for `fib(24)` on the same machine: `bx run source.bxs` (compile+VM) 56 ms,
 `bx run prebuilt.wasm` 153 ms, `bx build --wasm` 20 ms. So the wasm path's cost
 is dominated by the generic core interpreter (per-instruction budget/stack
