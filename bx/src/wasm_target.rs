@@ -644,6 +644,11 @@ struct Checker {
     /// (`false`) or grew it (`true`). A runtime-key insertion may only follow
     /// growth writes, because the emitter still has to treat the value as static.
     record_write_log: HashMap<String, Vec<bool>>,
+    /// AST site -> old static array type promoted to a dynamic array because a
+    /// dynamic value replaces a bool/string element.
+    dyn_array_sites: HashMap<usize, Ty>,
+    /// Variables that already received a static array element write.
+    array_write_log: std::collections::HashSet<String>,
 }
 
 impl Checker {
@@ -663,6 +668,8 @@ impl Checker {
             growth: HashMap::new(),
             dyn_record_sites: HashMap::new(),
             record_write_log: HashMap::new(),
+            dyn_array_sites: HashMap::new(),
+            array_write_log: std::collections::HashSet::new(),
         }
     }
 
@@ -3418,6 +3425,29 @@ impl Checker {
                             _ => Ty::Int,
                         };
                         let actual = self.infer(value)?;
+                        let promote = actual == Ty::Dyn
+                            && matches!(expected, Ty::Bool | Ty::Str)
+                            && matches!(arr_ty, Ty::ArrBool | Ty::ArrStr);
+                        if promote {
+                            let Expr::Ident(name) = &**array else {
+                                return Err(
+                                    "wasm target promotes array variables only".to_string()
+                                );
+                            };
+                            if self.array_write_log.contains(name) {
+                                return Err(format!(
+                                    "wasm target cannot write a dynamic element into '{}' after earlier element writes; write the dynamic value first",
+                                    name
+                                ));
+                            }
+                            let site = &**target as *const Expr as usize;
+                            self.dyn_array_sites.insert(site, arr_ty);
+                            self.update_binding_ty(name, Ty::Dyn)?;
+                            return Ok(());
+                        }
+                        if let Expr::Ident(name) = &**array {
+                            self.array_write_log.insert(name.clone());
+                        }
                         let fits = actual == expected
                             || (expected == Ty::Float && actual == Ty::Int)
                             || (actual == Ty::Dyn
@@ -14874,6 +14904,52 @@ impl<'a> Emitter<'a> {
                         }
                         return Ok(());
                     }
+                    if let Some(old_ty) = self.checker.dyn_array_sites.get(&dyn_site).copied() {
+                        let Expr::Ident(name) = &**array else {
+                            return Err("wasm target promotes array variables only".to_string());
+                        };
+                        if self.boxed.contains(name) {
+                            return Err(format!(
+                                "wasm target cannot promote the captured array '{}'",
+                                name
+                            ));
+                        }
+                        if self.alias_names(name).len() > 1 {
+                            return Err(format!(
+                                "wasm target cannot promote the aliased array '{}'",
+                                name
+                            ));
+                        }
+                        let kind = match old_ty {
+                            Ty::Arr => 4,
+                            Ty::ArrStr => 5,
+                            Ty::ArrF => 6,
+                            Ty::ArrBool => 11,
+                            other => {
+                                return Err(format!(
+                                    "wasm target cannot promote {} arrays",
+                                    ty_name(other)
+                                ))
+                            }
+                        };
+                        let cell_tmp = self.builder.add_local(ValType::I32);
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(kind as i32)));
+                        self.emit_expr(array)?;
+                        self.builder.push(Instr::Call(DYN_FROM_ARRAY));
+                        self.builder.push(Instr::Local(0x21, cell_tmp));
+                        let key_ty = self.type_of(index)?;
+                        let value_ty = self.type_of(value)?;
+                        self.builder.push(Instr::Local(0x20, cell_tmp));
+                        self.emit_box_dyn(index, key_ty)?;
+                        self.emit_box_dyn(value, value_ty)?;
+                        self.builder.push(Instr::Call(DYN_SET_AT));
+                        for alias in self.alias_names(name) {
+                            self.builder.push(Instr::Local(0x20, cell_tmp));
+                            self.emit_store(&alias)?;
+                        }
+                        return Ok(());
+                    }
                     if let Ty::Obj(shape) = self.type_of(array)? {
                         let Expr::Ident(_) = &**array else {
                             return Err("wasm target writes record fields through variables only"
@@ -20850,6 +20926,25 @@ mod tests {
                 "7".to_string(),
                 "7".to_string(),
                 "{\"n\":7}".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn dynamic_element_writes_promote_static_arrays() {
+        let (numbers, strings) = run_with_argv(
+            "let x = parse(env(\"D\", \"7\"))\nlet bs = [true, false]\nbs[0] = x\nprint(bs)\nlet ss = [\"a\", \"b\"]\nss[1] = x\nprint(ss)\nprint(ss.len())\nprint(ss[1])\nlet fs = [1.5]\nfs[0] = x\nprint(fs)\nlet is = [1]\nis[0] = x\nprint(is)",
+            &[],
+        );
+        assert_eq!(numbers, vec![2]);
+        assert_eq!(
+            strings,
+            vec![
+                "[7,false]".to_string(),
+                "[\"a\",7]".to_string(),
+                "7".to_string(),
+                "[7]".to_string(),
+                "[7]".to_string()
             ]
         );
     }

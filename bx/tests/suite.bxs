@@ -199,6 +199,16 @@ check("hello example", "hello from bx\n7\n{\"bytes\":2,\"fast\":true}", ["run", 
 
 print("bytecode")
 let artDir = __dir__ + "/../target/bx-tests"
+write(artDir + "/wasm-arr-promote.bxs", 'let x = parse(env("D", "7"))\nlet bs = [true, false]\nbs[0] = x\nprint(bs)\nlet ss = ["a", "b"]\nss[1] = x\nprint(ss)\nprint(ss.len())\nprint(ss[1])\nlet fs = [1.5]\nfs[0] = x\nprint(fs)\nlet is = [1]\nis[0] = x\nprint(is)\n')
+let wasmArrPromote = exec([BX, "build", "--wasm", artDir + "/wasm-arr-promote.bxs", "-o", artDir + "/wasm-arr-promote.wasm"])
+let wasmArrPromoteRun = exec([BX, "run", artDir + "/wasm-arr-promote.wasm"])
+let wasmArrPromoteVm = exec([BX, "run", artDir + "/wasm-arr-promote.bxs"])
+if (wasmArrPromote.code == 0 && wasmArrPromoteRun.out == wasmArrPromoteVm.out && wasmArrPromoteRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm dynamic array element promotion\n    wasm=" + json(wasmArrPromoteRun.out) + " vm=" + json(wasmArrPromoteVm.out) + " err=" + json(wasmArrPromote.err))
+}
 write(artDir + "/wasm-field-promote.bxs", 'let x = parse(env("D", "7"))\nlet r = {b: false, s: "a"}\nr.b = x\nr.s = x\nprint(r)\nprint(r.b)\nprint(r.s)\nlet q = {n: 1}\nq.n = x\nprint(q)\n')
 let wasmFieldPromote = exec([BX, "build", "--wasm", artDir + "/wasm-field-promote.bxs", "-o", artDir + "/wasm-field-promote.wasm"])
 let wasmFieldPromoteRun = exec([BX, "run", artDir + "/wasm-field-promote.wasm"])
