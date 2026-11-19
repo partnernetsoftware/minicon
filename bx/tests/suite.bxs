@@ -985,6 +985,16 @@ if (wasmAliasPush.code == 0 && wasmAliasPushRun.out == wasmAliasPushVm.out && wa
   casesFail += 1
   failures.push("wasm array alias push\n    wasm=" + json(wasmAliasPushRun.out) + " vm=" + json(wasmAliasPushVm.out) + " err=" + json(wasmAliasPush.err))
 }
+write(artDir + "/wasm-void.bxs", 'fn greet() {\n  print("hi")\n}\ngreet()\nprint(greet())\nlet mut = 0\nlet inc = fn() { mut += 1 }\ninc()\ninc()\nprint(mut)\nlet a = attempt(fn() { print("inside") })\nprint(a.ok)\nprint(a.value)\n')
+let wasmVoid = exec([BX, "build", "--wasm", artDir + "/wasm-void.bxs", "-o", artDir + "/wasm-void.wasm"])
+let wasmVoidRun = exec([BX, "run", artDir + "/wasm-void.wasm"])
+let wasmVoidVm = exec([BX, "run", artDir + "/wasm-void.bxs"])
+if (wasmVoid.code == 0 && wasmVoidRun.out == wasmVoidVm.out && wasmVoidRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm void functions and lambdas\n    wasm=" + json(wasmVoidRun.out) + " vm=" + json(wasmVoidVm.out) + " err=" + json(wasmVoid.err))
+}
 write(artDir + "/wasm-fnrecfield.bxs", 'fn f() { return {y: [2]} }\nlet r = f()\nprint(r.y)\nprint(r.y[0])\nprint(type(r.y))\n')
 let wasmFnRec = exec([BX, "build", "--wasm", artDir + "/wasm-fnrecfield.bxs", "-o", artDir + "/wasm-fnrecfield.wasm"])
 let wasmFnRecRun = exec([BX, "run", artDir + "/wasm-fnrecfield.wasm"])
@@ -1358,6 +1368,16 @@ if (wasmAliasPush.code == 0 && wasmAliasPushRun.out == wasmAliasPushVm.out && wa
 } else {
   casesFail += 1
   failures.push("wasm array alias push\n    wasm=" + json(wasmAliasPushRun.out) + " vm=" + json(wasmAliasPushVm.out) + " err=" + json(wasmAliasPush.err))
+}
+write(artDir + "/wasm-void.bxs", 'fn greet() {\n  print("hi")\n}\ngreet()\nprint(greet())\nlet mut = 0\nlet inc = fn() { mut += 1 }\ninc()\ninc()\nprint(mut)\nlet a = attempt(fn() { print("inside") })\nprint(a.ok)\nprint(a.value)\n')
+let wasmVoid = exec([BX, "build", "--wasm", artDir + "/wasm-void.bxs", "-o", artDir + "/wasm-void.wasm"])
+let wasmVoidRun = exec([BX, "run", artDir + "/wasm-void.wasm"])
+let wasmVoidVm = exec([BX, "run", artDir + "/wasm-void.bxs"])
+if (wasmVoid.code == 0 && wasmVoidRun.out == wasmVoidVm.out && wasmVoidRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm void functions and lambdas\n    wasm=" + json(wasmVoidRun.out) + " vm=" + json(wasmVoidVm.out) + " err=" + json(wasmVoid.err))
 }
 write(artDir + "/wasm-fnrecfield.bxs", 'fn f() { return {y: [2]} }\nlet r = f()\nprint(r.y)\nprint(r.y[0])\nprint(type(r.y))\n')
 let wasmFnRec = exec([BX, "build", "--wasm", artDir + "/wasm-fnrecfield.bxs", "-o", artDir + "/wasm-fnrecfield.wasm"])

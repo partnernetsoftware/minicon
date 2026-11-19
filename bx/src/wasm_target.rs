@@ -438,6 +438,23 @@ struct Shape {
 }
 
 /// Storage kind of a record field type.
+/// True when the body (recursively) contains a `return <value>` statement.
+fn body_returns_value(stmts: &[Stmt]) -> bool {
+    stmts.iter().any(|stmt| match stmt {
+        Stmt::Return(Some(_), _) => true,
+        Stmt::Block(body) => body_returns_value(body),
+        Stmt::If(_, then_body, else_body, _) => {
+            body_returns_value(then_body)
+                || else_body
+                    .as_deref()
+                    .map(body_returns_value)
+                    .unwrap_or(false)
+        }
+        Stmt::While(_, body, _) => body_returns_value(body),
+        Stmt::ForC(_, _, _, body, _) | Stmt::ForIn(_, _, _, body, _) => body_returns_value(body),
+        _ => false,
+    })
+}
 fn field_kind(ty: Ty) -> Option<u8> {
     match ty {
         Ty::Int => Some(0),
@@ -611,9 +628,7 @@ impl Checker {
             .lit_sigs
             .get(id as usize)
             .ok_or_else(|| "wasm target lost a function literal".to_string())?;
-        let result = sig
-            .result
-            .ok_or_else(|| "wasm target function literal returns no value".to_string())?;
+        let result = sig.result.unwrap_or(Ty::Null);
         if args.len() != sig.params.len() {
             return Err(format!(
                 "wasm target function literal takes {} arguments",
@@ -2706,7 +2721,13 @@ impl Checker {
                                 "wasm target attempt() callbacks take no parameters".to_string()
                             );
                         }
-                        let result_ty = sig.result.unwrap_or(Ty::Int);
+                        let result_ty = match sig.result {
+                            Some(ty) => ty,
+                            None => match &args[0] {
+                                Expr::Func(_, body, _) if !body_returns_value(body) => Ty::Null,
+                                _ => Ty::Int,
+                            },
+                        };
                         return Ok(Ty::Obj(self.attempt_shape(result_ty)?));
                     }
                     if name == "exec_all" && (args.len() == 1 || args.len() == 2) {
@@ -4676,6 +4697,15 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Local(0x20, record));
         self.builder.push(Instr::Const(0x42, WVal::I64(0)));
         self.builder.push(Instr::Mem(0x37, 3, 8));
+    }
+
+    /// Store a dynamic null cell in the attempt record's value slot.
+    fn emit_attempt_null_value(&mut self, record: u32) -> Result<(), String> {
+        self.builder.push(Instr::Local(0x20, record));
+        let null_literal = Expr::Null;
+        self.emit_box_dyn(&null_literal, Ty::Null)?;
+        self.builder.push(Instr::Mem(0x36, 2, 16));
+        Ok(())
     }
 
     /// Store a runtime `(ptr, len)` error message into the attempt record.
@@ -7117,7 +7147,13 @@ impl<'a> Emitter<'a> {
         if !sig.params.is_empty() {
             return Err("wasm target attempt() callbacks take no parameters".to_string());
         }
-        let result_ty = sig.result.unwrap_or(Ty::Int);
+        let result_ty = match sig.result {
+            Some(ty) => ty,
+            None => match callback {
+                Expr::Func(_, body, _) if !body_returns_value(body) => Ty::Null,
+                _ => Ty::Int,
+            },
+        };
         let shape = self.checker.attempt_shape(result_ty)?;
         let record = self.builder.add_local(ValType::I32);
         self.emit_alloc_const(24);
@@ -7179,6 +7215,10 @@ impl<'a> Emitter<'a> {
                 outcome = Err(error);
                 break;
             }
+        }
+        if matches!(outcome, Ok(())) && result_ty == Ty::Null {
+            // A callback that falls through returns null.
+            outcome = self.emit_attempt_null_value(record);
         }
         let declared_after: Vec<String> = self.locals.keys().cloned().collect();
         for name in declared_after {
@@ -14475,6 +14515,13 @@ impl<'a> Emitter<'a> {
             }
             Stmt::Expr(expr @ Expr::Call(callee, args, _), _) => {
                 if let Some((params, result, index)) = self.callable(callee)? {
+                    let literal_call = match &**callee {
+                        Expr::Ident(name) => self.checker.fn_sig(name).is_none(),
+                        _ => true,
+                    };
+                    if literal_call {
+                        self.emit_expr(callee)?;
+                    }
                     if args.len() != params.len() {
                         return Err(
                             "wasm target function literal takes a different number of arguments"
@@ -15162,8 +15209,12 @@ impl<'a> Emitter<'a> {
             }
             Stmt::Return(expr, _) => {
                 if let Some(ctx) = self.attempts.last().copied() {
-                    if let Some(value) = expr {
-                        self.emit_attempt_value(ctx.record, ctx.result_ty, value)?;
+                    match expr {
+                        Some(value) => self.emit_attempt_value(ctx.record, ctx.result_ty, value)?,
+                        None if ctx.result_ty == Ty::Null => {
+                            self.emit_attempt_null_value(ctx.record)?
+                        }
+                        None => {}
                     }
                     self.emit_attempt_jump();
                     return Ok(());
@@ -15211,6 +15262,9 @@ impl<'a> Emitter<'a> {
                             "wasm target function has no result type; return without a value"
                                 .to_string(),
                         )
+                    }
+                    (None, Some(Ty::Null)) => {
+                        self.builder.push(Instr::Const(0x41, WVal::I32(0)));
                     }
                     (None, Some(expected)) => {
                         return Err(format!(
@@ -17058,7 +17112,14 @@ pub fn compile_to_wasm_named(source: &str, file: Option<&str>) -> Result<Vec<u8>
             .iter()
             .map(|ty| ty.unwrap_or(Ty::Int))
             .collect();
-        checker.set_fn_sig(&decl.name, params, inferred_results[slot]);
+
+        // A function that never returns a value behaves like the VM: calls
+        // yield `null`, so give every such declaration an explicit result type.
+        checker.set_fn_sig(
+            &decl.name,
+            params,
+            inferred_results[slot].or(Some(Ty::Null)),
+        );
     }
     for (id, sig) in checker.lit_sigs.iter_mut().enumerate() {
         let slot = decl_count + id;
@@ -17066,7 +17127,7 @@ pub fn compile_to_wasm_named(source: &str, file: Option<&str>) -> Result<Vec<u8>
             .iter()
             .map(|ty| ty.unwrap_or(Ty::Int))
             .collect();
-        sig.result = inferred_results[slot];
+        sig.result = inferred_results[slot].or(Some(Ty::Null));
     }
     checker.check_literal_bodies(&lit_decls, &capture_types)?;
     for stmt in &stmts {
@@ -20034,6 +20095,26 @@ mod tests {
         assert_eq!(
             strings,
             vec!["[2]".to_string(), "2".to_string(), "array".to_string()]
+        );
+    }
+
+    #[test]
+    fn void_functions_and_lambdas_return_null() {
+        let (numbers, strings) = run_with_argv(
+            "fn greet() {\n  print(\"hi\")\n}\ngreet()\nprint(greet())\nlet mut = 0\nlet inc = fn() { mut += 1 }\ninc()\ninc()\nprint(mut)\nlet a = attempt(fn() { print(\"inside\") })\nprint(a.ok)\nprint(a.value)\nfn maybe(x) { if (x) { return 1 }\n  return 0 }\nprint(maybe(true))\nprint(maybe(false))",
+            &[],
+        );
+        assert_eq!(numbers, vec![2, 1, 0]);
+        assert_eq!(
+            strings,
+            vec![
+                "hi".to_string(),
+                "hi".to_string(),
+                "null".to_string(),
+                "inside".to_string(),
+                "true".to_string(),
+                "null".to_string()
+            ]
         );
     }
 
