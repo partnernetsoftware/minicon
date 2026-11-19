@@ -637,6 +637,13 @@ struct Checker {
     /// AST site -> (old shape, grown shape, new field kind) for literal-key
     /// record growth like `o.b = 2`.
     growth: HashMap<usize, (u32, u32, u8)>,
+    /// AST site -> static record shape converted to a dynamic object because a
+    /// runtime key inserts a new field (`o[k] = 3`).
+    dyn_record_sites: HashMap<usize, u32>,
+    /// Per variable, whether its earlier record writes kept the same shape
+    /// (`false`) or grew it (`true`). A runtime-key insertion may only follow
+    /// growth writes, because the emitter still has to treat the value as static.
+    record_write_log: HashMap<String, Vec<bool>>,
 }
 
 impl Checker {
@@ -654,6 +661,8 @@ impl Checker {
             fn_depth: 0,
             empty_hints: HashMap::new(),
             growth: HashMap::new(),
+            dyn_record_sites: HashMap::new(),
+            record_write_log: HashMap::new(),
         }
     }
 
@@ -3281,6 +3290,10 @@ impl Checker {
                                 let site = &**target as *const Expr as usize;
                                 let grown = self.shape_add_field(shape, key, kind)?;
                                 self.growth.insert(site, (shape, grown, kind));
+                                self.record_write_log
+                                    .entry(name.clone())
+                                    .or_default()
+                                    .push(true);
                                 self.update_binding_ty(name, Ty::Obj(grown))?;
                                 return Ok(());
                             }
@@ -3297,6 +3310,12 @@ impl Checker {
                                 ty_name(actual)
                             ));
                         }
+                        if let Expr::Ident(name) = &**object {
+                            self.record_write_log
+                                .entry(name.clone())
+                                .or_default()
+                                .push(false);
+                        }
                     }
                     Expr::Index(array, index, _) => {
                         let arr_ty = self.infer(array)?;
@@ -3305,13 +3324,38 @@ impl Checker {
                             self.infer(value)?;
                             return Ok(());
                         }
-                        if let Ty::Obj(_) = arr_ty {
+                        if let Ty::Obj(shape) = arr_ty {
                             if self.infer(index)? != Ty::Str {
                                 return Err(
                                     "wasm target record writes need a string key".to_string()
                                 );
                             }
                             self.infer(value)?;
+                            let static_write = match &**index {
+                                Expr::Str(key) => self.field_ty(shape, key).is_ok(),
+                                _ => false,
+                            };
+                            if !static_write {
+                                let Expr::Ident(name) = &**array else {
+                                    return Err(
+                                        "wasm target grows records through variables only"
+                                            .to_string(),
+                                    );
+                                };
+                                if self
+                                    .record_write_log
+                                    .get(name)
+                                    .is_some_and(|log| log.iter().any(|grew| !*grew))
+                                {
+                                    return Err(format!(
+                                        "wasm target cannot insert a runtime record key after field updates on '{}'; move the insertion first or use a dynamic record",
+                                        name
+                                    ));
+                                }
+                                let site = &**target as *const Expr as usize;
+                                self.dyn_record_sites.insert(site, shape);
+                                self.update_binding_ty(name, Ty::Dyn)?;
+                            }
                             return Ok(());
                         }
                         if !matches!(
@@ -14470,7 +14514,10 @@ impl<'a> Emitter<'a> {
             }
             Stmt::Expr(Expr::Assign(target, value, _), _) => {
                 if let Expr::Member(object, key, _) = &**target {
-                    if self.type_of(object)? == Ty::Dyn {
+                    let growth_site = &**target as *const Expr as usize;
+                    if self.type_of(object)? == Ty::Dyn
+                        && !self.checker.growth.contains_key(&growth_site)
+                    {
                         let value_ty = self.type_of(value)?;
                         self.emit_expr(object)?;
                         let key_expr = Expr::Str(key.clone());
@@ -14479,7 +14526,6 @@ impl<'a> Emitter<'a> {
                         self.builder.push(Instr::Call(DYN_SET_MEMBER));
                         return Ok(());
                     }
-                    let growth_site = &**target as *const Expr as usize;
                     if let Some((old_shape, new_shape, kind)) =
                         self.checker.growth.get(&growth_site).copied()
                     {
@@ -14648,6 +14694,52 @@ impl<'a> Emitter<'a> {
                     return Ok(());
                 }
                 if let Expr::Index(array, index, _) = &**target {
+                    let dyn_site = &**target as *const Expr as usize;
+                    if let Some(old_shape) = self.checker.dyn_record_sites.get(&dyn_site).copied() {
+                        let Expr::Ident(name) = &**array else {
+                            return Err(
+                                "wasm target grows records through variables only".to_string()
+                            );
+                        };
+                        if self.boxed.contains(name) {
+                            return Err(format!(
+                                "wasm target cannot grow the captured record '{}'",
+                                name
+                            ));
+                        }
+                        if self.alias_names(name).len() > 1 {
+                            return Err(format!(
+                                "wasm target cannot grow the aliased record '{}'",
+                                name
+                            ));
+                        }
+                        let kinds = self.record_kinds_table(old_shape)?;
+                        let (table, count) = self.record_table(old_shape)?;
+                        let rec_tmp = self.builder.add_local(ValType::I32);
+                        let obj_tmp = self.builder.add_local(ValType::I32);
+                        self.emit_expr(array)?;
+                        self.builder.push(Instr::Local(0x21, rec_tmp));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(kinds as i32)));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(table as i32)));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(count as i32)));
+                        self.builder.push(Instr::Local(0x20, rec_tmp));
+                        self.builder.push(Instr::Call(DYN_FROM_RECORD));
+                        self.builder.push(Instr::Local(0x21, obj_tmp));
+                        let key_ty = self.type_of(index)?;
+                        let value_ty = self.type_of(value)?;
+                        self.builder.push(Instr::Local(0x20, obj_tmp));
+                        self.emit_box_dyn(index, key_ty)?;
+                        self.emit_box_dyn(value, value_ty)?;
+                        self.builder.push(Instr::Call(DYN_SET_MEMBER));
+                        for alias in self.alias_names(name) {
+                            self.builder.push(Instr::Local(0x20, obj_tmp));
+                            self.emit_store(&alias)?;
+                        }
+                        return Ok(());
+                    }
                     if let Ty::Obj(shape) = self.type_of(array)? {
                         let Expr::Ident(_) = &**array else {
                             return Err("wasm target writes record fields through variables only"
@@ -20525,6 +20617,24 @@ mod tests {
                 "{\"a\":1,\"b\":2,\"c\":\"x\"}".to_string(),
                 "x".to_string(),
                 "{\"z\":5}".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn runtime_key_insertion_promotes_records_to_dynamic() {
+        let (numbers, strings) = run_with_argv(
+            "let r = {a: 1}\nlet k = \"b\"\nr[k] = 2\nprint(r)\nprint(r.len())\nprint(r[k])\nlet o = {x: 1}\no.y = 9\no[env(\"KEY\", \"z\")] = 3\nprint(json(o))\nprint(o.x + o.y + o.z)",
+            &[],
+        );
+        assert_eq!(numbers, vec![2]);
+        assert_eq!(
+            strings,
+            vec![
+                "{\"a\":1,\"b\":2}".to_string(),
+                "2".to_string(),
+                "{\"x\":1,\"y\":9,\"z\":3}".to_string(),
+                "13".to_string()
             ]
         );
     }

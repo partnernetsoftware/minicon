@@ -199,6 +199,15 @@ check("hello example", "hello from bx\n7\n{\"bytes\":2,\"fast\":true}", ["run", 
 
 print("bytecode")
 let artDir = __dir__ + "/../target/bx-tests"
+let loopsWasm = exec([BX, "build", "--wasm", __dir__ + "/cases/loops.bxs", "-o", artDir + "/loops.wasm"])
+let loopsWasmRun = exec([BX, "run", artDir + "/loops.wasm"], { cwd: __dir__ + "/cases" })
+let loopsVmRun = exec([BX, "run", __dir__ + "/cases/loops.bxs"], { cwd: __dir__ + "/cases" })
+if (loopsWasm.code == 0 && loopsWasmRun.out == loopsVmRun.out && loopsWasmRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm loops.bxs differential\n    wasm=" + json(loopsWasmRun.out) + " vm=" + json(loopsVmRun.out) + " err=" + json(loopsWasm.err))
+}
 // `bx check` compiles without executing, and reports where bad source fails
 let checkDir = artDir + "/check"
 mkdir(checkDir)
@@ -1081,11 +1090,12 @@ if (wasmGrow.code == 0 && wasmGrowRun.out == wasmGrowVm.out && wasmGrowRun.out.t
 write(artDir + "/wasm-grow-rt.bxs", 'let o = {a: 1}\nlet k = "c"\no[k] = 3\nprint(o)\n')
 let wasmGrowRt = exec([BX, "build", "--wasm", artDir + "/wasm-grow-rt.bxs", "-o", artDir + "/wasm-grow-rt.wasm"])
 let wasmGrowRtRun = exec([BX, "run", artDir + "/wasm-grow-rt.wasm"])
-if (wasmGrowRt.code == 0 && wasmGrowRtRun.code == 1 && wasmGrowRtRun.err.contains("cannot insert a new field")) {
+let wasmGrowRtVm = exec([BX, "run", artDir + "/wasm-grow-rt.bxs"])
+if (wasmGrowRt.code == 0 && wasmGrowRtRun.out == wasmGrowRtVm.out && wasmGrowRtRun.out.trim() != "") {
   casesOk += 1
 } else {
   casesFail += 1
-  failures.push("wasm runtime-key record insertion stays rejected\n    code=" + str(wasmGrowRt.code) + " run=" + str(wasmGrowRtRun.code) + " err=" + json(wasmGrowRt.err) + json(wasmGrowRtRun.err))
+  failures.push("wasm runtime-key record insertion (loops pattern)\n    code=" + str(wasmGrowRt.code) + " wasm=" + json(wasmGrowRtRun.out) + " vm=" + json(wasmGrowRtVm.out) + " err=" + json(wasmGrowRt.err) + json(wasmGrowRtRun.err))
 }
 let benchNames = ["boolarr", "calls", "coll", "fib", "loop", "recs"]
 let benchOk = true
@@ -1196,11 +1206,12 @@ if (wasmDynStrKey.code == 0 && wasmDynStrKeyRun.out == wasmDynStrKeyVm.out && wa
 write(artDir + "/wasm-recinsert.bxs", 'let r = {a: 1}\nr[env("K", "b")] = 2\nprint(r)\n')
 let wasmRecInsert = exec([BX, "build", "--wasm", artDir + "/wasm-recinsert.bxs", "-o", artDir + "/wasm-recinsert.wasm"])
 let wasmRecInsertRun = exec([BX, "run", artDir + "/wasm-recinsert.wasm"])
-if (wasmRecInsert.code == 0 && wasmRecInsertRun.code != 0 && wasmRecInsertRun.err.contains("cannot insert a new field")) {
+let wasmRecInsertVm = exec([BX, "run", artDir + "/wasm-recinsert.bxs"])
+if (wasmRecInsert.code == 0 && wasmRecInsertRun.code == 0 && wasmRecInsertRun.out == wasmRecInsertVm.out && wasmRecInsertRun.out.trim() != "") {
   casesOk += 1
 } else {
   casesFail += 1
-  failures.push("wasm record key insert fails loudly\n    build=" + json(wasmRecInsert.code) + " run=" + json(wasmRecInsertRun.out) + " err=" + json(wasmRecInsertRun.err))
+  failures.push("wasm runtime-key record insertion\n    build=" + json(wasmRecInsert.code) + " wasm=" + json(wasmRecInsertRun.out) + " vm=" + json(wasmRecInsertVm.out) + " err=" + json(wasmRecInsertRun.err))
 }
 write(artDir + "/wasm-mixreciter.bxs", 'for k, v in {a: 1, b: "x"} {\n  print(k)\n  print(v)\n}\nlet a = parse(env("X", "[1,2]"))\nlet r = {xs: a}\nfor k, v in r {\n  print(k)\n  print(json(v))\n}\n')
 let wasmMixRecIter = exec([BX, "build", "--wasm", artDir + "/wasm-mixreciter.bxs", "-o", artDir + "/wasm-mixreciter.wasm"])
@@ -1543,11 +1554,12 @@ if (wasmGrow.code == 0 && wasmGrowRun.out == wasmGrowVm.out && wasmGrowRun.out.t
 write(artDir + "/wasm-grow-rt.bxs", 'let o = {a: 1}\nlet k = "c"\no[k] = 3\nprint(o)\n')
 let wasmGrowRt = exec([BX, "build", "--wasm", artDir + "/wasm-grow-rt.bxs", "-o", artDir + "/wasm-grow-rt.wasm"])
 let wasmGrowRtRun = exec([BX, "run", artDir + "/wasm-grow-rt.wasm"])
-if (wasmGrowRt.code == 0 && wasmGrowRtRun.code == 1 && wasmGrowRtRun.err.contains("cannot insert a new field")) {
+let wasmGrowRtVm = exec([BX, "run", artDir + "/wasm-grow-rt.bxs"])
+if (wasmGrowRt.code == 0 && wasmGrowRtRun.out == wasmGrowRtVm.out && wasmGrowRtRun.out.trim() != "") {
   casesOk += 1
 } else {
   casesFail += 1
-  failures.push("wasm runtime-key record insertion stays rejected\n    code=" + str(wasmGrowRt.code) + " run=" + str(wasmGrowRtRun.code) + " err=" + json(wasmGrowRt.err) + json(wasmGrowRtRun.err))
+  failures.push("wasm runtime-key record insertion (loops pattern)\n    code=" + str(wasmGrowRt.code) + " wasm=" + json(wasmGrowRtRun.out) + " vm=" + json(wasmGrowRtVm.out) + " err=" + json(wasmGrowRt.err) + json(wasmGrowRtRun.err))
 }
 let benchNames = ["boolarr", "calls", "coll", "fib", "loop", "recs"]
 let benchOk = true
@@ -1658,11 +1670,12 @@ if (wasmDynStrKey.code == 0 && wasmDynStrKeyRun.out == wasmDynStrKeyVm.out && wa
 write(artDir + "/wasm-recinsert.bxs", 'let r = {a: 1}\nr[env("K", "b")] = 2\nprint(r)\n')
 let wasmRecInsert = exec([BX, "build", "--wasm", artDir + "/wasm-recinsert.bxs", "-o", artDir + "/wasm-recinsert.wasm"])
 let wasmRecInsertRun = exec([BX, "run", artDir + "/wasm-recinsert.wasm"])
-if (wasmRecInsert.code == 0 && wasmRecInsertRun.code != 0 && wasmRecInsertRun.err.contains("cannot insert a new field")) {
+let wasmRecInsertVm = exec([BX, "run", artDir + "/wasm-recinsert.bxs"])
+if (wasmRecInsert.code == 0 && wasmRecInsertRun.code == 0 && wasmRecInsertRun.out == wasmRecInsertVm.out && wasmRecInsertRun.out.trim() != "") {
   casesOk += 1
 } else {
   casesFail += 1
-  failures.push("wasm record key insert fails loudly\n    build=" + json(wasmRecInsert.code) + " run=" + json(wasmRecInsertRun.out) + " err=" + json(wasmRecInsertRun.err))
+  failures.push("wasm runtime-key record insertion\n    build=" + json(wasmRecInsert.code) + " wasm=" + json(wasmRecInsertRun.out) + " vm=" + json(wasmRecInsertVm.out) + " err=" + json(wasmRecInsertRun.err))
 }
 write(artDir + "/wasm-mixreciter.bxs", 'for k, v in {a: 1, b: "x"} {\n  print(k)\n  print(v)\n}\nlet a = parse(env("X", "[1,2]"))\nlet r = {xs: a}\nfor k, v in r {\n  print(k)\n  print(json(v))\n}\n')
 let wasmMixRecIter = exec([BX, "build", "--wasm", artDir + "/wasm-mixreciter.bxs", "-o", artDir + "/wasm-mixreciter.wasm"])
