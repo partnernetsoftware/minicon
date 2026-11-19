@@ -4134,7 +4134,7 @@ const ARG_TMP: u32 = 7;
 /// Imported host functions: env.print_i64, env.print_utf8, env.print_f64, env.fmod,
 /// bx.argc, bx.arg, bx.read_file, bx.write_file, bx.run, bx.capture,
 /// web.console_log_i64, web.console_log_f64, web.console_log_utf8, web.performance_now.
-const IMPORT_COUNT: u32 = 145;
+const IMPORT_COUNT: u32 = 146;
 const PRINT_UTF8: u32 = 1;
 const WEB_CONSOLE_I64: u32 = 10;
 const WEB_CONSOLE_F64: u32 = 11;
@@ -4268,6 +4268,7 @@ const DYN_RECORD_VALUES: u32 = 141;
 const DYN_WRITE_RECORD: u32 = 142;
 const DYN_TEXT_CELL: u32 = 143;
 const TEXT_CONCAT: u32 = 144;
+const DYN_TAG: u32 = 145;
 
 #[derive(Clone, Copy)]
 struct LocalSlot {
@@ -5114,6 +5115,11 @@ impl<'a> Emitter<'a> {
                 self.emit_expr(value)?;
                 self.builder.push(Instr::Op(0x1a));
                 self.emit_box_dyn(value, Ty::Null)?;
+                self.builder.push(Instr::Mem(0x36, 2, 16));
+            }
+            Ty::Dyn => {
+                self.builder.push(Instr::Local(0x20, record));
+                self.emit_expr(value)?;
                 self.builder.push(Instr::Mem(0x36, 2, 16));
             }
             _ => {
@@ -11633,8 +11639,25 @@ impl<'a> Emitter<'a> {
                     return Ok(Ty::Dyn);
                 }
                 if array_ty == Ty::Dyn {
+                    let container = self.builder.add_local(ValType::I32);
                     self.emit_expr(array)?;
+                    self.builder.push(Instr::Local(0x21, container));
+                    self.builder.push(Instr::Local(0x20, container));
+                    self.builder.push(Instr::Call(DYN_TAG));
+                    self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                    self.builder.push(Instr::Op(0x46));
+                    self.builder.push(Instr::Block {
+                        opcode: 0x04,
+                        end: 0,
+                        else_at: 0,
+                        start: 0,
+                    });
+                    self.labels.push(0x04);
+                    self.emit_panic("cannot index null (missing value?)");
+                    self.labels.pop();
+                    self.builder.push(Instr::Op(0x0b));
                     let index_ty = self.type_of(index)?;
+                    self.builder.push(Instr::Local(0x20, container));
                     if index_ty == Ty::Float {
                         self.emit_f64(index)?;
                         self.builder.push(Instr::Op(0xb0));
@@ -18322,6 +18345,7 @@ pub fn compile_to_wasm_named(source: &str, file: Option<&str>) -> Result<Vec<u8>
     builder.import_func("env", "dyn_write_record", five_i32_to_void_ty);
     builder.import_func("env", "dyn_text_cell", which_ty);
     builder.import_func("env", "text_concat", four_i32_to_i32_ty);
+    builder.import_func("env", "dyn_tag", i32_to_i32_ty);
     builder.enable_memory(8);
     for name in &checker.order {
         let ty = checker.lookup(name)?;
@@ -21119,6 +21143,24 @@ mod tests {
         );
         assert_eq!(numbers, vec![5, 6, 6]);
         assert_eq!(strings, vec!["5".to_string(), "[15,20]".to_string()]);
+    }
+
+    #[test]
+    fn indexing_null_raises_a_catchable_error() {
+        let (numbers, strings) = run_with_argv(
+            "let users = parse(env(\"U\", \"[{\\\"name\\\":\\\"a\\\"}]\"))\nlet a = attempt(fn() { return users[0][\"name\"] })\nprint(a.ok)\nprint(a.value)\nlet b = attempt(fn() { return users[5][\"name\"] })\nprint(b.ok)\nprint(b.error)",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec![
+                "true".to_string(),
+                "a".to_string(),
+                "false".to_string(),
+                "cannot index null (missing value?)".to_string()
+            ]
+        );
     }
 
     #[test]

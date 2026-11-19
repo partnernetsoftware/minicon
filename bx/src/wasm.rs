@@ -3607,6 +3607,17 @@ impl<'a, F: FnMut(i64), G: FnMut(&str)> Host for PrintHost<'a, F, G> {
                     None => Err("dyn_str result does not fit the file region".to_string()),
                 }
             }
+            ("env", "dyn_tag") => {
+                let cell = match args.first() {
+                    Some(WVal::I32(cell)) => *cell as usize,
+                    _ => return Err("env.dyn_tag expects one i32".to_string()),
+                };
+                if cell + 16 > memory.len() {
+                    return Err("dynamic cell out of bounds".to_string());
+                }
+                let tag = u32::from_le_bytes(memory[cell..cell + 4].try_into().unwrap());
+                Ok(vec![WVal::I32(tag as i32)])
+            }
             ("env", "dyn_type") => {
                 let cell = match args.first() {
                     Some(WVal::I32(cell)) => *cell as usize,
