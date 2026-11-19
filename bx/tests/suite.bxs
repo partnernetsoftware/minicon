@@ -985,6 +985,16 @@ if (wasmAliasPush.code == 0 && wasmAliasPushRun.out == wasmAliasPushVm.out && wa
   casesFail += 1
   failures.push("wasm array alias push\n    wasm=" + json(wasmAliasPushRun.out) + " vm=" + json(wasmAliasPushVm.out) + " err=" + json(wasmAliasPush.err))
 }
+write(artDir + "/wasm-fallthrough.bxs", 'fn maybe(x) { if (x) { return 1 } }\nprint(maybe(true))\nprint(maybe(false))\nprint(type(maybe(false)))\nfn mixed(x) { if (x > 0) { return 1 }\n  if (x == 0) { return "zero" }\n}\nprint(mixed(1))\nprint(mixed(0))\nprint(mixed(-1))\n')
+let wasmFall = exec([BX, "build", "--wasm", artDir + "/wasm-fallthrough.bxs", "-o", artDir + "/wasm-fallthrough.wasm"])
+let wasmFallRun = exec([BX, "run", artDir + "/wasm-fallthrough.wasm"])
+let wasmFallVm = exec([BX, "run", artDir + "/wasm-fallthrough.bxs"])
+if (wasmFall.code == 0 && wasmFallRun.out == wasmFallVm.out && wasmFallRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm fall-through functions\n    wasm=" + json(wasmFallRun.out) + " vm=" + json(wasmFallVm.out) + " err=" + json(wasmFall.err))
+}
 write(artDir + "/wasm-methods.bxs", 'let a = [3, 1, 2]\nprint(a.sum())\nprint(a.min())\nprint(a.max())\nprint(a.join("-"))\nprint(a.index_of(1))\nprint(a.contains(2))\na.sort()\nprint(a)\na.reverse()\nprint(a)\nlet s = "a,b,c"\nprint(s.split(","))\nprint(s.upper())\nprint(s.len())\nlet r = {x: 1, y: 2}\nprint(r.get("x"))\nprint(r.has("y"))\n')
 let wasmMethods = exec([BX, "build", "--wasm", artDir + "/wasm-methods.bxs", "-o", artDir + "/wasm-methods.wasm"])
 let wasmMethodsRun = exec([BX, "run", artDir + "/wasm-methods.wasm"])
@@ -1378,6 +1388,16 @@ if (wasmAliasPush.code == 0 && wasmAliasPushRun.out == wasmAliasPushVm.out && wa
 } else {
   casesFail += 1
   failures.push("wasm array alias push\n    wasm=" + json(wasmAliasPushRun.out) + " vm=" + json(wasmAliasPushVm.out) + " err=" + json(wasmAliasPush.err))
+}
+write(artDir + "/wasm-fallthrough.bxs", 'fn maybe(x) { if (x) { return 1 } }\nprint(maybe(true))\nprint(maybe(false))\nprint(type(maybe(false)))\nfn mixed(x) { if (x > 0) { return 1 }\n  if (x == 0) { return "zero" }\n}\nprint(mixed(1))\nprint(mixed(0))\nprint(mixed(-1))\n')
+let wasmFall = exec([BX, "build", "--wasm", artDir + "/wasm-fallthrough.bxs", "-o", artDir + "/wasm-fallthrough.wasm"])
+let wasmFallRun = exec([BX, "run", artDir + "/wasm-fallthrough.wasm"])
+let wasmFallVm = exec([BX, "run", artDir + "/wasm-fallthrough.bxs"])
+if (wasmFall.code == 0 && wasmFallRun.out == wasmFallVm.out && wasmFallRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm fall-through functions\n    wasm=" + json(wasmFallRun.out) + " vm=" + json(wasmFallVm.out) + " err=" + json(wasmFall.err))
 }
 write(artDir + "/wasm-methods.bxs", 'let a = [3, 1, 2]\nprint(a.sum())\nprint(a.min())\nprint(a.max())\nprint(a.join("-"))\nprint(a.index_of(1))\nprint(a.contains(2))\na.sort()\nprint(a)\na.reverse()\nprint(a)\nlet s = "a,b,c"\nprint(s.split(","))\nprint(s.upper())\nprint(s.len())\nlet r = {x: 1, y: 2}\nprint(r.get("x"))\nprint(r.has("y"))\n')
 let wasmMethods = exec([BX, "build", "--wasm", artDir + "/wasm-methods.bxs", "-o", artDir + "/wasm-methods.wasm"])
@@ -1777,6 +1797,16 @@ if (wasmSortJoin.code == 0 && wasmSortJoinRun.out == wasmSortJoinVm.out && wasmS
 } else {
   casesFail += 1
   failures.push("wasm method sort(cmp)/record join\n    wasm=" + json(wasmSortJoinRun.out) + " vm=" + json(wasmSortJoinVm.out) + " err=" + json(wasmSortJoinRun.err))
+}
+write(artDir + "/wasm-fallthrough.bxs", 'fn maybe(x) { if (x) { return 1 } }\nprint(maybe(true))\nprint(maybe(false))\nprint(type(maybe(false)))\nfn mixed(x) { if (x > 0) { return 1 }\n  if (x == 0) { return "zero" }\n}\nprint(mixed(1))\nprint(mixed(0))\nprint(mixed(-1))\n')
+let wasmFall = exec([BX, "build", "--wasm", artDir + "/wasm-fallthrough.bxs", "-o", artDir + "/wasm-fallthrough.wasm"])
+let wasmFallRun = exec([BX, "run", artDir + "/wasm-fallthrough.wasm"])
+let wasmFallVm = exec([BX, "run", artDir + "/wasm-fallthrough.bxs"])
+if (wasmFall.code == 0 && wasmFallRun.out == wasmFallVm.out && wasmFallRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm fall-through functions\n    wasm=" + json(wasmFallRun.out) + " vm=" + json(wasmFallVm.out) + " err=" + json(wasmFall.err))
 }
 write(artDir + "/wasm-methods.bxs", 'let xs = [1, 2]\nprint(xs.join("-"))\nprint(xs.join())\nprint(xs.reverse())\nprint(xs.sort())\nlet b = [true, false, true]\nprint(slice(b, 1))\nprint(b.join(","))\nlet s = ["a", "b"]\nprint(s.join("|"))\nprint(s.reverse())\nlet f = [1.5, 2.5]\nprint(f.join("|"))\nprint(f.reverse())\n')
 let wasmMethods = exec([BX, "build", "--wasm", artDir + "/wasm-methods.bxs", "-o", artDir + "/wasm-methods.wasm"])

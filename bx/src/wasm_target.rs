@@ -489,6 +489,20 @@ fn method_as_call(object: &Expr, name: &str, args: &[Expr]) -> Option<Expr> {
         0,
     ))
 }
+/// True when every path through the body ends in a `return`.
+fn body_always_returns(stmts: &[Stmt]) -> bool {
+    let Some(last) = stmts.last() else {
+        return false;
+    };
+    match last {
+        Stmt::Return(..) => true,
+        Stmt::Block(body) => body_always_returns(body),
+        Stmt::If(_, then_body, Some(else_body), _) => {
+            body_always_returns(then_body) && body_always_returns(else_body)
+        }
+        _ => false,
+    }
+}
 /// True when the body (recursively) contains a `return <value>` statement.
 fn body_returns_value(stmts: &[Stmt]) -> bool {
     stmts.iter().any(|stmt| match stmt {
@@ -17196,11 +17210,15 @@ pub fn compile_to_wasm_named(source: &str, file: Option<&str>) -> Result<Vec<u8>
 
         // A function that never returns a value behaves like the VM: calls
         // yield `null`, so give every such declaration an explicit result type.
-        checker.set_fn_sig(
-            &decl.name,
-            params,
-            inferred_results[slot].or(Some(Ty::Null)),
-        );
+        // Functions that return values on some paths and fall through on others
+        // yield `null` on the fall-through paths, so they become dynamic.
+        let result = match inferred_results[slot] {
+            Some(ty) if ty != Ty::Null && ty != Ty::Dyn && !body_always_returns(decl.body) => {
+                Some(Ty::Dyn)
+            }
+            other => other.or(Some(Ty::Null)),
+        };
+        checker.set_fn_sig(&decl.name, params, result);
     }
     for (id, sig) in checker.lit_sigs.iter_mut().enumerate() {
         let slot = decl_count + id;
@@ -17208,7 +17226,14 @@ pub fn compile_to_wasm_named(source: &str, file: Option<&str>) -> Result<Vec<u8>
             .iter()
             .map(|ty| ty.unwrap_or(Ty::Int))
             .collect();
-        sig.result = inferred_results[slot].or(Some(Ty::Null));
+        sig.result = match inferred_results[slot] {
+            Some(ty)
+                if ty != Ty::Null && ty != Ty::Dyn && !body_always_returns(lit_decls[id].body) =>
+            {
+                Some(Ty::Dyn)
+            }
+            other => other.or(Some(Ty::Null)),
+        };
     }
     checker.check_literal_bodies(&lit_decls, &capture_types)?;
     for stmt in &stmts {
@@ -20216,6 +20241,26 @@ mod tests {
                 "[\"a\",\"b\",\"c\"]".to_string(),
                 "A,B,C".to_string(),
                 "true".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn fallthrough_functions_return_null_like_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "fn maybe(x) { if (x) { return 1 } }\nprint(maybe(true))\nprint(maybe(false))\nprint(type(maybe(false)))\nfn mixed(x) { if (x > 0) { return 1 }\n  if (x == 0) { return \"zero\" }\n}\nprint(mixed(1))\nprint(mixed(0))\nprint(mixed(-1))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec![
+                "1".to_string(),
+                "null".to_string(),
+                "null".to_string(),
+                "1".to_string(),
+                "zero".to_string(),
+                "null".to_string()
             ]
         );
     }
