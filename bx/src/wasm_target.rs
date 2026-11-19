@@ -21336,6 +21336,35 @@ mod tests {
     }
 
     #[test]
+    fn every_emitted_module_validates() {
+        let corpus = [
+            "let a = [1, 2]\na.push(3)\nprint(a)\nprint(len(a))",
+            "fn f(x) { return x * 2 }\nprint(f(3))",
+            "let d = parse(env(\"X\", \"[1,2]\"))\nprint(d[0])\nprint(map(d, fn(v) { return v + 1 }))",
+            "let r = {a: 1}\nr.b = 2\nr[env(\"K\", \"c\")] = 3\nprint(r)",
+            "let v = parse(env(\"X\", \"[3,1]\"))\nsort(v, fn(a, b) { return b - a })\nprint(v)",
+            "let a = attempt(fn() { return [1][9] })\nprint(a.ok)\nprint(a.error)",
+            "for k, v in {a: 1, b: \"x\"} { print(k)\n  print(v) }",
+            "let s = \"a\"\ns += str(1)\nprint(s)",
+            "fn pick(o, k) { return o[k] }\nprint(pick({\"a\": 5}, \"a\"))",
+            "let xs = []\nfor (let i = 0; i < 3; i += 1) { push(xs, i * 2) }\nprint(reduce(xs, fn(a, b) { return a + b }, 0))",
+            "let m = map(parse(env(\"X\", \"[1,2]\")), fn(v) { if (v > 1) { return \"s\" }\n  return v })\nprint(m)",
+            "print([{\"a\": 1}] + [{\"a\": 2}])",
+            "let t = \"\"\nfor i in range(3) { t += str(i) }\nprint(t)",
+            "let rec = {name: \"x\", scores: [3, 1]}\nsort(rec.scores)\nrec.scores.push(9)\nprint(rec.scores)",
+            "fn maybe(x) { if (x) { return 1 } }\nprint(maybe(false))",
+            "let b = [true]\npush(b, parse(env(\"D\", \"7\")))\nprint(b)",
+            "let f = {v: 1.5}\nf.v = parse(env(\"D\", \"7\"))\nprint(f.v)",
+            "let o = {b: false}\no.b = parse(env(\"D\", \"7\"))\nprint(o)",
+        ];
+        for source in corpus {
+            let bytes =
+                compile_to_wasm(source).unwrap_or_else(|e| panic!("compile failed: {e}\n{source}"));
+            validate(&bytes).unwrap_or_else(|e| panic!("invalid module: {e}\n{source}"));
+        }
+    }
+
+    #[test]
     fn comparator_sort_is_stable_and_matches_the_vm() {
         let (numbers, strings) = run_with_argv(
             "print(sort([3, 1, 2], fn(x, y) { return x - y }))\nprint(sort([3, 1, 2], fn(x, y) { return y - x }))\nprint(sort([5], fn(x, y) { return x - y }))\nprint(sort([], fn(x, y) { return x - y }))\nprint(sort([2.5, 1.5, 3.5], fn(x, y) { if (x < y) { return -1 }\n  return 1 }))\nprint(sort([\"bb\", \"a\", \"ccc\"], fn(x, y) { return len(x) - len(y) }))\nlet rows = [[3], [1, 2], [2]]\nprint(sort(rows, fn(x, y) { return len(x) - len(y) }))\nlet rs = [{a: 3}, {a: 1}, {a: 2}, {a: 1}]\nprint(sort(rs, fn(x, y) { return x.a - y.a }))",

@@ -726,6 +726,10 @@ fn cmd_build(args: Vec<String>) -> i32 {
                 return 1;
             }
         };
+        if let Err(e) = wasm_target::validate(&module) {
+            eprintln!("bx: emitted browser module failed validation: {}", e);
+            return 1;
+        }
         let out = output.unwrap_or_else(|| {
             Path::new(&input)
                 .with_extension("html")
@@ -771,6 +775,10 @@ fn cmd_build(args: Vec<String>) -> i32 {
                 return 1;
             }
         };
+        if let Err(e) = wasm_target::validate(&bytes) {
+            eprintln!("bx: emitted module failed validation: {}", e);
+            return 1;
+        }
         let out = output.unwrap_or_else(|| {
             Path::new(&input)
                 .with_extension("wasm")
