@@ -323,6 +323,7 @@ conversion audit (P2c). If P2a/P2b fail their gates the Dyn arm remains behind
 | selftest | PASS |
 | real scripts vs VM | `tests/cases/data.bxs`, `tests/cases/loops.bxs`, `examples/{hello,use-lib}.bxs`, `tests/bench-wasm/*` all byte-identical output |
 | gates | `cargo fmt`, `cargo clippy --release -- -D warnings`, `test.sh` green |
+| reproduction | `bash bx/scripts/evidence.sh [bx-binary]` runs the suite, verifier, five differential tools and the wasm soak and prints one PASS/FAIL line per stage (exit non-zero on failure) |
 
 Benchmark timings (release build, Windows x64, 3 runs averaged; `bx run` for
 both the script and the emitted `.wasm`, so this compares the two engines):
