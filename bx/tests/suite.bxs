@@ -985,6 +985,16 @@ if (wasmAliasPush.code == 0 && wasmAliasPushRun.out == wasmAliasPushVm.out && wa
   casesFail += 1
   failures.push("wasm array alias push\n    wasm=" + json(wasmAliasPushRun.out) + " vm=" + json(wasmAliasPushVm.out) + " err=" + json(wasmAliasPush.err))
 }
+write(artDir + "/wasm-redbox.bxs", 'let v = parse(env("X", "[1,2,3]"))\nlet xs = map(v, fn(it) { return it })\nprint(reduce(xs, fn(a, b) { return int(b) }, 0))\nprint(reduce(xs, fn(a, b) { return float(b) }, 0.0))\nprint(reduce(xs, fn(a, b) { return str(b) }, ""))\n')
+let wasmRedbox = exec([BX, "build", "--wasm", artDir + "/wasm-redbox.bxs", "-o", artDir + "/wasm-redbox.wasm"])
+let wasmRedboxRun = exec([BX, "run", artDir + "/wasm-redbox.wasm"])
+let wasmRedboxVm = exec([BX, "run", artDir + "/wasm-redbox.bxs"])
+if (wasmRedbox.code == 0 && wasmRedboxRun.out == wasmRedboxVm.out && wasmRedboxRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm dynamic reduce scalar results\n    wasm=" + json(wasmRedboxRun.out) + " vm=" + json(wasmRedboxVm.out) + " err=" + json(wasmRedbox.err))
+}
 write(artDir + "/wasm-fallthrough.bxs", 'fn maybe(x) { if (x) { return 1 } }\nprint(maybe(true))\nprint(maybe(false))\nprint(type(maybe(false)))\nfn mixed(x) { if (x > 0) { return 1 }\n  if (x == 0) { return "zero" }\n}\nprint(mixed(1))\nprint(mixed(0))\nprint(mixed(-1))\n')
 let wasmFall = exec([BX, "build", "--wasm", artDir + "/wasm-fallthrough.bxs", "-o", artDir + "/wasm-fallthrough.wasm"])
 let wasmFallRun = exec([BX, "run", artDir + "/wasm-fallthrough.wasm"])
@@ -1058,7 +1068,7 @@ if (wasmMergeKind.code == 0 && wasmMergeKindRun.out == wasmMergeKindVm.out && wa
   casesFail += 1
   failures.push("wasm merge kind override\n    wasm=" + json(wasmMergeKindRun.out) + " vm=" + json(wasmMergeKindVm.out) + " err=" + json(wasmMergeKind.err))
 }
-let wasmDataCase = exec([BX, "build", "--wasm", __dir__ + "/cases/data.bxs", "-o", artDir + "/wasm-data.wasm"])
+let wasmDataCase = exec([BX, "build", "--wasm", artDir + "/wasm-data.bxs", "-o", artDir + "/wasm-data.wasm"])
 if (wasmDataCase.code == 1 && wasmDataCase.err.contains("dynamic sort comparators")) {
   casesOk += 1
 } else {
@@ -1389,6 +1399,16 @@ if (wasmAliasPush.code == 0 && wasmAliasPushRun.out == wasmAliasPushVm.out && wa
   casesFail += 1
   failures.push("wasm array alias push\n    wasm=" + json(wasmAliasPushRun.out) + " vm=" + json(wasmAliasPushVm.out) + " err=" + json(wasmAliasPush.err))
 }
+write(artDir + "/wasm-redbox.bxs", 'let v = parse(env("X", "[1,2,3]"))\nlet xs = map(v, fn(it) { return it })\nprint(reduce(xs, fn(a, b) { return int(b) }, 0))\nprint(reduce(xs, fn(a, b) { return float(b) }, 0.0))\nprint(reduce(xs, fn(a, b) { return str(b) }, ""))\n')
+let wasmRedbox = exec([BX, "build", "--wasm", artDir + "/wasm-redbox.bxs", "-o", artDir + "/wasm-redbox.wasm"])
+let wasmRedboxRun = exec([BX, "run", artDir + "/wasm-redbox.wasm"])
+let wasmRedboxVm = exec([BX, "run", artDir + "/wasm-redbox.bxs"])
+if (wasmRedbox.code == 0 && wasmRedboxRun.out == wasmRedboxVm.out && wasmRedboxRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm dynamic reduce scalar results\n    wasm=" + json(wasmRedboxRun.out) + " vm=" + json(wasmRedboxVm.out) + " err=" + json(wasmRedbox.err))
+}
 write(artDir + "/wasm-fallthrough.bxs", 'fn maybe(x) { if (x) { return 1 } }\nprint(maybe(true))\nprint(maybe(false))\nprint(type(maybe(false)))\nfn mixed(x) { if (x > 0) { return 1 }\n  if (x == 0) { return "zero" }\n}\nprint(mixed(1))\nprint(mixed(0))\nprint(mixed(-1))\n')
 let wasmFall = exec([BX, "build", "--wasm", artDir + "/wasm-fallthrough.bxs", "-o", artDir + "/wasm-fallthrough.wasm"])
 let wasmFallRun = exec([BX, "run", artDir + "/wasm-fallthrough.wasm"])
@@ -1462,7 +1482,7 @@ if (wasmMergeKind.code == 0 && wasmMergeKindRun.out == wasmMergeKindVm.out && wa
   casesFail += 1
   failures.push("wasm merge kind override\n    wasm=" + json(wasmMergeKindRun.out) + " vm=" + json(wasmMergeKindVm.out) + " err=" + json(wasmMergeKind.err))
 }
-let wasmDataCase = exec([BX, "build", "--wasm", __dir__ + "/cases/data.bxs", "-o", artDir + "/wasm-data.wasm"])
+let wasmDataCase = exec([BX, "build", "--wasm", artDir + "/wasm-data.bxs", "-o", artDir + "/wasm-data.wasm"])
 if (wasmDataCase.code == 1 && wasmDataCase.err.contains("dynamic sort comparators")) {
   casesOk += 1
 } else {
@@ -1797,6 +1817,16 @@ if (wasmSortJoin.code == 0 && wasmSortJoinRun.out == wasmSortJoinVm.out && wasmS
 } else {
   casesFail += 1
   failures.push("wasm method sort(cmp)/record join\n    wasm=" + json(wasmSortJoinRun.out) + " vm=" + json(wasmSortJoinVm.out) + " err=" + json(wasmSortJoinRun.err))
+}
+write(artDir + "/wasm-redbox.bxs", 'let v = parse(env("X", "[1,2,3]"))\nlet xs = map(v, fn(it) { return it })\nprint(reduce(xs, fn(a, b) { return int(b) }, 0))\nprint(reduce(xs, fn(a, b) { return float(b) }, 0.0))\nprint(reduce(xs, fn(a, b) { return str(b) }, ""))\n')
+let wasmRedbox = exec([BX, "build", "--wasm", artDir + "/wasm-redbox.bxs", "-o", artDir + "/wasm-redbox.wasm"])
+let wasmRedboxRun = exec([BX, "run", artDir + "/wasm-redbox.wasm"])
+let wasmRedboxVm = exec([BX, "run", artDir + "/wasm-redbox.bxs"])
+if (wasmRedbox.code == 0 && wasmRedboxRun.out == wasmRedboxVm.out && wasmRedboxRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm dynamic reduce scalar results\n    wasm=" + json(wasmRedboxRun.out) + " vm=" + json(wasmRedboxVm.out) + " err=" + json(wasmRedbox.err))
 }
 write(artDir + "/wasm-fallthrough.bxs", 'fn maybe(x) { if (x) { return 1 } }\nprint(maybe(true))\nprint(maybe(false))\nprint(type(maybe(false)))\nfn mixed(x) { if (x > 0) { return 1 }\n  if (x == 0) { return "zero" }\n}\nprint(mixed(1))\nprint(mixed(0))\nprint(mixed(-1))\n')
 let wasmFall = exec([BX, "build", "--wasm", artDir + "/wasm-fallthrough.bxs", "-o", artDir + "/wasm-fallthrough.wasm"])

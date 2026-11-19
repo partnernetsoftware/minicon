@@ -8115,6 +8115,41 @@ impl<'a> Emitter<'a> {
         self.builder.push(Instr::Local(0x20, index));
         self.builder.push(Instr::Call(DYN_ITER_AT));
         self.builder.push(Instr::Call(sig.index));
+        match sig.result.unwrap_or(Ty::Dyn) {
+            Ty::Dyn => {}
+            Ty::Int => {
+                let value = self.builder.add_local(ValType::I64);
+                self.builder.push(Instr::Local(0x21, value));
+                self.emit_dyn_box_local(Ty::Int, value, value, value)?;
+            }
+            Ty::Float => {
+                let value = self.builder.add_local(ValType::F64);
+                self.builder.push(Instr::Local(0x21, value));
+                self.emit_dyn_box_local(Ty::Float, value, value, value)?;
+            }
+            Ty::Bool => {
+                let value = self.builder.add_local(ValType::I32);
+                self.builder.push(Instr::Local(0x21, value));
+                self.emit_dyn_box_local(Ty::Bool, value, value, value)?;
+            }
+            Ty::Str => {
+                let len = self.builder.add_local(ValType::I32);
+                let ptr = self.builder.add_local(ValType::I32);
+                self.builder.push(Instr::Local(0x21, len));
+                self.builder.push(Instr::Local(0x21, ptr));
+                self.emit_dyn_box_local(Ty::Str, ptr, ptr, len)?;
+            }
+            Ty::Null => {
+                self.builder.push(Instr::Op(0x1a));
+                self.emit_dyn_box_local(Ty::Null, 0, 0, 0)?;
+            }
+            other => {
+                return Err(format!(
+                    "wasm target dynamic reduce callbacks return scalars, got {}",
+                    ty_name(other)
+                ))
+            }
+        }
         self.builder.push(Instr::Local(0x21, acc));
         self.builder.push(Instr::Local(0x20, index));
         self.builder.push(Instr::Const(0x42, WVal::I64(1)));
@@ -9873,6 +9908,9 @@ impl<'a> Emitter<'a> {
                 self.builder.push(Instr::Local(0x20, ptr));
                 self.builder.push(Instr::Op(0xad));
                 self.builder.push(Instr::Mem(0x37, 3, 8));
+            }
+            Ty::Null => {
+                self.push_dyn_header(cell, 0, 0);
             }
             other => {
                 return Err(format!(
@@ -15788,6 +15826,7 @@ impl<'a> InferState<'a> {
                                 Some(Ty::Float) => Some(Ty::ArrF),
                                 Some(Ty::Obj(shape)) => Some(Ty::ArrObj(shape)),
                                 Some(Ty::Arr) => Some(Ty::ArrArr),
+                                Some(Ty::Dyn) => Some(Ty::Dyn),
                                 _ => Some(Ty::Arr),
                             }
                         } else {
@@ -15841,6 +15880,7 @@ impl<'a> InferState<'a> {
                                 Some(Ty::Float) => Some(Ty::ArrF),
                                 Some(Ty::Obj(shape)) => Some(Ty::ArrObj(shape)),
                                 Some(Ty::Arr) => Some(Ty::ArrArr),
+                                Some(Ty::Dyn) => Some(Ty::Dyn),
                                 _ => Some(Ty::Arr),
                             }
                         } else {
@@ -17778,6 +17818,9 @@ pub fn compile_to_wasm_named(source: &str, file: Option<&str>) -> Result<Vec<u8>
             .get(id)
             .cloned()
             .ok_or_else(|| "missing signature for a function literal".to_string())?;
+        if std::env::var("BX_DEBUG_LITS").is_ok() {
+            eprintln!("lit {} params={:?} result={:?}", id, sig.params, sig.result);
+        }
         builder.begin_function(fn_types[decl_count + id]);
         // Literal frames reserve wasm param 0 for the capture environment, so
         // the scratch locals start after env + declared params.
@@ -20013,8 +20056,11 @@ mod tests {
             "let v = parse(env(\"X\", \"[3,1,2]\"))\nlet xs = map(v, fn(it) { return it })\nprint(sort(xs, fn(a, b) { return a - b }))\nprint(reduce(xs, fn(a, b) { return a + b }, 0))\nprint(min(xs))",
             &[],
         );
-        assert_eq!(numbers, vec![6i64]);
-        assert_eq!(strings, vec!["[1,2,3]".to_string(), "1".to_string()]);
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec!["[1,2,3]".to_string(), "6".to_string(), "1".to_string()]
+        );
     }
 
     #[test]
@@ -20023,8 +20069,11 @@ mod tests {
             "let data = parse(\"{\" + json(\"items\") + \":[{\" + json(\"score\") + \":2},{\" + json(\"score\") + \":3}]}\")\nlet xs = map(data[\"items\"], fn(it) { return it[\"score\"] })\nprint(reduce(xs, fn(a, b) { return a + b }, 0))\nprint(reduce(xs, fn(a, b) { return a }))\nprint(json(xs))",
             &[],
         );
-        assert_eq!(numbers, vec![5i64, 2]);
-        assert_eq!(strings, vec!["[2,3]".to_string()]);
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec!["5".to_string(), "2".to_string(), "[2,3]".to_string()]
+        );
     }
 
     #[test]
@@ -20262,6 +20311,19 @@ mod tests {
                 "zero".to_string(),
                 "null".to_string()
             ]
+        );
+    }
+
+    #[test]
+    fn dynamic_reduce_boxes_scalar_callback_results() {
+        let (numbers, strings) = run_with_argv(
+            "let v = parse(env(\"X\", \"[1,2,3]\"))\nlet xs = map(v, fn(it) { return it })\nprint(reduce(xs, fn(a, b) { return int(b) }, 0))\nprint(reduce(xs, fn(a, b) { return float(b) }, 0.0))\nprint(reduce(xs, fn(a, b) { return str(b) }, \"\"))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec!["3".to_string(), "3".to_string(), "3".to_string()]
         );
     }
 
