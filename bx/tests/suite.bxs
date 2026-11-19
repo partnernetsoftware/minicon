@@ -199,6 +199,16 @@ check("hello example", "hello from bx\n7\n{\"bytes\":2,\"fast\":true}", ["run", 
 
 print("bytecode")
 let artDir = __dir__ + "/../target/bx-tests"
+write(artDir + "/wasm-dynaccum.bxs", 'let v = parse(env("X", "[3,1,2]"))\nv.sort()\nprint(v)\nprint(v.len())\nprint(v.join("-"))\nprint(v.map(fn(x) { return x * 2 }))\nlet total = 0\nfor x in v { if (x == 2) { continue }\n  total = total + x }\nprint(total)\n')
+let wasmDynAccum = exec([BX, "build", "--wasm", artDir + "/wasm-dynaccum.bxs", "-o", artDir + "/wasm-dynaccum.wasm"])
+let wasmDynAccumRun = exec([BX, "run", artDir + "/wasm-dynaccum.wasm"])
+let wasmDynAccumVm = exec([BX, "run", artDir + "/wasm-dynaccum.bxs"])
+if (wasmDynAccum.code == 0 && wasmDynAccumRun.out == wasmDynAccumVm.out && wasmDynAccumRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm dynamic iteration accumulation\n    wasm=" + json(wasmDynAccumRun.out) + " vm=" + json(wasmDynAccumVm.out) + " err=" + json(wasmDynAccum.err))
+}
 let loopsWasm = exec([BX, "build", "--wasm", __dir__ + "/cases/loops.bxs", "-o", artDir + "/loops.wasm"])
 let loopsWasmRun = exec([BX, "run", artDir + "/loops.wasm"], { cwd: __dir__ + "/cases" })
 let loopsVmRun = exec([BX, "run", __dir__ + "/cases/loops.bxs"], { cwd: __dir__ + "/cases" })

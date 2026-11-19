@@ -3246,7 +3246,12 @@ impl Checker {
                     Expr::Ident(name) => {
                         let expected = self.lookup(name)?;
                         let actual = self.infer(value)?;
-                        if expected != actual {
+                        let convert = actual == Ty::Dyn
+                            && matches!(
+                                expected,
+                                Ty::Int | Ty::Float | Ty::Bool | Ty::Str
+                            );
+                        if expected != actual && !convert {
                             return Err(format!(
                                 "wasm target requires stable types: '{}' is {}, assigned {}",
                                 name,
@@ -4814,6 +4819,23 @@ impl<'a> Emitter<'a> {
         if expected == Ty::Float && actual == Ty::Int {
             self.builder.push(Instr::Op(0xb9));
             return Ok(());
+        }
+        if actual == Ty::Dyn {
+            match expected {
+                Ty::Int => {
+                    self.builder.push(Instr::Call(DYN_TO_INT));
+                    return Ok(());
+                }
+                Ty::Float => {
+                    self.builder.push(Instr::Call(DYN_TO_FLOAT));
+                    return Ok(());
+                }
+                Ty::Bool => {
+                    self.builder.push(Instr::Call(DYN_TRUTHY));
+                    return Ok(());
+                }
+                _ => {}
+            }
         }
         Err(format!(
             "wasm target parameter expects {}, got {}",
@@ -14865,7 +14887,34 @@ impl<'a> Emitter<'a> {
                     Expr::Ident(src) => Some(src.clone()),
                     _ => None,
                 };
-                let ty = self.emit_expr(value)?;
+                let mut ty = self.emit_expr(value)?;
+                if ty == Ty::Dyn {
+                    let expected_ty = self
+                        .local_of(name)
+                        .map(|slot| slot.ty)
+                        .or_else(|| self.checker.binding(name).ok().map(|binding| binding.ty));
+                    match expected_ty {
+                        Some(Ty::Int) => {
+                            self.builder.push(Instr::Call(DYN_TO_INT));
+                            ty = Ty::Int;
+                        }
+                        Some(Ty::Float) => {
+                            self.builder.push(Instr::Call(DYN_TO_FLOAT));
+                            ty = Ty::Float;
+                        }
+                        Some(Ty::Bool) => {
+                            self.builder.push(Instr::Call(DYN_TRUTHY));
+                            ty = Ty::Bool;
+                        }
+                        Some(Ty::Str) => {
+                            self.builder.push(Instr::Const(0x41, WVal::I32(0)));
+                            self.builder.push(Instr::Call(DYN_STR));
+                            self.push_block_as_pair();
+                            ty = Ty::Str;
+                        }
+                        _ => {}
+                    }
+                }
                 if matches!(
                     ty,
                     Ty::Arr
@@ -20635,6 +20684,23 @@ mod tests {
                 "2".to_string(),
                 "{\"x\":1,\"y\":9,\"z\":3}".to_string(),
                 "13".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn dynamic_iteration_accumulates_into_scalars() {
+        let (numbers, strings) = run_with_argv(
+            "let v = parse(env(\"X\", \"[3,1,2]\"))\nv.sort()\nprint(v)\nprint(v.len())\nprint(v.join(\"-\"))\nprint(v.map(fn(x) { return x * 2 }))\nlet total = 0\nfor x in v { if (x == 2) { continue }\n  total = total + x }\nprint(total)",
+            &[],
+        );
+        assert_eq!(numbers, vec![3, 4]);
+        assert_eq!(
+            strings,
+            vec![
+                "[1,2,3]".to_string(),
+                "1-2-3".to_string(),
+                "[2,4,6]".to_string()
             ]
         );
     }
