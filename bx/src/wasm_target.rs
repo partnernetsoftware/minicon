@@ -438,6 +438,57 @@ struct Shape {
 }
 
 /// Storage kind of a record field type.
+/// Method names that lower to the same-named builtin function call.
+fn builtin_method_name(name: &str) -> bool {
+    matches!(
+        name,
+        "sort"
+            | "reverse"
+            | "len"
+            | "sum"
+            | "min"
+            | "max"
+            | "join"
+            | "index_of"
+            | "contains"
+            | "split"
+            | "upper"
+            | "lower"
+            | "trim"
+            | "replace"
+            | "slice"
+            | "get"
+            | "has"
+            | "keys"
+            | "values"
+            | "starts_with"
+            | "ends_with"
+            | "type"
+            | "json"
+            | "str"
+            | "int"
+            | "float"
+    )
+}
+
+/// Rewrite `value.method(args)` as `method(value, args)` for builtin methods.
+fn method_as_call(object: &Expr, name: &str, args: &[Expr]) -> Option<Expr> {
+    if !builtin_method_name(name) {
+        return None;
+    }
+    // `sort(cmp)` keeps its dedicated comparator lowering.
+    if name == "sort" && !args.is_empty() {
+        return None;
+    }
+    let mut call_args = Vec::with_capacity(args.len() + 1);
+    call_args.push(object.clone());
+    call_args.extend(args.iter().cloned());
+    Some(Expr::Call(
+        Box::new(Expr::Ident(name.to_string())),
+        call_args,
+        0,
+    ))
+}
 /// True when the body (recursively) contains a `return <value>` statement.
 fn body_returns_value(stmts: &[Stmt]) -> bool {
     stmts.iter().any(|stmt| match stmt {
@@ -811,6 +862,11 @@ impl Checker {
     }
 
     fn infer(&self, expr: &Expr) -> Result<Ty, String> {
+        if let Expr::MethodCall(object, key, args, _) = expr {
+            if let Some(call) = method_as_call(object, key, args) {
+                return self.infer(&call);
+            }
+        }
         match expr {
             Expr::Func(..) => self
                 .literal_ids
@@ -1090,6 +1146,9 @@ impl Checker {
                 Ok(Ty::Obj(self.shape_id(&keys, &kinds)))
             }
             Expr::MethodCall(object, key, args, _) => {
+                if let Some(call) = method_as_call(object, key, args) {
+                    return self.infer(&call);
+                }
                 if matches!(key.as_str(), "push" | "pop") && self.infer(object)? == Ty::Dyn {
                     if key == "push" {
                         if args.len() != 1 {
@@ -3525,7 +3584,12 @@ impl Checker {
                     );
                 }
             }
-            Stmt::Expr(Expr::MethodCall(object, name, args, _), _) => {
+            Stmt::Expr(Expr::MethodCall(object, name, args, _), line) => {
+                if name != "push" && name != "pop" {
+                    if let Some(call) = method_as_call(object, name, args) {
+                        return self.check_stmt(&Stmt::Expr(call, *line));
+                    }
+                }
                 let base = self.infer(object)?;
                 if base == Ty::Dyn {
                     match name.as_str() {
@@ -10554,6 +10618,11 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_expr(&mut self, expr: &Expr) -> Result<Ty, String> {
+        if let Expr::MethodCall(object, key, args, _) = expr {
+            if let Some(call) = method_as_call(object, key, args) {
+                return self.emit_expr(&call);
+            }
+        }
         if string_value(expr).is_some() {
             self.emit_str(expr)?;
             return Ok(Ty::Str);
@@ -15038,6 +15107,18 @@ impl<'a> Emitter<'a> {
                 self.emit_for_in(key, value.as_deref(), iter, body)
             }
             Stmt::Expr(Expr::MethodCall(object, name, args, _), _) => {
+                if name != "push" && name != "pop" {
+                    if let Some(call) = method_as_call(object, name, args) {
+                        let ty = self.emit_expr(&call)?;
+                        if ty != Ty::Null {
+                            self.builder.push(Instr::Op(0x1a));
+                            if ty == Ty::Str {
+                                self.builder.push(Instr::Op(0x1a));
+                            }
+                        }
+                        return Ok(());
+                    }
+                }
                 let Expr::Ident(array) = &**object else {
                     return Err("wasm target supports .push on array variables only".to_string());
                 };
@@ -20114,6 +20195,27 @@ mod tests {
                 "inside".to_string(),
                 "true".to_string(),
                 "null".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn builtin_method_syntax_lowers_to_calls() {
+        let (numbers, strings) = run_with_argv(
+            "let a = [3, 1, 2]\nprint(a.sum())\nprint(a.min())\nprint(a.max())\nprint(a.join(\"-\"))\nprint(a.index_of(1))\nprint(a.contains(2))\na.sort()\nprint(a)\na.reverse()\nprint(a)\nlet s = \"a,b,c\"\nprint(s.split(\",\"))\nprint(s.upper())\nprint(s.len())\nlet r = {x: 1, y: 2}\nprint(r.get(\"x\"))\nprint(r.has(\"y\"))",
+            &[],
+        );
+        assert_eq!(numbers, vec![6, 1, 3, 1, 5, 1]);
+        assert_eq!(
+            strings,
+            vec![
+                "3-1-2".to_string(),
+                "true".to_string(),
+                "[1,2,3]".to_string(),
+                "[3,2,1]".to_string(),
+                "[\"a\",\"b\",\"c\"]".to_string(),
+                "A,B,C".to_string(),
+                "true".to_string()
             ]
         );
     }

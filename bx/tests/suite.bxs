@@ -985,6 +985,16 @@ if (wasmAliasPush.code == 0 && wasmAliasPushRun.out == wasmAliasPushVm.out && wa
   casesFail += 1
   failures.push("wasm array alias push\n    wasm=" + json(wasmAliasPushRun.out) + " vm=" + json(wasmAliasPushVm.out) + " err=" + json(wasmAliasPush.err))
 }
+write(artDir + "/wasm-methods.bxs", 'let a = [3, 1, 2]\nprint(a.sum())\nprint(a.min())\nprint(a.max())\nprint(a.join("-"))\nprint(a.index_of(1))\nprint(a.contains(2))\na.sort()\nprint(a)\na.reverse()\nprint(a)\nlet s = "a,b,c"\nprint(s.split(","))\nprint(s.upper())\nprint(s.len())\nlet r = {x: 1, y: 2}\nprint(r.get("x"))\nprint(r.has("y"))\n')
+let wasmMethods = exec([BX, "build", "--wasm", artDir + "/wasm-methods.bxs", "-o", artDir + "/wasm-methods.wasm"])
+let wasmMethodsRun = exec([BX, "run", artDir + "/wasm-methods.wasm"])
+let wasmMethodsVm = exec([BX, "run", artDir + "/wasm-methods.bxs"])
+if (wasmMethods.code == 0 && wasmMethodsRun.out == wasmMethodsVm.out && wasmMethodsRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm builtin method syntax\n    wasm=" + json(wasmMethodsRun.out) + " vm=" + json(wasmMethodsVm.out) + " err=" + json(wasmMethods.err))
+}
 write(artDir + "/wasm-void.bxs", 'fn greet() {\n  print("hi")\n}\ngreet()\nprint(greet())\nlet mut = 0\nlet inc = fn() { mut += 1 }\ninc()\ninc()\nprint(mut)\nlet a = attempt(fn() { print("inside") })\nprint(a.ok)\nprint(a.value)\n')
 let wasmVoid = exec([BX, "build", "--wasm", artDir + "/wasm-void.bxs", "-o", artDir + "/wasm-void.wasm"])
 let wasmVoidRun = exec([BX, "run", artDir + "/wasm-void.wasm"])
@@ -1368,6 +1378,16 @@ if (wasmAliasPush.code == 0 && wasmAliasPushRun.out == wasmAliasPushVm.out && wa
 } else {
   casesFail += 1
   failures.push("wasm array alias push\n    wasm=" + json(wasmAliasPushRun.out) + " vm=" + json(wasmAliasPushVm.out) + " err=" + json(wasmAliasPush.err))
+}
+write(artDir + "/wasm-methods.bxs", 'let a = [3, 1, 2]\nprint(a.sum())\nprint(a.min())\nprint(a.max())\nprint(a.join("-"))\nprint(a.index_of(1))\nprint(a.contains(2))\na.sort()\nprint(a)\na.reverse()\nprint(a)\nlet s = "a,b,c"\nprint(s.split(","))\nprint(s.upper())\nprint(s.len())\nlet r = {x: 1, y: 2}\nprint(r.get("x"))\nprint(r.has("y"))\n')
+let wasmMethods = exec([BX, "build", "--wasm", artDir + "/wasm-methods.bxs", "-o", artDir + "/wasm-methods.wasm"])
+let wasmMethodsRun = exec([BX, "run", artDir + "/wasm-methods.wasm"])
+let wasmMethodsVm = exec([BX, "run", artDir + "/wasm-methods.bxs"])
+if (wasmMethods.code == 0 && wasmMethodsRun.out == wasmMethodsVm.out && wasmMethodsRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm builtin method syntax\n    wasm=" + json(wasmMethodsRun.out) + " vm=" + json(wasmMethodsVm.out) + " err=" + json(wasmMethods.err))
 }
 write(artDir + "/wasm-void.bxs", 'fn greet() {\n  print("hi")\n}\ngreet()\nprint(greet())\nlet mut = 0\nlet inc = fn() { mut += 1 }\ninc()\ninc()\nprint(mut)\nlet a = attempt(fn() { print("inside") })\nprint(a.ok)\nprint(a.value)\n')
 let wasmVoid = exec([BX, "build", "--wasm", artDir + "/wasm-void.bxs", "-o", artDir + "/wasm-void.wasm"])
