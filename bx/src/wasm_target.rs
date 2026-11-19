@@ -634,6 +634,9 @@ struct Checker {
     /// Element kinds for `let xs = []` declarations, taken from the first
     /// `push` (the VM lets an empty array grow any type).
     empty_hints: HashMap<String, Ty>,
+    /// AST site -> (old shape, grown shape, new field kind) for literal-key
+    /// record growth like `o.b = 2`.
+    growth: HashMap<usize, (u32, u32, u8)>,
 }
 
 impl Checker {
@@ -650,6 +653,7 @@ impl Checker {
             scopes: Vec::new(),
             fn_depth: 0,
             empty_hints: HashMap::new(),
+            growth: HashMap::new(),
         }
     }
 
@@ -718,6 +722,37 @@ impl Checker {
             .iter()
             .map(|(name, binding)| (name.clone(), binding.ty))
             .collect()
+    }
+
+    /// Update an existing binding's static type (record growth).
+    fn update_binding_ty(&mut self, name: &str, ty: Ty) -> Result<(), String> {
+        if let Some(slot) = self.local_scope.get_mut(name) {
+            *slot = ty;
+            return Ok(());
+        }
+        for scope in self.scopes.iter_mut().rev() {
+            if let Some(slot) = scope.get_mut(name) {
+                *slot = ty;
+                return Ok(());
+            }
+        }
+        if let Some(binding) = self.env.get_mut(name) {
+            binding.ty = ty;
+            return Ok(());
+        }
+        Err(format!("undefined variable '{}'", name))
+    }
+
+    /// Shape of `shape` plus one more field.
+    fn shape_add_field(&self, shape: u32, key: &str, kind: u8) -> Result<u32, String> {
+        let mut keys = self.shape_keys(shape)?;
+        let mut kinds = self.shape_kinds(shape)?;
+        if keys.iter().any(|known| known == key) {
+            return Err(format!("record already has field '{}'", key));
+        }
+        keys.push(key.to_string());
+        kinds.push(kind);
+        Ok(self.shape_id(&keys, &kinds))
     }
 
     fn declare_let(&mut self, name: &str, ty: Ty) -> Result<(), String> {
@@ -3065,6 +3100,7 @@ impl Checker {
                             | Ty::ArrStrArr
                             | Ty::Str
                             | Ty::Map
+                            | Ty::Obj(_)
                             | Ty::Dyn => Ok(Ty::Int),
                             other => {
                                 Err(format!("wasm target cannot take len of {}", ty_name(other)))
@@ -3220,16 +3256,35 @@ impl Checker {
                                 "wasm target writes record fields only".to_string()
                             );
                         };
+                        let actual = self.infer(value)?;
                         let expected = match self.field_ty(shape, key) {
                             Ok(ty) => ty,
                             Err(_) => {
-                                return Err(format!(
-                                    "wasm target cannot add a new field '{}' to a static record; declare it in the record literal (the VM grows records at runtime)",
-                                    key
-                                ))
+                                // Literal-key growth: `o.b = 2` reallocates the
+                                // record at runtime like the VM.
+                                let Expr::Ident(name) = &**object else {
+                                    return Err(format!(
+                                        "wasm target cannot add a new field '{}' to a static record; declare it in the record literal (the VM grows records at runtime)",
+                                        key
+                                    ));
+                                };
+                                let kind = match field_kind_for_ty(actual) {
+                                    Some(kind) => kind,
+                                    None if actual == Ty::Null => 8,
+                                    None => {
+                                        return Err(format!(
+                                            "wasm target cannot store {} in a record field",
+                                            ty_name(actual)
+                                        ))
+                                    }
+                                };
+                                let site = &**target as *const Expr as usize;
+                                let grown = self.shape_add_field(shape, key, kind)?;
+                                self.growth.insert(site, (shape, grown, kind));
+                                self.update_binding_ty(name, Ty::Obj(grown))?;
+                                return Ok(());
                             }
                         };
-                        let actual = self.infer(value)?;
                            let ok = expected == actual
                                || (expected == Ty::Float && actual == Ty::Int)
                                || (expected == Ty::Dyn
@@ -3327,7 +3382,7 @@ impl Checker {
                         let element = match arr_ty {
                             Ty::Arr => Ty::Int,
                             Ty::ArrStr => Ty::Str,
-                Ty::ArrBool => Ty::Bool,
+                            Ty::ArrBool => Ty::Bool,
                             Ty::ArrObj(shape) => Ty::Obj(shape),
                             Ty::ArrArr => Ty::Arr,
                             Ty::ArrF => Ty::Float,
@@ -3350,9 +3405,7 @@ impl Checker {
                     }
                     "pop" => {
                         if args.len() != 1 || !matches!(args[0], Expr::Ident(_)) {
-                            return Err(
-                                "wasm target pop(array) takes a named array".to_string()
-                            );
+                            return Err("wasm target pop(array) takes a named array".to_string());
                         }
                         match self.infer(&args[0])? {
                             Ty::Arr
@@ -3393,14 +3446,13 @@ impl Checker {
                         }
                         if self.infer(&args[0])? == Ty::Dyn {
                             let Ty::Func(id) = self.infer(&args[1])? else {
-                                return Err(
-                                    "wasm target each() needs a function literal callback"
-                                        .to_string(),
-                                );
+                                return Err("wasm target each() needs a function literal callback"
+                                    .to_string());
                             };
-                            let sig = self.lit_sigs.get(id as usize).ok_or_else(|| {
-                                "wasm target lost a function literal".to_string()
-                            })?;
+                            let sig = self
+                                .lit_sigs
+                                .get(id as usize)
+                                .ok_or_else(|| "wasm target lost a function literal".to_string())?;
                             if sig.params != vec![Ty::Dyn] {
                                 return Err(
                                     "wasm target dynamic callbacks take one dynamic element"
@@ -3413,7 +3465,7 @@ impl Checker {
                             Ty::Arr => Ty::Int,
                             Ty::ArrF => Ty::Float,
                             Ty::ArrStr => Ty::Str,
-                Ty::ArrBool => Ty::Bool,
+                            Ty::ArrBool => Ty::Bool,
                             Ty::ArrObj(shape) => Ty::Obj(shape),
                             Ty::ArrArr => Ty::Arr,
                             Ty::ArrStrArr => Ty::ArrStr,
@@ -3441,7 +3493,8 @@ impl Checker {
                             ));
                         }
                         return Ok(());
-                    }                    "sleep" => {
+                    }
+                    "sleep" => {
                         if args.len() != 1 || self.infer(&args[0])? != Ty::Int {
                             return Err("wasm target sleep(ms) takes an int".to_string());
                         }
@@ -3572,13 +3625,8 @@ impl Checker {
                             )
                         }
                     }
-                    if !matches!(
-                        _op,
-                        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Mod
-                    ) {
-                        return Err(
-                            "wasm target compound-assigns with + - * % only".to_string()
-                        );
+                    if !matches!(_op, BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Mod) {
+                        return Err("wasm target compound-assigns with + - * % only".to_string());
                     }
                     if self.infer(value)? != Ty::Int {
                         return Err("wasm target records and arrays hold ints".to_string());
@@ -3631,14 +3679,12 @@ impl Checker {
                 let element = match base {
                     Ty::Arr => Ty::Int,
                     Ty::ArrStr => Ty::Str,
-                Ty::ArrBool => Ty::Bool,
+                    Ty::ArrBool => Ty::Bool,
                     Ty::ArrObj(shape) => Ty::Obj(shape),
                     Ty::ArrArr => Ty::Arr,
                     Ty::ArrF => Ty::Float,
                     Ty::ArrStrArr => Ty::ArrStr,
-                    _ => {
-                        return Err("wasm target supports .push on arrays only".to_string())
-                    }
+                    _ => return Err("wasm target supports .push on arrays only".to_string()),
                 };
                 if name == "pop" {
                     if !args.is_empty() {
@@ -3844,17 +3890,16 @@ impl Checker {
                             scope.insert(key_name, Ty::Int);
                         }
                         scope.insert(value_name, Ty::Bool);
-                    }                    Ty::Dyn => {
-                        match value {
-                            Some(value_name) => {
-                                scope.insert(key.clone(), Ty::Dyn);
-                                scope.insert(value_name.clone(), Ty::Dyn);
-                            }
-                            None => {
-                                scope.insert(key.clone(), Ty::Dyn);
-                            }
-                        }
                     }
+                    Ty::Dyn => match value {
+                        Some(value_name) => {
+                            scope.insert(key.clone(), Ty::Dyn);
+                            scope.insert(value_name.clone(), Ty::Dyn);
+                        }
+                        None => {
+                            scope.insert(key.clone(), Ty::Dyn);
+                        }
+                    },
                     other => {
                         return Err(format!(
                             "wasm target iterates arrays and maps only, got {}",
@@ -8650,6 +8695,7 @@ impl<'a> Emitter<'a> {
                         | Ty::ArrF
                         | Ty::ArrStrArr
                         | Ty::Map
+                        | Ty::Obj(_)
                         | Ty::Dyn => Ok(Ty::Int),
                         other => Err(format!("wasm target cannot take len of {}", ty_name(other))),
                     };
@@ -14306,6 +14352,11 @@ impl<'a> Emitter<'a> {
                                 self.builder.push(Instr::Call(STR_LEN));
                                 return Ok(Ty::Int);
                             }
+                            Ty::Obj(shape) => {
+                                let count = self.checker.shape_keys(shape)?.len() as i64;
+                                self.builder.push(Instr::Const(0x42, WVal::I64(count)));
+                                return Ok(Ty::Int);
+                            }
                             other => {
                                 return Err(format!(
                                     "wasm target cannot take len of {}",
@@ -14426,6 +14477,127 @@ impl<'a> Emitter<'a> {
                         self.emit_box_dyn(&key_expr, Ty::Str)?;
                         self.emit_box_dyn(value, value_ty)?;
                         self.builder.push(Instr::Call(DYN_SET_MEMBER));
+                        return Ok(());
+                    }
+                    let growth_site = &**target as *const Expr as usize;
+                    if let Some((old_shape, new_shape, kind)) =
+                        self.checker.growth.get(&growth_site).copied()
+                    {
+                        let Expr::Ident(name) = &**object else {
+                            return Err(
+                                "wasm target grows only literal-key record variables".to_string()
+                            );
+                        };
+                        if self.boxed.contains(name) {
+                            return Err(format!(
+                                "wasm target cannot grow the captured record '{}'",
+                                name
+                            ));
+                        }
+                        let value_ty = self.type_of(value)?;
+                        let old_keys = self.checker.shape_keys(old_shape)?;
+                        let new_keys = self.checker.shape_keys(new_shape)?;
+                        let new_index = self.checker.field_index(new_shape, key)?;
+                        let old_ptr = self.builder.add_local(ValType::I32);
+                        let new_ptr = self.builder.add_local(ValType::I32);
+                        let v_i64 = self.builder.add_local(ValType::I64);
+                        let v_f64 = self.builder.add_local(ValType::F64);
+                        let v_i32 = self.builder.add_local(ValType::I32);
+                        let v_ptr = self.builder.add_local(ValType::I32);
+                        let v_len = self.builder.add_local(ValType::I32);
+                        match kind {
+                            0 => {
+                                self.emit_expr(value)?;
+                                self.builder.push(Instr::Local(0x21, v_i64));
+                            }
+                            1 => {
+                                self.emit_str(value)?;
+                                self.builder.push(Instr::Local(0x21, v_len));
+                                self.builder.push(Instr::Local(0x21, v_ptr));
+                            }
+                            2 => {
+                                self.emit_f64(value)?;
+                                self.builder.push(Instr::Local(0x21, v_f64));
+                            }
+                            3 => {
+                                self.emit_expr(value)?;
+                                self.builder.push(Instr::Local(0x21, v_i32));
+                            }
+                            8 => {
+                                self.emit_box_dyn_value(value, value_ty)?;
+                                self.builder.push(Instr::Local(0x21, v_i32));
+                            }
+                            other => {
+                                return Err(format!(
+                                    "wasm target cannot store kind {} in a record field",
+                                    other
+                                ))
+                            }
+                        }
+                        self.emit_expr(object)?;
+                        self.builder.push(Instr::Local(0x21, old_ptr));
+                        self.emit_alloc_const(8 * new_keys.len() as u32);
+                        self.builder.push(Instr::Local(0x21, new_ptr));
+                        for (old_index, old_key) in old_keys.iter().enumerate() {
+                            let target_index =
+                                new_keys
+                                    .iter()
+                                    .position(|known| known == old_key)
+                                    .ok_or_else(|| "grown record lost a field".to_string())?;
+                            self.builder.push(Instr::Local(0x20, new_ptr));
+                            self.builder
+                                .push(Instr::Const(0x41, WVal::I32((8 * target_index) as i32)));
+                            self.builder.push(Instr::Op(0x6a));
+                            self.builder.push(Instr::Local(0x20, old_ptr));
+                            self.builder
+                                .push(Instr::Const(0x41, WVal::I32((8 * old_index) as i32)));
+                            self.builder.push(Instr::Op(0x6a));
+                            self.builder.push(Instr::Mem(0x29, 3, 0));
+                            self.builder.push(Instr::Mem(0x37, 3, 0));
+                        }
+                        let addr = self.builder.add_local(ValType::I32);
+                        self.builder.push(Instr::Local(0x20, new_ptr));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32((8 * new_index) as i32)));
+                        self.builder.push(Instr::Op(0x6a));
+                        self.builder.push(Instr::Local(0x21, addr));
+                        match kind {
+                            0 => {
+                                self.builder.push(Instr::Local(0x20, addr));
+                                self.builder.push(Instr::Local(0x20, v_i64));
+                                self.builder.push(Instr::Mem(0x37, 3, 0));
+                            }
+                            1 => {
+                                self.builder.push(Instr::Local(0x20, addr));
+                                self.builder.push(Instr::Local(0x20, v_ptr));
+                                self.builder.push(Instr::Mem(0x36, 2, 0));
+                                self.builder.push(Instr::Local(0x20, addr));
+                                self.builder.push(Instr::Const(0x41, WVal::I32(4)));
+                                self.builder.push(Instr::Op(0x6a));
+                                self.builder.push(Instr::Local(0x20, v_len));
+                                self.builder.push(Instr::Mem(0x36, 2, 0));
+                            }
+                            2 => {
+                                self.builder.push(Instr::Local(0x20, addr));
+                                self.builder.push(Instr::Local(0x20, v_f64));
+                                self.builder.push(Instr::Mem(0x39, 3, 0));
+                            }
+                            3 => {
+                                self.builder.push(Instr::Local(0x20, addr));
+                                self.builder.push(Instr::Local(0x20, v_i32));
+                                self.builder.push(Instr::Op(0xad));
+                                self.builder.push(Instr::Mem(0x37, 3, 0));
+                            }
+                            _ => {
+                                self.builder.push(Instr::Local(0x20, addr));
+                                self.builder.push(Instr::Local(0x20, v_i32));
+                                self.builder.push(Instr::Mem(0x36, 2, 0));
+                            }
+                        }
+                        for alias in self.alias_names(name) {
+                            self.builder.push(Instr::Local(0x20, new_ptr));
+                            self.emit_store(&alias)?;
+                        }
                         return Ok(());
                     }
                     let Ty::Obj(shape) = self.type_of(object)? else {
@@ -20337,6 +20509,23 @@ mod tests {
         assert_eq!(
             strings,
             vec!["3".to_string(), "3".to_string(), "3".to_string()]
+        );
+    }
+
+    #[test]
+    fn records_grow_on_literal_key_assignment() {
+        let (numbers, strings) = run_with_argv(
+            "let o = {a: 1}\no.b = 2\no.c = \"x\"\nprint(json(o))\nprint(o.a + o.b)\nprint(o.c)\nprint(o.len())\nlet e = {}\ne.z = 5\nprint(json(e))\nprint(e.z)",
+            &[],
+        );
+        assert_eq!(numbers, vec![3, 3, 5]);
+        assert_eq!(
+            strings,
+            vec![
+                "{\"a\":1,\"b\":2,\"c\":\"x\"}".to_string(),
+                "x".to_string(),
+                "{\"z\":5}".to_string()
+            ]
         );
     }
 

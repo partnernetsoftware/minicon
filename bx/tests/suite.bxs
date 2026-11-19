@@ -1068,13 +1068,24 @@ if (wasmMergeKind.code == 0 && wasmMergeKindRun.out == wasmMergeKindVm.out && wa
   casesFail += 1
   failures.push("wasm merge kind override\n    wasm=" + json(wasmMergeKindRun.out) + " vm=" + json(wasmMergeKindVm.out) + " err=" + json(wasmMergeKind.err))
 }
-write(artDir + "/wasm-grow.bxs", 'let o = {a: 1}\no.b = 2\nprint(o.b)\n')
+write(artDir + "/wasm-grow.bxs", 'let o = {a: 1}\no.b = 2\no.c = "x"\nprint(json(o))\nprint(o.a + o.b)\nprint(o.len())\nlet e = {}\ne.z = 5\nprint(json(e))\n')
 let wasmGrow = exec([BX, "build", "--wasm", artDir + "/wasm-grow.bxs", "-o", artDir + "/wasm-grow.wasm"])
-if (wasmGrow.code == 1 && wasmGrow.err.contains("cannot add a new field") && wasmGrow.err.contains("declare it in the record literal")) {
+let wasmGrowRun = exec([BX, "run", artDir + "/wasm-grow.wasm"])
+let wasmGrowVm = exec([BX, "run", artDir + "/wasm-grow.bxs"])
+if (wasmGrow.code == 0 && wasmGrowRun.out == wasmGrowVm.out && wasmGrowRun.out.trim() != "") {
   casesOk += 1
 } else {
   casesFail += 1
-  failures.push("wasm static record growth is rejected clearly\n    code=" + str(wasmGrow.code) + " err=" + json(wasmGrow.err))
+  failures.push("wasm literal-key record growth\n    wasm=" + json(wasmGrowRun.out) + " vm=" + json(wasmGrowVm.out) + " err=" + json(wasmGrow.err))
+}
+write(artDir + "/wasm-grow-rt.bxs", 'let o = {a: 1}\nlet k = "c"\no[k] = 3\nprint(o)\n')
+let wasmGrowRt = exec([BX, "build", "--wasm", artDir + "/wasm-grow-rt.bxs", "-o", artDir + "/wasm-grow-rt.wasm"])
+let wasmGrowRtRun = exec([BX, "run", artDir + "/wasm-grow-rt.wasm"])
+if (wasmGrowRt.code == 0 && wasmGrowRtRun.code == 1 && wasmGrowRtRun.err.contains("cannot insert a new field")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm runtime-key record insertion stays rejected\n    code=" + str(wasmGrowRt.code) + " run=" + str(wasmGrowRtRun.code) + " err=" + json(wasmGrowRt.err) + json(wasmGrowRtRun.err))
 }
 let benchNames = ["boolarr", "calls", "coll", "fib", "loop", "recs"]
 let benchOk = true
@@ -1519,13 +1530,24 @@ if (wasmMergeKind.code == 0 && wasmMergeKindRun.out == wasmMergeKindVm.out && wa
   casesFail += 1
   failures.push("wasm merge kind override\n    wasm=" + json(wasmMergeKindRun.out) + " vm=" + json(wasmMergeKindVm.out) + " err=" + json(wasmMergeKind.err))
 }
-write(artDir + "/wasm-grow.bxs", 'let o = {a: 1}\no.b = 2\nprint(o.b)\n')
+write(artDir + "/wasm-grow.bxs", 'let o = {a: 1}\no.b = 2\no.c = "x"\nprint(json(o))\nprint(o.a + o.b)\nprint(o.len())\nlet e = {}\ne.z = 5\nprint(json(e))\n')
 let wasmGrow = exec([BX, "build", "--wasm", artDir + "/wasm-grow.bxs", "-o", artDir + "/wasm-grow.wasm"])
-if (wasmGrow.code == 1 && wasmGrow.err.contains("cannot add a new field") && wasmGrow.err.contains("declare it in the record literal")) {
+let wasmGrowRun = exec([BX, "run", artDir + "/wasm-grow.wasm"])
+let wasmGrowVm = exec([BX, "run", artDir + "/wasm-grow.bxs"])
+if (wasmGrow.code == 0 && wasmGrowRun.out == wasmGrowVm.out && wasmGrowRun.out.trim() != "") {
   casesOk += 1
 } else {
   casesFail += 1
-  failures.push("wasm static record growth is rejected clearly\n    code=" + str(wasmGrow.code) + " err=" + json(wasmGrow.err))
+  failures.push("wasm literal-key record growth\n    wasm=" + json(wasmGrowRun.out) + " vm=" + json(wasmGrowVm.out) + " err=" + json(wasmGrow.err))
+}
+write(artDir + "/wasm-grow-rt.bxs", 'let o = {a: 1}\nlet k = "c"\no[k] = 3\nprint(o)\n')
+let wasmGrowRt = exec([BX, "build", "--wasm", artDir + "/wasm-grow-rt.bxs", "-o", artDir + "/wasm-grow-rt.wasm"])
+let wasmGrowRtRun = exec([BX, "run", artDir + "/wasm-grow-rt.wasm"])
+if (wasmGrowRt.code == 0 && wasmGrowRtRun.code == 1 && wasmGrowRtRun.err.contains("cannot insert a new field")) {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm runtime-key record insertion stays rejected\n    code=" + str(wasmGrowRt.code) + " run=" + str(wasmGrowRtRun.code) + " err=" + json(wasmGrowRt.err) + json(wasmGrowRtRun.err))
 }
 let benchNames = ["boolarr", "calls", "coll", "fib", "loop", "recs"]
 let benchOk = true
