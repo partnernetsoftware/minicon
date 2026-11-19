@@ -15505,7 +15505,7 @@ impl<'a> InferState<'a> {
                 for (key, value) in fields {
                     let ty = self.soft(value, locals);
                     keys.push(key.clone());
-                    kinds.push(ty.and_then(field_kind).unwrap_or(0));
+                    kinds.push(ty.and_then(field_kind_for_ty).unwrap_or(0));
                 }
                 Some(Ty::Obj(self.shape_id(&keys, &kinds)))
             }
@@ -20021,6 +20021,19 @@ mod tests {
                 "false".to_string(),
                 "division by zero".to_string()
             ]
+        );
+    }
+
+    #[test]
+    fn function_returned_record_fields_keep_container_kinds() {
+        let (numbers, strings) = run_with_argv(
+            "fn f() { return {y: [2]} }\nlet r = f()\nprint(r.y)\nprint(r.y[0])\nprint(type(r.y))",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec!["[2]".to_string(), "2".to_string(), "array".to_string()]
         );
     }
 
