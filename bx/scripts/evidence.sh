@@ -14,6 +14,10 @@ if [ ! -x "$bx" ]; then
   echo "evidence: cannot execute '$bx' (pass the bx binary as the first argument)" >&2
   exit 2
 fi
+# Resolve to an absolute path and hand it to the suite/verifier through the same
+# variable they read, so the bundle works from any working directory.
+bx="$(cd "$(dirname "$bx")" && pwd)/$(basename "$bx")"
+export BX_BIN="$bx"
 
 failures=0
 stage() {
