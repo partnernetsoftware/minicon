@@ -750,11 +750,18 @@ if (nodeProbe.code == 0) {
   write(artDir + "/wasm-demo.bxs", 'print(6 * 7)\nprint("hi")\n')
   let demo = exec([BX, "build", "--wasm", "--html", artDir + "/wasm-demo.bxs", "-o", artDir + "/wasm-demo.html"])
   let demoRun = exec(["node", artDir + "/wasm-demo.js"])
-  if (demo.code == 0 && demoRun.code == 0 && demoRun.out.trim() == "42\nhi") {
+  write(artDir + "/wasm-demo-rich.bxs", 'let xs = [1, 2, 3]\nprint(sum(xs))\nprint(map(xs, fn(x) { return x * 2 }))\nlet r = {a: 1}\nr.b = 2\nprint(r)\nprint(attempt(fn() { return [1][9] }).ok)\nprint(len("héllo"))\n')
+  let demoRich = exec([BX, "build", "--wasm", "--html", artDir + "/wasm-demo-rich.bxs", "-o", artDir + "/wasm-demo-rich.html"])
+  let demoRichRun = exec(["node", artDir + "/wasm-demo-rich.js"])
+  write(artDir + "/wasm-demo-dyn.bxs", 'let v = parse(env("X", "[1,2]"))\nprint(v)\n')
+  let demoDyn = exec([BX, "build", "--wasm", "--html", artDir + "/wasm-demo-dyn.bxs", "-o", artDir + "/wasm-demo-dyn.html"])
+  let demoDynRun = exec(["node", artDir + "/wasm-demo-dyn.js"])
+  let demoDynMsg = demoDynRun.out + demoDynRun.err
+  if (demo.code == 0 && demoRun.code == 0 && demoRun.out.trim() == "42\nhi" && demoRich.code == 0 && demoRichRun.code == 0 && demoRichRun.out.trim() == "6\n[2,4,6]\n{\"a\":1,\"b\":2}\nfalse\n5" && demoDyn.code == 0 && demoDynRun.code != 0 && demoDynMsg.contains("not available in the browser demo")) {
     casesOk += 1
   } else {
     casesFail += 1
-    failures.push("wasm browser demo runs under node\n    build=" + demo.code + " out=" + json(demoRun.out) + " err=" + json(demoRun.err))
+    failures.push("wasm browser demo static subset\n    demo=" + json(demoRun.out) + " rich=" + json(demoRichRun.out) + " dyn=" + json(demoDynRun.out) + " dynErr=" + json(demoDynRun.err) + " build=" + json(demoRich.err) + json(demoDyn.err))
   }
 }
 write(artDir + "/wasm-web.bxs", 'console_log(42)\nconsole_log("web")\nconsole_log(2.5)\nlet t = performance_now()\nif (t >= 0.0) { print(1) }\n')

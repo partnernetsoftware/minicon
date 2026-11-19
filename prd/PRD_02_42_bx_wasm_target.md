@@ -777,6 +777,7 @@ authoritative boundary list is:
 | B8 | mixed-kind concatenation | `["a"] + [1]` and `"x" + [1]` are rejected | build a dynamic array |
 | B9 | printing functions/map keys | still unsupported (`console_log` scalars only) | `type()`-gate before printing |
 | B10 | function literals as parameters | a parameter may receive one concrete closure, but two different literals are rejected with "different function literals" (the static target has no closure cell) | pass a single closure, return the closure, or use `BX_TARGET=bxb` |
+| B11 | browser demo host | `bx build --wasm --html` runs the static subset only; the generated JS host has no runtime `parse`/`exec`/IO, and such scripts stop with "runtime parse is not available in the browser demo" | ship a `.wasm` and provide a host, or use the static subset |
 
 Everything else that earlier notes described as a boundary (null in records,
 attempt success `error`, IO return values, record field types, runtime-key
