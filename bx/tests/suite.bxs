@@ -199,6 +199,16 @@ check("hello example", "hello from bx\n7\n{\"bytes\":2,\"fast\":true}", ["run", 
 
 print("bytecode")
 let artDir = __dir__ + "/../target/bx-tests"
+write(artDir + "/wasm-field-promote.bxs", 'let x = parse(env("D", "7"))\nlet r = {b: false, s: "a"}\nr.b = x\nr.s = x\nprint(r)\nprint(r.b)\nprint(r.s)\nlet q = {n: 1}\nq.n = x\nprint(q)\n')
+let wasmFieldPromote = exec([BX, "build", "--wasm", artDir + "/wasm-field-promote.bxs", "-o", artDir + "/wasm-field-promote.wasm"])
+let wasmFieldPromoteRun = exec([BX, "run", artDir + "/wasm-field-promote.wasm"])
+let wasmFieldPromoteVm = exec([BX, "run", artDir + "/wasm-field-promote.bxs"])
+if (wasmFieldPromote.code == 0 && wasmFieldPromoteRun.out == wasmFieldPromoteVm.out && wasmFieldPromoteRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm bool/string field dynamic replacement\n    wasm=" + json(wasmFieldPromoteRun.out) + " vm=" + json(wasmFieldPromoteVm.out) + " err=" + json(wasmFieldPromote.err))
+}
 write(artDir + "/wasm-unbox-container.bxs", 'let x = parse(env("D", "7"))\nlet xs = [0, 0]\nxs[1] = x\nprint(xs)\nlet r = {n: 1, f: 1.5}\nr.n = x\nr.f = x\nprint(r)\nlet ys = [1]\npush(ys, x)\nprint(ys)\n')
 let wasmUnboxCont = exec([BX, "build", "--wasm", artDir + "/wasm-unbox-container.bxs", "-o", artDir + "/wasm-unbox-container.wasm"])
 let wasmUnboxContRun = exec([BX, "run", artDir + "/wasm-unbox-container.wasm"])

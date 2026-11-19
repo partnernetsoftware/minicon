@@ -3313,6 +3313,28 @@ impl Checker {
                                    && (is_array_ty(actual) || matches!(actual, Ty::Obj(_))))
                                || (actual == Ty::Dyn
                                    && matches!(expected, Ty::Int | Ty::Float));
+                           if !ok && actual == Ty::Dyn && matches!(expected, Ty::Bool | Ty::Str) {
+                               let Expr::Ident(name) = &**object else {
+                                   return Err(format!(
+                                       "wasm target replaces field '{}' only on record variables",
+                                       key
+                                   ));
+                               };
+                               if self
+                                   .record_write_log
+                                   .get(name)
+                                   .is_some_and(|log| log.iter().any(|grew| !*grew))
+                               {
+                                   return Err(format!(
+                                       "wasm target cannot replace field '{}' after in-place updates on '{}'",
+                                       key, name
+                                   ));
+                               }
+                               let site = &**target as *const Expr as usize;
+                               self.dyn_record_sites.insert(site, shape);
+                               self.update_binding_ty(name, Ty::Dyn)?;
+                               return Ok(());
+                           }
                            if !ok {
                                return Err(format!(
                                 "wasm target record field '{}' holds {}, assigned {}",
@@ -14568,6 +14590,7 @@ impl<'a> Emitter<'a> {
                     let growth_site = &**target as *const Expr as usize;
                     if self.type_of(object)? == Ty::Dyn
                         && !self.checker.growth.contains_key(&growth_site)
+                        && !self.checker.dyn_record_sites.contains_key(&growth_site)
                     {
                         let value_ty = self.type_of(value)?;
                         self.emit_expr(object)?;
@@ -14575,6 +14598,53 @@ impl<'a> Emitter<'a> {
                         self.emit_box_dyn(&key_expr, Ty::Str)?;
                         self.emit_box_dyn(value, value_ty)?;
                         self.builder.push(Instr::Call(DYN_SET_MEMBER));
+                        return Ok(());
+                    }
+                    if let Some(old_shape) =
+                        self.checker.dyn_record_sites.get(&growth_site).copied()
+                    {
+                        let Expr::Ident(name) = &**object else {
+                            return Err(
+                                "wasm target replaces record fields on variables only".to_string()
+                            );
+                        };
+                        if self.boxed.contains(name) {
+                            return Err(format!(
+                                "wasm target cannot replace a field of the captured record '{}'",
+                                name
+                            ));
+                        }
+                        if self.alias_names(name).len() > 1 {
+                            return Err(format!(
+                                "wasm target cannot replace a field of the aliased record '{}'",
+                                name
+                            ));
+                        }
+                        let kinds = self.record_kinds_table(old_shape)?;
+                        let (table, count) = self.record_table(old_shape)?;
+                        let rec_tmp = self.builder.add_local(ValType::I32);
+                        let obj_tmp = self.builder.add_local(ValType::I32);
+                        self.emit_expr(object)?;
+                        self.builder.push(Instr::Local(0x21, rec_tmp));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(kinds as i32)));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(table as i32)));
+                        self.builder
+                            .push(Instr::Const(0x41, WVal::I32(count as i32)));
+                        self.builder.push(Instr::Local(0x20, rec_tmp));
+                        self.builder.push(Instr::Call(DYN_FROM_RECORD));
+                        self.builder.push(Instr::Local(0x21, obj_tmp));
+                        let value_ty = self.type_of(value)?;
+                        let key_expr = Expr::Str(key.clone());
+                        self.builder.push(Instr::Local(0x20, obj_tmp));
+                        self.emit_box_dyn(&key_expr, Ty::Str)?;
+                        self.emit_box_dyn(value, value_ty)?;
+                        self.builder.push(Instr::Call(DYN_SET_MEMBER));
+                        for alias in self.alias_names(name) {
+                            self.builder.push(Instr::Local(0x20, obj_tmp));
+                            self.emit_store(&alias)?;
+                        }
                         return Ok(());
                     }
                     if let Some((old_shape, new_shape, kind)) =
@@ -20762,6 +20832,24 @@ mod tests {
                 "[0,7]".to_string(),
                 "{\"f\":7,\"n\":7}".to_string(),
                 "[1,7]".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn dynamic_bool_or_string_field_values_promote_the_record() {
+        let (numbers, strings) = run_with_argv(
+            "let x = parse(env(\"D\", \"7\"))\nlet r = {b: false, s: \"a\"}\nr.b = x\nr.s = x\nprint(r)\nprint(r.b)\nprint(r.s)\nlet q = {n: 1}\nq.n = x\nprint(q)",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec![
+                "{\"b\":7,\"s\":7}".to_string(),
+                "7".to_string(),
+                "7".to_string(),
+                "{\"n\":7}".to_string()
             ]
         );
     }
