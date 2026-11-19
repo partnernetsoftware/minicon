@@ -199,6 +199,16 @@ check("hello example", "hello from bx\n7\n{\"bytes\":2,\"fast\":true}", ["run", 
 
 print("bytecode")
 let artDir = __dir__ + "/../target/bx-tests"
+write(artDir + "/wasm-grid.bxs", 'let matrix = [[1, 2], [3, 4]]\nlet transposed = []\nfor i in range(2) {\n  let col = []\n  for row in matrix {\n    col.push(row[i])\n  }\n  transposed.push(col)\n}\nprint(transposed)\nlet recs = []\nrecs.push({n: 2})\nrecs.push({n: 1})\nsort(recs, fn(a, b) { return a.n - b.n })\nprint(map(recs, fn(r) { return r.n }))\nlet s = ""\ns += "a"\ns += str(1)\nprint(s)\nlet rec = {name: "x", scores: [3, 1, 2]}\nsort(rec.scores)\nrec.scores.push(9)\nprint(rec.scores)\n')
+let wasmGrid = exec([BX, "build", "--wasm", artDir + "/wasm-grid.bxs", "-o", artDir + "/wasm-grid.wasm"])
+let wasmGridRun = exec([BX, "run", artDir + "/wasm-grid.wasm"])
+let wasmGridVm = exec([BX, "run", artDir + "/wasm-grid.bxs"])
+if (wasmGrid.code == 0 && wasmGridRun.out == wasmGridVm.out && wasmGridRun.out.trim() != "") {
+  casesOk += 1
+} else {
+  casesFail += 1
+  failures.push("wasm matrix/records/string append\n    wasm=" + json(wasmGridRun.out) + " vm=" + json(wasmGridVm.out) + " err=" + json(wasmGrid.err))
+}
 write(artDir + "/wasm-realdyn.bxs", 'let cfg = parse("{" + json("name") + ":" + json("svc") + "," + json("port") + ":8080," + json("tags") + ":[" + json("a") + "," + json("b") + "]}")\nprint(cfg["name"])\nprint(cfg["port"] + 1)\nlet users = parse("[" + "{" + json("name") + ":" + json("a") + "," + json("age") + ":30}," + "{" + json("name") + ":" + json("b") + "," + json("age") + ":25}]")\nprint(map(users, fn(u) { return u["name"] }))\nprint(reduce(users, fn(acc, u) { return acc + u["age"] }, 0))\nsort(users, fn(a, b) { return b["age"] - a["age"] })\nprint(map(users, fn(u) { return u["name"] }))\nlet a = attempt(fn() { return users[0]["name"] })\nprint(a.ok)\nprint(a.value)\nlet b = attempt(fn() { return users[9]["name"] })\nprint(b.ok)\nprint(b.error)\n')
 let wasmRealDyn = exec([BX, "build", "--wasm", artDir + "/wasm-realdyn.bxs", "-o", artDir + "/wasm-realdyn.wasm"])
 let wasmRealDynRun = exec([BX, "run", artDir + "/wasm-realdyn.wasm"])

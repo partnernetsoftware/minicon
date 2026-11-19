@@ -133,11 +133,20 @@ fn literal_element_ty(expr: &Expr) -> Option<Ty> {
             }
         }
         Expr::Bin(BinOp::Add, left, right) => {
-            let lt = literal_element_ty(left)?;
-            let rt = literal_element_ty(right)?;
-            if lt == Ty::Str || rt == Ty::Str {
+            let lt = literal_element_ty(left);
+            let rt = literal_element_ty(right);
+            if lt == Some(Ty::Str) || rt == Some(Ty::Str) {
                 Some(Ty::Str)
-            } else if lt == Ty::Float || rt == Ty::Float {
+            } else if lt == Some(Ty::Float) || rt == Some(Ty::Float) {
+                Some(Ty::Float)
+            } else {
+                Some(Ty::Int)
+            }
+        }
+        Expr::Bin(BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod, left, right) => {
+            let lt = literal_element_ty(left);
+            let rt = literal_element_ty(right);
+            if lt == Some(Ty::Float) || rt == Some(Ty::Float) {
                 Some(Ty::Float)
             } else {
                 Some(Ty::Int)
@@ -256,8 +265,12 @@ fn empty_array_push_hints(stmts: &[Stmt]) -> HashMap<String, Ty> {
                 if let Expr::Ident(name) = &**callee {
                     if name == "push" && args.len() == 2 {
                         if let Expr::Ident(target) = &args[0] {
-                            if let Some(ty) = literal_element_ty(&args[1]) {
-                                record_push_hint(pushes, target, ty);
+                            match literal_element_ty(&args[1]) {
+                                Some(ty) => record_push_hint(pushes, target, ty),
+                                // An operand whose static kind is unknown (variable,
+                                // call, record literal) keeps the growable array
+                                // dynamic instead of guessing ints.
+                                None => record_push_hint(pushes, target, Ty::Dyn),
                             }
                         }
                     }
@@ -269,8 +282,9 @@ fn empty_array_push_hints(stmts: &[Stmt]) -> HashMap<String, Ty> {
             Expr::MethodCall(object, key, args, _) => {
                 if key == "push" && args.len() == 1 {
                     if let Expr::Ident(target) = &**object {
-                        if let Some(ty) = literal_element_ty(&args[0]) {
-                            record_push_hint(pushes, target, ty);
+                        match literal_element_ty(&args[0]) {
+                            Some(ty) => record_push_hint(pushes, target, ty),
+                            None => record_push_hint(pushes, target, Ty::Dyn),
                         }
                     }
                 }
@@ -3779,6 +3793,13 @@ impl Checker {
                 if *_op == BinOp::Add && is_array_ty(target_ty) && target_ty == value_ty {
                     return Ok(());
                 }
+                if *_op == BinOp::Add
+                    && target_ty == Ty::Str
+                    && !is_array_ty(value_ty)
+                    && !matches!(value_ty, Ty::Obj(_))
+                {
+                    return Ok(());
+                }
                 if value_ty == Ty::Dyn && is_number(target_ty) {
                     return Ok(());
                 }
@@ -4880,6 +4901,19 @@ impl<'a> Emitter<'a> {
         };
         if op == BinOp::Add && is_array_ty(target_ty) {
             self.emit_array_concat(&Expr::Ident(name.to_string()), value)?;
+            return self.emit_store(name);
+        }
+        if op == BinOp::Add && target_ty == Ty::Str {
+            let value_ty = self.type_of(value)?;
+            if is_array_ty(value_ty) || matches!(value_ty, Ty::Obj(_)) {
+                return Err("wasm target concatenates scalars into strings".to_string());
+            }
+            let concat = Expr::Bin(
+                BinOp::Add,
+                Box::new(Expr::Ident(name.to_string())),
+                Box::new(value.clone()),
+            );
+            self.emit_str(&concat)?;
             return self.emit_store(name);
         }
         if !is_number(target_ty) {
@@ -15835,15 +15869,6 @@ impl<'a> Emitter<'a> {
                         return Ok(());
                     }
                 }
-                let Expr::Ident(array) = &**object else {
-                    return Err("wasm target supports .push on array variables only".to_string());
-                };
-                if name == "pop" {
-                    if !args.is_empty() {
-                        return Err("wasm target .pop takes no arguments".to_string());
-                    }
-                    return self.emit_pop(array);
-                }
                 let method_push_site = &**object as *const Expr as usize;
                 if self.type_of(object)? == Ty::Dyn
                     && !self
@@ -15873,6 +15898,15 @@ impl<'a> Emitter<'a> {
                             ))
                         }
                     }
+                }
+                let Expr::Ident(array) = &**object else {
+                    return Err("wasm target supports .push on array variables only".to_string());
+                };
+                if name == "pop" {
+                    if !args.is_empty() {
+                        return Err("wasm target .pop takes no arguments".to_string());
+                    }
+                    return self.emit_pop(array);
                 }
                 if name != "push" || args.len() != 1 {
                     return Err(format!(
@@ -21159,6 +21193,24 @@ mod tests {
                 "a".to_string(),
                 "false".to_string(),
                 "cannot index null (missing value?)".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn container_pushes_and_string_appends_match_the_vm() {
+        let (numbers, strings) = run_with_argv(
+            "let matrix = [[1, 2], [3, 4]]\nlet transposed = []\nfor i in range(2) {\n  let col = []\n  for row in matrix {\n    col.push(row[i])\n  }\n  transposed.push(col)\n}\nprint(transposed)\nlet recs = []\nrecs.push({n: 2})\nrecs.push({n: 1})\nsort(recs, fn(a, b) { return a.n - b.n })\nprint(map(recs, fn(r) { return r.n }))\nlet s = \"\"\ns += \"a\"\ns += str(1)\nprint(s)\nlet rec = {name: \"x\", scores: [3, 1, 2]}\nsort(rec.scores)\nrec.scores.push(9)\nprint(rec.scores)",
+            &[],
+        );
+        assert!(numbers.is_empty());
+        assert_eq!(
+            strings,
+            vec![
+                "[[1,3],[2,4]]".to_string(),
+                "[1,2]".to_string(),
+                "a1".to_string(),
+                "[1,2,3,9]".to_string()
             ]
         );
     }
